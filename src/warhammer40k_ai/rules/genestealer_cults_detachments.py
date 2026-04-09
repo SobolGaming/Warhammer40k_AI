@@ -190,6 +190,42 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_BONUS_KEY = (
         "enhancement_deeds_that_speak_to_the_masses_resurgence_points_bonus"
     )
+    _XENOCREED_STRATAGEM_ELIGIBLE_UNIT_PREFIXES = (
+        "acolyte hybrids",
+        "hybrid metamorphs",
+        "neophyte hybrids",
+    )
+    _XENOCREED_PATH_OF_ANGUISH_ELIGIBLE_UNIT_PREFIXES = (
+        "acolyte hybrids",
+        "neophyte hybrids",
+    )
+    _XENOCREED_FRENZIED_DEVOTION_RULE_NAME = "Frenzied Devotion"
+    _XENOCREED_FRENZIED_DEVOTION_ACTIVE_KEY = "gsc_xenocreed_frenzied_devotion_active"
+    _XENOCREED_FRENZIED_DEVOTION_OWNER_KEY = "gsc_xenocreed_frenzied_devotion_turn_owner"
+    _XENOCREED_FRENZIED_DEVOTION_TURN_KEY = "gsc_xenocreed_frenzied_devotion_turn"
+    _XENOCREED_FRENZIED_DEVOTION_PHASE_KEY = "gsc_xenocreed_frenzied_devotion_phase"
+    _XENOCREED_FRENZIED_DEVOTION_SOURCE_KEY = "gsc_xenocreed_frenzied_devotion_source"
+    _XENOCREED_FRENZIED_DEVOTION_SR_KEY = "gsc_xenocreed_frenzied_devotion_effects"
+    _XENOCREED_FRENZIED_DEVOTION_KEY_PREFIX = "gsc_xenocreed_frenzied_devotion"
+    _XENOCREED_TRANSCENDENT_CELERITY_RULE_NAME = "Transcendent Celerity"
+    _XENOCREED_TRANSCENDENT_CELERITY_ACTIVE_KEY = "gsc_xenocreed_transcendent_celerity_active"
+    _XENOCREED_TRANSCENDENT_CELERITY_OWNER_KEY = "gsc_xenocreed_transcendent_celerity_turn_owner"
+    _XENOCREED_TRANSCENDENT_CELERITY_TURN_KEY = "gsc_xenocreed_transcendent_celerity_turn"
+    _XENOCREED_TRANSCENDENT_CELERITY_PHASE_KEY = "gsc_xenocreed_transcendent_celerity_phase"
+    _XENOCREED_TRANSCENDENT_CELERITY_SOURCE_KEY = "gsc_xenocreed_transcendent_celerity_source"
+    _XENOCREED_TRANSCENDENT_CELERITY_SR_KEY = "gsc_xenocreed_transcendent_celerity_effects"
+    _XENOCREED_TRANSCENDENT_CELERITY_KEY_PREFIX = "gsc_xenocreed_transcendent_celerity"
+    _XENOCREED_TIRELESS_FERVOUR_RULE_NAME = "Tireless Fervour"
+    _XENOCREED_TIRELESS_FERVOUR_ACTIVE_KEY = "gsc_xenocreed_tireless_fervour_active"
+    _XENOCREED_TIRELESS_FERVOUR_OWNER_KEY = "gsc_xenocreed_tireless_fervour_turn_owner"
+    _XENOCREED_TIRELESS_FERVOUR_TURN_KEY = "gsc_xenocreed_tireless_fervour_turn"
+    _XENOCREED_TIRELESS_FERVOUR_PHASE_KEY = "gsc_xenocreed_tireless_fervour_phase"
+    _XENOCREED_TIRELESS_FERVOUR_SOURCE_KEY = "gsc_xenocreed_tireless_fervour_source"
+    _XENOCREED_MARTYR_RULE_NAME = "Vengeance for the Martyr!"
+    _XENOCREED_MARTYR_ACTIVE_KEY = "gsc_xenocreed_martyr_active"
+    _XENOCREED_MARTYR_OWNER_KEY = "gsc_xenocreed_martyr_owner"
+    _XENOCREED_MARTYR_SOURCE_KEY = "gsc_xenocreed_martyr_source"
+    _XENOCREED_MARTYR_REROLL_MODE_KEY = "gsc_xenocreed_martyr_reroll_mode"
 
     @staticmethod
     def _attached_root(unit):
@@ -979,6 +1015,399 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     bonus = 2
                 total += max(0, int(bonus))
         return int(total)
+
+    def _xenocreed_unit_matches_prefixes(self, unit, prefixes: tuple[str, ...]) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        for token in self._unit_name_tokens(root):
+            for prefix in prefixes:
+                if token.startswith(prefix):
+                    return True
+        return False
+
+    def xenocreed_stratagem_eligible_unit(self, unit) -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        return self._xenocreed_unit_matches_prefixes(unit, self._XENOCREED_STRATAGEM_ELIGIBLE_UNIT_PREFIXES)
+
+    def xenocreed_path_of_anguish_eligible_unit(self, unit) -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        return self._xenocreed_unit_matches_prefixes(unit, self._XENOCREED_PATH_OF_ANGUISH_ELIGIBLE_UNIT_PREFIXES)
+
+    def xenocreed_character_units(self, *, exclude_model=None) -> list:
+        if not self.is_xenocreed_congregation():
+            return []
+        excluded_id = str(get_entity_id(exclude_model) or "") if exclude_model is not None else ""
+        out: list = []
+        for root in self._iter_unit_roots():
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_genestealer_cults(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            has_other_character = False
+            for model in self._iter_attached_models(root):
+                alive = getattr(model, "is_alive", True)
+                if callable(alive):
+                    alive = alive()
+                if not bool(alive):
+                    continue
+                if not bool(getattr(model, "is_character", False)):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if excluded_id and model_id == excluded_id:
+                    continue
+                has_other_character = True
+                break
+            if has_other_character:
+                out.append(root)
+        return out
+
+    def _xenocreed_model_is_non_character_bodyguard(self, model) -> bool:
+        if model is None:
+            return False
+        if bool(getattr(model, "is_character", False)):
+            return False
+        model_unit = getattr(model, "parent_unit", None)
+        root = self._attached_root(model_unit)
+        if root is None:
+            return False
+        if not self.xenocreed_stratagem_eligible_unit(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        return True
+
+    def _xenocreed_apply_temporary_weapon_effects(
+        self,
+        unit,
+        *,
+        sr_key: str,
+        key_prefix: str,
+        source_name: str,
+        attack_type: str,
+        game=None,
+        attacks_bonus: int = 0,
+        keywords: tuple[str, ...] = (),
+        non_character_only: bool = False,
+    ) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        self._clear_temporary_weapon_keyword_effects(root, sr_key=sr_key)
+
+        effect_keys: list[dict] = []
+        for model in self._iter_attached_models(root):
+            alive = getattr(model, "is_alive", True)
+            if callable(alive):
+                alive = alive()
+            if not bool(alive):
+                continue
+            if non_character_only and bool(getattr(model, "is_character", False)):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if not model_id:
+                continue
+            weapon_names = self._model_weapon_names(model, attack_type=attack_type)
+            if not weapon_names:
+                continue
+            set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            for idx, weapon_name in enumerate(weapon_names):
+                base_key = f"{key_prefix}:{model_id}:{idx}"
+                if int(attacks_bonus or 0) > 0 and callable(set_bonus):
+                    effect_key = f"{base_key}:bonus"
+                    set_bonus(
+                        key=effect_key,
+                        weapon_name=weapon_name,
+                        attacks_bonus=int(attacks_bonus or 0),
+                        source=source_name,
+                        expires_phase="",
+                    )
+                    effect_keys.append({"model_id": model_id, "effect_key": effect_key})
+                if keywords and callable(set_keywords):
+                    effect_key = f"{base_key}:keywords"
+                    set_keywords(
+                        key=effect_key,
+                        weapon_name=weapon_name,
+                        keywords=list(keywords),
+                        source=source_name,
+                        expires_phase="",
+                        attack_type=attack_type,
+                    )
+                    effect_keys.append({"model_id": model_id, "effect_key": effect_key})
+
+        if not effect_keys:
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = [entry for entry in list(sr.get(sr_key, []) or []) if isinstance(entry, dict)]
+        effect_entry: dict = {
+            "source": source_name,
+            "model_effect_keys": effect_keys,
+        }
+        if game is not None:
+            effect_entry["battle_round"] = self._current_turn(game=game)
+        entries.append(effect_entry)
+        sr[sr_key] = entries
+        root.special_rules = sr
+        return True
+
+    def apply_xenocreed_frenzied_devotion(self, unit, *, game=None, source_name: str = "") -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self.xenocreed_stratagem_eligible_unit(root):
+            return False
+        source = str(source_name or self._XENOCREED_FRENZIED_DEVOTION_RULE_NAME).strip() or self._XENOCREED_FRENZIED_DEVOTION_RULE_NAME
+        if not self._xenocreed_apply_temporary_weapon_effects(
+            root,
+            sr_key=self._XENOCREED_FRENZIED_DEVOTION_SR_KEY,
+            key_prefix=self._XENOCREED_FRENZIED_DEVOTION_KEY_PREFIX,
+            source_name=source,
+            attack_type="melee",
+            game=game,
+            attacks_bonus=1,
+            keywords=("HAZARDOUS",),
+            non_character_only=True,
+        ):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = self._current_turn_owner_id(game=game, player=getattr(self.army, "player", None))
+        current_turn = self._current_turn(game=game)
+        sr[self._XENOCREED_FRENZIED_DEVOTION_ACTIVE_KEY] = True
+        if owner_id:
+            sr[self._XENOCREED_FRENZIED_DEVOTION_OWNER_KEY] = owner_id
+        if current_turn:
+            sr[self._XENOCREED_FRENZIED_DEVOTION_TURN_KEY] = current_turn
+        sr[self._XENOCREED_FRENZIED_DEVOTION_PHASE_KEY] = "FIGHT_PHASE"
+        sr[self._XENOCREED_FRENZIED_DEVOTION_SOURCE_KEY] = source
+        root.special_rules = sr
+        return True
+
+    def apply_xenocreed_transcendent_celerity(self, unit, *, game=None, source_name: str = "") -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self.xenocreed_stratagem_eligible_unit(root):
+            return False
+        source = str(source_name or self._XENOCREED_TRANSCENDENT_CELERITY_RULE_NAME).strip() or self._XENOCREED_TRANSCENDENT_CELERITY_RULE_NAME
+        if not self._xenocreed_apply_temporary_weapon_effects(
+            root,
+            sr_key=self._XENOCREED_TRANSCENDENT_CELERITY_SR_KEY,
+            key_prefix=self._XENOCREED_TRANSCENDENT_CELERITY_KEY_PREFIX,
+            source_name=source,
+            attack_type="ranged",
+            game=game,
+            keywords=("ASSAULT",),
+        ):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = self._current_turn_owner_id(game=game, player=getattr(self.army, "player", None))
+        current_turn = self._current_turn(game=game)
+        sr[self._XENOCREED_TRANSCENDENT_CELERITY_ACTIVE_KEY] = True
+        if owner_id:
+            sr[self._XENOCREED_TRANSCENDENT_CELERITY_OWNER_KEY] = owner_id
+        if current_turn:
+            sr[self._XENOCREED_TRANSCENDENT_CELERITY_TURN_KEY] = current_turn
+        sr[self._XENOCREED_TRANSCENDENT_CELERITY_PHASE_KEY] = "SHOOTING_PHASE"
+        sr[self._XENOCREED_TRANSCENDENT_CELERITY_SOURCE_KEY] = source
+        root.special_rules = sr
+        return True
+
+    def apply_xenocreed_tireless_fervour(self, unit, *, game=None, source_name: str = "") -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self.xenocreed_stratagem_eligible_unit(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = self._current_turn_owner_id(game=game, player=getattr(self.army, "player", None))
+        current_turn = self._current_turn(game=game)
+        source = str(source_name or self._XENOCREED_TIRELESS_FERVOUR_RULE_NAME).strip() or self._XENOCREED_TIRELESS_FERVOUR_RULE_NAME
+        sr[self._XENOCREED_TIRELESS_FERVOUR_ACTIVE_KEY] = True
+        if owner_id:
+            sr[self._XENOCREED_TIRELESS_FERVOUR_OWNER_KEY] = owner_id
+        if current_turn:
+            sr[self._XENOCREED_TIRELESS_FERVOUR_TURN_KEY] = current_turn
+        sr[self._XENOCREED_TIRELESS_FERVOUR_PHASE_KEY] = "CHARGE_PHASE"
+        sr[self._XENOCREED_TIRELESS_FERVOUR_SOURCE_KEY] = source
+        root.special_rules = sr
+        return True
+
+    def xenocreed_frenzied_devotion_melee_skill_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_xenocreed_congregation():
+            return 0, ""
+        if attacker_model is None or not self._xenocreed_model_is_non_character_bodyguard(attacker_model):
+            return 0, ""
+        if weapon_profile is not None:
+            parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent_wargear, "is_melee", None) if parent_wargear is not None else None
+            if callable(is_melee) and not bool(is_melee()):
+                return 0, ""
+            profile_is_melee = getattr(weapon_profile, "is_melee", None)
+            if callable(profile_is_melee) and not bool(profile_is_melee()):
+                return 0, ""
+        root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._XENOCREED_FRENZIED_DEVOTION_ACTIVE_KEY)):
+            return 0, ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._XENOCREED_FRENZIED_DEVOTION_OWNER_KEY,
+            turn_key=self._XENOCREED_FRENZIED_DEVOTION_TURN_KEY,
+            phase_key=self._XENOCREED_FRENZIED_DEVOTION_PHASE_KEY,
+        ):
+            return 0, ""
+        source = str(
+            sr.get(self._XENOCREED_FRENZIED_DEVOTION_SOURCE_KEY, "") or self._XENOCREED_FRENZIED_DEVOTION_RULE_NAME
+        ).strip() or self._XENOCREED_FRENZIED_DEVOTION_RULE_NAME
+        return 1, source
+
+    def _xenocreed_tireless_fervour_active(self, unit, *, game=None) -> tuple[bool, str]:
+        root = self._attached_root(unit)
+        if root is None or not self.is_xenocreed_congregation():
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._XENOCREED_TIRELESS_FERVOUR_ACTIVE_KEY)):
+            return False, ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._XENOCREED_TIRELESS_FERVOUR_OWNER_KEY,
+            turn_key=self._XENOCREED_TIRELESS_FERVOUR_TURN_KEY,
+            phase_key=self._XENOCREED_TIRELESS_FERVOUR_PHASE_KEY,
+        ):
+            return False, ""
+        source = str(sr.get(self._XENOCREED_TIRELESS_FERVOUR_SOURCE_KEY, "") or self._XENOCREED_TIRELESS_FERVOUR_RULE_NAME).strip()
+        return True, source or self._XENOCREED_TIRELESS_FERVOUR_RULE_NAME
+
+    def xenocreed_tireless_fervour_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        active, _source = self._xenocreed_tireless_fervour_active(unit, game=game)
+        return bool(active)
+
+    def xenocreed_tireless_fervour_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        active, _source = self._xenocreed_tireless_fervour_active(unit, game=game)
+        return bool(active)
+
+    def xenocreed_tireless_fervour_reroll_charge_applies(self, unit, *, target_units=None, game=None) -> bool:
+        active, _source = self._xenocreed_tireless_fervour_active(unit, game=game)
+        if not active or game is None:
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        target_roots = []
+        for target in list(target_units or []):
+            target_root = self._attached_root(target)
+            if target_root is not None:
+                target_roots.append(target_root)
+        if not target_roots:
+            return False
+        for character_root in self.xenocreed_character_units():
+            if character_root is None:
+                continue
+            for target_root in target_roots:
+                if target_root is None or not self._unit_is_on_battlefield(target_root):
+                    continue
+                if bool(game_map.is_within_engagement_range(character_root, target_root)):
+                    return True
+        return False
+
+    def mark_xenocreed_martyr_enemy(self, target_unit, *, source: str = "", reroll_mode: str = "ones") -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        mode = str(reroll_mode or "ones").strip().lower()
+        if mode not in {"ones", "full"}:
+            mode = "ones"
+        sr[self._XENOCREED_MARTYR_ACTIVE_KEY] = True
+        if owner_id:
+            sr[self._XENOCREED_MARTYR_OWNER_KEY] = owner_id
+        sr[self._XENOCREED_MARTYR_SOURCE_KEY] = str(source or self._XENOCREED_MARTYR_RULE_NAME).strip() or self._XENOCREED_MARTYR_RULE_NAME
+        sr[self._XENOCREED_MARTYR_REROLL_MODE_KEY] = mode
+        target_root.special_rules = sr
+        return True
+
+    def _xenocreed_martyr_enemy_context(self, target_unit) -> tuple[str, str]:
+        if not self.is_xenocreed_congregation():
+            return "", ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return "", ""
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._XENOCREED_MARTYR_ACTIVE_KEY)):
+            return "", ""
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        effect_owner = str(sr.get(self._XENOCREED_MARTYR_OWNER_KEY, "") or "")
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return "", ""
+        source = str(sr.get(self._XENOCREED_MARTYR_SOURCE_KEY, "") or self._XENOCREED_MARTYR_RULE_NAME).strip()
+        mode = str(sr.get(self._XENOCREED_MARTYR_REROLL_MODE_KEY, "") or "").strip().lower()
+        if mode not in {"ones", "full"}:
+            return "", ""
+        return mode, source or self._XENOCREED_MARTYR_RULE_NAME
+
+    def xenocreed_vengeance_for_the_martyr_hit_reroll_mods(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> dict:
+        del weapon_profile  # Unused; parity with other hooks.
+        del attack_instance  # Unused; parity with other hooks.
+        del game  # Unused; parity with other hooks.
+        if attacker_model is None or target_unit is None:
+            return {}
+        if not self._xenocreed_model_is_non_character_bodyguard(attacker_model):
+            return {}
+        reroll_mode, source = self._xenocreed_martyr_enemy_context(target_unit)
+        if reroll_mode == "full":
+            return {"reroll_full": True, "source": source}
+        if reroll_mode == "ones":
+            return {"reroll_values": [1], "source": source}
+        return {}
 
     def _integrated_tactics_source_eligible(self, unit) -> bool:
         if not self.is_brood_brother_auxilia():
@@ -2713,6 +3142,74 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                             self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_PHASE_KEY,
                             self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RANGE_KEY,
                             self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_SOURCE_KEY,
+                        ),
+                    )
+
+        if self.is_xenocreed_congregation():
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if phase_name == "FIGHT_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._XENOCREED_FRENZIED_DEVOTION_ACTIVE_KEY,
+                    phase_key=self._XENOCREED_FRENZIED_DEVOTION_PHASE_KEY,
+                    turn_key=self._XENOCREED_FRENZIED_DEVOTION_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._XENOCREED_FRENZIED_DEVOTION_ACTIVE_KEY,
+                            self._XENOCREED_FRENZIED_DEVOTION_OWNER_KEY,
+                            self._XENOCREED_FRENZIED_DEVOTION_TURN_KEY,
+                            self._XENOCREED_FRENZIED_DEVOTION_PHASE_KEY,
+                            self._XENOCREED_FRENZIED_DEVOTION_SOURCE_KEY,
+                        ),
+                    )
+                    self._clear_temporary_weapon_keyword_effects(
+                        root,
+                        sr_key=self._XENOCREED_FRENZIED_DEVOTION_SR_KEY,
+                    )
+                if phase_name == "SHOOTING_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._XENOCREED_TRANSCENDENT_CELERITY_ACTIVE_KEY,
+                    phase_key=self._XENOCREED_TRANSCENDENT_CELERITY_PHASE_KEY,
+                    turn_key=self._XENOCREED_TRANSCENDENT_CELERITY_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._XENOCREED_TRANSCENDENT_CELERITY_ACTIVE_KEY,
+                            self._XENOCREED_TRANSCENDENT_CELERITY_OWNER_KEY,
+                            self._XENOCREED_TRANSCENDENT_CELERITY_TURN_KEY,
+                            self._XENOCREED_TRANSCENDENT_CELERITY_PHASE_KEY,
+                            self._XENOCREED_TRANSCENDENT_CELERITY_SOURCE_KEY,
+                        ),
+                    )
+                    self._clear_temporary_weapon_keyword_effects(
+                        root,
+                        sr_key=self._XENOCREED_TRANSCENDENT_CELERITY_SR_KEY,
+                    )
+                if phase_name == "CHARGE_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._XENOCREED_TIRELESS_FERVOUR_ACTIVE_KEY,
+                    phase_key=self._XENOCREED_TIRELESS_FERVOUR_PHASE_KEY,
+                    turn_key=self._XENOCREED_TIRELESS_FERVOUR_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._XENOCREED_TIRELESS_FERVOUR_ACTIVE_KEY,
+                            self._XENOCREED_TIRELESS_FERVOUR_OWNER_KEY,
+                            self._XENOCREED_TIRELESS_FERVOUR_TURN_KEY,
+                            self._XENOCREED_TIRELESS_FERVOUR_PHASE_KEY,
+                            self._XENOCREED_TIRELESS_FERVOUR_SOURCE_KEY,
                         ),
                     )
 

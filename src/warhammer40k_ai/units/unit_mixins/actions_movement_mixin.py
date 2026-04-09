@@ -6437,6 +6437,7 @@ class ActionsMovementMixin:
         attacker_model=None,
         weapon_profile=None,
         closest_dist=None,
+        attack_instance=None,
     ) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -7649,6 +7650,43 @@ class ActionsMovementMixin:
                     reason = f"{source}: re-roll Hit roll"
                     if reason not in reroll_hit_full_reasons:
                         reroll_hit_full_reasons.append(reason)
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(gsc_mgr, "xenocreed_vengeance_for_the_martyr_hit_reroll_mods", None)
+                if gsc_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                mods_xenocreed = reroll_fn(
+                    attacker_model,
+                    target_unit=target,
+                    weapon_profile=weapon_profile,
+                    attack_instance=attack_instance,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+                if isinstance(mods_xenocreed, dict):
+                    source = str(mods_xenocreed.get("source", "") or "Vengeance for the Martyr!").strip() or "Vengeance for the Martyr!"
+                    if bool(mods_xenocreed.get("reroll_full")):
+                        mods["reroll_hit_full"] = True
+                        reason = f"{source}: re-roll Hit roll"
+                        if reason not in reroll_hit_full_reasons:
+                            reroll_hit_full_reasons.append(reason)
+                    for value in list(mods_xenocreed.get("reroll_values", []) or []):
+                        try:
+                            reroll_value = int(value or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        if reroll_value <= 0:
+                            continue
+                        reroll_hit_values.add(reroll_value)
+                    if 1 in reroll_hit_values:
+                        reason = f"{source}: re-roll Hit rolls of 1"
+                        if reason not in reroll_hit_reasons:
+                            reroll_hit_reasons.append(reason)
         except Exception:
             pass
 
@@ -12946,6 +12984,15 @@ class ActionsMovementMixin:
         )
         if callable(xenocreed_reroll_charge):
             if bool(xenocreed_reroll_charge(self)):
+                return True
+        xenocreed_tireless_reroll_charge = (
+            getattr(gsc_mgr, "xenocreed_tireless_fervour_reroll_charge_applies", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(xenocreed_tireless_reroll_charge):
+            targets = [target_unit] if target_unit is not None else None
+            if bool(xenocreed_tireless_reroll_charge(self, target_units=targets, game=game)):
                 return True
         final_day_reroll_charge = (
             getattr(gsc_mgr, "final_day_divine_imperative_reroll_charge_applies", None)
@@ -20298,6 +20345,16 @@ class ActionsMovementMixin:
                         return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "xenocreed_tireless_fervour_can_charge_after_advance", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
         spec_fn = getattr(self, "_advance_and_charge_once_per_battle_spec", None)
         if callable(spec_fn):
             return spec_fn() is not None
@@ -20390,6 +20447,15 @@ class ActionsMovementMixin:
             if callable(apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, game=game)):
+                    return True
+            tireless_apply_fn = (
+                getattr(mgr, "xenocreed_tireless_fervour_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tireless_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(tireless_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

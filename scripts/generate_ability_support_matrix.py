@@ -20164,6 +20164,12 @@ def _stratagem_support(
         "ALONG SHADOWED TRAILS": "Any phase reaction after an enemy ends a move within 9\" of one or more of your Cult Ambush markers: queue a deterministic point-pick to relocate one threatened marker more than 9\" horizontally from all enemy units before threatened markers are removed.",
         "ACCEPTABLE LOSSES": "Your Shooting phase: selected ASTRA MILITARUM unit can target one enemy engaged with friendly GENESTEALER CULTS units this phase; after resolving those attacks, each such engaged GENESTEALER CULTS unit suffers D3+1 mortal wounds on 5+.",
         "SUPPRESS AND OVERWHELM": "Your Shooting phase reaction after a friendly ASTRA MILITARUM unit shoots: select one enemy unit hit by that unit; selected enemy cannot use Fire Overwatch this turn, and friendly GENESTEALER CULTS units can re-roll Charge rolls when charging that enemy this turn.",
+        "FRENZIED DEVOTION": "Fight phase: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not fought improves the Attacks and Weapon Skill characteristics of melee weapons equipped by non-CHARACTER models by 1 and those weapons gain [HAZARDOUS] until end of phase.",
+        "THE DOWNTRODDEN RISE": "End of opponent Reinforcements step: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit in Cult Ambush can be set up without a marker more than 6\" horizontally from enemy units.",
+        "THE PATH OF ANGUISH": "Opponent Shooting phase reaction after an enemy unit shoots: selected Acolyte Hybrids or Neophyte Hybrids unit that lost models to that attack can make a queued deterministic surge move of up to D6\" toward the closest non-AIRCRAFT enemy and can move within Engagement Range of it.",
+        "TIRELESS FERVOUR": "Your Charge phase: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not declared a charge can charge after Advancing or Falling Back this phase, and can re-roll the Charge roll against enemies within Engagement Range of friendly CHARACTER units.",
+        "TRANSCENDENT CELERITY": "Your Shooting phase: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not shot gains [ASSAULT] on ranged weapons until end of phase.",
+        "VENGEANCE FOR THE MARTYR!": "Opponent Shooting phase or the Fight phase reaction after an enemy unit destroys your GENESTEALER CULTS CHARACTER model: mark that enemy until end of battle so friendly Acolyte Hybrids, Hybrid Metamorphs, and Neophyte Hybrids re-roll Hit rolls of 1 against it, or re-roll the Hit roll if the destroyed model was a Magus, Primus, or Acolyte Iconward.",
         "BIO-HORROR REVELATION": "Start of your opponent's Shooting phase: selected ABERRANTS/BIOPHAGUS/PURESTRAIN GENESTEALERS unit forces enemy shooters within 9\" that target it to take a Leadership test at -1; failed tests apply an attacker-specific -1 to hit against that unit until end of phase.",
         "CLOSE-RANGE SHOOT-OUT": "Your Shooting phase: selected GENESTEALER CULTS MOUNTED or VEHICLE unit that has not been selected to shoot gains [LETHAL HITS] on ranged attacks against targets within 18\" until end of phase.",
         "DEFT MANOEUVRING": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected Achilles Ridgerunners or Atalan Jackals target gains a 4+ invulnerable save until end of phase.",
@@ -20852,6 +20858,12 @@ def _stratagem_support(
         "000009080005",
         "000009080006",
         "000009080007",
+        "000009072002",
+        "000009072003",
+        "000009072004",
+        "000009072005",
+        "000009072006",
+        "000009072007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
     if stratagem_id in {

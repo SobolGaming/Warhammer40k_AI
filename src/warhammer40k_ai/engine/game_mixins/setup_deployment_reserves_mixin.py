@@ -2310,6 +2310,18 @@ class GameSetupDeploymentReservesMixin:
         # Cult Ambush: opponent's reinforcements step (end of this player's Movement phase)
         self._handle_cult_ambush_reinforcements(current_player)
 
+        for player in list(getattr(self, "players", []) or []):
+            if player is None or player is current_player:
+                continue
+            stratagem_mgr = getattr(player, "stratagems", None)
+            queue_xenocreed = (
+                getattr(stratagem_mgr, "_queue_genestealer_cults_xenocreed_reinforcements_step_end_reactions", None)
+                if stratagem_mgr is not None
+                else None
+            )
+            if callable(queue_xenocreed):
+                queue_xenocreed(current_player=current_player)
+
         # Chapter Approved "destroy after battle round 3" is enforced at end-of-battle-round.
 
         return arrival_results

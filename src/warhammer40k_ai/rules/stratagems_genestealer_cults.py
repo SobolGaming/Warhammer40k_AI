@@ -153,6 +153,20 @@ class GenestealerCultsStratagemMixin:
             return faction_id == "GC" and bool(has_detachment("Final Day"))
         return False
 
+    def _is_xenocreed_congregation_detachment(self) -> bool:
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_xenocreed_congregation", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker())
+        army = self._gsc_army()
+        if army is None:
+            return False
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Xenocreed Congregation"))
+        return False
+
     @staticmethod
     def _gsc_is_alive(unit: Any) -> bool:
         if unit is None:
@@ -713,6 +727,158 @@ class GenestealerCultsStratagemMixin:
             if self._gsc_is_within_engagement_range_of_enemy(root):
                 continue
             out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_xenocreed_bodyguard_candidates(self, *, require_on_battlefield: bool = True) -> List[Any]:
+        if not self._is_xenocreed_congregation_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        mgr = self._gsc_detachment_mgr()
+        eligible_fn = getattr(mgr, "xenocreed_stratagem_eligible_unit", None) if mgr is not None else None
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if callable(eligible_fn):
+                try:
+                    if not bool(eligible_fn(root)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if require_on_battlefield and not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_xenocreed_fight_candidates(self) -> List[Any]:
+        return sorted(
+            [root for root in self._gsc_xenocreed_bodyguard_candidates(require_on_battlefield=True) if not self._gsc_has_fought_this_phase(root)],
+            key=self._gsc_sort_key,
+        )
+
+    def _gsc_xenocreed_shooting_candidates(self) -> List[Any]:
+        return sorted(
+            [root for root in self._gsc_xenocreed_bodyguard_candidates(require_on_battlefield=True) if not self._gsc_has_shot_this_phase(root)],
+            key=self._gsc_sort_key,
+        )
+
+    def _gsc_xenocreed_charge_candidates(self) -> List[Any]:
+        out: List[Any] = []
+        for root in self._gsc_xenocreed_bodyguard_candidates(require_on_battlefield=True):
+            if self._gsc_has_declared_charge_this_round(root):
+                continue
+            can_charge = getattr(root, "can_declare_charge", None)
+            if callable(can_charge):
+                try:
+                    if not bool(can_charge(self.game)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_xenocreed_downtrodden_rise_candidates(self) -> List[Any]:
+        if not self._is_xenocreed_congregation_detachment():
+            return []
+        army = self._gsc_army()
+        cult_ambush = getattr(army, "cult_ambush", None) if army is not None else None
+        if cult_ambush is None:
+            return []
+        units = list(getattr(cult_ambush, "get_units_in_cult_ambush", lambda **_k: [])(game=self.game, only_arrivable=True) or [])
+        mgr = self._gsc_detachment_mgr()
+        eligible_fn = getattr(mgr, "xenocreed_stratagem_eligible_unit", None) if mgr is not None else None
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if callable(eligible_fn):
+                try:
+                    if not bool(eligible_fn(root)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_xenocreed_character_candidates(self, *, exclude_model=None) -> List[Any]:
+        if not self._is_xenocreed_congregation_detachment():
+            return []
+        mgr = self._gsc_detachment_mgr()
+        candidate_fn = getattr(mgr, "xenocreed_character_units", None) if mgr is not None else None
+        if not callable(candidate_fn):
+            return []
+        try:
+            candidates = list(candidate_fn(exclude_model=exclude_model) or [])
+        except (AttributeError, TypeError, ValueError):
+            return []
+        return sorted(
+            [self._gsc_root(root) for root in candidates if self._gsc_root(root) is not None],
+            key=self._gsc_sort_key,
+        )
+
+    def _gsc_xenocreed_path_of_anguish_candidates(
+        self,
+        attacker_unit: Any,
+        *,
+        killing_models_by_target: Any = None,
+    ) -> List[Any]:
+        if not self._is_xenocreed_congregation_detachment():
+            return []
+        enemy_root = self._gsc_root(attacker_unit)
+        if enemy_root is None or self._gsc_owned_by_player(enemy_root, self.player):
+            return []
+        mgr = self._gsc_detachment_mgr()
+        eligible_fn = getattr(mgr, "xenocreed_path_of_anguish_eligible_unit", None) if mgr is not None else None
+        if not isinstance(killing_models_by_target, dict):
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target_unit, destroyed_models in list(killing_models_by_target.items() or []):
+            if not destroyed_models:
+                continue
+            target_root = self._gsc_root(target_unit)
+            if target_root is None:
+                continue
+            uid = self._gsc_sort_key(target_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(target_root, self.player):
+                continue
+            if not self._gsc_on_battlefield(target_root, require_targetable=True):
+                continue
+            if callable(eligible_fn):
+                try:
+                    if not bool(eligible_fn(target_root)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(target_root)
         return sorted(out, key=self._gsc_sort_key)
 
     def _gsc_outlander_claw_army_units(self) -> List[Any]:
@@ -1555,6 +1721,203 @@ class GenestealerCultsStratagemMixin:
             },
             use_timer=False,
         )
+
+    def _queue_genestealer_cults_xenocreed_model_destroyed_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        target_unit: Any = None,
+        target_model: Any = None,
+        weapon_profile: Any = None,
+    ) -> None:
+        del weapon_profile  # Unused; parity with other queue hooks.
+        if not self._is_xenocreed_congregation_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None or target_model is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            return
+        destroyed_unit = getattr(target_model, "parent_unit", None) or target_unit
+        destroyed_root = self._gsc_root(destroyed_unit)
+        attacker_root = self._gsc_root(attacker_unit)
+        if destroyed_root is None or attacker_root is None:
+            return
+        if not self._gsc_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._gsc_is_genestealer_cults_unit(destroyed_root):
+            return
+        if not (
+            bool(getattr(target_model, "is_character", False))
+            or self._gsc_is_character_unit(destroyed_unit)
+        ):
+            return
+        if self._gsc_owned_by_player(attacker_root, self.player):
+            return
+        if not self._gsc_is_alive(attacker_root):
+            return
+        stratagem = self.get_by_name("VENGEANCE FOR THE MARTYR!")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_xenocreed_character_candidates(exclude_model=target_model)
+        if not candidates:
+            return
+        enemy_id = self._gsc_sort_key(attacker_root)
+        destroyed_model_id = str(get_entity_id(target_model) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            reaction_enemy = self._gsc_root(reaction.get("enemy_unit") or reaction.get("attacker_unit"))
+            reaction_model = reaction.get("destroyed_model") or reaction.get("target_model")
+            reaction_enemy_id = self._gsc_sort_key(reaction_enemy)
+            reaction_model_id = str(get_entity_id(reaction_model) or "")
+            if reaction_enemy_id == enemy_id and reaction_model_id == destroyed_model_id:
+                return
+        payload = {
+            "event": "model_destroyed",
+            "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "destroyed_model": target_model,
+            "target_model": target_model,
+            "destroyed_unit": destroyed_unit,
+            "target_unit": destroyed_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_xenocreed_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        if not self._is_xenocreed_congregation_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None or attacker_unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._gsc_root(attacker_unit)
+        if attacker_root is None or self._gsc_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("THE PATH OF ANGUISH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_xenocreed_path_of_anguish_candidates(
+            attacker_root,
+            killing_models_by_target=killing_models_by_target,
+        )
+        if not candidates:
+            return
+        attacker_id = self._gsc_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            reaction_enemy = self._gsc_root(
+                reaction.get("enemy_unit")
+                or reaction.get("attacker_unit")
+                or reaction.get("unit")
+                or reaction.get("target_unit")
+            )
+            if reaction_enemy is not None and self._gsc_sort_key(reaction_enemy) == attacker_id:
+                return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "hits_by_target": hits_by_target,
+            "killing_models_by_target": killing_models_by_target,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_xenocreed_reinforcements_step_end_reactions(
+        self,
+        *,
+        current_player: Any = None,
+    ) -> None:
+        if not self._is_xenocreed_congregation_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        acting_player = current_player if current_player is not None else getattr(game, "get_current_player", lambda: None)()
+        if acting_player is None or acting_player is self.player:
+            return
+        stratagem = self.get_by_name("THE DOWNTRODDEN RISE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_xenocreed_downtrodden_rise_candidates()
+        if not candidates:
+            return
+        if self._gsc_reaction_exists("reinforcements_step_end", stratagem.name):
+            return
+        payload = {
+            "event": "reinforcements_step_end",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player": acting_player,
+            "current_player_id": str(getattr(acting_player, "id", "") or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _roll_genestealer_cults_path_of_anguish_distance(self, unit: Any) -> int:
+        from ..utility.event_bus import append_dice
+
+        max_distance = int(dice_module.get_roll("D6") or 0)
+        player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                f"The Path of Anguish roll: {int(max_distance or 0)} (move {int(max_distance or 0)}\") for {getattr(unit, 'name', 'Unit')}",
+            )
+        return int(max_distance)
 
     def _queue_genestealer_cults_outlander_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if not self._is_outlander_claw_detachment():
@@ -3674,6 +4037,379 @@ class GenestealerCultsStratagemMixin:
         )
         return True
 
+    def _use_genestealer_cults_xenocreed_congregation_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_xenocreed_congregation_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "FRENZIED DEVOTION":
+            return self._use_genestealer_cults_frenzied_devotion(stratagem, **kwargs)
+        if name_u == "THE DOWNTRODDEN RISE":
+            return self._use_genestealer_cults_the_downtrodden_rise(stratagem, **kwargs)
+        if name_u == "THE PATH OF ANGUISH":
+            return self._use_genestealer_cults_the_path_of_anguish(stratagem, **kwargs)
+        if name_u == "TIRELESS FERVOUR":
+            return self._use_genestealer_cults_tireless_fervour(stratagem, **kwargs)
+        if name_u == "TRANSCENDENT CELERITY":
+            return self._use_genestealer_cults_transcendent_celerity(stratagem, **kwargs)
+        if name_u == "VENGEANCE FOR THE MARTYR!":
+            return self._use_genestealer_cults_vengeance_for_the_martyr(stratagem, **kwargs)
+        return None
+
+    def _use_genestealer_cults_frenzied_devotion(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FRENZIED DEVOTION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_fight_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FRENZIED DEVOTION: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: FRENZIED DEVOTION: target must be your Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not fought"
+            )
+            return False
+        mgr = self._gsc_detachment_mgr()
+        apply_fn = getattr(mgr, "apply_xenocreed_frenzied_devotion", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: FRENZIED DEVOTION: detachment manager hook unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not bool(apply_fn(target_root, game=game, source_name=str(getattr(stratagem, "name", "") or ""))):
+            logger.error("ERROR: FRENZIED DEVOTION: failed to apply temporary melee bonuses")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: FRENZIED DEVOTION: %s improves non-CHARACTER melee Attacks and Weapon Skill by 1 and gains [HAZARDOUS] this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_transcendent_celerity(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: TRANSCENDENT CELERITY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: TRANSCENDENT CELERITY: not your Shooting phase")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_shooting_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: TRANSCENDENT CELERITY: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: TRANSCENDENT CELERITY: target must be your Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not shot"
+            )
+            return False
+        mgr = self._gsc_detachment_mgr()
+        apply_fn = getattr(mgr, "apply_xenocreed_transcendent_celerity", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: TRANSCENDENT CELERITY: detachment manager hook unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not bool(apply_fn(target_root, game=game, source_name=str(getattr(stratagem, "name", "") or ""))):
+            logger.error("ERROR: TRANSCENDENT CELERITY: failed to apply temporary ranged keywords")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: TRANSCENDENT CELERITY: %s gains [ASSAULT] on ranged weapons this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_tireless_fervour(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: TIRELESS FERVOUR: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: TIRELESS FERVOUR: not your Charge phase")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_charge_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: TIRELESS FERVOUR: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: TIRELESS FERVOUR: target must be your Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not declared a charge"
+            )
+            return False
+        mgr = self._gsc_detachment_mgr()
+        apply_fn = getattr(mgr, "apply_xenocreed_tireless_fervour", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: TIRELESS FERVOUR: detachment manager hook unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not bool(apply_fn(target_root, game=game, source_name=str(getattr(stratagem, "name", "") or ""))):
+            logger.error("ERROR: TIRELESS FERVOUR: failed to apply charge permissions")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: TIRELESS FERVOUR: %s can charge after Advancing or Falling Back this phase and may re-roll the charge against enemies engaged with friendly CHARACTER units.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_vengeance_for_the_martyr(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: not opponent's Shooting phase")
+            return False
+
+        destroyed_model = context.get("destroyed_model") or context.get("target_model")
+        destroyed_unit = context.get("destroyed_unit") or getattr(destroyed_model, "parent_unit", None) or context.get("target_unit")
+        destroyed_root = self._gsc_root(destroyed_unit)
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("destroyed_by_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        if destroyed_model is None or destroyed_root is None:
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: missing destroyed GENESTEALER CULTS CHARACTER model")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: missing destroying enemy unit")
+            return False
+        if not self._gsc_owned_by_player(destroyed_root, self.player):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroyed model is not yours")
+            return False
+        if not self._gsc_is_genestealer_cults_unit(destroyed_root):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroyed model must be GENESTEALER CULTS")
+            return False
+        if not (
+            bool(getattr(destroyed_model, "is_character", False))
+            or self._gsc_is_character_unit(destroyed_unit)
+        ):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroyed model must be a CHARACTER")
+            return False
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroying unit must be an enemy unit")
+            return False
+
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_character_candidates(exclude_model=destroyed_model)
+        target_root = self._gsc_root(context.get("unit"))
+        target_from_target = self._gsc_root(context.get("target_unit"))
+        if target_root is None and self._gsc_unit_in_candidates(target_from_target, candidates):
+            target_root = target_from_target
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: VENGEANCE FOR THE MARTYR!: missing target CHARACTER unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: target must be one other friendly GENESTEALER CULTS CHARACTER")
+            return False
+
+        mgr = self._gsc_detachment_mgr()
+        mark_fn = getattr(mgr, "mark_xenocreed_martyr_enemy", None) if mgr is not None else None
+        if not callable(mark_fn):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: detachment manager hook unavailable")
+            return False
+        reroll_mode = "full" if self._gsc_unit_has_any_name(destroyed_unit, "Magus", "Primus", "Acolyte Iconward") else "ones"
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not bool(
+            mark_fn(
+                enemy_root,
+                source=str(getattr(stratagem, "name", "") or ""),
+                reroll_mode=reroll_mode,
+            )
+        ):
+            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: failed to mark the destroying enemy")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: VENGEANCE FOR THE MARTYR!: %s is marked until end of battle; friendly Acolyte Hybrids, Hybrid Metamorphs, and Neophyte Hybrids re-roll %s against it.",
+            getattr(enemy_root, "name", "Enemy"),
+            "Hit rolls" if reroll_mode == "full" else "Hit rolls of 1",
+        )
+        return True
+
+    def _use_genestealer_cults_the_path_of_anguish(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: THE PATH OF ANGUISH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: THE PATH OF ANGUISH: not opponent's Shooting phase")
+            return False
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        if enemy_root is None or self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: THE PATH OF ANGUISH: missing enemy attacker")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_path_of_anguish_candidates(
+                enemy_root,
+                killing_models_by_target=context.get("killing_models_by_target"),
+            )
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: THE PATH OF ANGUISH: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: THE PATH OF ANGUISH: target must be your Acolyte Hybrids or Neophyte Hybrids unit that lost models to that enemy's attacks"
+            )
+            return False
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: THE PATH OF ANGUISH: reactive move queue unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        max_distance = kwargs.get("max_distance")
+        if max_distance is None:
+            max_distance = self._roll_genestealer_cults_path_of_anguish_distance(target_root)
+        try:
+            max_distance = int(max_distance or 0)
+        except (TypeError, ValueError):
+            max_distance = 0
+        if max_distance <= 0:
+            logger.error("ERROR: THE PATH OF ANGUISH: movement distance roll failed")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            attacker_unit=enemy_root,
+            max_distance=int(max_distance),
+            kind="xenocreed_path_of_anguish",
+            movement_type="blood_surge",
+            source=str(getattr(stratagem, "name", "THE PATH OF ANGUISH") or "THE PATH OF ANGUISH"),
+            allow_engagement_range=True,
+            allow_skip=True,
+            extra_context={
+                "xenocreed_path_of_anguish_closest_enemy_exclude_keywords_any": ["AIRCRAFT"],
+            },
+        )
+        if request is None:
+            logger.error("ERROR: THE PATH OF ANGUISH: failed to queue movement decision")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: THE PATH OF ANGUISH: %s can make a Surge move up to %d\" toward the closest non-AIRCRAFT enemy.",
+            getattr(target_root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_genestealer_cults_the_downtrodden_rise(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: THE DOWNTRODDEN RISE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: THE DOWNTRODDEN RISE: not opponent's Movement phase")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_xenocreed_downtrodden_rise_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: THE DOWNTRODDEN RISE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: THE DOWNTRODDEN RISE: target must be your Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit in Cult Ambush"
+            )
+            return False
+        build_request = getattr(game, "_build_reserves_arrival_request", None)
+        request_decision = getattr(game, "request_decision", None)
+        if not callable(build_request) or not callable(request_decision):
+            logger.error("ERROR: THE DOWNTRODDEN RISE: reserves arrival request builder unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = build_request(target_root, allow_skip=False)
+        if request is None:
+            logger.error("ERROR: THE DOWNTRODDEN RISE: failed to create reserves arrival request")
+            return False
+        request.context = dict(getattr(request, "context", {}) or {})
+        request.context.update(
+            {
+                "ability": "the_downtrodden_rise",
+                "ability_name": "The Downtrodden Rise",
+                "reserves_arrival_ignore_turn_requirement": True,
+                "reserves_arrival_ignore_battlefield_edge_requirement": True,
+                "reserves_arrival_min_enemy_distance_override": 6.0,
+            }
+        )
+        request_decision(request)
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: THE DOWNTRODDEN RISE: %s can be set up from Cult Ambush without a marker more than 6\" horizontally from enemy units.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
     def _use_genestealer_cults_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         host_result = self._use_genestealer_cults_host_of_ascension_stratagem(stratagem, **kwargs)
         if host_result is not None:
@@ -3687,6 +4423,9 @@ class GenestealerCultsStratagemMixin:
         final_day_result = self._use_genestealer_cults_final_day_stratagem(stratagem, **kwargs)
         if final_day_result is not None:
             return final_day_result
+        xenocreed_result = self._use_genestealer_cults_xenocreed_congregation_stratagem(stratagem, **kwargs)
+        if xenocreed_result is not None:
+            return xenocreed_result
         return self._use_genestealer_cults_brood_brother_auxilia_stratagem(stratagem, **kwargs)
 
     def _use_genestealer_cults_host_of_ascension_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

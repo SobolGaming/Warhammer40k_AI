@@ -2437,6 +2437,7 @@ class StratagemManager(
             "RECLAIM OUR HONOUR!",
             "REFUSAL TO YIELD",
             "REVENGE OF THE RUBRICAE",
+            "VENGEANCE FOR THE MARTYR!",
         }:
             add("model_destroyed", self._on_model_destroyed)
 
@@ -2551,7 +2552,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if "VENOMOUS WRATH" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
-        if names & {"SUPPRESS AND OVERWHELM", "ACCEPTABLE LOSSES"}:
+        if names & {"SUPPRESS AND OVERWHELM", "ACCEPTABLE LOSSES", "THE PATH OF ANGUISH"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
         if "SERVO-DESIGNATORS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bridgehead_servo_designators)
@@ -13838,6 +13839,11 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 declared_targets=_kwargs.get("declared_targets"),
             )
+            self._queue_genestealer_cults_xenocreed_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
         except Exception:
             raise
 
@@ -17629,6 +17635,15 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_vindication_model_destroyed_reactions(
+                attacker_unit=attacker_unit,
+                target_unit=target_unit,
+                target_model=target_model,
+                weapon_profile=weapon_profile,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_xenocreed_model_destroyed_reactions(
                 attacker_unit=attacker_unit,
                 target_unit=target_unit,
                 target_model=target_model,

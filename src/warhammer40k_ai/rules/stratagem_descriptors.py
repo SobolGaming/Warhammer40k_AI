@@ -2602,6 +2602,104 @@ _FINAL_DAY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FINAL_DAY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_XENOCREED_CONGREGATION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009072002": StratagemToolDescriptor(
+        stratagem_id="000009072002",
+        name="VENGEANCE FOR THE MARTYR!",
+        timing="opponent_shooting_or_fight_phase_after_enemy_unit_destroys_friendly_character_model",
+        target="other_friendly_genestealer_cults_character_model_and_destroying_enemy_unit",
+        duration="until_end_of_battle",
+        effect="mark_destroying_enemy_for_hit_rerolls",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["GENESTEALER CULTS", "CHARACTER"],
+            "affected_attacker_names_any": ["Acolyte Hybrids", "Hybrid Metamorphs", "Neophyte Hybrids"],
+            "base_hit_reroll": "ones",
+            "full_hit_reroll_if_destroyed_model_names_any": ["Magus", "Primus", "Acolyte Iconward"],
+        },
+    ),
+    "000009072003": StratagemToolDescriptor(
+        stratagem_id="000009072003",
+        name="FRENZIED DEVOTION",
+        timing="fight_phase_on_select_to_fight",
+        target="friendly_acolyte_hybrids_hybrid_metamorphs_or_neophyte_hybrids_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="non_character_melee_attacks_ws_bonus_and_hazardous",
+        cp_cost=1,
+        effect_params={
+            "required_names_any": ["Acolyte Hybrids", "Hybrid Metamorphs", "Neophyte Hybrids"],
+            "attack_type": "melee",
+            "attacks_bonus": 1,
+            "weapon_skill_bonus": 1,
+            "grant_keywords": ["HAZARDOUS"],
+            "non_character_only": True,
+        },
+    ),
+    "000009072004": StratagemToolDescriptor(
+        stratagem_id="000009072004",
+        name="TIRELESS FERVOUR",
+        timing="charge_phase_before_unit_declares_charge",
+        target="friendly_acolyte_hybrids_hybrid_metamorphs_or_neophyte_hybrids_unit_not_yet_declared_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance_or_fall_back_with_conditional_reroll",
+        cp_cost=1,
+        effect_params={
+            "required_names_any": ["Acolyte Hybrids", "Hybrid Metamorphs", "Neophyte Hybrids"],
+            "charge_after_advance": True,
+            "charge_after_fall_back": True,
+            "charge_reroll_if_target_within_engagement_of_friendly_character": True,
+        },
+    ),
+    "000009072005": StratagemToolDescriptor(
+        stratagem_id="000009072005",
+        name="TRANSCENDENT CELERITY",
+        timing="shooting_phase_before_select_to_shoot",
+        target="friendly_acolyte_hybrids_hybrid_metamorphs_or_neophyte_hybrids_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_assault_to_ranged_weapons",
+        cp_cost=1,
+        effect_params={
+            "required_names_any": ["Acolyte Hybrids", "Hybrid Metamorphs", "Neophyte Hybrids"],
+            "attack_type": "ranged",
+            "grant_keywords": ["ASSAULT"],
+        },
+    ),
+    "000009072006": StratagemToolDescriptor(
+        stratagem_id="000009072006",
+        name="THE DOWNTRODDEN RISE",
+        timing="end_of_opponent_movement_phase_reinforcements_step",
+        target="friendly_acolyte_hybrids_hybrid_metamorphs_or_neophyte_hybrids_unit_in_cult_ambush",
+        duration="immediate",
+        effect="cult_ambush_setup_without_marker",
+        cp_cost=2,
+        effect_params={
+            "required_names_any": ["Acolyte Hybrids", "Hybrid Metamorphs", "Neophyte Hybrids"],
+            "setup_without_marker": True,
+            "setup_min_enemy_distance_horizontal": 6,
+        },
+    ),
+    "000009072007": StratagemToolDescriptor(
+        stratagem_id="000009072007",
+        name="THE PATH OF ANGUISH",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="friendly_acolyte_hybrids_or_neophyte_hybrids_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_surge_move_toward_closest_enemy",
+        cp_cost=1,
+        effect_params={
+            "required_names_any": ["Acolyte Hybrids", "Neophyte Hybrids"],
+            "distance_roll": "D6",
+            "movement_type": "blood_surge",
+            "allow_engagement_range": True,
+            "closest_enemy_exclude_keywords": ["AIRCRAFT"],
+        },
+    ),
+}
+
+_XENOCREED_CONGREGATION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _XENOCREED_CONGREGATION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009848002": StratagemToolDescriptor(
         stratagem_id="000009848002",
@@ -12844,6 +12942,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FINAL_DAY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _XENOCREED_CONGREGATION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13266,6 +13367,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME.get(key)
         or _OUTLANDER_CLAW_STRATAGEM_BY_NAME.get(key)
         or _FINAL_DAY_STRATAGEM_BY_NAME.get(key)
+        or _XENOCREED_CONGREGATION_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)

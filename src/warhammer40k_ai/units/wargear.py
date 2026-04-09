@@ -11203,6 +11203,21 @@ class WargearProfile:
             if int(cartographic_bonus or 0):
                 source_name = str(cartographic_source or "Cartographic Data-leech").strip() or "Cartographic Data-leech"
                 _add_skill_mod(int(cartographic_bonus), f"{source_name}: +{int(cartographic_bonus)} BS (Firing Deck)")
+        frenzied_bonus_fn = (
+            getattr(gsc_mgr, "xenocreed_frenzied_devotion_melee_skill_bonus", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(frenzied_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            frenzied_bonus, frenzied_source = frenzied_bonus_fn(
+                attacker,
+                weapon_profile=self,
+                game=game,
+            )
+            if int(frenzied_bonus or 0):
+                source_name = str(frenzied_source or "Frenzied Devotion").strip() or "Frenzied Devotion"
+                _add_skill_mod(int(frenzied_bonus), f"{source_name}: +{int(frenzied_bonus)} WS")
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
@@ -13910,6 +13925,31 @@ class WargearProfile:
                 hit_bonus, _wound_bonus, source = attacker_unit.get_dark_ritual_bonuses(game=game)
                 if hit_bonus:
                     _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source}")
+        except Exception:
+            pass
+        try:
+            if attack_is_melee and not any(
+                "frenzied devotion" in str(reason or "").strip().lower()
+                for _val, reason in list(skill_mods or [])
+            ):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(gsc_mgr, "xenocreed_frenzied_devotion_melee_skill_bonus", None)
+                    if gsc_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(bonus or 0):
+                        source_name = str(source or "Frenzied Devotion").strip() or "Frenzied Devotion"
+                        _add_skill_mod(int(bonus), f"{source_name}: +{int(bonus)} WS")
         except Exception:
             pass
         from ..utility.modifier_choice import (
