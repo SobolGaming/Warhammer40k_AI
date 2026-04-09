@@ -56,9 +56,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
+    "A DARK NETWORK",
     "A DEADLY PRIZE",
     "A GRIM WARNING",
     "A DEADLY SNARE",
+    "ACCEPTABLE LOSSES",
     "ALIEN EXPERTISE",
     "A TRAP WELL LAID",
     "BIO-HORROR REVELATION",
@@ -211,11 +213,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SENTINELS OF ETERNITY",
     "SUFFER NO RIVAL",
     "SYNERGISTIC EMPOWERMENT",
+    "SYMBIOTIC DESTRUCTION",
     "TERRITORIAL OBSESSION",
     "UNNATURAL AGGRESSION",
     "UNTAPPED POWER",
     "YOUR TIME IS NIGH",
     "REACTIVE SUBROUTINES",
+    "REGIMENTAL REINFORCEMENTS",
     "SOLAR PULSE",
     "SUBOPTIMAL FACADE",
     "RELENTLESS PURSUIT",
@@ -341,6 +345,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "IMPERIOUS ADVANCE",
     "INSPIRING PRESENCE",
     "INSTANT OF GRACE",
+    "IN THE SHADOW OF IRON",
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
     "LEONINE AGGRESSION",
@@ -915,6 +920,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
+    "A DARK NETWORK",
     "A GRIM WARNING",
     "ABLATIVE PLATING",
     "AGGRESSIVE ONSLAUGHT",
@@ -979,6 +985,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GRAV-INHIBITOR FIELD",
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
+    "IN THE SHADOW OF IRON",
     "INESCAPABLE JUSTICE",
     "SYNAPTIC SHIELD",
     "GLIMMERSHIFT PORTAL",
@@ -1032,6 +1039,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "RELENTLESS ASSAULT",
+    "REGIMENTAL REINFORCEMENTS",
     "REVENGE OF THE RUBRICAE",
     "RAPTORIAL VIGILANCE",
     "SAVAGE ECHOES",
@@ -1138,6 +1146,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
     "AVENGE THE MASTERS!",
+    "SUPPRESS AND OVERWHELM",
     "WRETCHED MASSES",
     "SOUL HUNGER",
     "UNRESTRAINED RAGE",
@@ -2350,6 +2359,7 @@ class StratagemManager(
             "FIRE OVERWATCH",
             "FIRES OF COVENANT",
             "A CHALLENGE MET",
+            "A DARK NETWORK",
             "MIRAGE OF ECHOES",
             "HORRIFIC INCURSION",
         }:
@@ -2395,6 +2405,7 @@ class StratagemManager(
             "YOUR TIME IS NIGH",
             "FINAL REDEMPTION",
             "AVENGE THE MASTERS!",
+            "REGIMENTAL REINFORCEMENTS",
             "REINFORCEMENTS!",
             "WRETCHED MASSES",
         }:
@@ -2523,7 +2534,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if "VENOMOUS WRATH" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
-        if "SUPPRESS AND OVERWHELM" in names:
+        if names & {"SUPPRESS AND OVERWHELM", "ACCEPTABLE LOSSES"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
         if "SERVO-DESIGNATORS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bridgehead_servo_designators)
@@ -4717,7 +4728,12 @@ class StratagemManager(
 
         # Targeting restrictions for provided context
         target = _extract_friendly_target_unit_from_kwargs(context)
-        if target is not None and name_u not in ("BLOOD OFFERING", "A GRIM WARNING", "PALL OF DREAD"):
+        if target is not None and name_u not in (
+            "BLOOD OFFERING",
+            "A GRIM WARNING",
+            "PALL OF DREAD",
+            "REGIMENTAL REINFORCEMENTS",
+        ):
             target_blocked = (
                 _unit_cannot_be_target_of_stratagem_except_embarked(target)
                 if name_u == "VOX-RELAY"
@@ -12807,6 +12823,7 @@ class StratagemManager(
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
         self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
         self._queue_nightmare_hunt_unit_set_up_reactions(unit=unit, **kwargs)
+        self._queue_genestealer_cults_brood_brother_auxilia_unit_set_up_reactions(unit=unit, **kwargs)
         self._maybe_queue_overwatch(unit, action="set_up", when="end")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
@@ -13754,6 +13771,10 @@ class StratagemManager(
             self._queue_genestealer_cults_brood_brother_auxilia_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
+            )
+            self._resolve_genestealer_cults_acceptable_losses_after_shooting(
+                attacker_unit=attacker_unit,
+                declared_targets=_kwargs.get("declared_targets"),
             )
         except Exception:
             raise
@@ -17999,6 +18020,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_genestealer_cults_brood_brother_auxilia_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_hallowed_martyrs_unit_destroyed_reactions(
                 unit=unit,
                 last_model=last_model,
@@ -18541,6 +18569,7 @@ class StratagemManager(
                 "DRAWN TO THE SLAUGHTER",
                 "PALL OF DREAD",
                 "AVENGE THE MASTERS!",
+                "REGIMENTAL REINFORCEMENTS",
                 "REINFORCEMENTS!",
                 "WRETCHED MASSES",
             ) and (

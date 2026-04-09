@@ -8131,6 +8131,127 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _gsc_acceptable_losses_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_acceptable_losses_active")):
+            return None
+        target_id = str(sr.get("gsc_acceptable_losses_target_id", "") or "")
+        if not target_id:
+            return None
+        source = str(sr.get("gsc_acceptable_losses_source", "") or "ACCEPTABLE LOSSES").strip() or "ACCEPTABLE LOSSES"
+        engaged_unit_ids = tuple(
+            str(value or "").strip()
+            for value in list(sr.get("gsc_acceptable_losses_engaged_unit_ids", []) or [])
+            if str(value or "").strip()
+        )
+        if game is None:
+            return {"target_id": target_id, "engaged_unit_ids": engaged_unit_ids, "source": source}
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("gsc_acceptable_losses_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("gsc_acceptable_losses_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("gsc_acceptable_losses_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"target_id": target_id, "engaged_unit_ids": engaged_unit_ids, "source": source}
+
+    def _gsc_acceptable_losses_allows_target(self, target_unit, *, game=None) -> bool:
+        context = self._gsc_acceptable_losses_context(game=game)
+        if not isinstance(context, dict):
+            return False
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        expected_target_id = str(context.get("target_id", "") or "")
+        return bool(expected_target_id and current_target_id and expected_target_id == current_target_id)
+
+    def _gsc_symbiotic_destruction_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_symbiotic_destruction_active")):
+            return None
+        target_id = str(sr.get("gsc_symbiotic_destruction_target_id", "") or "")
+        if not target_id:
+            return None
+        source = str(
+            sr.get("gsc_symbiotic_destruction_source", "") or "SYMBIOTIC DESTRUCTION"
+        ).strip() or "SYMBIOTIC DESTRUCTION"
+        reroll_values: list[int] = []
+        for value in list(sr.get("gsc_symbiotic_destruction_reroll_wound_values", []) or []):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                reroll_values.append(parsed)
+        if game is None:
+            return {
+                "target_id": target_id,
+                "target_lock": bool(sr.get("gsc_symbiotic_destruction_target_lock", True)),
+                "reroll_wound_values": tuple(sorted(set(reroll_values))),
+                "source": source,
+            }
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("gsc_symbiotic_destruction_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("gsc_symbiotic_destruction_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("gsc_symbiotic_destruction_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {
+            "target_id": target_id,
+            "target_lock": bool(sr.get("gsc_symbiotic_destruction_target_lock", True)),
+            "reroll_wound_values": tuple(sorted(set(reroll_values))),
+            "source": source,
+        }
+
+    def _gsc_symbiotic_destruction_target_locked_to(self, target_unit, *, game=None) -> bool:
+        context = self._gsc_symbiotic_destruction_context(game=game)
+        if not isinstance(context, dict):
+            return True
+        if not bool(context.get("target_lock", True)):
+            return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        expected_target_id = str(context.get("target_id", "") or "")
+        if expected_target_id and current_target_id and expected_target_id != current_target_id:
+            return False
+        return True
+
     def _space_marines_hunter_marked_for_destruction_context(self, *, game=None) -> Optional[dict]:
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self
@@ -9660,6 +9781,16 @@ class ActionsMovementMixin:
                 target_ok = self._space_marines_hunter_marked_for_destruction_target_locked_to(target, game=game_local)
             if target_ok:
                 source = str(context.get("source", "") or "MARKED FOR DESTRUCTION").strip() or "MARKED FOR DESTRUCTION"
+                for value in list(context.get("reroll_wound_values", ()) or ()):
+                    reroll_wound_values.add(int(value))
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of {int(value)}")
+        context = self._gsc_symbiotic_destruction_context(game=game_local)
+        if isinstance(context, dict):
+            target_ok = True
+            if target is not None:
+                target_ok = self._gsc_symbiotic_destruction_target_locked_to(target, game=game_local)
+            if target_ok:
+                source = str(context.get("source", "") or "SYMBIOTIC DESTRUCTION").strip() or "SYMBIOTIC DESTRUCTION"
                 for value in list(context.get("reroll_wound_values", ()) or ()):
                     reroll_wound_values.add(int(value))
                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of {int(value)}")

@@ -599,6 +599,20 @@ class ShootingMixin:
         try:
             game = self.get_parent_army().player.game
             if game is not None and hasattr(game, "event_system"):
+                declared_targets = []
+                declared_seen = set()
+                for target in list(touched_targets or []):
+                    if target is None:
+                        continue
+                    try:
+                        target_root = target.get_attached_unit_root()
+                    except Exception:
+                        target_root = target
+                    target_id = get_entity_id(target_root)
+                    if target_id in declared_seen:
+                        continue
+                    declared_seen.add(target_id)
+                    declared_targets.append(target_root)
                 game.event_system.publish(
                     "unit_shooting_resolved",
                     attacker_unit=self,
@@ -609,6 +623,7 @@ class ShootingMixin:
                     hit_models_by_target_psychic=dict(hit_models_by_target_psychic),
                     damage_by_target=dict(damage_by_target),
                     damage_by_target_while_engaged=dict(damage_by_target_while_engaged),
+                    declared_targets=list(declared_targets),
                 )
         except Exception:
             pass
@@ -1318,9 +1333,19 @@ class ShootingMixin:
         lock_check = getattr(root, "_gsc_integrated_tactics_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
             return False
+        lock_check = getattr(root, "_gsc_symbiotic_destruction_target_locked_to", None)
+        if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
+            return False
         lock_check = getattr(root, "_space_marines_hunter_marked_for_destruction_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
             return False
+        acceptable_losses_target = False
+        try:
+            allow_target = getattr(root, "_gsc_acceptable_losses_allows_target", None)
+            if callable(allow_target):
+                acceptable_losses_target = bool(allow_target(target_unit, game=game))
+        except Exception:
+            acceptable_losses_target = False
 
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
@@ -1382,6 +1407,8 @@ class ShootingMixin:
                 engaged_with_other = True
             if not engaged_with_other:
                 target_locked = False
+        if target_locked and acceptable_losses_target:
+            target_locked = False
         if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
             if ignore_engagement_active or all_is_rot_active:

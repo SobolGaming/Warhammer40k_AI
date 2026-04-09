@@ -404,6 +404,16 @@ class CultAmbushManager:
         self._publish_update(game)
         return new_unit
 
+    def clone_unit_into_cult_ambush(self, unit, *, game=None):
+        if unit is None:
+            return None
+        new_unit = self._clone_unit(unit)
+        if new_unit is None:
+            return None
+        self._prepare_unit_in_cult_ambush(new_unit, game=game)
+        self._publish_update(game)
+        return new_unit
+
     def unit_is_in_cult_ambush(self, unit) -> bool:
         if unit is None:
             return False
@@ -704,6 +714,135 @@ class CultAmbushManager:
 
     def skip_evasive_vanguard_relocation(self, marker_ids: list[str] | tuple[str, ...] | None, *, game=None) -> None:
         self.skip_summon_the_cult_relocation(marker_ids, game=game)
+
+    def _point_within_range_of_unit(self, unit, x: float, y: float, z: float, range_inches: float) -> bool:
+        if unit is None:
+            return False
+        point_base = Base(BaseType.CIRCULAR, 0.0)
+        point_base.set_position(float(x), float(y), float(z))
+        from ..utility.aura_utils import distance_between_bases_3d
+
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        for model in list(models or []):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                continue
+            model_base = getattr(model, "model_base", None)
+            if model_base is None:
+                continue
+            if float(distance_between_bases_3d(model_base, point_base)) <= float(range_inches) + 1e-6:
+                return True
+        return False
+
+    def validate_in_the_shadow_of_iron_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        source_unit=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        marker = self.get_marker(marker_id)
+        if marker is None or not bool(getattr(marker, "active", False)):
+            return (False, "Cult Ambush marker is no longer active.")
+        if source_unit is None:
+            return (False, "In the Shadow of Iron requires a source Astra Militarum Vehicle unit.")
+        if game is None:
+            return (False, "In the Shadow of Iron requires an active game.")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "In the Shadow of Iron requires a valid point.")
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "In the Shadow of Iron point must be numeric.")
+        if not self._marker_position_valid(game, x, y):
+            return (
+                False,
+                'In the Shadow of Iron marker must be more than 9" horizontally from all enemy units and on the battlefield.',
+            )
+        try:
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            z = float(getattr(marker, "z", 0.0) or 0.0)
+        if not self._point_within_range_of_unit(source_unit, x, y, z, 6.0):
+            return (False, 'In the Shadow of Iron marker must be wholly within 6" of the selected vehicle unit.')
+        return (True, "")
+
+    def apply_in_the_shadow_of_iron_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        source_unit=None,
+        threatened_marker_ids: list[str] | tuple[str, ...] | None = None,
+        game=None,
+    ) -> bool:
+        valid, _reason = self.validate_in_the_shadow_of_iron_relocation(
+            marker_id,
+            point,
+            source_unit=source_unit,
+            game=game,
+        )
+        if not valid:
+            return False
+        marker = self.get_marker(marker_id)
+        if marker is None:
+            return False
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            return False
+        marker.x = float(x)
+        marker.y = float(y)
+        marker.z = float(z)
+        marker.active = True
+        marker.pending_relocation = False
+
+        threatened_ids = [str(value or "").strip() for value in list(threatened_marker_ids or []) if str(value or "").strip()]
+        self._clear_pending_relocation(threatened_ids)
+        chosen_id = str(marker_id or "").strip()
+        for threatened_id in threatened_ids:
+            if threatened_id == chosen_id:
+                continue
+            other = self.get_marker(threatened_id)
+            if other is None:
+                continue
+            self.remove_marker(other)
+        self._publish_update(game)
+        return True
+
+    def validate_regimental_reinforcements_marker_placement(self, point, *, game=None) -> tuple[bool, str]:
+        if game is None:
+            return (False, "Regimental Reinforcements requires an active game.")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "Regimental Reinforcements requires a valid point.")
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "Regimental Reinforcements point must be numeric.")
+        if not self._marker_position_valid(game, x, y):
+            return (
+                False,
+                'Regimental Reinforcements marker must be more than 9" horizontally from all enemy units and on the battlefield.',
+            )
+        return (True, "")
+
+    def place_regimental_reinforcements_marker(self, point, *, game=None) -> Optional[CultAmbushMarker]:
+        valid, _reason = self.validate_regimental_reinforcements_marker_placement(point, game=game)
+        if not valid:
+            return None
+        try:
+            return self.place_marker_at(game, float(point[0]), float(point[1]))
+        except (TypeError, ValueError):
+            return None
 
     def _marker_position_valid(self, game, x: float, y: float) -> bool:
         if not self._marker_position_on_battlefield(game, x, y):

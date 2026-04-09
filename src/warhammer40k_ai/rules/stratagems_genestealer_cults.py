@@ -1212,6 +1212,338 @@ class GenestealerCultsStratagemMixin:
         except (TypeError, ValueError):
             return False
 
+    def _gsc_unit_within_range_of_unit(self, source_unit: Any, target_unit: Any, range_inches: float) -> bool:
+        source_root = self._gsc_root(source_unit)
+        target_root = self._gsc_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        try:
+            return bool(
+                unit_within_range_of_unit(
+                    source_root,
+                    target_root,
+                    float(range_inches),
+                    use_attached_aggregate=True,
+                )
+            )
+        except Exception:
+            return False
+
+    def _gsc_is_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._gsc_root(source_unit)
+        target_root = self._gsc_root(target_unit)
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if source_root is None or target_root is None or game_map is None:
+            return False
+
+        get_source_models = getattr(source_root, "get_attached_unit_models", None)
+        source_models_raw = (
+            list(get_source_models() or [])
+            if callable(get_source_models)
+            else list(getattr(source_root, "models", []) or [])
+        )
+        source_models = []
+        for model in list(source_models_raw or []):
+            alive_attr = getattr(model, "is_alive", False)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                source_models.append(model)
+        if not source_models:
+            return False
+
+        can_see_unit = getattr(game, "_model_can_see_unit", None)
+        if callable(can_see_unit):
+            for model in list(source_models or []):
+                try:
+                    if bool(can_see_unit(model, target_root, game_map=game_map)):
+                        return True
+                except TypeError:
+                    if bool(can_see_unit(model, target_root)):
+                        return True
+            return False
+
+        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if callable(has_los):
+            for model in list(source_models or []):
+                try:
+                    if bool(has_los(model, target_root, game_map)):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        can_see_model = getattr(game_map, "can_model_see_model", None)
+        if not callable(can_see_model):
+            return True
+
+        get_target_models = getattr(target_root, "get_attached_unit_models", None)
+        target_models = (
+            list(get_target_models() or [])
+            if callable(get_target_models)
+            else list(getattr(target_root, "models", []) or [])
+        )
+        target_models_alive = []
+        for model in list(target_models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                target_models_alive.append(model)
+        target_models = target_models_alive
+        for source_model in list(source_models or []):
+            for target_model in list(target_models or []):
+                try:
+                    if bool(can_see_model(source_model, target_model)):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def _gsc_unit_has_any_ranged_weapon(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if callable(is_ranged) and bool(is_ranged()):
+                    return True
+        return False
+
+    def _gsc_unit_has_ranged_weapon_in_range(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._gsc_root(source_unit)
+        target_root = self._gsc_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        try:
+            from ..utility.aura_utils import model_within_range_of_unit
+        except Exception:
+            model_within_range_of_unit = None
+
+        get_models = getattr(source_root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(source_root, "models", []) or [])
+        fallback_ranged_weapon_found = False
+        for model in list(models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                profiles = getattr(wargear, "profiles", None) or {}
+                if not profiles:
+                    fallback_ranged_weapon_found = True
+                    continue
+                for profile in list(profiles.values() or []):
+                    if profile is None:
+                        continue
+                    max_range = 0.0
+                    effective_range = getattr(profile, "_effective_range_max", None)
+                    if callable(effective_range):
+                        try:
+                            max_range = float(effective_range(model) or 0.0)
+                        except (TypeError, ValueError):
+                            max_range = 0.0
+                    if max_range <= 0.0:
+                        range_obj = getattr(profile, "range", None)
+                        try:
+                            max_range = float(getattr(range_obj, "max", 0.0) or 0.0)
+                        except (TypeError, ValueError):
+                            max_range = 0.0
+                    if max_range <= 0.0:
+                        continue
+                    if callable(model_within_range_of_unit):
+                        try:
+                            if bool(
+                                model_within_range_of_unit(
+                                    model,
+                                    target_root,
+                                    float(max_range),
+                                    use_attached_aggregate=True,
+                                )
+                            ):
+                                return True
+                        except Exception:
+                            continue
+        return fallback_ranged_weapon_found
+
+    def _gsc_true_genestealer_cults_unit(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        return bool(self._gsc_is_genestealer_cults_unit(root) and not self._gsc_is_astra_militarum_unit(root))
+
+    def _gsc_brood_brother_auxilia_army_units(self) -> List[Any]:
+        if not self._is_brood_brother_auxilia_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            rid = self._gsc_sort_key(root)
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_a_dark_network_candidates(self, enemy_unit: Any) -> List[Any]:
+        enemy_root = self._gsc_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if not (self._gsc_is_astra_militarum_unit(root) or self._gsc_true_genestealer_cults_unit(root)):
+                continue
+            if self._gsc_is_monster_or_vehicle(root):
+                continue
+            if not self._gsc_unit_within_range_of_unit(root, enemy_root, 12.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_acceptable_losses_engaged_gsc_units(self, enemy_unit: Any) -> List[Any]:
+        enemy_root = self._gsc_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if not self._gsc_true_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=False):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    out.append(root)
+            except Exception:
+                continue
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_acceptable_losses_enemy_candidates(self) -> List[Any]:
+        out: list[Any] = []
+        for enemy_root in self._gsc_enemy_on_battlefield_candidates():
+            if self._gsc_acceptable_losses_engaged_gsc_units(enemy_root):
+                out.append(enemy_root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_symbiotic_destruction_astra_candidates(self) -> List[Any]:
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if not self._gsc_is_astra_militarum_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if self._gsc_has_shot_this_phase(root):
+                continue
+            if not self._gsc_unit_has_any_ranged_weapon(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_symbiotic_destruction_gsc_candidates(self) -> List[Any]:
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if not self._gsc_true_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if self._gsc_has_shot_this_phase(root):
+                continue
+            if not self._gsc_unit_has_any_ranged_weapon(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_symbiotic_enemy_candidates(self, astra_unit: Any, gsc_unit: Any) -> List[Any]:
+        astra_root = self._gsc_root(astra_unit)
+        gsc_root = self._gsc_root(gsc_unit)
+        if astra_root is None or gsc_root is None or astra_root is gsc_root:
+            return []
+        out: list[Any] = []
+        for enemy_root in self._gsc_enemy_on_battlefield_candidates():
+            if not self._gsc_is_visible_to_unit(astra_root, enemy_root):
+                continue
+            if not self._gsc_is_visible_to_unit(gsc_root, enemy_root):
+                continue
+            if not self._gsc_unit_has_ranged_weapon_in_range(astra_root, enemy_root):
+                continue
+            if not self._gsc_unit_has_ranged_weapon_in_range(gsc_root, enemy_root):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_regimental_reinforcements_candidates(self) -> List[Any]:
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if self._gsc_is_alive(root):
+                continue
+            if not self._gsc_is_astra_militarum_unit(root):
+                continue
+            if not self._gsc_is_infantry(root):
+                continue
+            if not self._gsc_has_keyword(root, "REGIMENT"):
+                continue
+            if self._gsc_has_keyword(root, "ARTILLERY"):
+                continue
+            if self._gsc_is_character_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_in_the_shadow_of_iron_source_candidates(self) -> List[Any]:
+        out: list[Any] = []
+        for root in self._gsc_brood_brother_auxilia_army_units():
+            if not self._gsc_is_astra_militarum_unit(root):
+                continue
+            if not self._gsc_has_keyword(root, "VEHICLE"):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_can_use_in_the_shadow_of_iron(self) -> bool:
+        if not self._is_brood_brother_auxilia_detachment():
+            return False
+        stratagem = self.get_by_name("IN THE SHADOW OF IRON")
+        if stratagem is None:
+            return False
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return False
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        return self._gsc_norm_name(getattr(stratagem, "name", "")) not in used
+
+    def _gsc_commit_in_the_shadow_of_iron(self, *, source_unit: Any = None) -> bool:
+        stratagem = self.get_by_name("IN THE SHADOW OF IRON")
+        if stratagem is None:
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=source_unit):
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=False)
+        return True
+
     def _use_genestealer_cults_biosanctic_broodsurge_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_biosanctic_broodsurge_detachment():
             return None
@@ -1588,13 +1920,536 @@ class GenestealerCultsStratagemMixin:
             payload["enemy_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_genestealer_cults_brood_brother_auxilia_unit_set_up_reactions(
+        self,
+        *,
+        unit: Any,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if not self._is_brood_brother_auxilia_detachment():
+            return
+        if not bool(set_up_as_reinforcements):
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None or unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        enemy_root = self._gsc_root(unit)
+        if enemy_root is None:
+            return
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            return
+        if not self._gsc_on_battlefield(enemy_root, require_targetable=True):
+            return
+
+        stratagem = self.get_by_name("A DARK NETWORK")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+
+        candidates = self._gsc_a_dark_network_candidates(enemy_root)
+        if not candidates:
+            return
+
+        enemy_id = self._gsc_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_set_up":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            reaction_enemy = self._gsc_root(reaction.get("enemy_unit"))
+            if reaction_enemy is not None and self._gsc_sort_key(reaction_enemy) == enemy_id:
+                return
+
+        payload = {
+            "event": "unit_set_up",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_brood_brother_auxilia_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        destroyed_by_unit: Any = None,
+        **_kwargs,
+    ) -> None:
+        if not self._is_brood_brother_auxilia_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None or unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            return
+
+        destroyed_root = self._gsc_root(unit)
+        if destroyed_root is None:
+            return
+        if not self._gsc_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._gsc_unit_in_candidates(destroyed_root, self._gsc_regimental_reinforcements_candidates()):
+            return
+
+        stratagem = self.get_by_name("REGIMENTAL REINFORCEMENTS")
+        if stratagem is None:
+            return
+        if bool(getattr(self, "_used_once_per_battle", {}).get("REGIMENTAL REINFORCEMENTS", False)):
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+
+        destroyed_id = self._gsc_sort_key(destroyed_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            reaction_destroyed = self._gsc_root(reaction.get("destroyed_unit") or reaction.get("unit"))
+            if reaction_destroyed is not None and self._gsc_sort_key(reaction_destroyed) == destroyed_id:
+                return
+
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "destroyed_unit": destroyed_root,
+                "unit": destroyed_root,
+                "target_unit": destroyed_root,
+                "destroyed_by_unit": self._gsc_root(destroyed_by_unit) if destroyed_by_unit is not None else None,
+                "candidates": [destroyed_root],
+            },
+            use_timer=False,
+        )
+
+    def _resolve_genestealer_cults_acceptable_losses_after_shooting(
+        self,
+        *,
+        attacker_unit: Any,
+        declared_targets: Any = None,
+    ) -> None:
+        if not self._is_brood_brother_auxilia_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None or attacker_unit is None:
+            return
+
+        attacker_root = self._gsc_root(attacker_unit)
+        if attacker_root is None or not self._gsc_owned_by_player(attacker_root, self.player):
+            return
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_acceptable_losses_active", False)):
+            return
+        expected_phase = str(sr.get("gsc_acceptable_losses_expires_phase", "") or "").strip().upper()
+        if expected_phase and expected_phase != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("gsc_acceptable_losses_turn_owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        try:
+            effect_turn = int(sr.get("gsc_acceptable_losses_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return
+
+        target_id = str(sr.get("gsc_acceptable_losses_target_id", "") or "")
+        if not target_id:
+            return
+
+        declared_roots = self._gsc_resolve_unit_list(declared_targets)
+        if not any(str(get_entity_id(root) or "") == target_id for root in list(declared_roots or [])):
+            return
+
+        resolve_unit = getattr(game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return
+
+        for unit_id in list(sr.get("gsc_acceptable_losses_engaged_unit_ids", []) or []):
+            engaged_root = self._gsc_root(resolve_unit(str(unit_id or "")))
+            if engaged_root is None or not self._gsc_on_battlefield(engaged_root, require_targetable=False):
+                continue
+            roll = max(0, int(dice_module.get_roll("D6") or 0))
+            if roll < 5:
+                continue
+            mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0)) + 1
+            if mortal_wounds <= 0:
+                continue
+            applier = getattr(attacker_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(applier):
+                applier(
+                    engaged_root,
+                    int(mortal_wounds),
+                    game_map=getattr(game, "map", None),
+                    damage_source="gsc_acceptable_losses",
+                )
+
     def _use_genestealer_cults_brood_brother_auxilia_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_brood_brother_auxilia_detachment():
             return None
         name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "A DARK NETWORK":
+            return self._use_genestealer_cults_a_dark_network(stratagem, **kwargs)
+        if name_u == "ACCEPTABLE LOSSES":
+            return self._use_genestealer_cults_acceptable_losses(stratagem, **kwargs)
+        if name_u == "IN THE SHADOW OF IRON":
+            return self._use_genestealer_cults_in_the_shadow_of_iron(stratagem, **kwargs)
+        if name_u == "REGIMENTAL REINFORCEMENTS":
+            return self._use_genestealer_cults_regimental_reinforcements(stratagem, **kwargs)
         if name_u == "SUPPRESS AND OVERWHELM":
             return self._use_genestealer_cults_suppress_and_overwhelm(stratagem, **kwargs)
+        if name_u == "SYMBIOTIC DESTRUCTION":
+            return self._use_genestealer_cults_symbiotic_destruction(stratagem, **kwargs)
         return None
+
+    def _use_genestealer_cults_a_dark_network(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: A DARK NETWORK: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: A DARK NETWORK: not opponent's Movement phase")
+            return False
+
+        enemy_root = self._gsc_root(context.get("enemy_unit"))
+        if enemy_root is None or self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: A DARK NETWORK: missing enemy unit that was set up from Reserves")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_a_dark_network_candidates(enemy_root)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: A DARK NETWORK: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: A DARK NETWORK: target must be an eligible ASTRA MILITARUM or GENESTEALER CULTS unit within 12\""
+            )
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: A DARK NETWORK: reactive move queue unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=6,
+            kind="genestealer_cults_a_dark_network",
+            movement_type="move",
+            reactive_movement_type="a_dark_network",
+            source=str(getattr(stratagem, "name", "A DARK NETWORK") or "A DARK NETWORK"),
+            moving_unit=enemy_root,
+        )
+        if request is None:
+            logger.error("ERROR: A DARK NETWORK: failed to queue movement decision")
+            return False
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: A DARK NETWORK: %s can make a Normal move of up to 6\".",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_acceptable_losses(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ACCEPTABLE LOSSES: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: ACCEPTABLE LOSSES: not your Shooting phase")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = [
+            root
+            for root in self._gsc_symbiotic_destruction_astra_candidates()
+            if root is not None
+        ]
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: ACCEPTABLE LOSSES: missing Astra Militarum target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: ACCEPTABLE LOSSES: target must be an eligible ASTRA MILITARUM unit that has not shot")
+            return False
+
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("target_enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        enemy_candidates = self._gsc_resolve_unit_list(context.get("enemy_candidates"))
+        if not enemy_candidates:
+            enemy_candidates = self._gsc_acceptable_losses_enemy_candidates()
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: ACCEPTABLE LOSSES: missing engaged enemy unit")
+                return False
+        if not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: ACCEPTABLE LOSSES: selected enemy must be within Engagement Range of friendly GENESTEALER CULTS units")
+            return False
+
+        engaged_units = self._gsc_resolve_unit_list(context.get("engaged_gsc_units"))
+        if not engaged_units:
+            engaged_units = self._gsc_acceptable_losses_engaged_gsc_units(enemy_root)
+        if not engaged_units:
+            logger.error("ERROR: ACCEPTABLE LOSSES: selected enemy must be within Engagement Range of one or more friendly GENESTEALER CULTS units")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["gsc_acceptable_losses_active"] = True
+        sr["gsc_acceptable_losses_target_id"] = str(get_entity_id(enemy_root) or "")
+        sr["gsc_acceptable_losses_engaged_unit_ids"] = [
+            str(get_entity_id(unit) or "")
+            for unit in list(engaged_units or [])
+            if str(get_entity_id(unit) or "")
+        ]
+        sr["gsc_acceptable_losses_expires_phase"] = "SHOOTING_PHASE"
+        sr["gsc_acceptable_losses_source"] = str(
+            getattr(stratagem, "name", "ACCEPTABLE LOSSES") or "ACCEPTABLE LOSSES"
+        )
+        if owner:
+            sr["gsc_acceptable_losses_turn_owner"] = owner
+        if turn:
+            sr["gsc_acceptable_losses_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: ACCEPTABLE LOSSES: %s can target %s despite Engagement Range restrictions this phase.",
+            getattr(target_root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_genestealer_cults_in_the_shadow_of_iron(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        source_root = self._gsc_root(context.get("unit") or context.get("target_unit") or context.get("source_unit"))
+        candidates = self._gsc_in_the_shadow_of_iron_source_candidates()
+        if source_root is None:
+            if len(candidates) == 1:
+                source_root = candidates[0]
+            else:
+                logger.error("ERROR: IN THE SHADOW OF IRON: missing Astra Militarum VEHICLE unit")
+                return False
+        if not self._gsc_unit_in_candidates(source_root, candidates):
+            logger.error("ERROR: IN THE SHADOW OF IRON: target must be an eligible ASTRA MILITARUM VEHICLE unit")
+            return False
+
+        marker_id = str(context.get("marker_id", "") or "").strip()
+        point = context.get("point")
+        if not marker_id or not isinstance(point, (list, tuple)) or len(point) < 2:
+            logger.error("ERROR: IN THE SHADOW OF IRON: marker and relocation point are required")
+            return False
+
+        army = self._gsc_army()
+        cult_ambush = getattr(army, "cult_ambush", None) if army is not None else None
+        if cult_ambush is None:
+            logger.error("ERROR: IN THE SHADOW OF IRON: Cult Ambush manager unavailable")
+            return False
+        valid, reason = cult_ambush.validate_in_the_shadow_of_iron_relocation(
+            marker_id,
+            point,
+            source_unit=source_root,
+            game=game,
+        )
+        if not bool(valid):
+            logger.error("ERROR: IN THE SHADOW OF IRON: %s", str(reason or "invalid relocation point"))
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=source_root):
+            return False
+        applied = bool(
+            cult_ambush.apply_in_the_shadow_of_iron_relocation(
+                marker_id,
+                point,
+                source_unit=source_root,
+                threatened_marker_ids=list(context.get("threatened_marker_ids", []) or []),
+                game=game,
+            )
+        )
+        if not applied:
+            logger.error("ERROR: IN THE SHADOW OF IRON: failed to relocate Cult Ambush marker")
+            return False
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: IN THE SHADOW OF IRON: relocated a threatened Cult Ambush marker wholly within 6\" of %s.",
+            getattr(source_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_regimental_reinforcements(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: not opponent's Shooting phase")
+            return False
+        if bool(getattr(self, "_used_once_per_battle", {}).get("REGIMENTAL REINFORCEMENTS", False)):
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: already used this battle")
+            return False
+
+        destroyed_root = self._gsc_root(context.get("destroyed_unit") or context.get("unit") or context.get("target_unit"))
+        pending_candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if destroyed_root is None:
+            if len(pending_candidates) == 1:
+                destroyed_root = pending_candidates[0]
+            else:
+                logger.error("ERROR: REGIMENTAL REINFORCEMENTS: missing destroyed unit")
+                return False
+        if pending_candidates:
+            if not self._gsc_unit_in_candidates(destroyed_root, pending_candidates):
+                logger.error("ERROR: REGIMENTAL REINFORCEMENTS: target unit was not just destroyed")
+                return False
+        else:
+            pending_match = False
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("event", "") or "") != "unit_destroyed":
+                    continue
+                if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                    continue
+                reaction_destroyed = self._gsc_root(reaction.get("destroyed_unit") or reaction.get("unit"))
+                if reaction_destroyed is destroyed_root:
+                    pending_match = True
+                    break
+            if not pending_match:
+                logger.error("ERROR: REGIMENTAL REINFORCEMENTS: target unit must have been just destroyed")
+                return False
+        if not self._gsc_unit_in_candidates(destroyed_root, self._gsc_regimental_reinforcements_candidates()):
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: target must be a destroyed ASTRA MILITARUM INFANTRY REGIMENT unit")
+            return False
+
+        army = self._gsc_army()
+        cult_ambush = getattr(army, "cult_ambush", None) if army is not None else None
+        if cult_ambush is None:
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: Cult Ambush manager unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=destroyed_root):
+            return False
+
+        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        if roll < 3:
+            self._used_once_per_battle["REGIMENTAL REINFORCEMENTS"] = True
+            self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+            logger.info("INFO: REGIMENTAL REINFORCEMENTS: roll=%d, no replacement unit is added.", int(roll))
+            return True
+
+        new_unit = cult_ambush.clone_unit_into_cult_ambush(destroyed_root, game=game)
+        if new_unit is None:
+            logger.error("ERROR: REGIMENTAL REINFORCEMENTS: failed to create replacement unit")
+            return False
+        rebuild = getattr(game, "rebuild_entity_registry", None)
+        if callable(rebuild):
+            rebuild()
+
+        find_marker_position = getattr(cult_ambush, "find_marker_position", None)
+        marker_possible = bool(callable(find_marker_position) and find_marker_position(game) is not None)
+        if marker_possible:
+            from ..engine.decision_kinds import DECISION_PICK_POINT
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            request = DecisionRequest.create(
+                DECISION_PICK_POINT,
+                'Regimental Reinforcements: place one Cult Ambush marker more than 9" horizontally from all enemy units.',
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        "Place Cult Ambush Marker",
+                        payload={"action": "place_marker"},
+                    )
+                ],
+                context={
+                    "ability": "regimental_reinforcements_marker_placement",
+                    "ability_name": "Regimental Reinforcements",
+                    "owner_player_id": str(getattr(self.player, "id", "") or ""),
+                    "replacement_unit_id": str(get_entity_id(new_unit) or ""),
+                    "destroyed_unit_id": str(get_entity_id(destroyed_root) or ""),
+                },
+            )
+            game.request_decision(request)
+
+        self._used_once_per_battle["REGIMENTAL REINFORCEMENTS"] = True
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: REGIMENTAL REINFORCEMENTS: roll=%d, added %s to Cult Ambush%s.",
+            int(roll),
+            getattr(new_unit, "name", "Unit"),
+            " and queued marker placement" if marker_possible else "",
+        )
+        return True
 
     def _use_genestealer_cults_suppress_and_overwhelm(self, stratagem: Any, **kwargs) -> bool:
         context = self._gsc_pending_context(stratagem.name, kwargs)
@@ -1666,6 +2521,115 @@ class GenestealerCultsStratagemMixin:
         logger.info(
             "INFO: SUPPRESS AND OVERWHELM: %s cannot fire Overwatch this turn and GENESTEALER CULTS units can re-roll charge rolls against it.",
             getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_symbiotic_destruction(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SYMBIOTIC DESTRUCTION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: SYMBIOTIC DESTRUCTION: not your Shooting phase")
+            return False
+
+        selected_units = self._gsc_resolve_unit_list(
+            context.get("units")
+            or context.get("selected_units")
+            or context.get("friendly_units")
+            or []
+        )
+        astra_root = self._gsc_root(
+            context.get("astra_unit")
+            or context.get("unit")
+            or context.get("target_unit")
+            or (selected_units[0] if selected_units else None)
+        )
+        gsc_root = self._gsc_root(
+            context.get("gsc_unit")
+            or context.get("other_unit")
+            or context.get("support_unit")
+            or (selected_units[1] if len(selected_units) > 1 else None)
+        )
+        astra_candidates = self._gsc_symbiotic_destruction_astra_candidates()
+        gsc_candidates = self._gsc_symbiotic_destruction_gsc_candidates()
+        if astra_root is None:
+            if len(astra_candidates) == 1:
+                astra_root = astra_candidates[0]
+            else:
+                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing Astra Militarum unit")
+                return False
+        if gsc_root is None:
+            if len(gsc_candidates) == 1:
+                gsc_root = gsc_candidates[0]
+            else:
+                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing Genestealer Cults unit")
+                return False
+        if astra_root is gsc_root:
+            logger.error("ERROR: SYMBIOTIC DESTRUCTION: must select one Astra Militarum unit and one different Genestealer Cults unit")
+            return False
+        if not self._gsc_unit_in_candidates(astra_root, astra_candidates):
+            logger.error("ERROR: SYMBIOTIC DESTRUCTION: selected Astra Militarum unit is not eligible")
+            return False
+        if not self._gsc_unit_in_candidates(gsc_root, gsc_candidates):
+            logger.error("ERROR: SYMBIOTIC DESTRUCTION: selected Genestealer Cults unit is not eligible")
+            return False
+
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("target_enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        enemy_candidates = self._gsc_resolve_unit_list(context.get("enemy_candidates"))
+        if not enemy_candidates:
+            enemy_candidates = self._gsc_symbiotic_enemy_candidates(astra_root, gsc_root)
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing enemy unit")
+                return False
+        if not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error(
+                "ERROR: SYMBIOTIC DESTRUCTION: enemy must be visible to both selected units and within range of at least one ranged weapon from each"
+            )
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=astra_root):
+            return False
+
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        enemy_id = str(get_entity_id(enemy_root) or "")
+        source_name = str(getattr(stratagem, "name", "SYMBIOTIC DESTRUCTION") or "SYMBIOTIC DESTRUCTION")
+        for root in (astra_root, gsc_root):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["gsc_symbiotic_destruction_active"] = True
+            sr["gsc_symbiotic_destruction_target_id"] = enemy_id
+            sr["gsc_symbiotic_destruction_target_lock"] = True
+            sr["gsc_symbiotic_destruction_reroll_wound_values"] = [1]
+            sr["gsc_symbiotic_destruction_expires_phase"] = "SHOOTING_PHASE"
+            sr["gsc_symbiotic_destruction_source"] = source_name
+            if owner:
+                sr["gsc_symbiotic_destruction_turn_owner"] = owner
+            if turn:
+                sr["gsc_symbiotic_destruction_turn"] = turn
+            root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SYMBIOTIC DESTRUCTION: %s and %s are locked to %s and re-roll wound rolls of 1 this phase.",
+            getattr(astra_root, "name", "Unit 1"),
+            getattr(gsc_root, "name", "Unit 2"),
+            getattr(enemy_root, "name", "Enemy"),
         )
         return True
 
@@ -2205,6 +3169,35 @@ class GenestealerCultsStratagemMixin:
                         "gsc_coordinated_trap_source",
                         "gsc_coordinated_trap_turn_owner",
                         "gsc_coordinated_trap_turn",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+                acceptable_exp = str(sr.get("gsc_acceptable_losses_expires_phase", "") or "").strip().upper()
+                if sr.get("gsc_acceptable_losses_active") and (not acceptable_exp or acceptable_exp == phase_key):
+                    for key in (
+                        "gsc_acceptable_losses_active",
+                        "gsc_acceptable_losses_target_id",
+                        "gsc_acceptable_losses_engaged_unit_ids",
+                        "gsc_acceptable_losses_expires_phase",
+                        "gsc_acceptable_losses_source",
+                        "gsc_acceptable_losses_turn_owner",
+                        "gsc_acceptable_losses_turn",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+                symbiotic_exp = str(sr.get("gsc_symbiotic_destruction_expires_phase", "") or "").strip().upper()
+                if sr.get("gsc_symbiotic_destruction_active") and (not symbiotic_exp or symbiotic_exp == phase_key):
+                    for key in (
+                        "gsc_symbiotic_destruction_active",
+                        "gsc_symbiotic_destruction_target_id",
+                        "gsc_symbiotic_destruction_target_lock",
+                        "gsc_symbiotic_destruction_reroll_wound_values",
+                        "gsc_symbiotic_destruction_expires_phase",
+                        "gsc_symbiotic_destruction_source",
+                        "gsc_symbiotic_destruction_turn_owner",
+                        "gsc_symbiotic_destruction_turn",
                     ):
                         if key in sr:
                             sr.pop(key, None)

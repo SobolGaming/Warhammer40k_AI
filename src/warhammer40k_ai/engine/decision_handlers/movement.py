@@ -4006,6 +4006,7 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
         option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
         marker_id = str(option_payload.get("marker_id", "") or "")
         relocation_mode = str(option_payload.get("relocation_mode", "") or "")
+        source_unit_id = str(option_payload.get("source_unit_id", "") or "")
         if not marker_id:
             return ("Threatened Cult Ambush marker relocation requires a marker selection.",)
         if not relocation_mode:
@@ -4013,9 +4014,22 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
         validate_fn = getattr(game, "_validate_cult_ambush_threatened_marker_relocation", None)
         if not callable(validate_fn):
             return ("Threatened Cult Ambush marker relocation validation is unavailable.",)
-        valid, reason = validate_fn(ctx, marker_id=marker_id, relocation_mode=relocation_mode, point=point)
+        valid, reason = validate_fn(
+            ctx,
+            marker_id=marker_id,
+            relocation_mode=relocation_mode,
+            source_unit_id=source_unit_id,
+            point=point,
+        )
         if not bool(valid):
             return (str(reason or "Threatened Cult Ambush marker relocation point is invalid."),)
+    if ability_key == "regimental_reinforcements_marker_placement":
+        validate_fn = getattr(game, "_validate_regimental_reinforcements_marker_placement", None)
+        if not callable(validate_fn):
+            return ("Regimental Reinforcements marker validation is unavailable.",)
+        valid, reason = validate_fn(ctx, point=point)
+        if not bool(valid):
+            return (str(reason or "Regimental Reinforcements marker point is invalid."),)
     if ability_key == "cult_infiltration_marker_relocation":
         opt = find_option(request, result.option_id)
         option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
@@ -4217,10 +4231,29 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
     if ability_key == "cult_ambush_threatened_marker_relocation":
         marker_id = str(option_payload.get("marker_id", "") or "")
         relocation_mode = str(option_payload.get("relocation_mode", "") or "")
+        source_unit_id = str(option_payload.get("source_unit_id", "") or "")
         apply_fn = getattr(game, "_apply_cult_ambush_threatened_marker_relocation", None)
         if not callable(apply_fn) or not marker_id or not relocation_mode:
             return None
-        applied = bool(apply_fn(ctx, marker_id=marker_id, relocation_mode=relocation_mode, point=point))
+        applied = bool(
+            apply_fn(
+                ctx,
+                marker_id=marker_id,
+                relocation_mode=relocation_mode,
+                source_unit_id=source_unit_id,
+                point=point,
+            )
+        )
+        if not applied:
+            return None
+        if len(point) > 2:
+            return (x, y, float(point[2]))
+        return (x, y)
+    if ability_key == "regimental_reinforcements_marker_placement":
+        apply_fn = getattr(game, "_apply_regimental_reinforcements_marker_placement", None)
+        if not callable(apply_fn):
+            return None
+        applied = bool(apply_fn(ctx, point=point))
         if not applied:
             return None
         if len(point) > 2:

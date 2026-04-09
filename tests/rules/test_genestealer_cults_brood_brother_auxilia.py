@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_MOVE_UNIT,
+    DECISION_PICK_POINT,
+)
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -18,8 +24,10 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 class _DummyWargear:
     def __init__(self, name: str, *, ranged: bool = True):
+        self.id = f"wg_{str(name).lower().replace(' ', '_')}_{id(self)}"
         self.name = str(name)
         self._ranged = bool(ranged)
+        self.profiles = {}
 
     def is_ranged(self) -> bool:
         return bool(self._ranged)
@@ -197,6 +205,55 @@ def _pending_reaction_by_name(stratagems, name: str):
         if str(reaction.get("stratagem", "") or "").strip().upper() == target:
             return reaction
     return None
+
+
+def _find_request(game: Game, *, decision_type: str, ability: str | None = None, reactive_move_kind: str | None = None):
+    target_ability = str(ability or "").strip().lower()
+    target_kind = str(reactive_move_kind or "").strip().lower()
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != str(decision_type or ""):
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if target_ability and str(context.get("ability", "") or "").strip().lower() != target_ability:
+            continue
+        if target_kind and str(context.get("reactive_move_kind", "") or "").strip().lower() != target_kind:
+            continue
+        return request
+    return None
+
+
+def _option_with_marker(request, *, relocation_mode: str | None = None, source_unit: Unit | None = None):
+    target_mode = str(relocation_mode or "").strip().lower()
+    source_id = str(get_entity_id(source_unit) or "") if source_unit is not None else ""
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        marker_id = str(payload.get("marker_id", "") or "").strip()
+        if not marker_id:
+            continue
+        if target_mode and str(payload.get("relocation_mode", "") or "").strip().lower() != target_mode:
+            continue
+        if source_id and str(payload.get("source_unit_id", "") or "") != source_id:
+            continue
+        return option
+    return None
+
+
+def _make_ranged_profile(*, name: str = "Test Rifle", max_range: float = 24.0, blast: bool = False):
+    parent = SimpleNamespace(
+        name=str(name),
+        is_melee=lambda: False,
+        is_ranged=lambda: True,
+    )
+    return SimpleNamespace(
+        name=str(name),
+        parent_wargear=parent,
+        range=SimpleNamespace(max=float(max_range)),
+        is_indirect_fire=lambda: False,
+        is_torrent=lambda: False,
+        is_blast=lambda: bool(blast),
+        is_melee=lambda: False,
+        is_pistol=lambda: False,
+    )
 
 
 def test_integrated_tactics_queues_optional_choice_and_skip_clears_source_lock():
@@ -675,3 +732,379 @@ def test_suppress_and_overwhelm_marks_enemy_for_overwatch_block_and_gsc_charge_r
 
     game.turn = 3
     assert bool(gsc_charger.can_reroll_charge_roll(target_unit=enemy_target, game=game, game_map=game.map)) is False
+
+
+def test_brood_brother_auxilia_remaining_stratagem_descriptors_registered():
+    expected = {
+        "000009085007": ("A DARK NETWORK", "reactive_normal_move_up_to_6"),
+        "000009085005": (
+            "ACCEPTABLE LOSSES",
+            "allow_ranged_attacks_against_selected_engaged_enemy_then_roll_self_mortals_for_each_engaged_gsc_unit",
+        ),
+        "000009085002": (
+            "IN THE SHADOW OF IRON",
+            "relocate_cult_ambush_marker_wholly_within_6_of_selected_vehicle",
+        ),
+        "000009085003": (
+            "REGIMENTAL REINFORCEMENTS",
+            "on_3_plus_add_identical_unit_to_cult_ambush_and_place_marker_if_possible",
+        ),
+        "000009085006": ("SYMBIOTIC DESTRUCTION", "lock_selected_units_to_enemy_and_reroll_wound_ones_against_it"),
+    }
+
+    for stratagem_id, (name, effect) in expected.items():
+        desc = get_stratagem_tool_descriptor(stratagem_id=stratagem_id)
+        assert desc is not None
+        assert str(getattr(desc, "name", "") or "") == name
+        assert str(getattr(desc, "effect", "") or "") == effect
+
+
+def test_a_dark_network_queues_reaction_after_enemy_reserve_setup_and_use_queues_reactive_move():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    reactor = _make_unit(
+        "Brood Brothers Infantry",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    enemy = _make_unit(
+        "Enemy Reserves",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    gsc_army.add_unit(reactor)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(reactor, 10.0, 10.0)
+    _set_unit_position(enemy, 18.0, 10.0)
+    game.map.units = [reactor, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+
+    game.event_system.publish("unit_set_up", unit=enemy, set_up_as_reinforcements=True)
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "A DARK NETWORK")
+    assert pending is not None
+
+    used = gsc_player.stratagems.use(
+        "A DARK NETWORK",
+        unit=reactor,
+        enemy_unit=enemy,
+        phase_name="Movement phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert int(gsc_player.command_points or 0) == 2
+
+    request = _find_request(
+        game,
+        decision_type=DECISION_MOVE_UNIT,
+        reactive_move_kind="genestealer_cults_a_dark_network",
+    )
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert str(context.get("unit_id", "") or "") == str(get_entity_id(reactor) or "")
+    assert str(context.get("reactive_move_moving_unit_id", "") or "") == str(get_entity_id(enemy) or "")
+    assert int(context.get("max_distance", 0) or 0) == 6
+
+
+def test_in_the_shadow_of_iron_queues_relocation_option_and_relocates_marker():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    vehicle = _make_unit(
+        "Brood Brothers Chimera",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "VEHICLE"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(vehicle)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(vehicle, 4.0, 0.0)
+    _set_unit_position(enemy, 40.0, 0.0)
+    game.map.units = [vehicle, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+
+    cult_ambush = gsc_army.cult_ambush
+    marker = cult_ambush.place_marker_at(game, 10.0, 0.0)
+    assert marker is not None
+
+    _set_unit_position(enemy, 18.0, 0.0)
+    game.map.units = [vehicle, enemy]
+    game.rebuild_entity_registry()
+
+    cult_ambush.on_enemy_unit_move_ended(enemy, game=game)
+    request = _find_request(
+        game,
+        decision_type=DECISION_PICK_POINT,
+        ability="cult_ambush_threatened_marker_relocation",
+    )
+    assert request is not None
+    option = _option_with_marker(
+        request,
+        relocation_mode="in_the_shadow_of_iron",
+        source_unit=vehicle,
+    )
+    assert option is not None
+    payload = dict(getattr(option, "payload", {}) or {})
+    assert str(payload.get("source_unit_id", "") or "") == str(get_entity_id(vehicle) or "")
+
+    result = resolve_decision_command(
+        game,
+        request,
+        option.option_id,
+        result_payload={"point": [3.0, 0.0]},
+        player_id=gsc_player.id,
+    )
+    assert bool(getattr(result, "ok", False))
+    active_markers = list(cult_ambush.get_active_markers() or [])
+    assert len(active_markers) == 1
+    relocated = active_markers[0]
+    assert float(getattr(relocated, "x", -1.0) or -1.0) == 3.0
+    assert float(getattr(relocated, "y", -1.0)) == 0.0
+    assert int(gsc_player.command_points or 0) == 2
+
+
+def test_regimental_reinforcements_clones_destroyed_unit_and_queues_marker_placement():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 4
+
+    destroyed_unit = _make_unit(
+        "Brood Brothers Squad",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    enemy = _make_unit("Enemy Shooters", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(destroyed_unit)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(destroyed_unit, 5.0, 5.0)
+    _set_unit_position(enemy, 40.0, 40.0)
+    destroyed_models = list(getattr(destroyed_unit, "models", []) or [])
+    for model in list(destroyed_models or []):
+        model.wounds = 0
+    destroyed_unit.models_lost = list(destroyed_models)
+    destroyed_unit.models = []
+    game.map.units = [destroyed_unit, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+
+    game.event_system.publish("unit_destroyed", unit=destroyed_unit, destroyed_by_unit=enemy)
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "REGIMENTAL REINFORCEMENTS")
+    assert pending is not None
+
+    with patch("warhammer40k_ai.rules.stratagems_genestealer_cults.dice_module.get_roll", return_value=4):
+        used = gsc_player.stratagems.use(
+            "REGIMENTAL REINFORCEMENTS",
+            unit=destroyed_unit,
+            phase_name="Shooting phase",
+            dequeue=True,
+        )
+    assert bool(used) is True
+    assert bool(gsc_player.stratagems._used_once_per_battle.get("REGIMENTAL REINFORCEMENTS", False)) is True
+
+    replacement_units = [
+        unit
+        for unit in list(gsc_army.units or [])
+        if unit is not destroyed_unit and getattr(unit, "name", "") == getattr(destroyed_unit, "name", "")
+    ]
+    assert len(replacement_units) == 1
+    replacement = replacement_units[0]
+    assert bool(gsc_army.cult_ambush.unit_is_in_cult_ambush(replacement)) is True
+    assert bool(replacement.is_alive()) is True
+
+    request = _find_request(
+        game,
+        decision_type=DECISION_PICK_POINT,
+        ability="regimental_reinforcements_marker_placement",
+    )
+    assert request is not None
+    result = resolve_decision_command(
+        game,
+        request,
+        request.options[0].option_id,
+        result_payload={"point": [10.0, 10.0]},
+        player_id=gsc_player.id,
+    )
+    assert bool(getattr(result, "ok", False))
+    active_markers = list(gsc_army.cult_ambush.get_active_markers() or [])
+    assert len(active_markers) == 1
+
+
+def test_acceptable_losses_allows_selected_engaged_target_and_applies_post_shoot_mortals():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 4
+
+    astra_shooter = _make_unit(
+        "Brood Brothers Squad",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    engaged_gsc_one = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    engaged_gsc_two = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy_target = _make_unit("Enemy Target", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    other_enemy = _make_unit("Other Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(astra_shooter)
+    gsc_army.add_unit(engaged_gsc_one)
+    gsc_army.add_unit(engaged_gsc_two)
+    enemy_army.add_unit(enemy_target)
+    enemy_army.add_unit(other_enemy)
+    _attach_ranged_weapons(astra_shooter, weapon_name="Lasgun")
+    _set_unit_position(astra_shooter, 2.0, 10.0)
+    _set_unit_position(engaged_gsc_one, 10.0, 10.0)
+    _set_unit_position(engaged_gsc_two, 10.0, 10.8)
+    _set_unit_position(enemy_target, 10.6, 10.0)
+    _set_unit_position(other_enemy, 16.0, 10.0)
+    game.map.units = [astra_shooter, engaged_gsc_one, engaged_gsc_two, enemy_target, other_enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    profile = _make_ranged_profile()
+    assert bool(
+        astra_shooter._can_model_shoot_weapon_at_target(
+            astra_shooter.models[0],
+            profile,
+            enemy_target,
+            game.map,
+        )
+    ) is False
+
+    recorded_mortals: dict[str, int] = {}
+
+    def _record_mortals(target_unit, mortal_wound_amount, **_kwargs):
+        recorded_mortals[str(get_entity_id(target_unit) or "")] = int(mortal_wound_amount or 0)
+
+    astra_shooter._apply_mortal_wounds_to_unit = _record_mortals
+
+    used = gsc_player.stratagems.use(
+        "ACCEPTABLE LOSSES",
+        unit=astra_shooter,
+        enemy_unit=enemy_target,
+        phase_name="Shooting phase",
+    )
+    assert bool(used) is True
+    assert bool(
+        astra_shooter._can_model_shoot_weapon_at_target(
+            astra_shooter.models[0],
+            profile,
+            enemy_target,
+            game.map,
+        )
+    ) is True
+
+    with patch("warhammer40k_ai.rules.stratagems_genestealer_cults.dice_module.get_roll", side_effect=[5, 2, 5, 1]):
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=astra_shooter,
+            declared_targets=[enemy_target],
+        )
+
+    assert set(recorded_mortals.keys()) == {
+        str(get_entity_id(engaged_gsc_one) or ""),
+        str(get_entity_id(engaged_gsc_two) or ""),
+    }
+    assert sorted(recorded_mortals.values()) == [2, 3]
+
+
+def test_symbiotic_destruction_target_locks_units_and_grants_wound_reroll_ones():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 4
+
+    astra_unit = _make_unit(
+        "Brood Brothers Squad",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    gsc_unit = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    locked_enemy = _make_unit("Locked Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    other_enemy = _make_unit("Other Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(astra_unit)
+    gsc_army.add_unit(gsc_unit)
+    enemy_army.add_unit(locked_enemy)
+    enemy_army.add_unit(other_enemy)
+    _set_unit_position(astra_unit, 0.0, 0.0)
+    _set_unit_position(gsc_unit, 2.0, 0.0)
+    _set_unit_position(locked_enemy, 10.0, 0.0)
+    _set_unit_position(other_enemy, 12.0, 6.0)
+    _attach_ranged_weapons(astra_unit, weapon_name="Lasgun")
+    _attach_ranged_weapons(gsc_unit, weapon_name="Autogun")
+    game.map.units = [astra_unit, gsc_unit, locked_enemy, other_enemy]
+    game.rebuild_entity_registry()
+
+    used = gsc_player.stratagems.use(
+        "SYMBIOTIC DESTRUCTION",
+        phase_name="Shooting phase",
+        astra_unit=astra_unit,
+        gsc_unit=gsc_unit,
+        enemy_unit=locked_enemy,
+    )
+    assert bool(used) is True
+
+    profile = _make_ranged_profile()
+    for shooter in (astra_unit, gsc_unit):
+        assert bool(
+            shooter._can_model_shoot_weapon_at_target(
+                shooter.models[0],
+                profile,
+                locked_enemy,
+                game.map,
+            )
+        ) is True
+        assert bool(
+            shooter._can_model_shoot_weapon_at_target(
+                shooter.models[0],
+                profile,
+                other_enemy,
+                game.map,
+            )
+        ) is False
+
+        wound_mods = shooter.get_unit_wound_reroll_modifiers("ranged", target=locked_enemy)
+        assert bool(wound_mods.get("reroll_wound_ones", False)) is True
+        assert any(
+            "SYMBIOTIC DESTRUCTION" in str(reason or "")
+            for reason in list(wound_mods.get("reroll_wound_reasons", ()) or ())
+        )

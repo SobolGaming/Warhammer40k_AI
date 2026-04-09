@@ -4162,12 +4162,14 @@ class GameView:
                         selected_option_id = ""
                     marker_id = ""
                     relocation_mode = ""
+                    source_unit_id = ""
                     for entry in list(option_entries(request) or []):
                         if str(entry.get("option_id", "") or "") != str(selected_option_id or ""):
                             continue
                         payload = dict(entry.get("payload", {}) or {})
                         marker_id = str(payload.get("marker_id", "") or "").strip()
                         relocation_mode = str(payload.get("relocation_mode", "") or "").strip()
+                        source_unit_id = str(payload.get("source_unit_id", "") or "").strip()
                         break
                     if not marker_id:
                         return {"valid": False, "reason": "Select a threatened Cult Ambush marker first."}
@@ -4180,8 +4182,17 @@ class GameView:
                         ctx,
                         marker_id=marker_id,
                         relocation_mode=relocation_mode,
+                        source_unit_id=source_unit_id,
                         point=(float(x), float(y)),
                     )
+                    if not bool(valid):
+                        return {"valid": False, "reason": str(reason or "Invalid point.")}
+                    return {"valid": True, "reason": "OK"}
+                if ability_key == "regimental_reinforcements_marker_placement":
+                    validate_fn = getattr(self.game, "_validate_regimental_reinforcements_marker_placement", None)
+                    if not callable(validate_fn):
+                        return {"valid": False, "reason": "Regimental Reinforcements validation unavailable."}
+                    valid, reason = validate_fn(ctx, point=(float(x), float(y)))
                     if not bool(valid):
                         return {"valid": False, "reason": str(reason or "Invalid point.")}
                     return {"valid": True, "reason": "OK"}
