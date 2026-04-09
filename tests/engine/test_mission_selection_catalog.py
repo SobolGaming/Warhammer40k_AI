@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from warhammer40k_ai.battlefield.terrain_layouts import TerrainLayoutsRegistry
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.mission_selection import (
@@ -78,6 +79,28 @@ def test_preview_pack_exposes_five_force_dispositions() -> None:
         "Priority Assets",
     ]
     assert len(pack.pairings) == 25
+
+
+def test_preview_pack_pairing_matrix_exposes_exactly_three_valid_layout_ids_per_pairing() -> None:
+    pack = get_mission_pack("provisional_11e_preview")
+    valid_layout_ids = set(TerrainLayoutsRegistry.layout_ids())
+
+    for player_a in pack.force_dispositions:
+        for player_b in pack.force_dispositions:
+            catalog = build_mission_selection_catalog(
+                _build_game(
+                    player_a_force=player_a.display_name,
+                    player_b_force=player_b.display_name,
+                )
+            )
+            preview_entries = [entry for entry in catalog if entry["pack_id"] == pack.pack_id]
+
+            assert len(preview_entries) == 1
+            layouts = preview_entries[0]["layouts"]
+            assert layouts is not None
+            assert len(layouts) == 3
+            assert len(set(layouts)) == 3
+            assert set(layouts).issubset(valid_layout_ids)
 
 
 def test_random_mission_options_stay_on_chapter_approved_pack() -> None:
