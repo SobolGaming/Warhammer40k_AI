@@ -533,6 +533,15 @@ def test_xenocreed_stratagem_descriptors_registered() -> None:
         assert str(getattr(desc, "name", "") or "") == name
         assert str(getattr(desc, "effect", "") or "") == effect
 
+    vengeance = get_stratagem_tool_descriptor(stratagem_id="000009072002")
+    assert vengeance is not None
+    assert str(vengeance.target or "") == "another_friendly_genestealer_cults_character_model_on_battlefield_or_in_reserves"
+    assert tuple(str(value or "").strip().lower() for value in vengeance.effect_params.get("friendly_unit_name_prefixes", ())) == (
+        "acolyte hybrids",
+        "hybrid metamorphs",
+        "neophyte hybrids",
+    )
+
 
 def test_frenzied_devotion_applies_attacks_ws_and_hazardous_only_to_non_character_models_and_cleans_up() -> None:
     game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
@@ -820,6 +829,106 @@ def test_vengeance_for_the_martyr_rerolls_ones_for_non_iconic_character_loss() -
     )
     assert bool(mods.get("reroll_hit_full")) is False
     assert 1 in tuple(mods.get("reroll_hit_values", ()) or ())
+
+
+def test_vengeance_for_the_martyr_requires_another_character_model() -> None:
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Killers",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    gsc_army.add_unit(primus)
+    enemy_army.add_unit(enemy)
+
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+    game.event_system.publish(
+        "model_destroyed",
+        attacker_unit=enemy,
+        target_unit=primus,
+        target_model=primus.models[0],
+    )
+
+    assert _pending_reaction_by_name(gsc_player.stratagems, "VENGEANCE FOR THE MARTYR!") is None
+
+
+def test_vengeance_for_the_martyr_can_select_character_in_reserves_and_marks_enemy() -> None:
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    neophytes = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    magus = _make_unit(
+        "Magus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Killers",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    magus.deployed = False
+    magus.reserve_status = "reserves"
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(primus)
+    gsc_army.add_unit(magus)
+    enemy_army.add_unit(enemy)
+
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+    game.event_system.publish(
+        "model_destroyed",
+        attacker_unit=enemy,
+        target_unit=primus,
+        target_model=primus.models[0],
+    )
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "VENGEANCE FOR THE MARTYR!")
+    assert pending is not None
+
+    used = gsc_player.stratagems.use(
+        "VENGEANCE FOR THE MARTYR!",
+        unit=magus,
+        enemy_unit=enemy,
+        destroyed_unit=primus,
+        destroyed_model=primus.models[0],
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+
+    enemy_sr = dict(getattr(enemy, "special_rules", {}) or {})
+    assert bool(enemy_sr.get("gsc_xenocreed_martyr_active")) is True
+    assert str(enemy_sr.get("gsc_xenocreed_martyr_reroll_mode", "") or "") == "full"
 
 
 def test_the_path_of_anguish_queues_after_enemy_shooting_and_uses_blood_surge_move() -> None:

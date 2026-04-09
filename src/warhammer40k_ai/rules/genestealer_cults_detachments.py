@@ -316,6 +316,18 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         return 1500, "Onslaught"
 
     @staticmethod
+    def _unit_is_in_reserves(unit) -> bool:
+        if unit is None:
+            return False
+        reserve_status = str(getattr(unit, "reserve_status", "deployed") or "").strip().lower()
+        if reserve_status not in {"", "deployed"}:
+            return True
+        is_in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(is_in_reserves):
+            return bool(is_in_reserves())
+        return False
+
+    @staticmethod
     def _unit_is_on_battlefield(unit) -> bool:
         if unit is None:
             return False
@@ -324,10 +336,7 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return False
         if not bool(getattr(unit, "deployed", True)):
             return False
-        if str(getattr(unit, "reserve_status", "deployed") or "").strip().lower() != "deployed":
-            return False
-        is_in_reserves = getattr(unit, "is_in_reserves", None)
-        if callable(is_in_reserves) and bool(is_in_reserves()):
+        if GenestealerCultsDetachmentManager._unit_is_in_reserves(unit):
             return False
         embarked = getattr(unit, "is_embarked", False)
         if callable(embarked):
@@ -1040,7 +1049,7 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return False
         return self._xenocreed_unit_matches_prefixes(unit, self._XENOCREED_PATH_OF_ANGUISH_ELIGIBLE_UNIT_PREFIXES)
 
-    def xenocreed_character_units(self, *, exclude_model=None) -> list:
+    def xenocreed_character_units(self, *, exclude_model=None, include_reserves: bool = False) -> list:
         if not self.is_xenocreed_congregation():
             return []
         excluded_id = str(get_entity_id(exclude_model) or "") if exclude_model is not None else ""
@@ -1053,6 +1062,9 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             if not self._unit_is_genestealer_cults(root):
                 continue
             if not self._unit_is_on_battlefield(root):
+                if not bool(include_reserves) or not self._unit_is_in_reserves(root):
+                    continue
+            if getattr(root, "embarked_in", None) is not None:
                 continue
             has_other_character = False
             for model in self._iter_attached_models(root):

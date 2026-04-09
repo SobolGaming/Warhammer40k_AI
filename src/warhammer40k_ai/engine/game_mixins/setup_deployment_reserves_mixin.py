@@ -3939,6 +3939,10 @@ class GameSetupDeploymentReservesMixin:
                 allow_embarked_transport_on_battlefield = bool(
                     cache.get("redeploy_allow_embarked_transport_on_battlefield", False)
                 )
+                ability_name = str(cache.get("redeploy_ability_name") or "")
+                if ability_name.strip().lower() == "decoys and misdirection":
+                    if bool(getattr(u, "is_embarked", False)) or getattr(u, "embarked_in", None) is not None:
+                        continue
                 if requires_source_on_battlefield and (
                     not self._redeploy_source_meets_battlefield_requirement(
                         u,
@@ -3953,7 +3957,6 @@ class GameSetupDeploymentReservesMixin:
                 must_include_source_unit = bool(cache.get("redeploy_must_include_source_unit", False))
                 require_exact_count = bool(cache.get("redeploy_require_exact_count", False))
                 army_once_per_ability = bool(cache.get("redeploy_army_once_per_ability", False))
-                ability_name = str(cache.get("redeploy_ability_name") or "")
                 if not ability_name:
                     ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
                 if army_once_per_ability:

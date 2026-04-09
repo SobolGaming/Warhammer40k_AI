@@ -4560,10 +4560,8 @@ class GamePhaseHandlersMixin:
             army = owner.get_army()
             if army is None:
                 continue
-            if str(getattr(army, "faction_id", "") or "").strip().upper() != "AM":
-                continue
             mgr = getattr(army, "voice_of_command", None)
-            if mgr is None or not bool(getattr(mgr, "_army_has_voice", lambda: False)()):
+            if mgr is None:
                 continue
 
             seen_roots: set[str] = set()

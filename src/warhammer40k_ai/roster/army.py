@@ -537,10 +537,12 @@ class Army:
             from ..rules.doctrina_imperatives import DoctrinaImperativesManager
             self.doctrina_imperatives = DoctrinaImperativesManager(self)
 
-        if fid == "AM":
+        if fid in {"AM", "GC"}:
             from ..rules.voice_of_command import VoiceOfCommandManager
-            from ..rules.deathstrike import DeathstrikeManager
             self.voice_of_command = VoiceOfCommandManager(self)
+
+        if fid == "AM":
+            from ..rules.deathstrike import DeathstrikeManager
             self.deathstrike = DeathstrikeManager(self)
 
         if fid == "GC":

@@ -3536,7 +3536,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("GC", "Decoys and Misdirection"): (
             "Supported",
-            "After deployment: redeploy up to three friendly GENESTEALER CULTS units; selected units may be placed into Strategic Reserves regardless of current reserve limits.",
+            "After deployment: an unembarked Primus can redeploy up to three friendly GENESTEALER CULTS units; selected units may be placed into Strategic Reserves regardless of current reserve limits.",
         ),
         ("GC", "Planted Explosives"): (
             "Supported",
@@ -20154,7 +20154,7 @@ def _stratagem_support(
         "RAPID INGRESS": "Movement phase: place a reserves unit at end of opponent move.",
         "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
         "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",
-        "TUNNEL CRAWLERS": "Start of your Movement phase: selected GENESTEALER CULTS unit arriving with Deep Strike this phase can be set up more than 6\" from enemy models and cannot declare a charge this turn.",
+        "TUNNEL CRAWLERS": "Start of your Movement phase: selected GENESTEALER CULTS unit arriving this phase with Deep Strike, including Cult Ambush arrivals set up without a marker, can be set up more than 6\" from enemy models and cannot declare a charge this turn.",
         "LYING IN WAIT": "Start of your opponent's Movement phase: selected GENESTEALER CULTS BATTLELINE unit in Cult Ambush can be set up wholly within 6\" of its marker and outside Engagement Range this phase.",
         "PRIMED AND READIED": "Start of your Shooting/Fight phase: selected GENESTEALER CULTS unit that has not been selected this phase scores critical hits on unmodified Hit rolls of 5+ until end of phase.",
         "COORDINATED TRAP": "Start of your Shooting/Fight phase: select two eligible GENESTEALER CULTS units and one enemy unit; selected units gain +1 to Wound rolls and can only target that enemy until end of phase (Fight phase requires the enemy to be in Engagement Range of both selected units).",
@@ -20169,7 +20169,7 @@ def _stratagem_support(
         "THE PATH OF ANGUISH": "Opponent Shooting phase reaction after an enemy unit shoots: selected Acolyte Hybrids or Neophyte Hybrids unit that lost models to that attack can make a queued deterministic surge move of up to D6\" toward the closest non-AIRCRAFT enemy and can move within Engagement Range of it.",
         "TIRELESS FERVOUR": "Your Charge phase: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not declared a charge can charge after Advancing or Falling Back this phase, and can re-roll the Charge roll against enemies within Engagement Range of friendly CHARACTER units.",
         "TRANSCENDENT CELERITY": "Your Shooting phase: selected Acolyte Hybrids, Hybrid Metamorphs, or Neophyte Hybrids unit that has not shot gains [ASSAULT] on ranged weapons until end of phase.",
-        "VENGEANCE FOR THE MARTYR!": "Opponent Shooting phase or the Fight phase reaction after an enemy unit destroys your GENESTEALER CULTS CHARACTER model: mark that enemy until end of battle so friendly Acolyte Hybrids, Hybrid Metamorphs, and Neophyte Hybrids re-roll Hit rolls of 1 against it, or re-roll the Hit roll if the destroyed model was a Magus, Primus, or Acolyte Iconward.",
+        "VENGEANCE FOR THE MARTYR!": "Opponent Shooting phase or the Fight phase reaction after an enemy unit destroys your GENESTEALER CULTS CHARACTER model: select one other friendly GENESTEALER CULTS CHARACTER on the battlefield or in Reserves, then mark that enemy until end of battle so friendly Acolyte Hybrids, Hybrid Metamorphs, and Neophyte Hybrids re-roll Hit rolls of 1 against it, or re-roll the Hit roll instead if the destroyed model was a Magus, Primus, or Acolyte Iconward.",
         "BIO-HORROR REVELATION": "Start of your opponent's Shooting phase: selected ABERRANTS/BIOPHAGUS/PURESTRAIN GENESTEALERS unit forces enemy shooters within 9\" that target it to take a Leadership test at -1; failed tests apply an attacker-specific -1 to hit against that unit until end of phase.",
         "CLOSE-RANGE SHOOT-OUT": "Your Shooting phase: selected GENESTEALER CULTS MOUNTED or VEHICLE unit that has not been selected to shoot gains [LETHAL HITS] on ranged attacks against targets within 18\" until end of phase.",
         "DEFT MANOEUVRING": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected Achilles Ridgerunners or Atalan Jackals target gains a 4+ invulnerable save until end of phase.",

@@ -832,7 +832,7 @@ class GenestealerCultsStratagemMixin:
         if not callable(candidate_fn):
             return []
         try:
-            candidates = list(candidate_fn(exclude_model=exclude_model) or [])
+            candidates = list(candidate_fn(exclude_model=exclude_model, include_reserves=True) or [])
         except (AttributeError, TypeError, ValueError):
             return []
         return sorted(
@@ -1048,6 +1048,7 @@ class GenestealerCultsStratagemMixin:
         army = self._gsc_army()
         if army is None:
             return []
+        cult_ambush = getattr(army, "cult_ambush", None)
         out: List[Any] = []
         seen: set[str] = set()
         for unit in list(getattr(army, "units", []) or []):
@@ -1057,8 +1058,6 @@ class GenestealerCultsStratagemMixin:
             uid = self._gsc_sort_key(root)
             if uid and uid in seen:
                 continue
-            if uid:
-                seen.add(uid)
             if not self._gsc_owned_by_player(root, self.player):
                 continue
             if not self._gsc_is_genestealer_cults_unit(root):
@@ -1073,7 +1072,35 @@ class GenestealerCultsStratagemMixin:
                 continue
             if not self._gsc_can_arrive_from_reserves(root):
                 continue
+            if uid:
+                seen.add(uid)
             out.append(root)
+        if cult_ambush is not None:
+            cult_ambush_units = list(
+                getattr(cult_ambush, "get_units_in_cult_ambush", lambda **_k: [])(
+                    game=self.game,
+                    only_arrivable=True,
+                )
+                or []
+            )
+            for unit in cult_ambush_units:
+                root = self._gsc_root(unit)
+                if root is None:
+                    continue
+                uid = self._gsc_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if not self._gsc_owned_by_player(root, self.player):
+                    continue
+                if not self._gsc_is_genestealer_cults_unit(root):
+                    continue
+                if not self._gsc_is_alive(root):
+                    continue
+                if not self._gsc_can_arrive_from_reserves(root):
+                    continue
+                if uid:
+                    seen.add(uid)
+                out.append(root)
         return sorted(out, key=self._gsc_sort_key)
 
     def _gsc_host_of_ascension_lying_in_wait_candidates(self) -> List[Any]:
@@ -1751,10 +1778,13 @@ class GenestealerCultsStratagemMixin:
             return
         if not self._gsc_is_genestealer_cults_unit(destroyed_root):
             return
-        if not (
-            bool(getattr(target_model, "is_character", False))
-            or self._gsc_is_character_unit(destroyed_unit)
-        ):
+        target_is_character = getattr(target_model, "is_character", False)
+        if callable(target_is_character):
+            try:
+                target_is_character = target_is_character()
+            except (AttributeError, TypeError, ValueError):
+                target_is_character = False
+        if not bool(target_is_character):
             return
         if self._gsc_owned_by_player(attacker_root, self.player):
             return
@@ -4221,10 +4251,13 @@ class GenestealerCultsStratagemMixin:
         if not self._gsc_is_genestealer_cults_unit(destroyed_root):
             logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroyed model must be GENESTEALER CULTS")
             return False
-        if not (
-            bool(getattr(destroyed_model, "is_character", False))
-            or self._gsc_is_character_unit(destroyed_unit)
-        ):
+        destroyed_model_is_character = getattr(destroyed_model, "is_character", False)
+        if callable(destroyed_model_is_character):
+            try:
+                destroyed_model_is_character = destroyed_model_is_character()
+            except (AttributeError, TypeError, ValueError):
+                destroyed_model_is_character = False
+        if not bool(destroyed_model_is_character):
             logger.error("ERROR: VENGEANCE FOR THE MARTYR!: destroyed model must be a CHARACTER")
             return False
         if self._gsc_owned_by_player(enemy_root, self.player):
@@ -4245,7 +4278,9 @@ class GenestealerCultsStratagemMixin:
                 logger.error("ERROR: VENGEANCE FOR THE MARTYR!: missing target CHARACTER unit")
                 return False
         if not self._gsc_unit_in_candidates(target_root, candidates):
-            logger.error("ERROR: VENGEANCE FOR THE MARTYR!: target must be one other friendly GENESTEALER CULTS CHARACTER")
+            logger.error(
+                "ERROR: VENGEANCE FOR THE MARTYR!: target must be one other friendly GENESTEALER CULTS CHARACTER on the battlefield or in Reserves"
+            )
             return False
 
         mgr = self._gsc_detachment_mgr()
@@ -4470,7 +4505,9 @@ class GenestealerCultsStratagemMixin:
                 logger.error("ERROR: TUNNEL CRAWLERS: missing target unit")
                 return False
         if target_root not in candidates:
-            logger.error("ERROR: TUNNEL CRAWLERS: target must be a GENESTEALER CULTS unit arriving with Deep Strike this phase")
+            logger.error(
+                "ERROR: TUNNEL CRAWLERS: target must be a GENESTEALER CULTS unit arriving with Deep Strike this phase or from Cult Ambush without a marker"
+            )
             return False
         context_candidates = [
             self._gsc_root(candidate)
@@ -4489,6 +4526,7 @@ class GenestealerCultsStratagemMixin:
             sr = {}
         owner = str(getattr(self.player, "id", "") or "")
         turn = int(getattr(game, "turn", 0) or 0)
+        sr["tunnel_crawlers_temp_deep_strike"] = True
         sr["tunnel_crawlers_deep_strike_min_distance"] = 6.0
         sr["tunnel_crawlers_expires_phase"] = "MOVEMENT_PHASE"
         sr["tunnel_crawlers_source"] = str(getattr(stratagem, "name", "TUNNEL CRAWLERS") or "TUNNEL CRAWLERS")

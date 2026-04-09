@@ -483,6 +483,38 @@ def test_tunnel_crawlers_queues_and_applies_deep_strike_override_with_no_charge(
     assert not gsc_unit.can_declare_charge_against(enemy_unit, game)
 
 
+def test_tunnel_crawlers_can_target_cult_ambush_arrival_without_marker() -> None:
+    game, gsc_player, _enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    cult_ambush = gsc_player.army.cult_ambush
+    assert cult_ambush is not None
+    cult_ambush._prepare_unit_in_cult_ambush(gsc_unit, game=game)
+    gsc_unit.can_arrive_from_reserves = lambda _turn: True
+    assert bool(gsc_unit.has_deep_strike()) is False
+
+    phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=gsc_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "TUNNEL CRAWLERS")
+    assert pending is not None
+
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        dequeue=True,
+    )
+    assert ok
+    assert bool(gsc_unit.has_deep_strike()) is True
+    assert float(gsc_unit.get_deep_strike_min_distance_override() or 0.0) == 6.0
+    assert bool((getattr(gsc_unit, "special_rules", {}) or {}).get("tunnel_crawlers_no_charge_on_arrival")) is True
+
+
 def test_lying_in_wait_allows_cult_ambush_setup_within_six_and_not_engagement() -> None:
     game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
     game.turn = 2

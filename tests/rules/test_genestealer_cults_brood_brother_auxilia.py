@@ -75,6 +75,12 @@ class _MockDatasheet:
         self.attached_to_names = []
 
 
+WARRIOR_ELITE_TEXT = (
+    "Once per battle round, at the start of any phase, you can select one Order to affect this unit until the start "
+    "of your next Command phase, in addition to any other Orders issued to this unit by an Officer model this battle round."
+)
+
+
 def _make_unit(
     name: str,
     *,
@@ -437,6 +443,46 @@ def test_brood_brothers_voice_of_command_loss_flags_units_and_disables_voice_che
     assert "voice_of_command_order_source" not in updated_sr
     assert removed_sources == ["voice_of_command:"]
     assert bool(voc._unit_has_voice(officer)) is False
+
+
+def test_brood_brothers_kasrkin_warrior_elite_still_grants_additional_order():
+    game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    kasrkin = _make_unit(
+        "Kasrkin",
+        faction_name="Astra Militarum",
+        keywords=["INFANTRY", "ASTRA MILITARUM"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    kasrkin.possible_abilities = [SimpleNamespace(name="Warrior Elite", description=WARRIOR_ELITE_TEXT)]
+    gsc_army.add_unit(kasrkin)
+    game.map.units = [kasrkin]
+    game.rebuild_entity_registry()
+
+    mgr = gsc_army.voice_of_command
+    assert mgr is not None
+    mgr._apply_order_to_unit_and_attached(kasrkin, "TAKE_AIM", owner_id=gsc_player.id, source_id="officer-1")
+
+    game._on_phase_start_astra_militarum_warrior_elite(player=gsc_player, phase=game.phase)
+    request = _find_request(game, decision_type=DECISION_CHOOSE_QUARRY, ability="warrior_elite_order")
+    assert request is not None
+
+    option_id = ""
+    for option in list(request.options or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("order_key", "") or "").strip().upper() == "TAKE_COVER":
+            option_id = str(getattr(option, "option_id", "") or "")
+            break
+    assert option_id
+
+    result = resolve_decision_command(game, request, option_id, player_id=gsc_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+
+    sr = dict(getattr(kasrkin, "special_rules", {}) or {})
+    assert str(sr.get("voice_of_command_order_key", "") or "") == "TAKE_AIM"
+    assert "TAKE_COVER" in list(sr.get("voice_of_command_additional_order_keys", []) or [])
+    assert bool(sr.get("voice_of_command_take_cover_cap")) is True
 
 
 def test_adaptive_reprisal_allows_heroic_intervention_for_zero_cp_once_per_turn_within_range():

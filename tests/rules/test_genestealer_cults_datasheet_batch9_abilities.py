@@ -99,3 +99,35 @@ def test_primus_decoys_and_misdirection_queues_redeploy_request_with_strategic_r
         and str(payload.get("redeploy_action", "") or "").strip().lower() == "strategic_reserves"
         for payload in options
     )
+
+
+def test_primus_decoys_and_misdirection_does_not_queue_when_primus_is_embarked() -> None:
+    game, gsc_player, _enemy_player, gsc_army, _enemy_army = _build_game()
+
+    primus = _actual_unit("Primus", faction_id="GC")
+    neophytes = _actual_unit("Neophyte Hybrids", faction_id="GC")
+    acolytes = _actual_unit("Acolyte Hybrids With Autopistols", faction_id="GC")
+
+    gsc_army.add_unit(primus)
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(acolytes)
+    _deploy(neophytes, 6.0, 0.0)
+    _deploy(acolytes, 12.0, 0.0)
+    primus.deployed = True
+    primus.reserve_status = "deployed"
+    primus.embarked_in = object()
+    game.map.units = [neophytes, acolytes]
+    game.rebuild_entity_registry()
+
+    has_redeploy, count, can_place_in_reserves = primus.has_redeploy()
+    assert bool(has_redeploy) is True
+    assert int(count or 0) == 3
+    assert bool(can_place_in_reserves) is True
+
+    game.execute_redeploy_units_phase()
+    request = _find_redeploy_request(
+        game,
+        player_id=str(gsc_player.id),
+        ability_name="Decoys and Misdirection",
+    )
+    assert request is None

@@ -395,6 +395,7 @@ class PositioningTraitCacheMixin:
                     sr.get("bearer_unit_deep_strike")
                     or sr.get("realm_of_chaos_temp_deep_strike")
                     or sr.get("imperialis_fleet_combat_landers_deep_strike")
+                    or sr.get("tunnel_crawlers_temp_deep_strike")
                 ):
                     found = True
                 elif sr.get("attached_unit_bodyguard_leader_deep_strike") and bool(

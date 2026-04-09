@@ -639,3 +639,178 @@ class TestCultAmbush(unittest.TestCase):
 
         pos_allowed = (22.0, 10.0, 0.0)
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, pos_allowed))
+
+    def test_cult_ambush_setup_respects_enemy_reserves_restrictions(self):
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        p1 = _Player("P1")
+        p2 = _Player("P2")
+        army1 = _Army("GC", p1)
+        army2 = _Army("ENEMY", p2)
+        p1.army = army1
+        p2.army = army2
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+        mgr = CultAmbushManager(army1)
+
+        ability = Ability(
+            name="Omni-scramblers",
+            faction_id="SM",
+            description="Enemy units that are set up as Reinforcements cannot be set up within 12\" of this unit.",
+            type="Ability",
+        )
+        enemy_model = Model(
+            name="Enemy",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        enemy_model.set_location(10.0, 10.0, 0.0, 0.0)
+        enemy_unit = SimpleNamespace(
+            models=[enemy_model],
+            possible_abilities=[ability],
+            deployed=True,
+            reserve_status="deployed",
+            embarked_in=None,
+            is_alive=lambda: True,
+        )
+        army2.units.append(enemy_unit)
+
+        class _CultAmbushArrival:
+            def __init__(self, army):
+                self._army = army
+                self.models = [
+                    Model(
+                        name="Arriving",
+                        movement=6,
+                        toughness=4,
+                        save=4,
+                        wounds=2,
+                        leadership=7,
+                        objective_control=1,
+                        model_base=Base(BaseType.CIRCULAR, 1.0),
+                    )
+                ]
+
+            def get_parent_army(self):
+                return self._army
+
+            def _create_potential_base(self, x, y, z, facing, model):
+                base = copy.deepcopy(model.model_base)
+                base.set_position(x, y, z)
+                base.set_facing(facing)
+                return base
+
+        arriving = _CultAmbushArrival(army1)
+
+        self.assertFalse(mgr._placements_respect_enemy_distance(arriving, [(22.0, 10.0, 0.0, 0.0)], game=game))
+
+    def test_unused_cult_ambush_marker_remains_after_skip(self):
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
+        p1 = _Player("GSC")
+        p2 = _Player("Enemy")
+        army = _Army("GC", p1)
+        enemy_army = _Army("ENEMY", p2)
+        p1.army = army
+        p2.army = enemy_army
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+        game.turn = 2
+        mgr = CultAmbushManager(army)
+
+        unit = _CultUnit("Neophyte Hybrids", army, count=10)
+        mgr._prepare_unit_in_cult_ambush(unit, game=game)
+        unit.can_arrive_from_reserves = lambda _turn: True
+        marker = mgr.place_marker_at(game, 10.0, 10.0)
+
+        self.assertIsNotNone(marker)
+        mgr.handle_reinforcements(game=game, player=p1)
+
+        request = next(iter(list(game.decision_queue.list() or [])), None)
+        self.assertIsNotNone(request)
+        skip_option = next(
+            (
+                opt
+                for opt in list(getattr(request, "options", []) or [])
+                if str((getattr(opt, "payload", {}) or {}).get("action", "") or "") == "skip"
+            ),
+            None,
+        )
+        self.assertIsNotNone(skip_option)
+
+        result = resolve_decision_command(game, request, skip_option.option_id, player_id=p1.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+        self.assertTrue(bool(marker.active))
+
+    def test_remaining_markers_are_not_removed_when_no_units_are_in_cult_ambush(self):
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+
+        p1 = _Player("GSC")
+        p2 = _Player("Enemy")
+        army = _Army("GC", p1)
+        enemy_army = _Army("ENEMY", p2)
+        p1.army = army
+        p2.army = enemy_army
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+        mgr = CultAmbushManager(army)
+        marker = mgr.place_marker_at(game, 10.0, 10.0)
+
+        self.assertIsNotNone(marker)
+        mgr.handle_reinforcements(game=game, player=p1)
+
+        self.assertTrue(bool(marker.active))
+        self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
+
+    def test_enemy_setup_within_nine_does_not_remove_marker_until_it_moves(self):
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager, CultAmbushMarker
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        p1 = _Player("GSC")
+        p2 = _Player("Enemy")
+        army = _Army("GC", p1)
+        enemy_army = _Army("ENEMY", p2)
+        p1.army = army
+        p2.army = enemy_army
+
+        mgr = CultAmbushManager(army)
+        marker = CultAmbushMarker(marker_id="m1", x=10.0, y=10.0, z=0.0, active=True)
+        mgr.markers.append(marker)
+
+        enemy_model = Model(
+            name="Enemy",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        enemy_model.set_location(12.0, 10.0, 0.0, 0.0)
+        enemy_unit = SimpleNamespace(
+            models=[enemy_model],
+            deployed=True,
+            reserve_status="deployed",
+            embarked_in=None,
+            is_alive=lambda: True,
+            has_any_keyword=lambda kw: False,
+            get_parent_army=lambda: enemy_army,
+        )
+
+        self.assertTrue(bool(marker.active))
+        mgr.on_enemy_unit_move_ended(enemy_unit)
+        self.assertFalse(bool(marker.active))

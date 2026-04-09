@@ -3744,6 +3744,7 @@ class LateGameplayMixin:
                 if "tunnel_crawlers_deep_strike_min_distance" in sr or "tunnel_crawlers_expires_phase" in sr:
                     for key in (
                         "tunnel_crawlers_deep_strike_min_distance",
+                        "tunnel_crawlers_temp_deep_strike",
                         "tunnel_crawlers_turn_owner",
                         "tunnel_crawlers_turn",
                         "tunnel_crawlers_expires_phase",
@@ -3827,6 +3828,17 @@ class LateGameplayMixin:
                         "midgame_temp_deep_strike_turn_owner",
                         "midgame_temp_deep_strike_must_arrive_turn",
                         "midgame_temp_deep_strike_source",
+                    ):
+                        sr.pop(key, None)
+                if sr.get("tunnel_crawlers_temp_deep_strike") is True or "tunnel_crawlers_expires_phase" in sr:
+                    for key in (
+                        "tunnel_crawlers_temp_deep_strike",
+                        "tunnel_crawlers_deep_strike_min_distance",
+                        "tunnel_crawlers_turn_owner",
+                        "tunnel_crawlers_turn",
+                        "tunnel_crawlers_expires_phase",
+                        "tunnel_crawlers_source",
+                        "tunnel_crawlers_no_charge_on_arrival",
                     ):
                         sr.pop(key, None)
                 self.special_rules = sr

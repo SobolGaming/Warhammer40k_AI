@@ -7595,6 +7595,45 @@ class ActionsMovementMixin:
                         f"{str(source or 'ANIMUS CURSE').strip() or 'ANIMUS CURSE'}: re-roll Hit roll vs marked target"
                     )
 
+        if target is not None and attacker_model is not None:
+            try:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+                reroll_fn = (
+                    getattr(gsc_mgr, "xenocreed_vengeance_for_the_martyr_hit_reroll_mods", None)
+                    if gsc_mgr is not None
+                    else None
+                )
+                if callable(reroll_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    mods_vengeance = reroll_fn(
+                        attacker_model,
+                        unit=root,
+                        target_unit=target,
+                        game=game,
+                    )
+                    if isinstance(mods_vengeance, dict):
+                        source = str(
+                            mods_vengeance.get("source", "") or "VENGEANCE FOR THE MARTYR!"
+                        ).strip() or "VENGEANCE FOR THE MARTYR!"
+                        if bool(mods_vengeance.get("reroll_full", False)):
+                            mods["reroll_hit_full"] = True
+                            reason = f"{source}: re-roll Hit roll vs marked target"
+                            if reason not in reroll_hit_full_reasons:
+                                reroll_hit_full_reasons.append(reason)
+                        for value in list(mods_vengeance.get("reroll_values", ()) or ()):
+                            try:
+                                reroll_value = int(value)
+                            except (TypeError, ValueError):
+                                continue
+                            reroll_hit_values.add(reroll_value)
+                        if bool(mods_vengeance.get("reroll_values", ())):
+                            reason = f"{source}: re-roll Hit rolls of 1 vs marked target"
+                            if reason not in reroll_hit_reasons:
+                                reroll_hit_reasons.append(reason)
+            except Exception:
+                pass
+
         if atype in ("any", "ranged"):
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("space_marines_battle_drill_recall_active", False)):
