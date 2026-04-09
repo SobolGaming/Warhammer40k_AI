@@ -6342,7 +6342,7 @@ class GamePhaseHandlersMixin:
 
     def _on_phase_start_genestealer_cults_final_day_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "MOVEMENT_PHASE":
+        if pname not in {"MOVEMENT_PHASE", "COMMAND_PHASE"}:
             return
         if player is None:
             return

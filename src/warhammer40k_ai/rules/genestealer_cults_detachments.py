@@ -91,6 +91,37 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _FINAL_DAY_PSIONIC_OWNER_KEY = "gsc_final_day_psionic_parasitism_owner"
     _FINAL_DAY_PSIONIC_TURN_KEY = "gsc_final_day_psionic_parasitism_turn"
     _FINAL_DAY_PSIONIC_SOURCE_KEY = "gsc_final_day_psionic_parasitism_source"
+    _FINAL_DAY_AVENGE_RULE_NAME = "Avenge the Star Children"
+    _FINAL_DAY_AVENGE_ACTIVE_KEY = "gsc_final_day_avenge_mark_active"
+    _FINAL_DAY_AVENGE_OWNER_KEY = "gsc_final_day_avenge_mark_owner"
+    _FINAL_DAY_AVENGE_SOURCE_KEY = "gsc_final_day_avenge_mark_source"
+    _FINAL_DAY_DARTING_ATTACKS_RULE_NAME = "Darting Attacks"
+    _FINAL_DAY_DARTING_ATTACKS_ACTIVE_KEY = "gsc_final_day_darting_attacks_active"
+    _FINAL_DAY_DARTING_ATTACKS_OWNER_KEY = "gsc_final_day_darting_attacks_turn_owner"
+    _FINAL_DAY_DARTING_ATTACKS_TURN_KEY = "gsc_final_day_darting_attacks_turn"
+    _FINAL_DAY_DARTING_ATTACKS_PHASE_KEY = "gsc_final_day_darting_attacks_expires_phase"
+    _FINAL_DAY_DARTING_ATTACKS_SOURCE_KEY = "gsc_final_day_darting_attacks_source"
+    _FINAL_DAY_DIVINE_IMPERATIVE_RULE_NAME = "Divine Imperative"
+    _FINAL_DAY_DIVINE_IMPERATIVE_ACTIVE_KEY = "gsc_final_day_divine_imperative_active"
+    _FINAL_DAY_DIVINE_IMPERATIVE_OWNER_KEY = "gsc_final_day_divine_imperative_turn_owner"
+    _FINAL_DAY_DIVINE_IMPERATIVE_TURN_KEY = "gsc_final_day_divine_imperative_turn"
+    _FINAL_DAY_DIVINE_IMPERATIVE_PHASE_KEY = "gsc_final_day_divine_imperative_expires_phase"
+    _FINAL_DAY_DIVINE_IMPERATIVE_SOURCE_KEY = "gsc_final_day_divine_imperative_source"
+    _FINAL_DAY_DIVINE_IMPERATIVE_TARGET_KEY = "gsc_final_day_divine_imperative_target_id"
+    _FINAL_DAY_DIVINE_IMPERATIVE_BONUS_KEY = "gsc_final_day_divine_imperative_charge_bonus"
+    _FINAL_DAY_HYPERFEROCITY_RULE_NAME = "Hyperferocity"
+    _FINAL_DAY_HYPERFEROCITY_ACTIVE_KEY = "gsc_final_day_hyperferocity_active"
+    _FINAL_DAY_HYPERFEROCITY_OWNER_KEY = "gsc_final_day_hyperferocity_turn_owner"
+    _FINAL_DAY_HYPERFEROCITY_TURN_KEY = "gsc_final_day_hyperferocity_turn"
+    _FINAL_DAY_HYPERFEROCITY_PHASE_KEY = "gsc_final_day_hyperferocity_expires_phase"
+    _FINAL_DAY_HYPERFEROCITY_SOURCE_KEY = "gsc_final_day_hyperferocity_source"
+    _FINAL_DAY_PSI_SURGE_RULE_NAME = "Psi Surge"
+    _FINAL_DAY_PSI_SURGE_ACTIVE_KEY = "gsc_final_day_psi_surge_active"
+    _FINAL_DAY_PSI_SURGE_OWNER_KEY = "gsc_final_day_psi_surge_turn_owner"
+    _FINAL_DAY_PSI_SURGE_TURN_KEY = "gsc_final_day_psi_surge_turn"
+    _FINAL_DAY_PSI_SURGE_SOURCE_KEY = "gsc_final_day_psi_surge_source"
+    _FINAL_DAY_PSI_SURGE_RANGE_BONUS_KEY = "gsc_final_day_psi_surge_range_bonus"
+    _FINAL_DAY_PSI_SURGE_COOLDOWN_KEY = "gsc_final_day_psi_surge_cooldown_active"
     _FINAL_DAY_CATALYST_RULE_NAME = "Catalyst (Aura)"
     _FINAL_DAY_SYNAPTIC_AUGER_RULE_NAME = "Synaptic Auger"
     _FINAL_DAY_SYNAPTIC_AUGER_ACTIVE_KEY = "enhancement_synaptic_auger"
@@ -1659,6 +1690,178 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         source_name = str(sr.get(self._FINAL_DAY_PSIONIC_SOURCE_KEY, "") or self._FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME)
         return int(bonus), source_name
 
+    def final_day_target_within_range_of_friendly_tyranids(
+        self,
+        target_unit,
+        *,
+        range_in: float,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        return self._final_day_target_within_range_of_friendly_tyranids(
+            target_unit,
+            range_in=range_in,
+            game=game,
+            game_map=game_map,
+        )
+
+    def mark_final_day_avenged_enemy(self, target_unit, *, source: str = "") -> bool:
+        if not self.is_final_day():
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        sr[self._FINAL_DAY_AVENGE_ACTIVE_KEY] = True
+        if owner_id:
+            sr[self._FINAL_DAY_AVENGE_OWNER_KEY] = owner_id
+        sr[self._FINAL_DAY_AVENGE_SOURCE_KEY] = str(source or self._FINAL_DAY_AVENGE_RULE_NAME).strip() or self._FINAL_DAY_AVENGE_RULE_NAME
+        target_root.special_rules = sr
+        return True
+
+    def _final_day_is_avenged_enemy(self, target_unit) -> bool:
+        if not self.is_final_day():
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_AVENGE_ACTIVE_KEY)):
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        expected_owner = str(sr.get(self._FINAL_DAY_AVENGE_OWNER_KEY, "") or "")
+        if owner_id and expected_owner and owner_id != expected_owner:
+            return False
+        return True
+
+    def final_day_avenged_enemy_hit_bonus(self, attacker_model, target_unit, *, game=None, weapon_profile=None) -> tuple[int, str]:
+        del game  # Unused; parity with other hooks.
+        del weapon_profile  # Unused; parity with other hooks.
+        if not self.is_final_day():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_root) or self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        if not self._final_day_is_avenged_enemy(target_unit):
+            return 0, ""
+        return 1, self._FINAL_DAY_AVENGE_RULE_NAME
+
+    def final_day_avenged_enemy_wound_bonus(self, attacker_model, target_unit, *, game=None, weapon_profile=None) -> tuple[int, str]:
+        del game  # Unused; parity with other hooks.
+        del weapon_profile  # Unused; parity with other hooks.
+        if not self.is_final_day():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_root) or self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        if not self._final_day_is_avenged_enemy(target_unit):
+            return 0, ""
+        return 1, self._FINAL_DAY_AVENGE_RULE_NAME
+
+    def final_day_darting_attacks_can_shoot_after_fall_back(self, unit, *, game=None) -> bool:
+        root = self._attached_root(unit)
+        if root is None or not self.is_final_day():
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_DARTING_ATTACKS_ACTIVE_KEY)):
+            return False
+        return self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._FINAL_DAY_DARTING_ATTACKS_OWNER_KEY,
+            turn_key=self._FINAL_DAY_DARTING_ATTACKS_TURN_KEY,
+            phase_key=self._FINAL_DAY_DARTING_ATTACKS_PHASE_KEY,
+        )
+
+    def final_day_darting_attacks_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        return self.final_day_darting_attacks_can_shoot_after_fall_back(unit, game=game)
+
+    def _final_day_targets_include_locked_enemy(self, *, sr: dict, target_units=None) -> bool:
+        if not isinstance(sr, dict) or target_units is None:
+            return False
+        expected_id = str(sr.get(self._FINAL_DAY_DIVINE_IMPERATIVE_TARGET_KEY, "") or "")
+        if not expected_id:
+            return False
+        raw_targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        for target in list(raw_targets or []):
+            target_root = self._attached_root(target)
+            if target_root is None:
+                continue
+            if str(get_entity_id(target_root) or "") == expected_id:
+                return True
+        return False
+
+    def final_day_divine_imperative_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        root = self._attached_root(unit)
+        if root is None or not self.is_final_day():
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_DIVINE_IMPERATIVE_ACTIVE_KEY)):
+            return 0, ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._FINAL_DAY_DIVINE_IMPERATIVE_OWNER_KEY,
+            turn_key=self._FINAL_DAY_DIVINE_IMPERATIVE_TURN_KEY,
+            phase_key=self._FINAL_DAY_DIVINE_IMPERATIVE_PHASE_KEY,
+        ):
+            return 0, ""
+        if not self._final_day_targets_include_locked_enemy(sr=sr, target_units=target_units):
+            return 0, ""
+        try:
+            bonus = int(sr.get(self._FINAL_DAY_DIVINE_IMPERATIVE_BONUS_KEY, 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get(self._FINAL_DAY_DIVINE_IMPERATIVE_SOURCE_KEY, "") or self._FINAL_DAY_DIVINE_IMPERATIVE_RULE_NAME).strip()
+        return int(bonus), source or self._FINAL_DAY_DIVINE_IMPERATIVE_RULE_NAME
+
+    def final_day_divine_imperative_reroll_charge_applies(self, unit, *, target_units=None, game=None) -> bool:
+        bonus, _source = self.final_day_divine_imperative_charge_roll_bonus(
+            unit,
+            target_units=target_units,
+            game=game,
+        )
+        return bool(int(bonus or 0) > 0)
+
+    def _final_day_catalyst_range_for_unit(self, unit, *, game=None) -> float:
+        root = self._attached_root(unit)
+        if root is None or not self.is_final_day():
+            return 6.0
+        sr = getattr(root, "special_rules", None)
+        base_range = 6.0
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_PSI_SURGE_ACTIVE_KEY)):
+            return base_range
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._FINAL_DAY_PSI_SURGE_OWNER_KEY,
+            turn_key=self._FINAL_DAY_PSI_SURGE_TURN_KEY,
+            phase_key="",
+        ):
+            return base_range
+        try:
+            bonus = float(sr.get(self._FINAL_DAY_PSI_SURGE_RANGE_BONUS_KEY, 3.0) or 3.0)
+        except (TypeError, ValueError):
+            bonus = 3.0
+        return float(base_range + max(0.0, bonus))
+
     def final_day_catalyst_hit_bonus(self, attacker_model, target_unit, *, game=None, weapon_profile=None) -> tuple[int, str]:
         del weapon_profile  # Unused; parity with other hooks.
         if not self.is_final_day():
@@ -1678,13 +1881,17 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if self._unit_is_tyranids(attacker_root):
             return 0, ""
-        if self._final_day_target_within_range_of_friendly_tyranids(
-            target_root,
-            range_in=6.0,
-            game=game,
-            game_map=game_map,
-        ):
-            return 1, self._FINAL_DAY_CATALYST_RULE_NAME
+        for tyr_root in self._iter_unit_roots():
+            if not self._unit_is_tyranids(tyr_root):
+                continue
+            if not self._unit_is_on_battlefield(tyr_root):
+                continue
+            try:
+                distance = float(game_map.get_distance_between_units(tyr_root, target_root))
+            except (TypeError, ValueError):
+                continue
+            if distance <= self._final_day_catalyst_range_for_unit(tyr_root, game=game):
+                return 1, self._FINAL_DAY_CATALYST_RULE_NAME
         return 0, ""
 
     def final_day_inhuman_integration_sustained_hits_value(
@@ -1737,6 +1944,41 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         ).strip() or self._FINAL_DAY_INHUMAN_INTEGRATION_RULE_NAME
         return int(sustained_hits_value), source_name
 
+    def final_day_hyperferocity_wound_reroll_mode(self, unit, target_unit, *, game=None) -> tuple[str, str]:
+        root = self._attached_root(unit)
+        target_root = self._attached_root(target_unit)
+        if root is None or target_root is None or not self.is_final_day():
+            return "", ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_HYPERFEROCITY_ACTIVE_KEY)):
+            return "", ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._FINAL_DAY_HYPERFEROCITY_OWNER_KEY,
+            turn_key=self._FINAL_DAY_HYPERFEROCITY_TURN_KEY,
+            phase_key=self._FINAL_DAY_HYPERFEROCITY_PHASE_KEY,
+        ):
+            return "", ""
+        source = str(sr.get(self._FINAL_DAY_HYPERFEROCITY_SOURCE_KEY, "") or self._FINAL_DAY_HYPERFEROCITY_RULE_NAME).strip()
+        if self._final_day_target_within_range_of_friendly_tyranids(target_root, range_in=6.0, game=game):
+            return "full", source or self._FINAL_DAY_HYPERFEROCITY_RULE_NAME
+        return "ones", source or self._FINAL_DAY_HYPERFEROCITY_RULE_NAME
+
+    def final_day_psi_surge_on_cooldown(self, *, game=None) -> bool:
+        if not self.is_final_day():
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        for root in self._iter_unit_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_PSI_SURGE_COOLDOWN_KEY)):
+                continue
+            effect_owner = str(sr.get(self._FINAL_DAY_PSI_SURGE_OWNER_KEY, "") or "")
+            if owner_id and effect_owner and owner_id != effect_owner:
+                continue
+            return True
+        return False
+
     def _clear_final_day_psionic_bonus(self, unit) -> None:
         root = self._attached_root(unit)
         if root is None:
@@ -1750,6 +1992,36 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             self._FINAL_DAY_PSIONIC_OWNER_KEY,
             self._FINAL_DAY_PSIONIC_TURN_KEY,
             self._FINAL_DAY_PSIONIC_SOURCE_KEY,
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_final_day_psi_surge(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            self._FINAL_DAY_PSI_SURGE_ACTIVE_KEY,
+            self._FINAL_DAY_PSI_SURGE_RANGE_BONUS_KEY,
+            self._FINAL_DAY_PSI_SURGE_SOURCE_KEY,
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_final_day_psi_surge_cooldown(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            self._FINAL_DAY_PSI_SURGE_COOLDOWN_KEY,
+            self._FINAL_DAY_PSI_SURGE_OWNER_KEY,
+            self._FINAL_DAY_PSI_SURGE_TURN_KEY,
         ):
             sr.pop(key, None)
         root.special_rules = sr
@@ -2271,7 +2543,7 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
     def cleanup_on_phase_start(self, phase, active_player) -> None:
         phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
-        if not self.is_final_day() or phase_name != "MOVEMENT_PHASE":
+        if not self.is_final_day() or phase_name not in {"MOVEMENT_PHASE", "COMMAND_PHASE"}:
             return
         owner_id = str(getattr(active_player, "id", "") or "")
         game = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
@@ -2292,6 +2564,20 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             if current_turn and effect_turn and current_turn <= effect_turn:
                 continue
             self._clear_final_day_psionic_bonus(root)
+        if phase_name == "COMMAND_PHASE":
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_PSI_SURGE_ACTIVE_KEY)):
+                    continue
+                if owner_id and str(sr.get(self._FINAL_DAY_PSI_SURGE_OWNER_KEY, "") or "") not in ("", owner_id):
+                    continue
+                try:
+                    effect_turn = int(sr.get(self._FINAL_DAY_PSI_SURGE_TURN_KEY, 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                if current_turn and effect_turn and current_turn <= effect_turn:
+                    continue
+                self._clear_final_day_psi_surge(root)
 
     def cleanup_on_phase_end(self, phase, active_player) -> None:
         phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
@@ -2336,6 +2622,79 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     if current_turn and effect_turn and effect_turn != current_turn:
                         continue
                     self._clear_integrated_tactics_target_mark(target_root)
+
+        if self.is_final_day():
+            owner_id = str(getattr(active_player, "id", "") or "")
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if phase_name == "FIGHT_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._FINAL_DAY_HYPERFEROCITY_ACTIVE_KEY,
+                    phase_key=self._FINAL_DAY_HYPERFEROCITY_PHASE_KEY,
+                    turn_key=self._FINAL_DAY_HYPERFEROCITY_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._FINAL_DAY_HYPERFEROCITY_ACTIVE_KEY,
+                            self._FINAL_DAY_HYPERFEROCITY_OWNER_KEY,
+                            self._FINAL_DAY_HYPERFEROCITY_TURN_KEY,
+                            self._FINAL_DAY_HYPERFEROCITY_PHASE_KEY,
+                            self._FINAL_DAY_HYPERFEROCITY_SOURCE_KEY,
+                        ),
+                    )
+                if phase_name in {"SHOOTING_PHASE", "CHARGE_PHASE"} and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._FINAL_DAY_DARTING_ATTACKS_ACTIVE_KEY,
+                    phase_key=self._FINAL_DAY_DARTING_ATTACKS_PHASE_KEY,
+                    turn_key=self._FINAL_DAY_DARTING_ATTACKS_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._FINAL_DAY_DARTING_ATTACKS_ACTIVE_KEY,
+                            self._FINAL_DAY_DARTING_ATTACKS_OWNER_KEY,
+                            self._FINAL_DAY_DARTING_ATTACKS_TURN_KEY,
+                            self._FINAL_DAY_DARTING_ATTACKS_PHASE_KEY,
+                            self._FINAL_DAY_DARTING_ATTACKS_SOURCE_KEY,
+                        ),
+                    )
+                if phase_name == "CHARGE_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._FINAL_DAY_DIVINE_IMPERATIVE_ACTIVE_KEY,
+                    phase_key=self._FINAL_DAY_DIVINE_IMPERATIVE_PHASE_KEY,
+                    turn_key=self._FINAL_DAY_DIVINE_IMPERATIVE_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_ACTIVE_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_OWNER_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_TURN_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_PHASE_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_SOURCE_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_TARGET_KEY,
+                            self._FINAL_DAY_DIVINE_IMPERATIVE_BONUS_KEY,
+                        ),
+                    )
+                if phase_name == "COMMAND_PHASE" and bool(sr.get(self._FINAL_DAY_PSI_SURGE_COOLDOWN_KEY)):
+                    if owner_id and str(sr.get(self._FINAL_DAY_PSI_SURGE_OWNER_KEY, "") or "") not in ("", owner_id):
+                        continue
+                    try:
+                        effect_turn = int(sr.get(self._FINAL_DAY_PSI_SURGE_TURN_KEY, 0) or 0)
+                    except (TypeError, ValueError):
+                        effect_turn = 0
+                    if current_turn and effect_turn and current_turn <= effect_turn:
+                        continue
+                    self._clear_final_day_psi_surge_cooldown(root)
 
         if self.is_biosanctic_broodsurge():
             for root in self._iter_unit_roots():

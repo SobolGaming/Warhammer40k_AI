@@ -8015,6 +8015,40 @@ class ActionsMovementMixin:
             return None
         return {"wound_bonus": int(wound_bonus), "source": source}
 
+    def _gsc_final_day_hyperferocity_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_final_day_hyperferocity_active")):
+            return None
+        source = str(sr.get("gsc_final_day_hyperferocity_source", "") or "HYPERFEROCITY").strip() or "HYPERFEROCITY"
+        if game is None:
+            return {"source": source}
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("gsc_final_day_hyperferocity_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("gsc_final_day_hyperferocity_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("gsc_final_day_hyperferocity_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"source": source}
+
     def _houndpack_hungry_for_combat_context(self, *, game=None) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -9603,6 +9637,22 @@ class ActionsMovementMixin:
         get_parent_army = getattr(root, "get_parent_army", None)
         army = get_parent_army() if callable(get_parent_army) else None
         try:
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            bonus_fn = getattr(gsc_mgr, "final_day_avenged_enemy_wound_bonus", None) if gsc_mgr is not None else None
+            if callable(bonus_fn) and attacker_model is not None and target is not None:
+                bonus, source = bonus_fn(
+                    attacker_model,
+                    target,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if int(bonus or 0):
+                    source_name = str(source or "Avenge the Star Children").strip() or "Avenge the Star Children"
+                    mods["wound"] += int(bonus)
+                    wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+        except Exception:
+            pass
+        try:
             csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
             bonus_fn = getattr(csm_mgr, "renegade_warband_vengeful_destruction_wound_bonus", None) if csm_mgr is not None else None
             if callable(bonus_fn) and attacker_model is not None and target is not None:
@@ -9794,6 +9844,23 @@ class ActionsMovementMixin:
                 for value in list(context.get("reroll_wound_values", ()) or ()):
                     reroll_wound_values.add(int(value))
                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of {int(value)}")
+        context = self._gsc_final_day_hyperferocity_context(game=game_local)
+        if isinstance(context, dict) and atype in ("any", "melee") and target is not None:
+            try:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            except Exception:
+                army = None
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            reroll_fn = getattr(gsc_mgr, "final_day_hyperferocity_wound_reroll_mode", None) if gsc_mgr is not None else None
+            if callable(reroll_fn):
+                mode, source = reroll_fn(root, target, game=game_local)
+                source_name = str(source or context.get("source", "") or "HYPERFEROCITY").strip() or "HYPERFEROCITY"
+                if str(mode).strip().lower() == "full":
+                    mods["reroll_wound_full"] = True
+                    reroll_wound_full_reasons.append(f"{source_name}: re-roll Wound roll")
+                elif str(mode).strip().lower() == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(f"{source_name}: re-roll Wound rolls of 1")
 
         tau_reroll_mode, tau_reroll_source = ActionsMovementMixin._tau_multisensory_scanning_reroll_mode(self, atype)
         if tau_reroll_mode == "full":
@@ -12880,6 +12947,15 @@ class ActionsMovementMixin:
         if callable(xenocreed_reroll_charge):
             if bool(xenocreed_reroll_charge(self)):
                 return True
+        final_day_reroll_charge = (
+            getattr(gsc_mgr, "final_day_divine_imperative_reroll_charge_applies", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(final_day_reroll_charge):
+            targets = [target_unit] if target_unit is not None else None
+            if bool(final_day_reroll_charge(self, target_units=targets, game=game)):
+                return True
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         cultist_brand_charge = (
             getattr(csm_mgr, "chaos_cult_cultists_brand_reroll_charge_applies", None)
@@ -13406,6 +13482,16 @@ class ActionsMovementMixin:
             bonus, source = gsc_stimulated_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Stimulated Bio-Surge")))
+        gsc_final_day_bonus_fn = (
+            getattr(gsc_mgr, "final_day_divine_imperative_charge_roll_bonus", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(gsc_final_day_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = gsc_final_day_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Divine Imperative")))
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         csm_bonus_fn = (
             getattr(csm_mgr, "renegade_warband_empyric_symbiote_charge_roll_bonus", None)
@@ -19584,6 +19670,16 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "final_day_darting_attacks_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
             apply_fn = getattr(mgr, "martial_philosopher_can_shoot_after_fall_back", None) if mgr is not None else None
             if callable(apply_fn):
@@ -20284,6 +20380,16 @@ class ActionsMovementMixin:
             if callable(pactbound_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(pactbound_apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "final_day_darting_attacks_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

@@ -12716,7 +12716,15 @@ class WargearProfile:
             if bonus:
                 source_name = str(source or "Psionic Parasitism").strip() or "Psionic Parasitism"
                 _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
-        # Genestealer Cults: Final Day (Catalyst Aura) GSC attacks get +1 to hit vs enemies within 6" of friendly TYRANIDS.
+        # Genestealer Cults: Final Day (Avenge the Star Children) GSC attacks get +1 to hit vs the marked enemy.
+        avenge_bonus_fn = getattr(gsc_mgr, "final_day_avenged_enemy_hit_bonus", None) if gsc_mgr is not None else None
+        if callable(avenge_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = avenge_bonus_fn(attacker, target, game=game, weapon_profile=self)
+            if bonus:
+                source_name = str(source or "Avenge the Star Children").strip() or "Avenge the Star Children"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        # Genestealer Cults: Final Day (Catalyst Aura) GSC attacks get +1 to hit vs enemies near friendly TYRANIDS.
         catalyst_bonus_fn = getattr(gsc_mgr, "final_day_catalyst_hit_bonus", None) if gsc_mgr is not None else None
         if callable(catalyst_bonus_fn):
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None

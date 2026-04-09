@@ -125,6 +125,20 @@ class GenestealerCultsStratagemMixin:
             return faction_id == "GC" and bool(has_detachment("Biosanctic Broodsurge"))
         return False
 
+    def _is_final_day_detachment(self) -> bool:
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_final_day", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker())
+        army = self._gsc_army()
+        if army is None:
+            return False
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Final Day"))
+        return False
+
     @staticmethod
     def _gsc_is_alive(unit: Any) -> bool:
         if unit is None:
@@ -181,6 +195,26 @@ class GenestealerCultsStratagemMixin:
         if callable(has_any):
             try:
                 if bool(has_any("ASTRA MILITARUM")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        return False
+
+    def _gsc_is_tyranids_unit(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_tyranids", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("TYRANIDS")):
                     return True
             except (AttributeError, TypeError, ValueError):
                 pass
@@ -531,6 +565,109 @@ class GenestealerCultsStratagemMixin:
                         continue
                 except (AttributeError, TypeError, ValueError):
                     continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_final_day_tyranids_candidates(self) -> List[Any]:
+        if not self._is_final_day_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_tyranids_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_final_day_genestealer_cults_candidates(self, *, phase_key: str = "") -> List[Any]:
+        if not self._is_final_day_detachment():
+            return []
+        normalized_phase = self._gsc_phase_key_from_name(phase_key)
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if self._gsc_is_tyranids_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if normalized_phase == "CHARGE_PHASE" and self._gsc_has_declared_charge_this_round(root):
+                continue
+            if normalized_phase == "FIGHT_PHASE" and self._gsc_has_fought_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_final_day_enemy_near_friendly_tyranids_candidates(self) -> List[Any]:
+        if not self._is_final_day_detachment():
+            return []
+        mgr = self._gsc_detachment_mgr()
+        in_range_fn = getattr(mgr, "final_day_target_within_range_of_friendly_tyranids", None) if mgr is not None else None
+        if not callable(in_range_fn):
+            return []
+        out: List[Any] = []
+        for enemy in self._gsc_enemy_on_battlefield_candidates():
+            try:
+                if bool(in_range_fn(enemy, range_in=1.0, game=self.game)):
+                    out.append(enemy)
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_final_day_resistance_tunnels_candidates(self) -> List[Any]:
+        if not self._is_final_day_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not (self._gsc_is_genestealer_cults_unit(root) or self._gsc_is_tyranids_unit(root)):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if self._gsc_is_within_engagement_range_of_enemy(root):
+                continue
             out.append(root)
         return sorted(out, key=self._gsc_sort_key)
 
@@ -1180,6 +1317,136 @@ class GenestealerCultsStratagemMixin:
             "attacker_unit": enemy_root,
         }
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_final_day_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_final_day_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {
+            "COMMAND_PHASE",
+            "MOVEMENT_PHASE",
+            "SHOOTING_PHASE",
+            "CHARGE_PHASE",
+            "FIGHT_PHASE",
+        }:
+            return
+        stratagem = self.get_by_name("PSI SURGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        mgr = self._gsc_detachment_mgr()
+        cooldown_fn = getattr(mgr, "final_day_psi_surge_on_cooldown", None) if mgr is not None else None
+        if callable(cooldown_fn) and bool(cooldown_fn(game=game)):
+            return
+        candidates = self._gsc_final_day_tyranids_candidates()
+        if not candidates or self._gsc_reaction_exists("phase_start", stratagem.name):
+            return
+        phase_label = self._gsc_phase_label(phase_key)
+        payload = {
+            "event": "phase_start",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_final_day_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_final_day_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("RESISTANCE TUNNELS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_final_day_resistance_tunnels_candidates()
+        if not candidates or self._gsc_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_final_day_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        destroyed_by_unit: Any = None,
+        **_kwargs,
+    ) -> None:
+        if not self._is_final_day_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None or unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            return
+        destroyed_root = self._gsc_root(unit)
+        enemy_root = self._gsc_root(destroyed_by_unit) if destroyed_by_unit is not None else None
+        if destroyed_root is None or enemy_root is None:
+            return
+        if not self._gsc_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._gsc_is_tyranids_unit(destroyed_root):
+            return
+        if not self._gsc_is_character_unit(destroyed_root):
+            return
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            return
+        if not self._gsc_is_alive(enemy_root):
+            return
+        stratagem = self.get_by_name("AVENGE THE STAR CHILDREN")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        if self._gsc_reaction_exists("unit_destroyed", stratagem.name):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "destroyed_unit": destroyed_root,
+                "enemy_unit": enemy_root,
+                "destroyed_by_unit": enemy_root,
+                "candidates": [destroyed_root],
+            },
+            use_timer=False,
+        )
 
     def _gsc_can_use_biosanctic_evasive_vanguard(self) -> bool:
         if not self._is_biosanctic_broodsurge_detachment():
@@ -2633,6 +2900,345 @@ class GenestealerCultsStratagemMixin:
         )
         return True
 
+    def _use_genestealer_cults_final_day_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_final_day_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "AVENGE THE STAR CHILDREN":
+            return self._use_genestealer_cults_avenge_the_star_children(stratagem, **kwargs)
+        if name_u == "DARTING ATTACKS":
+            return self._use_genestealer_cults_darting_attacks(stratagem, **kwargs)
+        if name_u == "DIVINE IMPERATIVE":
+            return self._use_genestealer_cults_divine_imperative(stratagem, **kwargs)
+        if name_u == "HYPERFEROCITY":
+            return self._use_genestealer_cults_hyperferocity(stratagem, **kwargs)
+        if name_u == "PSI SURGE":
+            return self._use_genestealer_cults_psi_surge(stratagem, **kwargs)
+        if name_u == "RESISTANCE TUNNELS":
+            return self._use_genestealer_cults_resistance_tunnels(stratagem, **kwargs)
+        return None
+
+    def _use_genestealer_cults_avenge_the_star_children(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: not opponent's Shooting phase")
+            return False
+
+        destroyed_root = self._gsc_root(context.get("destroyed_unit"))
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("destroyed_by_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        if destroyed_root is None:
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: missing destroyed TYRANIDS CHARACTER unit")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: missing destroying enemy unit")
+            return False
+        if not self._gsc_owned_by_player(destroyed_root, self.player):
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: destroyed unit is not yours")
+            return False
+        if not self._gsc_is_tyranids_unit(destroyed_root) or not self._gsc_is_character_unit(destroyed_root):
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: target must be your destroyed TYRANIDS CHARACTER unit")
+            return False
+        if self._gsc_is_alive(destroyed_root):
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: target unit was not destroyed")
+            return False
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: destroying unit must be an enemy unit")
+            return False
+
+        if not self._gsc_spend_cp(stratagem):
+            return False
+        mgr = self._gsc_detachment_mgr()
+        mark_fn = getattr(mgr, "mark_final_day_avenged_enemy", None) if mgr is not None else None
+        if not callable(mark_fn) or not bool(mark_fn(enemy_root, source=str(getattr(stratagem, "name", "") or ""))):
+            logger.error("ERROR: AVENGE THE STAR CHILDREN: failed to mark the destroying enemy unit")
+            return False
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: AVENGE THE STAR CHILDREN: %s is marked for friendly GENESTEALER CULTS attacks until end of battle.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_genestealer_cults_darting_attacks(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key not in {"SHOOTING_PHASE", "CHARGE_PHASE"}:
+            logger.error("ERROR: DARTING ATTACKS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: DARTING ATTACKS: not your phase")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_final_day_tyranids_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: DARTING ATTACKS: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: DARTING ATTACKS: target must be your TYRANIDS unit")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_final_day_darting_attacks_active"] = True
+        sr["gsc_final_day_darting_attacks_expires_phase"] = phase_key
+        sr["gsc_final_day_darting_attacks_source"] = str(getattr(stratagem, "name", "DARTING ATTACKS") or "DARTING ATTACKS")
+        if owner:
+            sr["gsc_final_day_darting_attacks_turn_owner"] = owner
+        if turn:
+            sr["gsc_final_day_darting_attacks_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: DARTING ATTACKS: %s can %s after Falling Back until end of %s.",
+            getattr(target_root, "name", "Unit"),
+            "shoot" if phase_key == "SHOOTING_PHASE" else "declare a charge",
+            self._gsc_phase_label(phase_key),
+        )
+        return True
+
+    def _use_genestealer_cults_divine_imperative(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key != "CHARGE_PHASE":
+            logger.error("ERROR: DIVINE IMPERATIVE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: DIVINE IMPERATIVE: not your Charge phase")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_final_day_genestealer_cults_candidates(phase_key="CHARGE_PHASE")
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: DIVINE IMPERATIVE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: DIVINE IMPERATIVE: target must be your GENESTEALER CULTS unit that has not declared a charge")
+            return False
+
+        enemy_candidates = self._gsc_resolve_unit_list(context.get("enemy_candidates"))
+        if not enemy_candidates:
+            enemy_candidates = self._gsc_final_day_enemy_near_friendly_tyranids_candidates()
+        enemy_root = self._gsc_root(
+            context.get("enemy_unit")
+            or context.get("target_enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: DIVINE IMPERATIVE: missing enemy target unit")
+                return False
+        if not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: DIVINE IMPERATIVE: enemy target must be within Engagement Range of one or more friendly TYRANIDS units")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_final_day_divine_imperative_active"] = True
+        sr["gsc_final_day_divine_imperative_expires_phase"] = "CHARGE_PHASE"
+        sr["gsc_final_day_divine_imperative_source"] = str(
+            getattr(stratagem, "name", "DIVINE IMPERATIVE") or "DIVINE IMPERATIVE"
+        )
+        sr["gsc_final_day_divine_imperative_target_id"] = self._gsc_sort_key(enemy_root)
+        sr["gsc_final_day_divine_imperative_charge_bonus"] = 1
+        if owner:
+            sr["gsc_final_day_divine_imperative_turn_owner"] = owner
+        if turn:
+            sr["gsc_final_day_divine_imperative_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: DIVINE IMPERATIVE: %s gains +1 to Charge rolls and can re-roll charges when targeting %s this phase.",
+            getattr(target_root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_genestealer_cults_hyperferocity(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key != "FIGHT_PHASE":
+            logger.error("ERROR: HYPERFEROCITY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_final_day_genestealer_cults_candidates(phase_key="FIGHT_PHASE")
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: HYPERFEROCITY: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: HYPERFEROCITY: target must be your GENESTEALER CULTS unit that has not fought")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_final_day_hyperferocity_active"] = True
+        sr["gsc_final_day_hyperferocity_expires_phase"] = "FIGHT_PHASE"
+        sr["gsc_final_day_hyperferocity_source"] = str(getattr(stratagem, "name", "HYPERFEROCITY") or "HYPERFEROCITY")
+        if owner:
+            sr["gsc_final_day_hyperferocity_turn_owner"] = owner
+        if turn:
+            sr["gsc_final_day_hyperferocity_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: HYPERFEROCITY: %s re-rolls Wound rolls of 1 in melee this phase, upgrading to full re-rolls against enemies near friendly TYRANIDS.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_psi_surge(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key not in {"COMMAND_PHASE", "MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"}:
+            logger.error("ERROR: PSI SURGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        mgr = self._gsc_detachment_mgr()
+        cooldown_fn = getattr(mgr, "final_day_psi_surge_on_cooldown", None) if mgr is not None else None
+        if callable(cooldown_fn) and bool(cooldown_fn(game=game)):
+            logger.error("ERROR: PSI SURGE: stratagem is still on cooldown until the end of your next Command phase")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_final_day_tyranids_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PSI SURGE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: PSI SURGE: target must be your TYRANIDS unit")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_final_day_psi_surge_active"] = True
+        sr["gsc_final_day_psi_surge_cooldown_active"] = True
+        sr["gsc_final_day_psi_surge_range_bonus"] = 3.0
+        sr["gsc_final_day_psi_surge_source"] = str(getattr(stratagem, "name", "PSI SURGE") or "PSI SURGE")
+        if owner:
+            sr["gsc_final_day_psi_surge_turn_owner"] = owner
+        if turn:
+            sr["gsc_final_day_psi_surge_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: PSI SURGE: %s increases the range of its Catalyst ability by 3\" until the start of your next Command phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_resistance_tunnels(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RESISTANCE TUNNELS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: RESISTANCE TUNNELS: not opponent's Fight phase")
+            return False
+
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_final_day_resistance_tunnels_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RESISTANCE TUNNELS: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: RESISTANCE TUNNELS: target must be your GENESTEALER CULTS or TYRANIDS unit not within Engagement Range")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._gsc_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "RESISTANCE TUNNELS") or "RESISTANCE TUNNELS"),
+        ):
+            logger.error("ERROR: RESISTANCE TUNNELS: failed to place target into Strategic Reserves")
+            return False
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RESISTANCE TUNNELS: %s enters Strategic Reserves.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
     def _use_genestealer_cults_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         host_result = self._use_genestealer_cults_host_of_ascension_stratagem(stratagem, **kwargs)
         if host_result is not None:
@@ -2640,6 +3246,9 @@ class GenestealerCultsStratagemMixin:
         biosanctic_result = self._use_genestealer_cults_biosanctic_broodsurge_stratagem(stratagem, **kwargs)
         if biosanctic_result is not None:
             return biosanctic_result
+        final_day_result = self._use_genestealer_cults_final_day_stratagem(stratagem, **kwargs)
+        if final_day_result is not None:
+            return final_day_result
         return self._use_genestealer_cults_brood_brother_auxilia_stratagem(stratagem, **kwargs)
 
     def _use_genestealer_cults_host_of_ascension_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

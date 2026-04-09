@@ -2415,6 +2415,100 @@ _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FINAL_DAY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009828004": StratagemToolDescriptor(
+        stratagem_id="000009828004",
+        name="AVENGE THE STAR CHILDREN",
+        timing="opponent_shooting_or_fight_phase_after_enemy_unit_shoots_or_fights",
+        target="destroyed_friendly_tyranids_character_unit_and_destroying_enemy_unit",
+        duration="until_end_of_battle",
+        effect="mark_destroying_enemy_for_gsc_hit_and_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "requires_destroyed_friendly_keywords_any": ["TYRANIDS", "CHARACTER"],
+            "hit_roll_bonus": 1,
+            "wound_roll_bonus": 1,
+        },
+    ),
+    "000009828006": StratagemToolDescriptor(
+        stratagem_id="000009828006",
+        name="DARTING ATTACKS",
+        timing="shooting_or_charge_phase",
+        target="friendly_tyranids_unit",
+        duration="until_end_of_phase",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["TYRANIDS"],
+            "allow_shoot_after_fall_back": True,
+            "allow_charge_after_fall_back": True,
+        },
+    ),
+    "000009828005": StratagemToolDescriptor(
+        stratagem_id="000009828005",
+        name="DIVINE IMPERATIVE",
+        timing="charge_phase_before_unit_declares_charge",
+        target="friendly_genestealer_cults_unit_not_yet_declared_charge_and_enemy_engaged_by_friendly_tyranids",
+        duration="until_end_of_phase",
+        effect="target_locked_charge_bonus_and_reroll",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["GENESTEALER CULTS"],
+            "charge_roll_bonus": 1,
+            "charge_reroll": True,
+            "target_lock": True,
+            "requires_enemy_within_engagement_of_friendly_tyranids": True,
+        },
+    ),
+    "000009828002": StratagemToolDescriptor(
+        stratagem_id="000009828002",
+        name="HYPERFEROCITY",
+        timing="fight_phase_on_select_to_fight",
+        target="friendly_genestealer_cults_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="reroll_wound_ones_or_full_near_friendly_tyranids",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["GENESTEALER CULTS"],
+            "attack_type": "melee",
+            "reroll_wound_values": [1],
+            "full_reroll_range_from_friendly_tyranids": 6,
+        },
+    ),
+    "000009828003": StratagemToolDescriptor(
+        stratagem_id="000009828003",
+        name="PSI SURGE",
+        timing="start_of_any_phase",
+        target="friendly_tyranids_unit",
+        duration="until_start_of_your_next_command_phase_and_stratagem_locked_until_end_of_it",
+        effect="increase_catalyst_aura_range_and_lock_stratagem",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["TYRANIDS"],
+            "aura_range_bonus": 3,
+            "stratagem_lockout_until_end_of_next_command_phase": True,
+        },
+    ),
+    "000009828007": StratagemToolDescriptor(
+        stratagem_id="000009828007",
+        name="RESISTANCE TUNNELS",
+        timing="end_of_opponent_fight_phase",
+        target="friendly_genestealer_cults_or_tyranids_unit_not_within_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["GENESTEALER CULTS", "TYRANIDS"],
+            "require_not_engagement": True,
+            "reserve_status": "strategic_reserves",
+        },
+    ),
+}
+
+_FINAL_DAY_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FINAL_DAY_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009848002": StratagemToolDescriptor(
         stratagem_id="000009848002",
@@ -12651,6 +12745,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FINAL_DAY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13071,6 +13168,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)
         or _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME.get(key)
+        or _FINAL_DAY_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)

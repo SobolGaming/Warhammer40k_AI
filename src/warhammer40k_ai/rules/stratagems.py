@@ -99,6 +99,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DISDAIN FOR THE WEAK",
     "DISTILLERS OF FEAR",
     "DRAW THEM OUT",
+    "DARTING ATTACKS",
     "ARCANE FOCUS",
     "ASSASSIN BEASTS",
     "FROM ALL SIDES",
@@ -115,6 +116,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SULPHUROUS VEIL",
     "HARDENED KILLERS",
     "HORRIFIC INCURSION",
+    "HYPERFEROCITY",
     "HYPER-METABOLIC VIGOUR",
     "LET THE GALAXY BURN",
     "MASTERS ARE WATCHING",
@@ -135,6 +137,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERRUN",
     "PRESERVATION IMPERATIVE",
     "SAINTLY PAROXYSM",
+    "PSI SURGE",
+    "DIVINE IMPERATIVE",
+    "AVENGE THE STAR CHILDREN",
+    "RESISTANCE TUNNELS",
     "REINFORCED HIVE NODE",
     "IRRESISTIBLE WILL",
     "INVISIBLE HUNTER",
@@ -2405,6 +2411,7 @@ class StratagemManager(
             "YOUR TIME IS NIGH",
             "FINAL REDEMPTION",
             "AVENGE THE MASTERS!",
+            "AVENGE THE STAR CHILDREN",
             "REGIMENTAL REINFORCEMENTS",
             "REINFORCEMENTS!",
             "WRETCHED MASSES",
@@ -2642,6 +2649,7 @@ class StratagemManager(
             "EMP GRENADES",
             "DEADLY DECEIVERS",
             "FIGHTING SHADOWS",
+            "PSI SURGE",
             "BIO-HORROR REVELATION",
         }
         fight_reaction_names = {
@@ -2805,6 +2813,7 @@ class StratagemManager(
             "SCOUTING OUTRIDERS",
             "RAPID EMBARKATION",
             "RETURN TO THE SHADOWS",
+            "RESISTANCE TUNNELS",
             "COGITATED NEED",
             "SECURE POSITIONS",
             "WALL OF MIRRORS",
@@ -9491,6 +9500,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_genestealer_cults_final_day_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_thousand_sons_grand_coven_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
@@ -10850,6 +10863,10 @@ class StratagemManager(
             raise
         try:
             self._queue_genestealer_cults_host_of_ascension_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_final_day_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -18021,6 +18038,13 @@ class StratagemManager(
             raise
         try:
             self._queue_genestealer_cults_brood_brother_auxilia_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_final_day_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

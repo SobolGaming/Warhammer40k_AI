@@ -10,6 +10,7 @@ from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -154,6 +155,20 @@ def _bearer_model(unit: Unit):
             is_alive = is_alive()
         if bool(is_alive):
             return model
+    return None
+
+
+def _stratagem_manager(player: Player):
+    manager = getattr(player, "stratagems", None)
+    assert manager is not None
+    return manager
+
+
+def _pending_reaction_by_name(stratagems, name: str):
+    target = str(name or "").strip().upper()
+    for reaction in list(getattr(stratagems, "_pending_reactions", []) or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == target:
+            return reaction
     return None
 
 
@@ -661,3 +676,351 @@ def test_inhuman_integration_grants_sustained_hits_when_target_is_near_friendly_
         game_map=game.map,
     )
     assert int(dead_bearer_bonus.get("sustained_hits_value", 0) or 0) == 0
+
+
+def test_final_day_stratagem_descriptors_exist():
+    expected = {
+        "000009828004": ("AVENGE THE STAR CHILDREN", "mark_destroying_enemy_for_gsc_hit_and_wound_bonus"),
+        "000009828006": ("DARTING ATTACKS", "shoot_and_charge_after_fall_back"),
+        "000009828005": ("DIVINE IMPERATIVE", "target_locked_charge_bonus_and_reroll"),
+        "000009828002": ("HYPERFEROCITY", "reroll_wound_ones_or_full_near_friendly_tyranids"),
+        "000009828003": ("PSI SURGE", "increase_catalyst_aura_range_and_lock_stratagem"),
+        "000009828007": ("RESISTANCE TUNNELS", "enter_strategic_reserves"),
+    }
+
+    for stratagem_id, (name, effect) in expected.items():
+        desc = get_stratagem_tool_descriptor(stratagem_id=stratagem_id)
+        assert desc is not None
+        assert str(getattr(desc, "name", "") or "") == name
+        assert str(getattr(desc, "effect", "") or "") == effect
+
+
+def test_avenge_the_star_children_marks_enemy_and_grants_hit_and_wound_bonuses():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    destroyed_tyranid = _make_unit(
+        "Winged Tyranid Prime",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "SYNAPSE", "CHARACTER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    gsc_attacker = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Shooters", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(destroyed_tyranid)
+    gsc_army.add_unit(gsc_attacker)
+    enemy_army.add_unit(enemy)
+    game.map.units = [destroyed_tyranid, gsc_attacker, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    _stratagem_manager(gsc_player).refresh_available()
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+
+    destroyed_tyranid.models = []
+    game.event_system.publish("unit_destroyed", unit=destroyed_tyranid, destroyed_by_unit=enemy)
+
+    manager = _stratagem_manager(gsc_player)
+    pending = _pending_reaction_by_name(manager, "AVENGE THE STAR CHILDREN")
+    assert pending is not None
+
+    used = manager.use(
+        "AVENGE THE STAR CHILDREN",
+        destroyed_unit=destroyed_tyranid,
+        enemy_unit=enemy,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert int(gsc_player.command_points or 0) == 2
+
+    profile = _make_ranged_profile(name="Autogun")
+    hit_result = profile._hit_target_with_tracking(
+        enemy,
+        gsc_attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert any("Avenge the Star Children" in str(item or "") for item in list(hit_result.get("modifiers", []) or []))
+
+    wound_result = profile._wound_target_with_tracking(
+        enemy,
+        gsc_attacker.models[0],
+        dict(hit_result, hit=True),
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert any("Avenge the Star Children" in str(item or "") for item in list(wound_result.get("modifiers", []) or []))
+
+
+def test_darting_attacks_allows_shooting_and_charging_after_fall_back_in_selected_phase():
+    game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game()
+    tyranid_unit = _make_unit(
+        "Raveners",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    gsc_army.add_unit(tyranid_unit)
+    game.map.units = [tyranid_unit]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    manager = _stratagem_manager(gsc_player)
+    manager.refresh_available()
+    gsc_player.command_points = 4
+
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+    used_shooting = manager.use("DARTING ATTACKS", unit=tyranid_unit, phase_name="Shooting phase")
+    assert bool(used_shooting) is True
+    assert bool(tyranid_unit.can_shoot_after_fall_back(_make_ranged_profile(name="Devourer"))) is True
+
+    game.event_system.publish("phase_end", player=gsc_player, phase=game.phase)
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+    used_charge = manager.use("DARTING ATTACKS", unit=tyranid_unit, phase_name="Charge phase")
+    assert bool(used_charge) is True
+    assert bool(tyranid_unit.can_charge_after_fall_back()) is True
+
+
+def test_divine_imperative_applies_charge_bonus_and_reroll_only_against_locked_enemy():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    gsc_charger = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    tyranid_anchor = _make_unit(
+        "Raveners",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    enemy_locked = _make_unit("Enemy Locked", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_other = _make_unit("Enemy Other", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(gsc_charger)
+    gsc_army.add_unit(tyranid_anchor)
+    enemy_army.add_unit(enemy_locked)
+    enemy_army.add_unit(enemy_other)
+    _set_unit_position(gsc_charger, 0.0, 0.0)
+    _set_unit_position(tyranid_anchor, 10.0, 10.0)
+    _set_unit_position(enemy_locked, 10.5, 10.0)
+    _set_unit_position(enemy_other, 30.0, 30.0)
+    game.map.units = [gsc_charger, tyranid_anchor, enemy_locked, enemy_other]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+
+    manager = _stratagem_manager(gsc_player)
+    manager.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    used = manager.use(
+        "DIVINE IMPERATIVE",
+        unit=gsc_charger,
+        enemy_unit=enemy_locked,
+        phase_name="Charge phase",
+    )
+    assert bool(used) is True
+
+    mgr = gsc_army.genestealer_cults_detachments
+    bonus, source = mgr.final_day_divine_imperative_charge_roll_bonus(
+        gsc_charger,
+        target_units=[enemy_locked],
+        game=game,
+    )
+    assert int(bonus or 0) == 1
+    assert "divine imperative" in str(source or "").lower()
+    assert bool(gsc_charger.can_reroll_charge_roll(target_unit=enemy_locked, game=game, game_map=game.map)) is True
+    assert bool(gsc_charger.can_reroll_charge_roll(target_unit=enemy_other, game=game, game_map=game.map)) is False
+
+
+def test_hyperferocity_grants_wound_reroll_ones_or_full_when_enemy_is_near_friendly_tyranids():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    fighter = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    tyranid_anchor = _make_unit(
+        "Raveners",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    near_enemy = _make_unit("Near Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    far_enemy = _make_unit("Far Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(fighter)
+    gsc_army.add_unit(tyranid_anchor)
+    enemy_army.add_unit(near_enemy)
+    enemy_army.add_unit(far_enemy)
+    _set_unit_position(fighter, 0.0, 0.0)
+    _set_unit_position(tyranid_anchor, 10.0, 10.0)
+    _set_unit_position(near_enemy, 10.5, 10.0)
+    _set_unit_position(far_enemy, 25.0, 25.0)
+    game.map.units = [fighter, tyranid_anchor, near_enemy, far_enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+
+    manager = _stratagem_manager(gsc_player)
+    manager.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    used = manager.use("HYPERFEROCITY", unit=fighter, phase_name="Fight phase")
+    assert bool(used) is True
+
+    melee = _make_melee_profile()
+    near_mods = fighter.get_unit_wound_reroll_modifiers(
+        "melee",
+        target=near_enemy,
+        attacker_model=fighter.models[0],
+        weapon_profile=melee,
+    )
+    far_mods = fighter.get_unit_wound_reroll_modifiers(
+        "melee",
+        target=far_enemy,
+        attacker_model=fighter.models[0],
+        weapon_profile=melee,
+    )
+    assert bool(near_mods.get("reroll_wound_full")) is True
+    assert bool(far_mods.get("reroll_wound_full")) is False
+    assert 1 in tuple(far_mods.get("reroll_wound_values", ()) or ())
+
+
+def test_psi_surge_extends_catalyst_range_until_next_command_phase_start_and_enforces_cooldown():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 4
+
+    gsc_attacker = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    tyranid_anchor = _make_unit(
+        "Raveners",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(gsc_attacker)
+    gsc_army.add_unit(tyranid_anchor)
+    enemy_army.add_unit(enemy)
+    game.map.units = [gsc_attacker, tyranid_anchor, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+
+    game.map.get_distance_between_units = lambda unit_a, unit_b: 8.0 if unit_a is tyranid_anchor and unit_b is enemy else 99.0
+    manager = _stratagem_manager(gsc_player)
+    manager.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    profile = _make_ranged_profile(name="Autogun")
+    base_hit = profile._hit_target_with_tracking(
+        enemy,
+        gsc_attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not any("Catalyst" in str(item or "") for item in list(base_hit.get("modifiers", []) or []))
+
+    used = manager.use("PSI SURGE", unit=tyranid_anchor, phase_name="Shooting phase")
+    assert bool(used) is True
+
+    surged_hit = profile._hit_target_with_tracking(
+        enemy,
+        gsc_attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert any("Catalyst" in str(item or "") for item in list(surged_hit.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=gsc_player, phase=game.phase)
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+    assert bool(manager.use("PSI SURGE", unit=tyranid_anchor, phase_name="Fight phase")) is False
+
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.turn = 3
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+    cleared_hit = profile._hit_target_with_tracking(
+        enemy,
+        gsc_attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not any("Catalyst" in str(item or "") for item in list(cleared_hit.get("modifiers", []) or []))
+
+
+def test_resistance_tunnels_queues_end_of_opponent_fight_phase_and_places_unit_in_strategic_reserves():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    target = _make_unit(
+        "Raveners",
+        faction_name="Tyranids",
+        keywords=["TYRANIDS", "VANGUARD INVADER", "INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(target)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(target, 0.0, 0.0)
+    _set_unit_position(enemy, 20.0, 20.0)
+    game.map.units = [target, enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+
+    manager = _stratagem_manager(gsc_player)
+    manager.refresh_available()
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+    game.event_system.publish("phase_end", player=enemy_player, phase=game.phase)
+
+    pending = _pending_reaction_by_name(manager, "RESISTANCE TUNNELS")
+    assert pending is not None
+
+    used = manager.use(
+        "RESISTANCE TUNNELS",
+        unit=target,
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert str(getattr(target, "reserve_status", "") or "") == "strategic_reserves"
+    assert target not in list(getattr(game.map, "units", []) or [])
