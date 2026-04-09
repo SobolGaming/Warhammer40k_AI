@@ -164,6 +164,13 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _OUTLANDER_STARFALL_SHELLS_TARGET_SOURCE_KEY = "gsc_starfall_shells_source"
     _OUTLANDER_STARFALL_SHELLS_TARGET_PENALTY_KEY = "gsc_starfall_shells_hit_roll_penalty"
     _OUTLANDER_STARFALL_SHELLS_TARGET_EXPIRES_TIMING_KEY = "gsc_starfall_shells_expires_timing"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RULE_NAME = "Close-range Shoot-out"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_ACTIVE_KEY = "gsc_outlander_close_range_shoot_out_active"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_OWNER_KEY = "gsc_outlander_close_range_shoot_out_owner"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_TURN_KEY = "gsc_outlander_close_range_shoot_out_turn"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_PHASE_KEY = "gsc_outlander_close_range_shoot_out_phase"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RANGE_KEY = "gsc_outlander_close_range_shoot_out_range"
+    _OUTLANDER_CLOSE_RANGE_SHOOT_OUT_SOURCE_KEY = "gsc_outlander_close_range_shoot_out_source"
     _UNQUESTIONING_FANATICISM_RULE_NAME = "Unquestioning Fanaticism"
     _UNQUESTIONING_FANATICISM_ELIGIBLE_UNIT_PREFIXES = (
         "acolyte hybrids",
@@ -794,6 +801,67 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             "source": source_name,
             "hit_roll_penalty": int(max(1, hit_roll_penalty)),
         }
+
+    def outlander_claw_close_range_shoot_out_lethal_hits(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        game_map=None,
+        weapon_profile=None,
+    ) -> tuple[bool, str]:
+        if not self.is_outlander_claw():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        target_root = self._attached_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False, ""
+        if not self._unit_in_army(attacker_root):
+            return False, ""
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return False, ""
+        if not self._unit_is_on_battlefield(attacker_root):
+            return False, ""
+        if not self._unit_is_on_battlefield(target_root):
+            return False, ""
+
+        if weapon_profile is not None:
+            parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged) and not bool(is_ranged()):
+                return False, ""
+            profile_is_melee = getattr(weapon_profile, "is_melee", None)
+            if callable(profile_is_melee) and bool(profile_is_melee()):
+                return False, ""
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_ACTIVE_KEY)):
+            return False, ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_OWNER_KEY,
+            turn_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_TURN_KEY,
+            phase_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_PHASE_KEY,
+        ):
+            return False, ""
+        try:
+            range_in = float(sr.get(self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RANGE_KEY, 18.0) or 18.0)
+        except (TypeError, ValueError):
+            range_in = 18.0
+        if range_in < 0.0:
+            range_in = 0.0
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(attacker_root, target_root, range_in, use_attached_aggregate=True)):
+            return False, ""
+        source_name = str(
+            sr.get(self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_SOURCE_KEY, "") or self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RULE_NAME
+        ).strip() or self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RULE_NAME
+        return True, source_name
 
     def _xenocreed_unquestioning_fanaticism_bodyguard_eligible(self, unit) -> bool:
         root = self._attached_root(unit)
@@ -2622,6 +2690,31 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     if current_turn and effect_turn and effect_turn != current_turn:
                         continue
                     self._clear_integrated_tactics_target_mark(target_root)
+
+        if self.is_outlander_claw() and phase_name == "SHOOTING_PHASE":
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_ACTIVE_KEY,
+                    phase_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_PHASE_KEY,
+                    turn_key=self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_ACTIVE_KEY,
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_OWNER_KEY,
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_TURN_KEY,
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_PHASE_KEY,
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_RANGE_KEY,
+                            self._OUTLANDER_CLOSE_RANGE_SHOOT_OUT_SOURCE_KEY,
+                        ),
+                    )
 
         if self.is_final_day():
             owner_id = str(getattr(active_player, "id", "") or "")

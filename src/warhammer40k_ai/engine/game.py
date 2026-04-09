@@ -11661,13 +11661,16 @@ class Game(
         can_evasive = bool(
             getattr(stratagem_mgr, "_gsc_can_use_biosanctic_evasive_vanguard", lambda: False)()
         ) if stratagem_mgr is not None else False
+        can_along = bool(
+            getattr(stratagem_mgr, "_gsc_can_use_along_shadowed_trails", lambda: False)()
+        ) if stratagem_mgr is not None else False
         shadow_sources = list(
             getattr(stratagem_mgr, "_gsc_in_the_shadow_of_iron_source_candidates", lambda: [])() or []
         ) if stratagem_mgr is not None else []
         can_shadow = bool(shadow_sources) and bool(
             getattr(stratagem_mgr, "_gsc_can_use_in_the_shadow_of_iron", lambda: False)()
         ) if stratagem_mgr is not None else False
-        if not can_summon and not can_evasive and not can_shadow:
+        if not can_summon and not can_evasive and not can_along and not can_shadow:
             return []
 
         from .decision_kinds import DECISION_PICK_POINT
@@ -11711,6 +11714,13 @@ class Game(
                         payload={"marker_id": marker_id, "relocation_mode": "evasive_vanguard"},
                     )
                 )
+            if can_along:
+                options.append(
+                    DecisionOption.create(
+                        f"Marker {idx} (Along Shadowed Trails)",
+                        payload={"marker_id": marker_id, "relocation_mode": "along_shadowed_trails"},
+                    )
+                )
             if can_shadow:
                 for source_unit in list(shadow_sources or []):
                     source_name = str(getattr(source_unit, "name", "") or "Vehicle").strip() or "Vehicle"
@@ -11729,7 +11739,12 @@ class Game(
 
         source_models = list(getattr(mgr, "get_summon_the_cult_source_models", lambda **_kwargs: [])(game=self) or [])
         shadow_source_unit_ids = [str(get_entity_id(unit) or "") for unit in list(shadow_sources or [])]
-        relocation_mode_count = int(bool(can_summon)) + int(bool(can_evasive)) + int(bool(can_shadow))
+        relocation_mode_count = (
+            int(bool(can_summon))
+            + int(bool(can_evasive))
+            + int(bool(can_along))
+            + int(bool(can_shadow))
+        )
         ability = "summon_the_cult_marker_relocation"
         ability_name = "Summon the Cult"
         prompt = (
@@ -11742,6 +11757,14 @@ class Game(
             ability_name = "Evasive Vanguard"
             prompt = (
                 "Evasive Vanguard: select one threatened Cult Ambush marker and a relocation point more than 9\" "
+                "horizontally from all enemy units, or Skip."
+            )
+            instruction = "Choose a threatened marker, then choose its relocation point, or Skip."
+        elif can_along and not can_summon and not can_evasive and not can_shadow:
+            ability = "cult_ambush_threatened_marker_relocation"
+            ability_name = "Cult Ambush Threatened Marker Relocation"
+            prompt = (
+                "Along Shadowed Trails: select one threatened Cult Ambush marker and a relocation point more than 9\" "
                 "horizontally from all enemy units, or Skip."
             )
             instruction = "Choose a threatened marker, then choose its relocation point, or Skip."
@@ -11758,7 +11781,8 @@ class Game(
             ability_name = "Cult Ambush Threatened Marker Relocation"
             prompt = (
                 "Select one threatened Cult Ambush marker and a relocation point, or Skip. Summon the Cult requires "
-                "the point to be within 12\" of a model with that ability; Evasive Vanguard spends 1CP; In the Shadow "
+                "the point to be within 12\" of a model with that ability; Evasive Vanguard and Along Shadowed Trails "
+                "spend 1CP and require the point to be more than 9\" horizontally from all enemy units; In the Shadow "
                 "of Iron spends 1CP and requires the point to be wholly within 6\" of the selected vehicle."
             )
             instruction = "Choose a relocation mode and threatened marker, then choose its relocation point, or Skip."
@@ -11777,6 +11801,7 @@ class Game(
                 "shadow_source_unit_ids": list(shadow_source_unit_ids),
                 "summon_the_cult_available": bool(can_summon),
                 "evasive_vanguard_available": bool(can_evasive),
+                "along_shadowed_trails_available": bool(can_along),
                 "in_the_shadow_of_iron_available": bool(can_shadow),
                 "optional": True,
                 "instruction": instruction,
@@ -11888,6 +11913,43 @@ class Game(
         if player is not None:
             append_action(player, "Evasive Vanguard: marker removed as normal.")
 
+    def _validate_along_shadowed_trails_marker_relocation(self, context: dict, *, marker_id: str, point) -> tuple[bool, str]:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return (False, "Along Shadowed Trails manager is unavailable.")
+        validate_fn = getattr(mgr, "validate_evasive_vanguard_relocation", None)
+        if not callable(validate_fn):
+            return (False, "Along Shadowed Trails validation is unavailable.")
+        return validate_fn(str(marker_id or ""), point, game=self)
+
+    def _apply_along_shadowed_trails_marker_relocation(self, context: dict, *, marker_id: str, point) -> bool:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return False
+        player = getattr(getattr(mgr, "army", None), "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return False
+        used = getattr(stratagem_mgr, "use", None)
+        if not callable(used):
+            return False
+        applied = bool(
+            used(
+                "ALONG SHADOWED TRAILS",
+                phase_name=str(getattr(getattr(self, "phase", None), "name", "") or ""),
+                marker_id=str(marker_id or ""),
+                point=point,
+                threatened_marker_ids=list(context.get("threatened_marker_ids", []) or []),
+            )
+        )
+        if not applied:
+            return False
+        from ..utility.event_bus import append_action
+
+        if player is not None:
+            append_action(player, "Along Shadowed Trails: relocated a threatened Cult Ambush marker.")
+        return True
+
     def _validate_cult_ambush_threatened_marker_relocation(
         self,
         context: dict,
@@ -11902,6 +11964,8 @@ class Game(
             return self._validate_summon_the_cult_marker_relocation(context, marker_id=marker_id, point=point)
         if mode == "evasive_vanguard":
             return self._validate_evasive_vanguard_marker_relocation(context, marker_id=marker_id, point=point)
+        if mode == "along_shadowed_trails":
+            return self._validate_along_shadowed_trails_marker_relocation(context, marker_id=marker_id, point=point)
         if mode == "in_the_shadow_of_iron":
             mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
             if mgr is None:
@@ -11927,6 +11991,8 @@ class Game(
             return bool(self._apply_summon_the_cult_marker_relocation(context, marker_id=marker_id, point=point))
         if mode == "evasive_vanguard":
             return bool(self._apply_evasive_vanguard_marker_relocation(context, marker_id=marker_id, point=point))
+        if mode == "along_shadowed_trails":
+            return bool(self._apply_along_shadowed_trails_marker_relocation(context, marker_id=marker_id, point=point))
         if mode == "in_the_shadow_of_iron":
             mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
             if mgr is None:

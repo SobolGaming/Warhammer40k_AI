@@ -1,11 +1,16 @@
 from unittest.mock import patch
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_MOVE_UNIT,
+    DECISION_PICK_POINT,
+)
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units import wargear as wargear_mod
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
@@ -154,13 +159,51 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
         model.set_location(float(x) + (float(idx) * 1.5), float(y), 0.0, 0.0)
 
 
-def _find_request(game: Game, *, ability: str):
+def _publish_current_phase_start(game: Game) -> None:
+    current_player = game.get_current_player()
+    assert current_player is not None
+    game.event_system.publish("phase_start", player=current_player, phase=game.phase)
+
+
+def _find_request(
+    game: Game,
+    *,
+    decision_type: str,
+    ability: str | None = None,
+    reactive_move_kind: str | None = None,
+):
+    target_ability = str(ability or "").strip().lower()
+    target_kind = str(reactive_move_kind or "").strip().lower()
     for req in list(game.decision_queue.list() or []):
-        if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+        if str(getattr(req, "decision_type", "") or "") != str(decision_type or ""):
             continue
         ctx = dict(getattr(req, "context", {}) or {})
-        if str(ctx.get("ability", "") or "") == ability:
-            return req
+        if target_ability and str(ctx.get("ability", "") or "").strip().lower() != target_ability:
+            continue
+        if target_kind and str(ctx.get("reactive_move_kind", "") or "").strip().lower() != target_kind:
+            continue
+        return req
+    return None
+
+
+def _pending_reaction_by_name(stratagems, name: str):
+    target = str(name or "").strip().upper()
+    for reaction in list(stratagems.get_pending_reactions() or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == target:
+            return reaction
+    return None
+
+
+def _option_with_marker(request, *, relocation_mode: str | None = None):
+    target_mode = str(relocation_mode or "").strip().lower()
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        marker_id = str(payload.get("marker_id", "") or "").strip()
+        if not marker_id:
+            continue
+        if target_mode and str(payload.get("relocation_mode", "") or "").strip().lower() != target_mode:
+            continue
+        return option
     return None
 
 
@@ -174,6 +217,23 @@ def test_outlander_claw_enhancement_descriptors_exist():
 
     for enhancement_id, (name, effect) in expected.items():
         desc = get_enhancement_tool_descriptor(enhancement_id=enhancement_id)
+        assert desc is not None
+        assert str(getattr(desc, "name", "") or "") == name
+        assert str(getattr(desc, "effect", "") or "") == effect
+
+
+def test_outlander_claw_stratagem_descriptors_exist():
+    expected = {
+        "000009080002": ("ALONG SHADOWED TRAILS", "relocate_cult_ambush_marker"),
+        "000009080003": ("DEVOTED CREW", "defensive_damage_reduction"),
+        "000009080004": ("CLOSE-RANGE SHOOT-OUT", "ranged_lethal_hits"),
+        "000009080005": ("RAPID FEINT", "reactive_move"),
+        "000009080006": ("DEFT MANOEUVRING", "invulnerable_save"),
+        "000009080007": ("ENCIRCLING THE PREY", "enter_strategic_reserves"),
+    }
+
+    for stratagem_id, (name, effect) in expected.items():
+        desc = get_stratagem_tool_descriptor(stratagem_id=stratagem_id)
         assert desc is not None
         assert str(getattr(desc, "name", "") or "") == name
         assert str(getattr(desc, "effect", "") or "") == effect
@@ -392,7 +452,7 @@ def test_starfall_shells_applies_hit_penalty_until_owner_next_shooting_phase():
         hits_by_target={enemy: 1},
         hit_models_by_target_weapon={enemy: {"cult sniper rifle": {shooter.models[0]}}},
     )
-    request = _find_request(game, ability="gsc_starfall_shells")
+    request = _find_request(game, decision_type=DECISION_CHOOSE_QUARRY, ability="gsc_starfall_shells")
     assert request is not None
 
     option = next(
@@ -415,3 +475,276 @@ def test_starfall_shells_applies_hit_penalty_until_owner_next_shooting_phase():
     with patch.object(wargear_mod, "get_roll", return_value=4):
         attack_without_penalty = profile.attack(shooter.models[0], enemy.models[0], game_map=game.map)
     assert int(attack_without_penalty.hit_results[0].get("final_needed", 0) or 0) == 4
+
+
+def test_along_shadowed_trails_relocates_threatened_cult_ambush_marker():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_army.add_unit(enemy)
+    _set_unit_position(enemy, 18.0, 0.0)
+    game.map.units = [enemy]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    cult_ambush = gsc_army.cult_ambush
+    marker = cult_ambush.place_marker_at(game, 6.0, 0.0)
+    assert marker is not None
+
+    _set_unit_position(enemy, 14.0, 0.0)
+    cult_ambush.on_enemy_unit_move_ended(enemy, game=game)
+    request = _find_request(
+        game,
+        decision_type=DECISION_PICK_POINT,
+        ability="cult_ambush_threatened_marker_relocation",
+    )
+    assert request is not None
+    option = _option_with_marker(request, relocation_mode="along_shadowed_trails")
+    assert option is not None
+
+    result = resolve_decision_command(
+        game,
+        request,
+        option.option_id,
+        result_payload={"point": [30.0, 0.0]},
+        player_id=gsc_player.id,
+    )
+    assert bool(getattr(result, "ok", False))
+    active_markers = list(cult_ambush.get_active_markers() or [])
+    assert len(active_markers) == 1
+    relocated = active_markers[0]
+    assert float(getattr(relocated, "x", -1.0)) == 30.0
+    assert float(getattr(relocated, "y", -1.0)) == 0.0
+    assert int(gsc_player.command_points or 0) == 2
+
+
+def test_rapid_feint_queues_reaction_and_reactive_move_request():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    jackals = _make_unit(
+        "Atalan Jackals",
+        faction_name="Genestealer Cults",
+        keywords=["MOUNTED"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(jackals)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(jackals, 10.0, 10.0)
+    _set_unit_position(enemy, 18.0, 10.0)
+    game.map.units = [jackals, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="advance")
+    assert _pending_reaction_by_name(gsc_player.stratagems, "RAPID FEINT") is not None
+
+    used = gsc_player.stratagems.use(
+        "RAPID FEINT",
+        unit=jackals,
+        enemy_unit=enemy,
+        action="advance",
+        phase_name="Movement phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert int(gsc_player.command_points or 0) == 2
+
+    request = _find_request(
+        game,
+        decision_type=DECISION_MOVE_UNIT,
+        reactive_move_kind="genestealer_cults_rapid_feint",
+    )
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert int(context.get("max_distance", 0) or 0) == 6
+    assert str(context.get("movement_type", "") or "") == "move"
+    assert str(context.get("reactive_move_moving_unit_id", "") or "") == str(get_entity_id(enemy) or "")
+    assert bool(context.get("allow_skip", False)) is True
+
+
+def test_deft_manoeuvring_queues_and_applies_invulnerable_save_override():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    ridgerunners = _make_unit(
+        "Achilles Ridgerunners",
+        faction_name="Genestealer Cults",
+        keywords=["MOUNTED"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Shooter", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(ridgerunners)
+    enemy_army.add_unit(enemy)
+    game.map.units = [ridgerunners, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[ridgerunners])
+    assert _pending_reaction_by_name(gsc_player.stratagems, "DEFT MANOEUVRING") is not None
+
+    used = gsc_player.stratagems.use(
+        "DEFT MANOEUVRING",
+        unit=ridgerunners,
+        attacking_unit=enemy,
+        target_units=[ridgerunners],
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    effects = list((ridgerunners.special_rules or {}).get("defensive_invuln_overrides", []) or [])
+    assert len(effects) == 1
+    assert int(effects[0].get("value", 0) or 0) == 4
+    assert str(effects[0].get("expires_phase", "") or "") == "SHOOTING_PHASE"
+
+
+def test_devoted_crew_queues_and_applies_damage_reduction_in_fight_phase():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    truck = _make_unit(
+        "Goliath Truck",
+        faction_name="Genestealer Cults",
+        keywords=["VEHICLE"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Fighter", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(truck)
+    enemy_army.add_unit(enemy)
+    game.map.units = [truck, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    game.event_system.publish("fight_targets_selected", attacking_unit=enemy, target_units=[truck])
+    assert _pending_reaction_by_name(gsc_player.stratagems, "DEVOTED CREW") is not None
+
+    used = gsc_player.stratagems.use(
+        "DEVOTED CREW",
+        unit=truck,
+        attacking_unit=enemy,
+        target_units=[truck],
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    effects = list((truck.special_rules or {}).get("defensive_damage_reductions", []) or [])
+    assert len(effects) == 1
+    assert int(effects[0].get("value", 0) or 0) == 1
+    assert str(effects[0].get("expires_phase", "") or "") == "FIGHT_PHASE"
+
+
+def test_close_range_shoot_out_grants_ranged_lethal_hits_only_within_18():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    jackals = _make_unit(
+        "Atalan Jackals",
+        faction_name="Genestealer Cults",
+        keywords=["MOUNTED"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy_close = _make_unit("Enemy Close", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_far = _make_unit("Enemy Far", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(jackals)
+    enemy_army.add_unit(enemy_close)
+    enemy_army.add_unit(enemy_far)
+    _set_unit_position(jackals, 0.0, 0.0)
+    _set_unit_position(enemy_close, 12.0, 0.0)
+    _set_unit_position(enemy_far, 24.0, 0.0)
+    game.map.units = [jackals, enemy_close, enemy_far]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    used = gsc_player.stratagems.use(
+        "CLOSE-RANGE SHOOT-OUT",
+        unit=jackals,
+        phase_name="Shooting phase",
+    )
+    assert bool(used) is True
+
+    profile = _make_ranged_profile(name="Autogun")
+    close_bonuses = jackals.get_attack_keyword_bonuses(
+        model=jackals.models[0],
+        target=enemy_close,
+        attack_type="ranged",
+        weapon_profile=profile,
+        game_map=game.map,
+    )
+    far_bonuses = jackals.get_attack_keyword_bonuses(
+        model=jackals.models[0],
+        target=enemy_far,
+        attack_type="ranged",
+        weapon_profile=profile,
+        game_map=game.map,
+    )
+    assert bool(close_bonuses.get("lethal_hits", False)) is True
+    assert bool(far_bonuses.get("lethal_hits", False)) is False
+
+    game._on_phase_end_cleanup(player=gsc_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    expired = jackals.get_attack_keyword_bonuses(
+        model=jackals.models[0],
+        target=enemy_close,
+        attack_type="ranged",
+        weapon_profile=profile,
+        game_map=game.map,
+    )
+    assert bool(expired.get("lethal_hits", False)) is False
+
+
+def test_encircling_the_prey_queues_at_fight_phase_end_and_enters_strategic_reserves():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    truck = _make_unit(
+        "Goliath Truck",
+        faction_name="Genestealer Cults",
+        keywords=["VEHICLE"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(truck)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(truck, 3.0, 10.0)
+    _set_unit_position(enemy, 40.0, 10.0)
+    game.map.units = [truck, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    assert _pending_reaction_by_name(gsc_player.stratagems, "ENCIRCLING THE PREY") is not None
+
+    used = gsc_player.stratagems.use(
+        "ENCIRCLING THE PREY",
+        unit=truck,
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert str(getattr(truck, "reserve_status", "") or "").strip().lower() == "strategic_reserves"

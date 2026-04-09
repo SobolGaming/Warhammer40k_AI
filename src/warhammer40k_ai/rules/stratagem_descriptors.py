@@ -2415,6 +2415,99 @@ _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_OUTLANDER_CLAW_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009080002": StratagemToolDescriptor(
+        stratagem_id="000009080002",
+        name="ALONG SHADOWED TRAILS",
+        timing="any_phase_after_enemy_move_ends_within_9_of_cult_ambush_marker",
+        target="threatened_cult_ambush_marker",
+        duration="immediate",
+        effect="relocate_cult_ambush_marker",
+        cp_cost=1,
+        effect_params={
+            "distance_from_enemy": 9,
+            "distance_type": "horizontal",
+            "before_marker_removal": True,
+        },
+    ),
+    "000009080003": StratagemToolDescriptor(
+        stratagem_id="000009080003",
+        name="DEVOTED CREW",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="goliath_rockgrinder_or_goliath_truck_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=1,
+        effect_params={
+            "damage_reduction": 1,
+            "unit_names_any": ["Goliath Rockgrinder", "Goliath Truck"],
+        },
+    ),
+    "000009080004": StratagemToolDescriptor(
+        stratagem_id="000009080004",
+        name="CLOSE-RANGE SHOOT-OUT",
+        timing="shooting_phase_on_select_to_shoot",
+        target="friendly_genestealer_cults_mounted_or_vehicle_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["GENESTEALER CULTS"],
+            "required_keywords_any": ["MOUNTED", "VEHICLE"],
+            "target_range_in": 18.0,
+        },
+    ),
+    "000009080005": StratagemToolDescriptor(
+        stratagem_id="000009080005",
+        name="RAPID FEINT",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="achilles_ridgerunners_or_atalan_jackals_unit_within_9_of_enemy_mover",
+        duration="immediate",
+        effect="reactive_move",
+        cp_cost=1,
+        effect_params={
+            "reactive_move_distance_in": 6.0,
+            "reactive_move_kind": "genestealer_cults_rapid_feint",
+            "required_unit_names_any": ["Achilles Ridgerunners", "Atalan Jackals"],
+            "trigger_move_types": ["normal_move", "advance", "fall_back"],
+            "trigger_range_in": 9.0,
+        },
+    ),
+    "000009080006": StratagemToolDescriptor(
+        stratagem_id="000009080006",
+        name="DEFT MANOEUVRING",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="achilles_ridgerunners_or_atalan_jackals_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="invulnerable_save",
+        cp_cost=1,
+        effect_params={
+            "invulnerable_save": 4,
+            "unit_names_any": ["Achilles Ridgerunners", "Atalan Jackals"],
+        },
+    ),
+    "000009080007": StratagemToolDescriptor(
+        stratagem_id="000009080007",
+        name="ENCIRCLING THE PREY",
+        timing="end_of_opponent_fight_phase",
+        target="friendly_genestealer_cults_mounted_or_vehicle_unit_not_within_engagement_and_wholly_within_9_of_battlefield_edge",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["GENESTEALER CULTS"],
+            "required_keywords_any": ["MOUNTED", "VEHICLE"],
+            "require_not_engagement": True,
+            "battlefield_edge_distance": 9.0,
+            "reserve_status": "strategic_reserves",
+        },
+    ),
+}
+
+_OUTLANDER_CLAW_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _OUTLANDER_CLAW_STRATAGEM_DESCRIPTORS.values()
+}
+
 _FINAL_DAY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009828004": StratagemToolDescriptor(
         stratagem_id="000009828004",
@@ -12745,6 +12838,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _OUTLANDER_CLAW_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _FINAL_DAY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13168,6 +13264,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)
         or _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME.get(key)
+        or _OUTLANDER_CLAW_STRATAGEM_BY_NAME.get(key)
         or _FINAL_DAY_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)

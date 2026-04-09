@@ -125,6 +125,20 @@ class GenestealerCultsStratagemMixin:
             return faction_id == "GC" and bool(has_detachment("Biosanctic Broodsurge"))
         return False
 
+    def _is_outlander_claw_detachment(self) -> bool:
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_outlander_claw", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker())
+        army = self._gsc_army()
+        if army is None:
+            return False
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Outlander Claw"))
+        return False
+
     def _is_final_day_detachment(self) -> bool:
         mgr = self._gsc_detachment_mgr()
         checker = getattr(mgr, "is_final_day", None) if mgr is not None else None
@@ -420,6 +434,36 @@ class GenestealerCultsStratagemMixin:
             return False
         return self._gsc_has_keyword(root, "MONSTER") or self._gsc_has_keyword(root, "VEHICLE")
 
+    def _gsc_unit_name_tokens(self, unit: Any) -> set[str]:
+        root = self._gsc_root(unit)
+        if root is None:
+            return set()
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        tokens: set[str] = set()
+        for member in list(members or [root]):
+            token = self._gsc_norm_name(getattr(member, "name", ""))
+            if token:
+                tokens.add(token)
+        root_name = self._gsc_norm_name(getattr(root, "name", ""))
+        if root_name:
+            tokens.add(root_name)
+        return tokens
+
+    def _gsc_unit_has_any_name(self, unit: Any, *names: str) -> bool:
+        wanted = {self._gsc_norm_name(name) for name in list(names or []) if self._gsc_norm_name(name)}
+        if not wanted:
+            return False
+        return bool(self._gsc_unit_name_tokens(unit) & wanted)
+
+    def _gsc_is_mounted_or_vehicle(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        return bool(self._gsc_has_keyword(root, "MOUNTED") or self._gsc_has_keyword(root, "VEHICLE"))
+
     def _gsc_is_biosanctic_stratagem_eligible_unit(self, unit: Any) -> bool:
         if not self._is_biosanctic_broodsurge_detachment():
             return False
@@ -667,6 +711,70 @@ class GenestealerCultsStratagemMixin:
             if not self._gsc_on_battlefield(root, require_targetable=True):
                 continue
             if self._gsc_is_within_engagement_range_of_enemy(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_outlander_claw_army_units(self) -> List[Any]:
+        if not self._is_outlander_claw_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_outlander_close_range_shoot_out_candidates(self) -> List[Any]:
+        out: List[Any] = []
+        for root in self._gsc_outlander_claw_army_units():
+            if not self._gsc_is_mounted_or_vehicle(root):
+                continue
+            if self._gsc_has_shot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_outlander_rapid_feint_candidates(self, enemy_unit: Any) -> List[Any]:
+        enemy_root = self._gsc_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        out: List[Any] = []
+        for root in self._gsc_outlander_claw_army_units():
+            if not self._gsc_unit_has_any_name(root, "Achilles Ridgerunners", "Atalan Jackals"):
+                continue
+            if not self._gsc_unit_within_range_of_unit(root, enemy_root, 9.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_outlander_encircling_the_prey_candidates(self) -> List[Any]:
+        edge_checker = getattr(self, "_unit_wholly_within_battlefield_edge_distance", None)
+        if not callable(edge_checker):
+            return []
+        out: List[Any] = []
+        for root in self._gsc_outlander_claw_army_units():
+            if not self._gsc_is_mounted_or_vehicle(root):
+                continue
+            if self._gsc_is_within_engagement_range_of_enemy(root):
+                continue
+            if not bool(edge_checker(root, 9.0)):
                 continue
             out.append(root)
         return sorted(out, key=self._gsc_sort_key)
@@ -1447,6 +1555,119 @@ class GenestealerCultsStratagemMixin:
             },
             use_timer=False,
         )
+
+    def _queue_genestealer_cults_outlander_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_outlander_claw_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None or unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"move", "normal_move", "advance", "fall_back"}:
+            return
+        enemy_root = self._gsc_root(unit)
+        if enemy_root is None or self._gsc_owned_by_player(enemy_root, self.player):
+            return
+        if not self._gsc_on_battlefield(enemy_root, require_targetable=False):
+            return
+        stratagem = self.get_by_name("RAPID FEINT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_outlander_rapid_feint_candidates(enemy_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            if self._gsc_root(reaction.get("enemy_unit")) is enemy_root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_outlander_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        del attacking_unit
+        del target_units
+        return
+
+    def _queue_genestealer_cults_outlander_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        del attacking_unit
+        del target_units
+        return
+
+    def _queue_genestealer_cults_outlander_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_outlander_claw_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("ENCIRCLING THE PREY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_outlander_encircling_the_prey_candidates()
+        if not candidates or self._gsc_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _gsc_can_use_along_shadowed_trails(self) -> bool:
+        if not self._is_outlander_claw_detachment():
+            return False
+        stratagem = self.get_by_name("ALONG SHADOWED TRAILS")
+        if stratagem is None:
+            return False
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return False
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        return self._gsc_norm_name(getattr(stratagem, "name", "")) not in used
 
     def _gsc_can_use_biosanctic_evasive_vanguard(self) -> bool:
         if not self._is_biosanctic_broodsurge_detachment():
@@ -2401,6 +2622,220 @@ class GenestealerCultsStratagemMixin:
             return self._use_genestealer_cults_symbiotic_destruction(stratagem, **kwargs)
         return None
 
+    def _use_genestealer_cults_outlander_claw_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_outlander_claw_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "ALONG SHADOWED TRAILS":
+            return self._use_genestealer_cults_along_shadowed_trails(stratagem, **kwargs)
+        if name_u == "CLOSE-RANGE SHOOT-OUT":
+            return self._use_genestealer_cults_close_range_shoot_out(stratagem, **kwargs)
+        if name_u == "RAPID FEINT":
+            return self._use_genestealer_cults_rapid_feint(stratagem, **kwargs)
+        if name_u == "ENCIRCLING THE PREY":
+            return self._use_genestealer_cults_encircling_the_prey(stratagem, **kwargs)
+        return None
+
+    def _use_genestealer_cults_along_shadowed_trails(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        marker_id = str(context.get("marker_id", "") or "").strip()
+        point = context.get("point")
+        if not marker_id or not isinstance(point, (list, tuple)) or len(point) < 2:
+            logger.error("ERROR: ALONG SHADOWED TRAILS: marker and relocation point are required")
+            return False
+        army = self._gsc_army()
+        cult_ambush = getattr(army, "cult_ambush", None) if army is not None else None
+        if cult_ambush is None:
+            logger.error("ERROR: ALONG SHADOWED TRAILS: Cult Ambush manager unavailable")
+            return False
+        valid, reason = cult_ambush.validate_evasive_vanguard_relocation(
+            marker_id,
+            point,
+            game=game,
+        )
+        if not bool(valid):
+            logger.error("ERROR: ALONG SHADOWED TRAILS: %s", str(reason or "invalid relocation point"))
+            return False
+        if not self._gsc_spend_cp(stratagem):
+            return False
+        applied = bool(
+            cult_ambush.apply_evasive_vanguard_relocation(
+                marker_id,
+                point,
+                threatened_marker_ids=list(context.get("threatened_marker_ids", []) or []),
+                game=game,
+            )
+        )
+        if not applied:
+            logger.error("ERROR: ALONG SHADOWED TRAILS: failed to relocate Cult Ambush marker")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: ALONG SHADOWED TRAILS: relocated a threatened Cult Ambush marker more than 9\" from enemy units."
+        )
+        return True
+
+    def _use_genestealer_cults_close_range_shoot_out(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CLOSE-RANGE SHOOT-OUT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CLOSE-RANGE SHOOT-OUT: not your Shooting phase")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_outlander_close_range_shoot_out_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: CLOSE-RANGE SHOOT-OUT: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: CLOSE-RANGE SHOOT-OUT: target must be your GENESTEALER CULTS MOUNTED or VEHICLE unit that has not shot"
+            )
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_outlander_close_range_shoot_out_active"] = True
+        sr["gsc_outlander_close_range_shoot_out_owner"] = owner_id
+        sr["gsc_outlander_close_range_shoot_out_turn"] = turn
+        sr["gsc_outlander_close_range_shoot_out_phase"] = "SHOOTING_PHASE"
+        sr["gsc_outlander_close_range_shoot_out_range"] = 18.0
+        sr["gsc_outlander_close_range_shoot_out_source"] = str(
+            getattr(stratagem, "name", "CLOSE-RANGE SHOOT-OUT") or "CLOSE-RANGE SHOOT-OUT"
+        )
+        target_root.special_rules = sr
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: CLOSE-RANGE SHOOT-OUT: %s gains LETHAL HITS on ranged attacks against targets within 18\" this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_rapid_feint(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RAPID FEINT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: RAPID FEINT: not opponent's Movement phase")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key and action_key not in {"move", "normal_move", "advance", "fall_back"}:
+            logger.error("ERROR: RAPID FEINT: trigger move must be a Normal, Advance, or Fall Back move")
+            return False
+        enemy_root = self._gsc_root(context.get("enemy_unit") or context.get("moving_unit"))
+        if enemy_root is None or self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: RAPID FEINT: missing enemy unit context")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_outlander_rapid_feint_candidates(enemy_root)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RAPID FEINT: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: RAPID FEINT: target must be an Achilles Ridgerunners or Atalan Jackals unit within 9\" of the enemy unit"
+            )
+            return False
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: RAPID FEINT: reactive move queue unavailable")
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=6,
+            kind="genestealer_cults_rapid_feint",
+            movement_type="move",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "RAPID FEINT") or "RAPID FEINT"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: RAPID FEINT: failed to queue movement decision")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RAPID FEINT: %s can make a Normal move of up to 6\".",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_encircling_the_prey(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ENCIRCLING THE PREY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: ENCIRCLING THE PREY: not opponent's Fight phase")
+            return False
+        target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+        candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_outlander_encircling_the_prey_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: ENCIRCLING THE PREY: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: ENCIRCLING THE PREY: target must be your GENESTEALER CULTS MOUNTED or VEHICLE unit not in Engagement Range and wholly within 9\" of a battlefield edge"
+            )
+            return False
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._gsc_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "ENCIRCLING THE PREY") or "ENCIRCLING THE PREY"),
+        ):
+            logger.error("ERROR: ENCIRCLING THE PREY: failed to place target into Strategic Reserves")
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: ENCIRCLING THE PREY: %s enters Strategic Reserves.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
     def _use_genestealer_cults_a_dark_network(self, stratagem: Any, **kwargs) -> bool:
         context = self._gsc_pending_context(stratagem.name, kwargs)
         phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
@@ -3246,6 +3681,9 @@ class GenestealerCultsStratagemMixin:
         biosanctic_result = self._use_genestealer_cults_biosanctic_broodsurge_stratagem(stratagem, **kwargs)
         if biosanctic_result is not None:
             return biosanctic_result
+        outlander_result = self._use_genestealer_cults_outlander_claw_stratagem(stratagem, **kwargs)
+        if outlander_result is not None:
+            return outlander_result
         final_day_result = self._use_genestealer_cults_final_day_stratagem(stratagem, **kwargs)
         if final_day_result is not None:
             return final_day_result

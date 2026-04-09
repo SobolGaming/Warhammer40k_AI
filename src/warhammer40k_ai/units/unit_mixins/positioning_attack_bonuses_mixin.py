@@ -2031,6 +2031,24 @@ class PositioningAttackBonusesMixin:
                             "source": str(source or "Inhuman Integration").strip() or "Inhuman Integration",
                         }
                     )
+            close_range_fn = getattr(gsc_mgr, "outlander_claw_close_range_shoot_out_lethal_hits", None) if gsc_mgr is not None else None
+            if callable(close_range_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                active, source = close_range_fn(
+                    model,
+                    target,
+                    game=game,
+                    game_map=game_map,
+                    weapon_profile=weapon_profile,
+                )
+                if bool(active):
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": "LETHAL HITS",
+                            "source": str(source or "Close-range Shoot-out").strip() or "Close-range Shoot-out",
+                        }
+                    )
         atype = str(attack_type or "").strip().lower()
         is_melee_attack = atype in ("", "any", "melee")
         if (

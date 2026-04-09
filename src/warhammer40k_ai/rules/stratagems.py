@@ -59,6 +59,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A DARK NETWORK",
     "A DEADLY PRIZE",
     "A GRIM WARNING",
+    "ALONG SHADOWED TRAILS",
     "A DEADLY SNARE",
     "ACCEPTABLE LOSSES",
     "ALIEN EXPERTISE",
@@ -89,9 +90,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
+    "ALONG SHADOWED TRAILS",
     "BLACK CRUSADE",
     "BROODGUARD IMPULSE",
     "COILS OF DECEPTION",
+    "CLOSE-RANGE SHOOT-OUT",
     "EVASIVE VANGUARD",
     "DELAYED MUTATIONS",
     "DETONATOR",
@@ -100,6 +103,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DISTILLERS OF FEAR",
     "DRAW THEM OUT",
     "DARTING ATTACKS",
+    "ENCIRCLING THE PREY",
     "ARCANE FOCUS",
     "ASSASSIN BEASTS",
     "FROM ALL SIDES",
@@ -169,6 +173,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RESTORATIVE IMPULSE",
     "SYNAPTIC SHIELD",
     "PARASITIC PAYLOAD",
+    "RAPID FEINT",
     "PATH OF THE RIGHTEOUS",
     "PHEROMONE WAYPOINTS",
     "SPONTANEOUS HYPERCORROSION",
@@ -961,15 +966,18 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CRUSHED LIKE VERMIN",
     "COORDINATED STRIKE",
     "CUT DOWN THE WEAK",
+    "DEFT MANOEUVRING",
     "DEFIANT TO THE LAST",
     "DEATH FRENZY",
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMP GRENADES",
+    "ENCIRCLING THE PREY",
     "FAIL-SAFE DETONATOR",
     "ONLY IN DEATH DOES DUTY END",
     "DRAW THEM OUT",
+    "DEVOTED CREW",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
     "MOVE OUT",
@@ -1024,6 +1032,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PEERLESS WARRIOR",
     "RAPID EMBARKATION",
     "RAPID INGRESS",
+    "RAPID FEINT",
     "FIRE AND FADE",
     "GUERRILLA TACTICS",
     "MURDER-CALL",
@@ -1589,7 +1598,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
         rf"each time an attack targets {attack_targets_unit_re}, worsen the armour penetration characteristic of that attack by 1"
     )
     damage_re = re.compile(
-        r"each time (an|a) (?:(?P<atype>melee|ranged) )?attack is allocated to a model in your unit, subtract 1 from the damage characteristic of that attack"
+        r"each time (an|a) (?:(?P<atype>melee|ranged) )?attack (?:is allocated to a model in your unit|targets your unit), subtract 1 from the damage characteristic of that attack"
     )
     invuln_re = re.compile(
         r"(all )?models in your unit have a (?P<value>\d)\+ invulnerable save"
@@ -2337,6 +2346,7 @@ class StratagemManager(
             "BOUNDLESS ZEAL",
             "CRUSHED LIKE VERMIN",
             "CUNNING HUNTER",
+            "RAPID FEINT",
             "HARRYING HOUNDS",
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
@@ -2648,6 +2658,8 @@ class StratagemManager(
             "HIDDEN HUNTERS",
             "EMP GRENADES",
             "DEADLY DECEIVERS",
+            "DEFT MANOEUVRING",
+            "DEVOTED CREW",
             "FIGHTING SHADOWS",
             "PSI SURGE",
             "BIO-HORROR REVELATION",
@@ -2717,6 +2729,7 @@ class StratagemManager(
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
             "EMP GRENADES",
+            "DEVOTED CREW",
             "DOUBLE-CROSS",
             "FIGHTING SHADOWS",
             "FATEFUL ROLE",
@@ -2791,6 +2804,7 @@ class StratagemManager(
             "GORY DEDICATION",
             "MURDER-CALL",
             "NEW ORDERS",
+            "ENCIRCLING THE PREY",
             "RAPID INGRESS",
             "REDIRECTED STRIKE",
             "SKYBORNE SANCTUARY",
@@ -3185,12 +3199,35 @@ class StratagemManager(
             return True
         mode = str(spec.get("target_keyword_mode") or "all").strip().lower()
         normalized_unit_keywords: list[str] | None = None
+        normalized_unit_names: list[str] | None = None
 
         def _normalize_keyword_text(value: str) -> str:
             text = str(value or "")
             text = text.replace("\u2019", "'").replace("\u2018", "'")
             text = re.sub(r"[^a-z0-9]+", " ", text.lower())
             return re.sub(r"\s+", " ", text).strip()
+
+        def _get_normalized_unit_names() -> list[str]:
+            nonlocal normalized_unit_names
+            if normalized_unit_names is not None:
+                return normalized_unit_names
+            root = unit
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            if callable(get_root):
+                root = get_root() or unit
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            normalized_unit_names = []
+            seen: set[str] = set()
+            for member in members:
+                normalized = _normalize_keyword_text(getattr(member, "name", ""))
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                normalized_unit_names.append(normalized)
+            return normalized_unit_names
 
         def _get_normalized_unit_keywords() -> list[str]:
             nonlocal normalized_unit_keywords
@@ -3241,6 +3278,9 @@ class StratagemManager(
         def _match_keyword(kw: str) -> bool:
             if not kw:
                 return False
+            normalized = _normalize_keyword_text(kw)
+            if normalized and normalized in _get_normalized_unit_names():
+                return True
             has_any_keyword = getattr(unit, "has_any_keyword", None)
             if callable(has_any_keyword) and has_any_keyword(kw):
                 return True
@@ -10413,6 +10453,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_genestealer_cults_outlander_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             army = getattr(self.player, "army", None)
             voice = getattr(army, "voice_of_command", None) if army is not None else None
             clear_coordinated = getattr(voice, "clear_coordinated_action_phase_effects", None) if voice is not None else None
@@ -12761,6 +12805,7 @@ class StratagemManager(
         self._queue_hammer_tactical_withdrawal_reactions(unit=unit, action=action)
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
         self._queue_recon_draw_them_out_reactions(unit=unit, action=action)
+        self._queue_genestealer_cults_outlander_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -14053,6 +14098,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_genestealer_cults_outlander_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_combined_arms_stalwart_protector_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15311,6 +15363,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_unending_swarm_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_outlander_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
