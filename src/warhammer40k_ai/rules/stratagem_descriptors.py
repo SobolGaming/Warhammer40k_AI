@@ -3913,6 +3913,43 @@ _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME = {
 }
 
 _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010365002": StratagemToolDescriptor(
+        stratagem_id="000010365002",
+        name="Aggressive Anticipation",
+        timing="your_shooting_or_either_fight_phase_on_select",
+        target="grey_knights_psyker_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="ignore_skill_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "ignore_modifiers": ["ballistic_skill", "weapon_skill", "hit_roll"],
+        },
+    ),
+    "000010365003": StratagemToolDescriptor(
+        stratagem_id="000010365003",
+        name="Appointed Hour",
+        timing="your_shooting_or_either_fight_phase_on_select",
+        target="grey_knights_psyker_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="critical_hits_on_5plus",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "crit_hit_threshold": 5},
+    ),
+    "000010365005": StratagemToolDescriptor(
+        stratagem_id="000010365005",
+        name="Necessary End",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="grey_knights_infantry_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "fight_on_death_after_attacks": True,
+            "dynamic_threshold": "battle_round_plus_one",
+        },
+    ),
     "000010365006": StratagemToolDescriptor(
         stratagem_id="000010365006",
         name="Redirected Strike",

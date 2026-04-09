@@ -42,6 +42,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
     "AGGRESSIVE ONSLAUGHT",
+    "AGGRESSIVE ANTICIPATION",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
     "ANGELIC GRACE",
@@ -90,6 +91,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
+    "APPOINTED HOUR",
     "ALONG SHADOWED TRAILS",
     "BLACK CRUSADE",
     "BROODGUARD IMPULSE",
@@ -486,6 +488,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MINEFIELD",
     "MORDIAN MINUTE",
     "NEW ORDERS",
+    "NECESSARY END",
     "NO RETREAT!",
     "ON MY POSITION",
     "OVER THE TOP",
@@ -9219,6 +9222,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_augurium_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_first_company_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10634,6 +10641,7 @@ class StratagemManager(
             self._resolve_space_marines_vindication_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_augurium_phase_end_effects(phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
@@ -15710,6 +15718,13 @@ class StratagemManager(
             self._queue_thousand_sons_grand_coven_target_reactions(
                 event_name="fight_targets_selected",
                 phase_name="FIGHT_PHASE",
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_augurium_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

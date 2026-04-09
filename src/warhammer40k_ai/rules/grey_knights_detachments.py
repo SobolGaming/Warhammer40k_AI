@@ -1642,6 +1642,148 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         except Exception:
             return unit
 
+    @staticmethod
+    def _clear_unit_ability_cache(unit) -> None:
+        if unit is None:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+        if root is None:
+            return
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+            root._ability_cache = cache
+
+    def _augurium_phase_effect_state(self, unit, *, prefix: str, game=None) -> tuple[object | None, dict]:
+        if not self.is_augurium_task_force():
+            return None, {}
+        root = self._attached_root(unit)
+        if root is None:
+            return None, {}
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not self.army:
+            return None, {}
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(f"{prefix}_active", False))):
+            return None, {}
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is None:
+            return root, sr
+        expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+        current_phase = self._phase_name(game_obj)
+        if expected_phase and current_phase and current_phase != expected_phase:
+            return None, {}
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn > 0 and current_turn > 0 and effect_turn != current_turn:
+            return None, {}
+        effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        if effect_owner and current_owner and effect_owner != current_owner:
+            return None, {}
+        return root, sr
+
+    def augurium_aggressive_anticipation_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None:
+            return None
+        root, sr = self._augurium_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="augurium_aggressive_anticipation",
+            game=game,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return None
+        source = (
+            str(sr.get("augurium_aggressive_anticipation_source", "") or "AGGRESSIVE ANTICIPATION").strip()
+            or "AGGRESSIVE ANTICIPATION"
+        )
+        return {
+            "name": source,
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def augurium_appointed_hour_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if attacker_model is None:
+            return 0, ""
+        root, sr = self._augurium_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="augurium_appointed_hour",
+            game=game,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return 0, ""
+        try:
+            threshold = int(sr.get("augurium_appointed_hour_crit_threshold", 0) or 0)
+        except (TypeError, ValueError):
+            threshold = 0
+        if threshold <= 0:
+            return 0, ""
+        source = str(sr.get("augurium_appointed_hour_source", "") or "APPOINTED HOUR").strip() or "APPOINTED HOUR"
+        return max(2, min(6, threshold)), source
+
+    def augurium_necessary_end_fight_on_death_rule(
+        self,
+        unit,
+        *,
+        model=None,
+        game=None,
+    ) -> dict | None:
+        _ = model
+        root, sr = self._augurium_phase_effect_state(
+            unit,
+            prefix="augurium_necessary_end",
+            game=game,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return None
+        if not self._attached_unit_has_keyword(root, "INFANTRY"):
+            return None
+        try:
+            threshold = int(sr.get("augurium_necessary_end_threshold", 0) or 0)
+        except (TypeError, ValueError):
+            threshold = 0
+        if threshold < 2 or threshold > 6:
+            return None
+        source = str(sr.get("augurium_necessary_end_source", "") or "NECESSARY END").strip() or "NECESSARY END"
+        return {
+            "threshold": int(threshold),
+            "source": source,
+            "allow_any_fight_phase_destruction": True,
+        }
+
     def _channelled_force_root_is_eligible(self, unit) -> bool:
         if not self.is_banishers():
             return False

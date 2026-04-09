@@ -2204,6 +2204,29 @@ class KeywordsDetachmentsMixin:
                     source = str(am_rule.get("source", "") or "Trench Fighters").strip() or "Trench Fighters"
                     return {"threshold": int(threshold), "source": source}
 
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        gk_rule_fn = (
+            getattr(gk_mgr, "augurium_necessary_end_fight_on_death_rule", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(gk_rule_fn):
+            gk_rule = gk_rule_fn(self, model=model, game=game)
+            if isinstance(gk_rule, dict):
+                try:
+                    threshold = int(gk_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(gk_rule.get("source", "") or "Necessary End").strip() or "Necessary End"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                        "allow_any_fight_phase_destruction": bool(
+                            gk_rule.get("allow_any_fight_phase_destruction", False)
+                        ),
+                    }
+
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
             resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(

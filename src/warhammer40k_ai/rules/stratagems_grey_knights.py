@@ -223,6 +223,106 @@ class GreyKnightsStratagemMixin:
                 return True
         return False
 
+    @staticmethod
+    def _gk_clear_ability_cache(unit: Any) -> None:
+        root = GreyKnightsStratagemMixin._gk_root(unit)
+        if root is None:
+            return
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+            root._ability_cache = cache
+
+    @staticmethod
+    def _gk_unit_already_selected_to_shoot_or_fight_this_phase(unit: Any, *, phase_name: str) -> bool:
+        root = GreyKnightsStratagemMixin._gk_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key == "shooting phase":
+            return bool(
+                getattr(round_state, "shot_this_phase", False)
+                or getattr(round_state, "shot_this_round", False)
+            )
+        if phase_key == "fight phase":
+            return bool(getattr(round_state, "fought_this_phase", False))
+        return False
+
+    def _augurium_phase_candidates(self, *, phase_name: str) -> list[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        if not self._is_augurium_task_force():
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "shooting phase" and active_player is not self.player:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if not self._is_gk_psyker_unit(root):
+                continue
+            if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_key):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gk_sort_key)
+
+    def _augurium_necessary_end_candidates(self, target_units: Any) -> list[Any]:
+        if not self._is_augurium_task_force():
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if not self._is_gk_infantry_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
     def _augurium_redirected_strike_candidates(self) -> list[Any]:
         if not self._is_augurium_task_force():
             return []
@@ -597,6 +697,49 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_augurium_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_augurium_task_force():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Shooting phase"
+        elif phase_key == "FIGHT_PHASE":
+            phase_name = "Fight phase"
+        else:
+            return
+        candidates = self._augurium_phase_candidates(phase_name=phase_name)
+        if not candidates:
+            return
+        for stratagem_name in ("AGGRESSIVE ANTICIPATION", "APPOINTED HOUR"):
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+                continue
+            name_u = str(stratagem.name or "").strip().upper()
+            if name_u in self._used_stratagems_this_phase:
+                continue
+            if self._warpbane_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
     def _queue_augurium_unit_set_up_reactions(
         self,
         *,
@@ -654,6 +797,48 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_augurium_fight_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_augurium_task_force():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or not self._gk_is_alive(attacking_root):
+            return
+        if self._gk_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("NECESSARY END")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._augurium_necessary_end_candidates(target_units)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_warpbane_shooting_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
         if attacking_unit is None or not self._is_warpbane_task_force():
             return
@@ -693,6 +878,74 @@ class GreyKnightsStratagemMixin:
         if len(candidates) == 1:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
+
+    def _cleanup_augurium_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_augurium_task_force():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        keys_by_phase: dict[str, tuple[str, ...]] = {
+            "SHOOTING_PHASE": (
+                "augurium_aggressive_anticipation_active",
+                "augurium_aggressive_anticipation_turn_owner",
+                "augurium_aggressive_anticipation_turn",
+                "augurium_aggressive_anticipation_expires_phase",
+                "augurium_aggressive_anticipation_source",
+                "augurium_appointed_hour_active",
+                "augurium_appointed_hour_crit_threshold",
+                "augurium_appointed_hour_turn_owner",
+                "augurium_appointed_hour_turn",
+                "augurium_appointed_hour_expires_phase",
+                "augurium_appointed_hour_source",
+            ),
+            "FIGHT_PHASE": (
+                "augurium_aggressive_anticipation_active",
+                "augurium_aggressive_anticipation_turn_owner",
+                "augurium_aggressive_anticipation_turn",
+                "augurium_aggressive_anticipation_expires_phase",
+                "augurium_aggressive_anticipation_source",
+                "augurium_appointed_hour_active",
+                "augurium_appointed_hour_crit_threshold",
+                "augurium_appointed_hour_turn_owner",
+                "augurium_appointed_hour_turn",
+                "augurium_appointed_hour_expires_phase",
+                "augurium_appointed_hour_source",
+                "augurium_necessary_end_active",
+                "augurium_necessary_end_threshold",
+                "augurium_necessary_end_turn_owner",
+                "augurium_necessary_end_turn",
+                "augurium_necessary_end_expires_phase",
+                "augurium_necessary_end_source",
+            ),
+        }
+        keys = keys_by_phase.get(phase_name)
+        if not keys:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if not changed:
+                continue
+            root.special_rules = sr
+            self._gk_clear_ability_cache(root)
 
     @staticmethod
     def _warpbane_effect_is_active(
@@ -926,10 +1179,16 @@ class GreyKnightsStratagemMixin:
 
     def _use_grey_knights_warpbane_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "AGGRESSIVE ANTICIPATION":
+            return self._use_augurium_aggressive_anticipation(stratagem, **kwargs)
+        if name_u == "APPOINTED HOUR":
+            return self._use_augurium_appointed_hour(stratagem, **kwargs)
         if name_u == "COMBAT MANIFESTATION":
             return self._use_brotherhood_strike_combat_manifestation(stratagem, **kwargs)
         if name_u == "MIRAGE OF ECHOES":
             return self._use_augurium_mirage_of_echoes(stratagem, **kwargs)
+        if name_u == "NECESSARY END":
+            return self._use_augurium_necessary_end(stratagem, **kwargs)
         if name_u == "REDIRECTED STRIKE":
             return self._use_augurium_redirected_strike(stratagem, **kwargs)
         if name_u == "SANCTIFIED KILL ZONE":
@@ -945,6 +1204,220 @@ class GreyKnightsStratagemMixin:
         if name_u == "FLAMES OF SANCTITY":
             return self._use_warpbane_flames_of_sanctity(stratagem, **kwargs)
         return None
+
+    def _use_augurium_aggressive_anticipation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_augurium_task_force():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: not your Shooting phase")
+            return False
+        eligible = candidates or self._augurium_phase_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        )
+        if eligible and root not in eligible:
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+            logger.error("ERROR: AGGRESSIVE ANTICIPATION: target has already been selected this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["augurium_aggressive_anticipation_active"] = True
+        sr["augurium_aggressive_anticipation_turn_owner"] = str(
+            getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        sr["augurium_aggressive_anticipation_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["augurium_aggressive_anticipation_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["augurium_aggressive_anticipation_source"] = (
+            str(getattr(stratagem, "name", "") or "AGGRESSIVE ANTICIPATION").strip()
+            or "AGGRESSIVE ANTICIPATION"
+        )
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AGGRESSIVE ANTICIPATION: %s can ignore WS/BS and Hit roll modifiers this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_augurium_appointed_hour(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_augurium_task_force():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: APPOINTED HOUR: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: APPOINTED HOUR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: APPOINTED HOUR: not your Shooting phase")
+            return False
+        eligible = candidates or self._augurium_phase_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        )
+        if eligible and root not in eligible:
+            logger.error("ERROR: APPOINTED HOUR: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: APPOINTED HOUR: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: APPOINTED HOUR: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: APPOINTED HOUR: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+            logger.error("ERROR: APPOINTED HOUR: target has already been selected this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["augurium_appointed_hour_active"] = True
+        sr["augurium_appointed_hour_crit_threshold"] = 5
+        sr["augurium_appointed_hour_turn_owner"] = str(
+            getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        sr["augurium_appointed_hour_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["augurium_appointed_hour_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["augurium_appointed_hour_source"] = str(getattr(stratagem, "name", "") or "APPOINTED HOUR").strip() or "APPOINTED HOUR"
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: APPOINTED HOUR: %s scores critical hits on unmodified Hit rolls of 5+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_augurium_necessary_end(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_augurium_task_force():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or attacking_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "NECESSARY END":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if "phase_name" not in kwargs:
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: NECESSARY END: no target unit provided")
+            return False
+        if attacking_unit is None:
+            logger.error("ERROR: NECESSARY END: missing enemy attacking unit")
+            return False
+        root = self._gk_root(unit)
+        attacking_root = self._gk_root(attacking_unit)
+        if root is None or attacking_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: NECESSARY END: wrong phase")
+            return False
+        if self._gk_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: NECESSARY END: trigger requires an enemy attacking unit")
+            return False
+        eligible = candidates or self._augurium_necessary_end_candidates(target_units)
+        if eligible and root not in eligible:
+            logger.error("ERROR: NECESSARY END: target unit was not selected as an attack target")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: NECESSARY END: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: NECESSARY END: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: NECESSARY END: target must be a GREY KNIGHTS INFANTRY unit")
+            return False
+        if target_units and root not in [self._gk_root(target) for target in list(target_units or [])]:
+            logger.error("ERROR: NECESSARY END: target was not selected as an attack target")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        try:
+            current_battle_round = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        except (TypeError, ValueError):
+            current_battle_round = 0
+        threshold = int(current_battle_round) + 1
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["augurium_necessary_end_active"] = True
+        sr["augurium_necessary_end_threshold"] = int(threshold)
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr["augurium_necessary_end_turn_owner"] = str(
+            getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        sr["augurium_necessary_end_turn"] = int(current_battle_round)
+        sr["augurium_necessary_end_expires_phase"] = "FIGHT_PHASE"
+        sr["augurium_necessary_end_source"] = str(getattr(stratagem, "name", "") or "NECESSARY END").strip() or "NECESSARY END"
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: NECESSARY END: %s can fight on death on %d+ this phase.",
+            getattr(root, "name", "Unit"),
+            int(threshold),
+        )
+        return True
 
     def _use_augurium_redirected_strike(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_augurium_task_force():

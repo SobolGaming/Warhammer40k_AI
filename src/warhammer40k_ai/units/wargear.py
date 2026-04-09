@@ -10502,6 +10502,22 @@ class WargearProfile:
                 necrons_rule = None
             if isinstance(necrons_rule, dict) and necrons_rule:
                 return necrons_rule
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        aggressive_rule_fn = (
+            getattr(gk_mgr, "augurium_aggressive_anticipation_ignore_hit_modifiers_rule", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(aggressive_rule_fn):
+            try:
+                gk_rule = aggressive_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                gk_rule = None
+            if isinstance(gk_rule, dict) and gk_rule:
+                return gk_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None
@@ -17191,6 +17207,20 @@ class WargearProfile:
                 if int(threshold or 0):
                     crit_threshold = min(int(crit_threshold), int(threshold))
                     source_name = str(source or "Unforgiven Fury").strip() or "Unforgiven Fury"
+                    crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            threshold_fn = getattr(gk_mgr, "augurium_appointed_hour_crit_hit_threshold", None) if gk_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                threshold, source = threshold_fn(attacker, weapon_profile=self, game=game)
+                if int(threshold or 0):
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    source_name = str(source or "Appointed Hour").strip() or "Appointed Hour"
                     crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         except Exception:
             pass

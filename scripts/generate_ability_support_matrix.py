@@ -20788,11 +20788,14 @@ def _stratagem_support(
         "THE REALM OF CHAOS": "End of opponent turn: up to two Shadow-of-Chaos units (or one other unit) enter Strategic Reserves and return next Movement phase via Deep Strike.",
         "WARP SURGE": "Charge phase: LEGIONES DAEMONICA unit within Shadow of Chaos can charge after advancing this phase.",
         "AEGIS ETERNAL": "Opponent Shooting phase: targeted GREY KNIGHTS INFANTRY gains a 4+ invulnerable save while its models are wholly within Hallowed Ground.",
+        "AGGRESSIVE ANTICIPATION": "Your Shooting phase or the Fight phase: selected GREY KNIGHTS PSYKER unit that has not yet been selected to shoot or fight can ignore Weapon Skill, Ballistic Skill, and Hit roll modifiers until end of phase.",
+        "APPOINTED HOUR": "Your Shooting phase or the Fight phase: selected GREY KNIGHTS PSYKER unit that has not yet been selected to shoot or fight scores Critical Hits on unmodified Hit rolls of 5+ until end of phase.",
         "FIRES OF COVENANT": "Opponent Movement phase: targeted GREY KNIGHTS INFANTRY rolls D6 each time an enemy is set up or ends a Normal/Advance/Fall Back move within 6\"; +2 to the roll while wholly within Hallowed Ground; on 4+ that enemy suffers D3 mortal wounds.",
         "FLAMES OF SANCTITY": "End of Fight phase: targeted PURIFIER SQUAD rolls against each enemy unit within 6\" and inflicts D3 mortal wounds on 4+ (adds 1 to each roll if including Castellan Crowe).",
         "HALLOWED BEACON": "Movement Reinforcements step: targeted GREY KNIGHTS INFANTRY (non-TERMINATOR) Deep Strike arrival can be set up more than 6\" horizontally away from enemies, and placement must be wholly within Hallowed Ground.",
         "COMBAT MANIFESTATION": "Movement Reinforcements step: targeted GREY KNIGHTS unit arriving from Reserves with Deep Strike can be set up more than 6\" horizontally from enemy units this phase, and that unit cannot declare a charge this turn.",
         "MIRAGE OF ECHOES": "Opponent Movement phase Reinforcements step after enemy setup: selected GREY KNIGHTS PSYKER unit within 12\" of that enemy, with Deep Strike and not in Engagement Range, enters Strategic Reserves.",
+        "NECESSARY END": "Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit rolls a D6 each time one of its models is destroyed this phase and, on a result greater than the current battle round number, that model fights on death after the attacker finishes its attacks.",
         "REDIRECTED STRIKE": "End of your Command phase: selected GREY KNIGHTS PSYKER unit with Deep Strike and not in Engagement Range enters Strategic Reserves.",
         "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
@@ -21504,6 +21507,24 @@ def _stratagem_support(
         return (
             "Implemented",
             "Start of the opponent Charge phase: one visible enemy unit within 12\" of a selected ADEPTUS ASTARTES unit with a Torrent weapon suffers -2 to Charge rolls this phase, non-cumulative with other negative Charge modifiers.",
+            name_u,
+        )
+    if stratagem_id == "000010365002":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected GREY KNIGHTS PSYKER unit that has not yet been selected to shoot or fight can ignore Weapon Skill, Ballistic Skill, and Hit roll modifiers until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010365003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected GREY KNIGHTS PSYKER unit that has not yet been selected to shoot or fight scores Critical Hits on unmodified Hit rolls of 5+ until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010365005":
+        return (
+            "Implemented",
+            "Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit rolls a D6 each time one of its models is destroyed this phase and, on a result greater than the current battle round number, that model fights on death after the attacker finishes its attacks.",
             name_u,
         )
     if stratagem_id == "000010401002":

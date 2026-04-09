@@ -1,4 +1,4 @@
-# Imperial Knights Ability Support
+﻿# Imperial Knights Ability Support
 
 Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.
 
