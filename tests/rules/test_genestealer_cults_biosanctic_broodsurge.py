@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_PICK_POINT
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.rules.stratagems import StratagemManager
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -157,6 +161,37 @@ def _make_melee_profile(ap: int = 0) -> WargearProfile:
     )
 
 
+def _stratagem_manager(player: Player):
+    manager = getattr(player, "stratagems", None)
+    assert manager is not None
+    return manager
+
+
+def _find_request(game: Game, *, decision_type: str, ability: str):
+    ability_key = str(ability or "").strip().lower()
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != str(decision_type or ""):
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("ability", "") or "").strip().lower() != ability_key:
+            continue
+        return request
+    return None
+
+
+def _option_with_marker(request, *, relocation_mode: str | None = None):
+    target_mode = str(relocation_mode or "").strip().lower()
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        marker_id = str(payload.get("marker_id", "") or "").strip()
+        if not marker_id:
+            continue
+        if target_mode and str(payload.get("relocation_mode", "") or "").strip().lower() != target_mode:
+            continue
+        return option
+    return None
+
+
 def test_biosanctic_broodsurge_enhancement_descriptors_registered() -> None:
     predatory = get_enhancement_tool_descriptor(enhancement_id="000009075002")
     assert predatory is not None
@@ -177,6 +212,263 @@ def test_biosanctic_broodsurge_enhancement_descriptors_registered() -> None:
     assert majesty is not None
     assert majesty.name == "Alien Majesty"
     assert majesty.effect == "enemy_objective_control_penalty_minimum"
+
+
+def test_biosanctic_broodsurge_stratagem_descriptors_registered() -> None:
+    expected = {
+        "000009076002": ("EVASIVE VANGUARD", "relocate_cult_ambush_marker"),
+        "000009076003": ("SAINTLY PAROXYSM", "roll_d6_then_deal_mortal_wounds_to_destroying_enemy"),
+        "000009076004": ("GENE-TWISTED MUSCLE", "wound_roll_bonus_against_monster_or_vehicle"),
+        "000009076005": ("HYPER-METABOLIC VIGOUR", "pile_in_and_consolidate_distance_override"),
+        "000009076006": ("STIMULATED BIO-SURGE", "conditional_charge_roll_bonus_per_selected_target"),
+        "000009076007": (
+            "BIO-HORROR REVELATION",
+            "enemy_shooters_within_9_take_leadership_test_or_suffer_hit_penalty_against_target",
+        ),
+    }
+
+    for stratagem_id, (name, effect) in expected.items():
+        descriptor = get_stratagem_tool_descriptor(stratagem_id=stratagem_id)
+        assert descriptor is not None
+        assert descriptor.name == name
+        assert descriptor.effect == effect
+
+
+def test_bio_horror_revelation_queues_and_applies_attacker_scoped_hit_penalty() -> None:
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    gsc_player.command_points = 3
+
+    aberrants = _make_unit(
+        "Aberrants",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        model_count=2,
+        wounds=3,
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        model_count=2,
+        wounds=2,
+    )
+    gsc_army.add_unit(aberrants)
+    enemy_army.add_unit(enemy)
+    _set_model_location(aberrants, 0.0, 0.0)
+    _set_model_location(enemy, 5.0, 0.0)
+    game.map.units = [aberrants, enemy]
+    game.rebuild_entity_registry()
+
+    manager = _stratagem_manager(gsc_player)
+    manager._on_phase_start(enemy_player, BattleRoundPhases.SHOOTING_PHASE)
+    assert any(
+        str(entry.get("stratagem", "") or "").strip().upper() == "BIO-HORROR REVELATION"
+        for entry in list(getattr(manager, "_pending_reactions", []) or [])
+    )
+
+    assert bool(manager.use("BIO-HORROR REVELATION", phase_name="Shooting phase", unit=aberrants))
+
+    enemy.pass_leadership_check = lambda game=None: False
+    manager._on_shooting_targets_selected(attacking_unit=enemy, target_units=[aberrants])
+
+    effects = list(getattr(aberrants, "special_rules", {}).get("defensive_hit_mods", []) or [])
+    assert len(effects) == 1
+    effect = effects[0]
+    assert int(effect.get("value", 0) or 0) == 1
+    assert str(effect.get("attack_type", "") or "") == "ranged"
+    assert str(effect.get("attacker_key", "") or "").strip()
+    assert "BIO-HORROR REVELATION" in str(effect.get("source", "") or "")
+
+
+def test_gene_twisted_muscle_grants_wound_bonus_against_vehicle_targets() -> None:
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    aberrants = _make_unit(
+        "Aberrants",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        model_count=2,
+        wounds=3,
+    )
+    aberrants.round_state.charged_this_round = True
+    vehicle = _make_unit(
+        "Enemy Tank",
+        faction_name="Enemy",
+        keywords=["VEHICLE"],
+        faction_keywords=["ENEMY"],
+        wounds=12,
+    )
+    gsc_army.add_unit(aberrants)
+    enemy_army.add_unit(vehicle)
+    _set_model_location(aberrants, 0.0, 0.0)
+    _set_model_location(vehicle, 0.75, 0.0)
+    game.map.units = [aberrants, vehicle]
+    game.rebuild_entity_registry()
+
+    manager = _stratagem_manager(gsc_player)
+    assert bool(manager.use("GENE-TWISTED MUSCLE", phase_name="Fight phase", unit=aberrants))
+
+    wound_mods = aberrants.get_unit_wound_reroll_modifiers("melee", target=vehicle)
+    assert int(wound_mods.get("wound", 0) or 0) >= 1
+    assert any("GENE-TWISTED MUSCLE" in str(reason or "") for reason in list(wound_mods.get("wound_reasons", ()) or ()))
+
+
+def test_hyper_metabolic_vigour_sets_and_cleans_fight_move_overrides() -> None:
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    purestrains = _make_unit(
+        "Purestrain Genestealers",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        model_count=2,
+        wounds=2,
+    )
+    purestrains.round_state.charged_this_round = True
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=5)
+    gsc_army.add_unit(purestrains)
+    enemy_army.add_unit(enemy)
+    _set_model_location(purestrains, 0.0, 0.0)
+    _set_model_location(enemy, 0.75, 0.0)
+    game.map.units = [purestrains, enemy]
+    game.rebuild_entity_registry()
+
+    manager = _stratagem_manager(gsc_player)
+    assert bool(manager.use("HYPER-METABOLIC VIGOUR", phase_name="Fight phase", unit=purestrains))
+
+    sr = dict(getattr(purestrains, "special_rules", {}) or {})
+    assert float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0) == 6.0
+    assert float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0) == 6.0
+    assert str(sr.get("stratagem_choreographer_of_war_source", "") or "") == "HYPER-METABOLIC VIGOUR"
+
+    gsc_army.genestealer_cults_detachments.cleanup_on_phase_end(BattleRoundPhases.FIGHT_PHASE, gsc_player)
+    cleaned = dict(getattr(purestrains, "special_rules", {}) or {})
+    assert "stratagem_pile_in_distance_override" not in cleaned
+    assert "stratagem_consolidate_distance_override" not in cleaned
+    assert "stratagem_choreographer_of_war_source" not in cleaned
+
+
+def test_saintly_paroxysm_queues_and_rolls_2d3_for_patriarch() -> None:
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    patriarch = _make_unit(
+        "Patriarch",
+        keywords=["CHARACTER", "INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        wounds=6,
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=6)
+    gsc_army.add_unit(patriarch)
+    enemy_army.add_unit(enemy)
+    _set_model_location(patriarch, 0.0, 0.0)
+    _set_model_location(enemy, 0.75, 0.0)
+    game.map.units = [patriarch, enemy]
+    game.rebuild_entity_registry()
+
+    patriarch._last_destroyed_by_unit = enemy
+    patriarch._apply_mortal_wounds_to_unit = lambda target_unit, mortal_wound_amount, **_kwargs: setattr(
+        target_unit, "_saintly_mortal_wounds", int(mortal_wound_amount)
+    )
+
+    manager = _stratagem_manager(gsc_player)
+    manager._on_model_destroyed_before_removal(unit=patriarch, model=patriarch.models[0])
+    assert any(
+        str(entry.get("stratagem", "") or "").strip().upper() == "SAINTLY PAROXYSM"
+        for entry in list(getattr(manager, "_pending_reactions", []) or [])
+    )
+
+    with patch("warhammer40k_ai.rules.stratagems_genestealer_cults.dice_module.get_roll", side_effect=[2, 2, 2]):
+        assert bool(manager.use("SAINTLY PAROXYSM", phase_name="Fight phase"))
+    assert int(getattr(enemy, "_saintly_mortal_wounds", 0) or 0) == 4
+
+
+def test_stimulated_bio_surge_adds_bonus_per_selected_target_when_closest_is_included() -> None:
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    purestrains = _make_unit(
+        "Purestrain Genestealers",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        model_count=2,
+        wounds=2,
+    )
+    closest_enemy = _make_unit("Closest Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=4)
+    second_enemy = _make_unit("Second Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=4)
+    gsc_army.add_unit(purestrains)
+    enemy_army.add_unit(closest_enemy)
+    enemy_army.add_unit(second_enemy)
+    _set_model_location(purestrains, 0.0, 0.0)
+    _set_model_location(closest_enemy, 5.0, 0.0)
+    _set_model_location(second_enemy, 7.0, 0.0)
+    game.map.units = [purestrains, closest_enemy, second_enemy]
+    game.rebuild_entity_registry()
+
+    manager = _stratagem_manager(gsc_player)
+    assert bool(manager.use("STIMULATED BIO-SURGE", phase_name="Charge phase", unit=purestrains))
+
+    modifiers = list(game._collect_charge_modifiers(purestrains, target_unit=[closest_enemy, second_enemy]) or [])
+    stimulated = [item for item in modifiers if str(item[1] or "").strip().upper() == "STIMULATED BIO-SURGE"]
+    assert stimulated == [(2, "STIMULATED BIO-SURGE")]
+
+    without_closest = list(game._collect_charge_modifiers(purestrains, target_unit=[second_enemy]) or [])
+    assert not any(str(item[1] or "").strip().upper() == "STIMULATED BIO-SURGE" for item in without_closest)
+
+
+def test_evasive_vanguard_requests_marker_relocation_and_spends_cp_on_apply() -> None:
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.current_player_index = 1
+    gsc_player.command_points = 2
+
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=4)
+    enemy_army.add_unit(enemy)
+    _set_model_location(enemy, 40.0, 0.0)
+    game.map.units = [enemy]
+    game.rebuild_entity_registry()
+
+    manager = gsc_army.cult_ambush
+    marker = manager.place_marker_at(game, 10.0, 0.0)
+    assert marker is not None
+
+    _set_model_location(enemy, 18.0, 0.0)
+    game.map.units = [enemy]
+    game.rebuild_entity_registry()
+
+    manager.on_enemy_unit_move_ended(enemy, game=game)
+    request = _find_request(game, decision_type=DECISION_PICK_POINT, ability="evasive_vanguard_marker_relocation")
+    assert request is not None
+
+    marker_option = _option_with_marker(request)
+    assert marker_option is not None
+
+    result = resolve_decision_command(
+        game,
+        request,
+        marker_option.option_id,
+        result_payload={"point": [3.0, 0.0]},
+        player_id=gsc_player.id,
+    )
+    assert bool(getattr(result, "ok", False)) is True
+    active_markers = list(manager.get_active_markers() or [])
+    assert len(active_markers) == 1
+    relocated = active_markers[0]
+    assert float(getattr(relocated, "x", -1.0) or -1.0) == 3.0
+    assert float(getattr(relocated, "y", -1.0)) == 0.0
+    assert int(getattr(gsc_player, "command_points", 0) or 0) == 1
 
 
 def test_predatory_instincts_grants_infiltrators_to_attached_unit_while_bearer_lives() -> None:

@@ -2248,6 +2248,95 @@ _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009076002": StratagemToolDescriptor(
+        stratagem_id="000009076002",
+        name="EVASIVE VANGUARD",
+        timing="any_phase_after_enemy_move_ends_within_9_of_cult_ambush_marker",
+        target="threatened_cult_ambush_marker",
+        duration="immediate",
+        effect="relocate_cult_ambush_marker",
+        cp_cost=1,
+        effect_params={
+            "distance_from_enemy": 9,
+            "distance_type": "horizontal",
+            "before_marker_removal": True,
+        },
+    ),
+    "000009076003": StratagemToolDescriptor(
+        stratagem_id="000009076003",
+        name="SAINTLY PAROXYSM",
+        timing="fight_phase_after_friendly_character_model_destroyed_before_removal",
+        target="destroyed_friendly_character_model_and_destroying_enemy_unit",
+        duration="immediate",
+        effect="roll_d6_then_deal_mortal_wounds_to_destroying_enemy",
+        cp_cost=1,
+        effect_params={
+            "success_on": 2,
+            "mortal_wounds": "D3",
+            "enhanced_mortal_wounds": "2D3",
+            "enhanced_unit_names": ["Abominant", "Patriarch"],
+        },
+    ),
+    "000009076004": StratagemToolDescriptor(
+        stratagem_id="000009076004",
+        name="GENE-TWISTED MUSCLE",
+        timing="fight_phase_on_select_to_fight",
+        target="aberrants_biophagus_or_purestrain_genestealers_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="wound_roll_bonus_against_monster_or_vehicle",
+        cp_cost=1,
+        effect_params={"wound_roll_bonus": 1, "target_keywords": ["MONSTER", "VEHICLE"]},
+    ),
+    "000009076005": StratagemToolDescriptor(
+        stratagem_id="000009076005",
+        name="HYPER-METABOLIC VIGOUR",
+        timing="fight_phase_on_select_to_fight",
+        target="aberrants_biophagus_or_purestrain_genestealers_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="pile_in_and_consolidate_distance_override",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance": 6,
+            "consolidate_distance": 6,
+            "closest_enemy_unit_instead_of_model": True,
+        },
+    ),
+    "000009076006": StratagemToolDescriptor(
+        stratagem_id="000009076006",
+        name="STIMULATED BIO-SURGE",
+        timing="charge_phase_before_unit_declares_charge",
+        target="aberrants_biophagus_or_purestrain_genestealers_unit_that_has_not_declared_charge",
+        duration="until_end_of_phase",
+        effect="conditional_charge_roll_bonus_per_selected_target",
+        cp_cost=1,
+        effect_params={
+            "requires_closest_eligible_target_selected": True,
+            "bonus_per_selected_target": 1,
+            "max_bonus": 3,
+        },
+    ),
+    "000009076007": StratagemToolDescriptor(
+        stratagem_id="000009076007",
+        name="BIO-HORROR REVELATION",
+        timing="start_of_opponent_shooting_phase",
+        target="aberrants_biophagus_or_purestrain_genestealers_unit",
+        duration="until_end_of_phase",
+        effect="enemy_shooters_within_9_take_leadership_test_or_suffer_hit_penalty_against_target",
+        cp_cost=1,
+        effect_params={
+            "range": 9,
+            "distance_type": "3d",
+            "leadership_test_modifier": -1,
+            "failed_test_hit_roll_penalty": 1,
+        },
+    ),
+}
+
+_BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009848002": StratagemToolDescriptor(
         stratagem_id="000009848002",
@@ -12481,6 +12570,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BIOSANCTIC_BROODSURGE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12900,6 +12992,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)
+        or _BIOSANCTIC_BROODSURGE_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)

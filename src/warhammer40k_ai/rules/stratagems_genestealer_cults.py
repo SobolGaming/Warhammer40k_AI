@@ -111,6 +111,20 @@ class GenestealerCultsStratagemMixin:
             return faction_id == "GC" and bool(has_detachment("Brood Brother Auxilia"))
         return False
 
+    def _is_biosanctic_broodsurge_detachment(self) -> bool:
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_biosanctic_broodsurge", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker())
+        army = self._gsc_army()
+        if army is None:
+            return False
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Biosanctic Broodsurge"))
+        return False
+
     @staticmethod
     def _gsc_is_alive(unit: Any) -> bool:
         if unit is None:
@@ -333,6 +347,68 @@ class GenestealerCultsStratagemMixin:
         round_state = getattr(unit, "round_state", None)
         return bool(getattr(round_state, "fought_this_phase", False))
 
+    @staticmethod
+    def _gsc_has_declared_charge_this_round(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        if round_state is None:
+            return False
+        if bool(getattr(round_state, "attempted_charge_this_round", False)):
+            return True
+        target_ids = getattr(round_state, "charge_target_ids", None)
+        return bool(target_ids)
+
+    @staticmethod
+    def _gsc_has_keyword(unit: Any, keyword: str) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                return bool(has_any(str(keyword or "").strip().upper()))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        keywords = [str(value or "").strip().upper() for value in list(getattr(unit, "keywords", []) or [])]
+        return str(keyword or "").strip().upper() in keywords
+
+    def _gsc_is_character_unit(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        if self._gsc_has_keyword(root, "CHARACTER"):
+            return True
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        return any(self._gsc_has_keyword(member, "CHARACTER") for member in list(members or []))
+
+    def _gsc_is_monster_or_vehicle(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        return self._gsc_has_keyword(root, "MONSTER") or self._gsc_has_keyword(root, "VEHICLE")
+
+    def _gsc_is_biosanctic_stratagem_eligible_unit(self, unit: Any) -> bool:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return False
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_biosanctic_stratagem_eligible_unit", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        names: list[str] = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in list(members or [root]):
+            names.append(str(getattr(member, "name", "") or "").strip().upper())
+        return any(
+            text in {"ABERRANTS", "BIOPHAGUS", "PURESTRAIN GENESTEALERS"}
+            for text in list(names or [])
+        )
+
     def _gsc_unit_in_candidates(self, root: Any, candidates: List[Any]) -> bool:
         if root is None:
             return False
@@ -395,6 +471,67 @@ class GenestealerCultsStratagemMixin:
                 if not self._gsc_on_battlefield(root, require_targetable=True):
                     continue
                 out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_biosanctic_broodsurge_candidates(self) -> List[Any]:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            rid = self._gsc_sort_key(root)
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_is_biosanctic_stratagem_eligible_unit(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_biosanctic_fight_candidates(self) -> List[Any]:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        out: List[Any] = []
+        for root in self._gsc_biosanctic_broodsurge_candidates():
+            if self._gsc_has_fought_this_phase(root):
+                continue
+            is_eligible = getattr(root, "is_eligible_to_fight", None)
+            if callable(is_eligible):
+                try:
+                    if not bool(is_eligible(game_map)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_biosanctic_charge_candidates(self) -> List[Any]:
+        game = getattr(self, "game", None)
+        out: List[Any] = []
+        for root in self._gsc_biosanctic_broodsurge_candidates():
+            if self._gsc_has_declared_charge_this_round(root):
+                continue
+            can_charge = getattr(root, "can_declare_charge", None)
+            if callable(can_charge):
+                try:
+                    if not bool(can_charge(game)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
         return sorted(out, key=self._gsc_sort_key)
 
     def _gsc_host_of_ascension_phase_attack_candidates(self, *, phase_key: str) -> List[Any]:
@@ -814,6 +951,256 @@ class GenestealerCultsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_genestealer_cults_biosanctic_broodsurge_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("BIO-HORROR REVELATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_biosanctic_broodsurge_candidates()
+        if not candidates or self._gsc_reaction_exists("phase_start", stratagem.name):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    @staticmethod
+    def _gsc_bio_horror_effect_active(target_unit: Any, *, game: Any) -> bool:
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_bio_horror_revelation_active")):
+            return False
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        expected_phase = str(sr.get("gsc_bio_horror_revelation_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_key and expected_phase != phase_key:
+            return False
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        try:
+            effect_turn = int(sr.get("gsc_bio_horror_revelation_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if current_turn and effect_turn and current_turn != effect_turn:
+            return False
+        return True
+
+    def _gsc_bio_horror_has_attacker_penalty(self, target_unit: Any, *, attacker_key: str, phase_key: str) -> bool:
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        effects = sr.get("defensive_hit_mods")
+        if not isinstance(effects, list):
+            return False
+        for effect in list(effects or []):
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("attacker_key", "") or "") != str(attacker_key or ""):
+                continue
+            if str(effect.get("expires_phase", "") or "").strip().upper() != str(phase_key or "").strip().upper():
+                continue
+            if "BIO-HORROR REVELATION" not in self._gsc_norm_name(str(effect.get("source", "") or "")):
+                continue
+            return True
+        return False
+
+    def _process_genestealer_cults_bio_horror_revelation_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None:
+            return
+        attacker_root = self._gsc_root(attacking_unit)
+        if attacker_root is None or self._gsc_owned_by_player(attacker_root, self.player):
+            return
+        if not self._gsc_on_battlefield(attacker_root, require_targetable=False):
+            return
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except (AttributeError, ImportError, TypeError, ValueError):
+            return
+
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        attacker_key = str(self._attacker_unit_key(attacker_root) or self._gsc_sort_key(attacker_root) or "")
+        if not attacker_key:
+            return
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            target_root = self._gsc_root(target)
+            if target_root is None:
+                continue
+            target_id = self._gsc_sort_key(target_root)
+            if target_id and target_id in seen:
+                continue
+            if target_id:
+                seen.add(target_id)
+            if not self._gsc_owned_by_player(target_root, self.player):
+                continue
+            if not self._gsc_bio_horror_effect_active(target_root, game=game):
+                continue
+            if not bool(unit_within_range_of_unit(target_root, attacker_root, 9.0, use_attached_aggregate=True)):
+                continue
+            if attacker_key and self._gsc_bio_horror_has_attacker_penalty(
+                target_root,
+                attacker_key=attacker_key,
+                phase_key=phase_key,
+            ):
+                continue
+
+            original_sr = getattr(attacker_root, "special_rules", None)
+            attacker_sr = dict(original_sr) if isinstance(original_sr, dict) else {}
+            marker = object()
+            prior = {
+                key: attacker_sr.get(key, marker)
+                for key in (
+                    "post_shoot_leadership_debuff_active",
+                    "post_shoot_leadership_debuff_value",
+                    "post_shoot_leadership_debuff_source",
+                )
+            }
+            attacker_sr["post_shoot_leadership_debuff_active"] = True
+            attacker_sr["post_shoot_leadership_debuff_value"] = 1
+            attacker_sr["post_shoot_leadership_debuff_source"] = "BIO-HORROR REVELATION"
+            attacker_root.special_rules = attacker_sr
+            passed = True
+            leadership_test = getattr(attacker_root, "pass_leadership_check", None)
+            if callable(leadership_test):
+                try:
+                    passed = bool(leadership_test(game=game))
+                except (AttributeError, TypeError, ValueError):
+                    passed = True
+            restored_sr = dict(getattr(attacker_root, "special_rules", None) or {})
+            for key, value in list(prior.items()):
+                if value is marker:
+                    restored_sr.pop(key, None)
+                else:
+                    restored_sr[key] = value
+            attacker_root.special_rules = restored_sr
+
+            if passed:
+                continue
+            self._append_defensive_effect(
+                target_root,
+                "defensive_hit_mods",
+                {
+                    "value": 1,
+                    "attack_type": "ranged",
+                    "attacker_key": attacker_key,
+                    "expires_phase": phase_key,
+                    "source": "BIO-HORROR REVELATION",
+                },
+            )
+
+    def _queue_genestealer_cults_biosanctic_saintly_paroxysm_model_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        model: Any,
+    ) -> None:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return
+        if unit is None or model is None:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        current_phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if not current_phase_name:
+            phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_key == "FIGHT_PHASE":
+                current_phase_name = "fight phase"
+        if current_phase_name != "fight phase":
+            return
+        source_unit = getattr(model, "parent_unit", None) or unit
+        if source_unit is None:
+            return
+        if not self._gsc_owned_by_player(source_unit, self.player):
+            return
+        if not self._gsc_is_genestealer_cults_unit(source_unit):
+            return
+        if not self._gsc_is_character_unit(source_unit):
+            return
+        stratagem = self.get_by_name("SAINTLY PAROXYSM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        enemy_unit = (
+            getattr(source_unit, "_last_destroyed_by_unit", None)
+            or getattr(unit, "_last_destroyed_by_unit", None)
+        )
+        enemy_root = self._gsc_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            return
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            return
+        if not self._gsc_on_battlefield(enemy_root, require_targetable=False):
+            return
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": source_unit,
+            "target_unit": source_unit,
+            "destroyed_model": model,
+            "destroyed_source_unit": source_unit,
+            "enemy_unit": enemy_root,
+            "attacker_unit": enemy_root,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _gsc_can_use_biosanctic_evasive_vanguard(self) -> bool:
+        if not self._is_biosanctic_broodsurge_detachment():
+            return False
+        stratagem = self.get_by_name("EVASIVE VANGUARD")
+        if stratagem is None:
+            return False
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return False
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        return self._gsc_norm_name(getattr(stratagem, "name", "")) not in used
+
+    def _gsc_commit_biosanctic_evasive_vanguard(self) -> bool:
+        stratagem = self.get_by_name("EVASIVE VANGUARD")
+        if stratagem is None:
+            return False
+        if not self._gsc_spend_cp(stratagem):
+            return False
+        self._gsc_finalize_use(stratagem, dequeue=False)
+        return True
+
     @staticmethod
     def _gsc_positive_hits(value: Any) -> bool:
         if value is None:
@@ -824,6 +1211,306 @@ class GenestealerCultsStratagemMixin:
             return int(value or 0) > 0
         except (TypeError, ValueError):
             return False
+
+    def _use_genestealer_cults_biosanctic_broodsurge_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_biosanctic_broodsurge_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "BIO-HORROR REVELATION":
+            return self._use_genestealer_cults_bio_horror_revelation(stratagem, **kwargs)
+        if name_u == "GENE-TWISTED MUSCLE":
+            return self._use_genestealer_cults_gene_twisted_muscle(stratagem, **kwargs)
+        if name_u == "HYPER-METABOLIC VIGOUR":
+            return self._use_genestealer_cults_hyper_metabolic_vigour(stratagem, **kwargs)
+        if name_u == "SAINTLY PAROXYSM":
+            return self._use_genestealer_cults_saintly_paroxysm(stratagem, **kwargs)
+        if name_u == "STIMULATED BIO-SURGE":
+            return self._use_genestealer_cults_stimulated_bio_surge(stratagem, **kwargs)
+        return None
+
+    def _use_genestealer_cults_bio_horror_revelation(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BIO-HORROR REVELATION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: BIO-HORROR REVELATION: not opponent's phase")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        candidates = self._gsc_biosanctic_broodsurge_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: BIO-HORROR REVELATION: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: BIO-HORROR REVELATION: target must be your ABERRANTS, BIOPHAGUS or PURESTRAIN GENESTEALERS unit"
+            )
+            return False
+        context_candidates = self._gsc_resolve_unit_list(context.get("candidates"))
+        if context_candidates and not self._gsc_unit_in_candidates(target_root, context_candidates):
+            logger.error("ERROR: BIO-HORROR REVELATION: target was not selected")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_bio_horror_revelation_active"] = True
+        sr["gsc_bio_horror_revelation_source"] = str(
+            getattr(stratagem, "name", "BIO-HORROR REVELATION") or "BIO-HORROR REVELATION"
+        )
+        sr["gsc_bio_horror_revelation_expires_phase"] = "SHOOTING_PHASE"
+        if owner:
+            sr["gsc_bio_horror_revelation_turn_owner"] = owner
+        if turn:
+            sr["gsc_bio_horror_revelation_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: BIO-HORROR REVELATION: %s forces nearby enemy shooters to take Leadership tests this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_gene_twisted_muscle(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: GENE-TWISTED MUSCLE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        candidates = self._gsc_biosanctic_fight_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: GENE-TWISTED MUSCLE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: GENE-TWISTED MUSCLE: target must be your eligible ABERRANTS, BIOPHAGUS or PURESTRAIN GENESTEALERS unit"
+            )
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_gene_twisted_muscle_active"] = True
+        sr["gsc_gene_twisted_muscle_wound_bonus"] = 1
+        sr["gsc_gene_twisted_muscle_expires_phase"] = "FIGHT_PHASE"
+        sr["gsc_gene_twisted_muscle_source"] = str(
+            getattr(stratagem, "name", "GENE-TWISTED MUSCLE") or "GENE-TWISTED MUSCLE"
+        )
+        if owner:
+            sr["gsc_gene_twisted_muscle_turn_owner"] = owner
+        if turn:
+            sr["gsc_gene_twisted_muscle_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: GENE-TWISTED MUSCLE: %s gains +1 to wound against MONSTER and VEHICLE units this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_hyper_metabolic_vigour(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: HYPER-METABOLIC VIGOUR: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        candidates = self._gsc_biosanctic_fight_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: HYPER-METABOLIC VIGOUR: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: HYPER-METABOLIC VIGOUR: target must be your eligible ABERRANTS, BIOPHAGUS or PURESTRAIN GENESTEALERS unit"
+            )
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_hyper_metabolic_vigour_active"] = True
+        sr["gsc_hyper_metabolic_vigour_expires_phase"] = "FIGHT_PHASE"
+        sr["gsc_hyper_metabolic_vigour_source"] = str(
+            getattr(stratagem, "name", "HYPER-METABOLIC VIGOUR") or "HYPER-METABOLIC VIGOUR"
+        )
+        if owner:
+            sr["gsc_hyper_metabolic_vigour_turn_owner"] = owner
+        if turn:
+            sr["gsc_hyper_metabolic_vigour_turn"] = turn
+        sr["stratagem_pile_in_distance_override"] = 6.0
+        sr["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_distance_override"] = 6.0
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_choreographer_of_war_source"] = str(
+            getattr(stratagem, "name", "HYPER-METABOLIC VIGOUR") or "HYPER-METABOLIC VIGOUR"
+        )
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: HYPER-METABOLIC VIGOUR: %s can pile in and consolidate 6\" this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_saintly_paroxysm(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SAINTLY PAROXYSM: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        source_unit = context.get("destroyed_source_unit") or context.get("unit") or context.get("target_unit")
+        if source_unit is None:
+            source_unit = context.get("destroyed_unit")
+        destroyed_model = context.get("destroyed_model")
+        if source_unit is None or destroyed_model is None:
+            logger.error("ERROR: SAINTLY PAROXYSM: missing destroyed CHARACTER model")
+            return False
+        if not self._gsc_owned_by_player(source_unit, self.player) or not self._gsc_is_character_unit(source_unit):
+            logger.error("ERROR: SAINTLY PAROXYSM: destroyed model must belong to your CHARACTER")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("attacker_unit")
+        enemy_root = self._gsc_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            logger.error("ERROR: SAINTLY PAROXYSM: missing destroying enemy unit")
+            return False
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: SAINTLY PAROXYSM: destroying unit is not an enemy unit")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=source_unit):
+            return False
+
+        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        mortal_wounds = 0
+        if roll >= 2:
+            source_name = self._gsc_norm_name(str(getattr(source_unit, "name", "") or ""))
+            if source_name in {"ABOMINANT", "PATRIARCH"}:
+                mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0)) + max(0, int(dice_module.get_roll("D3") or 0))
+            else:
+                mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0))
+        source_root = self._gsc_root(source_unit) or source_unit
+        if mortal_wounds > 0 and hasattr(source_root, "_apply_mortal_wounds_to_unit"):
+            source_root._apply_mortal_wounds_to_unit(
+                enemy_root,
+                int(mortal_wounds),
+                game_map=getattr(game, "map", None),
+                attacker_unit=source_root,
+                damage_source=str(getattr(stratagem, "name", "SAINTLY PAROXYSM") or "SAINTLY PAROXYSM"),
+            )
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SAINTLY PAROXYSM: roll=%d, %s suffers %d mortal wound(s).",
+            int(roll),
+            getattr(enemy_root, "name", "Enemy unit"),
+            int(mortal_wounds),
+        )
+        return True
+
+    def _use_genestealer_cults_stimulated_bio_surge(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: STIMULATED BIO-SURGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: STIMULATED BIO-SURGE: not your phase")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        candidates = self._gsc_biosanctic_charge_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: STIMULATED BIO-SURGE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: STIMULATED BIO-SURGE: target must be your ABERRANTS, BIOPHAGUS or PURESTRAIN GENESTEALERS unit that has not declared a charge"
+            )
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_stimulated_bio_surge_active"] = True
+        sr["gsc_stimulated_bio_surge_bonus_per_target"] = 1
+        sr["gsc_stimulated_bio_surge_max_bonus"] = 3
+        sr["gsc_stimulated_bio_surge_expires_phase"] = "CHARGE_PHASE"
+        sr["gsc_stimulated_bio_surge_source"] = str(
+            getattr(stratagem, "name", "STIMULATED BIO-SURGE") or "STIMULATED BIO-SURGE"
+        )
+        if owner:
+            sr["gsc_stimulated_bio_surge_turn_owner"] = owner
+        if turn:
+            sr["gsc_stimulated_bio_surge_turn"] = turn
+        target_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: STIMULATED BIO-SURGE: %s gains a conditional charge-roll bonus this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
 
     def _queue_genestealer_cults_brood_brother_auxilia_shooting_resolved_reactions(
         self,
@@ -986,6 +1673,9 @@ class GenestealerCultsStratagemMixin:
         host_result = self._use_genestealer_cults_host_of_ascension_stratagem(stratagem, **kwargs)
         if host_result is not None:
             return host_result
+        biosanctic_result = self._use_genestealer_cults_biosanctic_broodsurge_stratagem(stratagem, **kwargs)
+        if biosanctic_result is not None:
+            return biosanctic_result
         return self._use_genestealer_cults_brood_brother_auxilia_stratagem(stratagem, **kwargs)
 
     def _use_genestealer_cults_host_of_ascension_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

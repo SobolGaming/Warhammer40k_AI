@@ -15,6 +15,33 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         "biophagus",
         "purestrain genestealers",
     )
+    _BIO_HORROR_REVELATION_RULE_NAME = "Bio-Horror Revelation"
+    _BIO_HORROR_ACTIVE_KEY = "gsc_bio_horror_revelation_active"
+    _BIO_HORROR_OWNER_KEY = "gsc_bio_horror_revelation_turn_owner"
+    _BIO_HORROR_TURN_KEY = "gsc_bio_horror_revelation_turn"
+    _BIO_HORROR_PHASE_KEY = "gsc_bio_horror_revelation_expires_phase"
+    _BIO_HORROR_SOURCE_KEY = "gsc_bio_horror_revelation_source"
+    _GENE_TWISTED_MUSCLE_RULE_NAME = "Gene-Twisted Muscle"
+    _GENE_TWISTED_MUSCLE_ACTIVE_KEY = "gsc_gene_twisted_muscle_active"
+    _GENE_TWISTED_MUSCLE_BONUS_KEY = "gsc_gene_twisted_muscle_wound_bonus"
+    _GENE_TWISTED_MUSCLE_OWNER_KEY = "gsc_gene_twisted_muscle_turn_owner"
+    _GENE_TWISTED_MUSCLE_TURN_KEY = "gsc_gene_twisted_muscle_turn"
+    _GENE_TWISTED_MUSCLE_PHASE_KEY = "gsc_gene_twisted_muscle_expires_phase"
+    _GENE_TWISTED_MUSCLE_SOURCE_KEY = "gsc_gene_twisted_muscle_source"
+    _HYPER_METABOLIC_VIGOUR_RULE_NAME = "Hyper-Metabolic Vigour"
+    _HYPER_METABOLIC_VIGOUR_ACTIVE_KEY = "gsc_hyper_metabolic_vigour_active"
+    _HYPER_METABOLIC_VIGOUR_OWNER_KEY = "gsc_hyper_metabolic_vigour_turn_owner"
+    _HYPER_METABOLIC_VIGOUR_TURN_KEY = "gsc_hyper_metabolic_vigour_turn"
+    _HYPER_METABOLIC_VIGOUR_PHASE_KEY = "gsc_hyper_metabolic_vigour_expires_phase"
+    _HYPER_METABOLIC_VIGOUR_SOURCE_KEY = "gsc_hyper_metabolic_vigour_source"
+    _STIMULATED_BIO_SURGE_RULE_NAME = "Stimulated Bio-Surge"
+    _STIMULATED_BIO_SURGE_ACTIVE_KEY = "gsc_stimulated_bio_surge_active"
+    _STIMULATED_BIO_SURGE_OWNER_KEY = "gsc_stimulated_bio_surge_turn_owner"
+    _STIMULATED_BIO_SURGE_TURN_KEY = "gsc_stimulated_bio_surge_turn"
+    _STIMULATED_BIO_SURGE_PHASE_KEY = "gsc_stimulated_bio_surge_expires_phase"
+    _STIMULATED_BIO_SURGE_SOURCE_KEY = "gsc_stimulated_bio_surge_source"
+    _STIMULATED_BIO_SURGE_PER_TARGET_KEY = "gsc_stimulated_bio_surge_bonus_per_target"
+    _STIMULATED_BIO_SURGE_MAX_KEY = "gsc_stimulated_bio_surge_max_bonus"
     _A_PERFECT_AMBUSH_RULE_NAME = "A Perfect Ambush"
     _A_PERFECT_AMBUSH_SR_KEY = "gsc_a_perfect_ambush_effects"
     _A_PERFECT_AMBUSH_KEY_PREFIX = "gsc_a_perfect_ambush"
@@ -1894,6 +1921,9 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def is_biosanctic_stratagem_eligible_unit(self, unit) -> bool:
+        return self._is_hypermorphic_fury_eligible_unit(unit)
+
     def hypermorphic_fury_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
         del target_units  # Unused; present for parity with other detachment manager hooks.
         del game  # Unused; present for parity with other detachment manager hooks.
@@ -1915,6 +1945,127 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             if phase_name and phase_name != "FIGHT_PHASE":
                 return 0, ""
         return 1, self._HYPERMORPHIC_FURY_RULE_NAME
+
+    def biosanctic_stimulated_bio_surge_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        root = self._attached_root(unit)
+        if root is None or not self.is_biosanctic_broodsurge():
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._STIMULATED_BIO_SURGE_ACTIVE_KEY)):
+            return 0, ""
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._STIMULATED_BIO_SURGE_OWNER_KEY,
+            turn_key=self._STIMULATED_BIO_SURGE_TURN_KEY,
+            phase_key=self._STIMULATED_BIO_SURGE_PHASE_KEY,
+        ):
+            return 0, ""
+        if target_units is None:
+            return 0, ""
+        targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        target_roots = [self._attached_root(target) for target in list(targets or []) if self._attached_root(target) is not None]
+        if not target_roots:
+            return 0, ""
+
+        closest_ids = self._stimulated_bio_surge_closest_eligible_target_ids(root, game=game)
+        if closest_ids and not any(str(get_entity_id(target) or "") in closest_ids for target in target_roots):
+            return 0, ""
+        try:
+            bonus_per_target = int(sr.get(self._STIMULATED_BIO_SURGE_PER_TARGET_KEY, 1) or 1)
+        except (TypeError, ValueError):
+            bonus_per_target = 1
+        try:
+            max_bonus = int(sr.get(self._STIMULATED_BIO_SURGE_MAX_KEY, 3) or 3)
+        except (TypeError, ValueError):
+            max_bonus = 3
+        bonus = min(max(0, int(max_bonus)), max(0, int(bonus_per_target)) * len(target_roots))
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get(self._STIMULATED_BIO_SURGE_SOURCE_KEY, "") or self._STIMULATED_BIO_SURGE_RULE_NAME).strip()
+        return int(bonus), source or self._STIMULATED_BIO_SURGE_RULE_NAME
+
+    def _stimulated_bio_surge_closest_eligible_target_ids(self, unit, *, game=None) -> set[str]:
+        root = self._attached_root(unit)
+        if root is None or game is None:
+            return set()
+        game_map = self._resolve_game_map(game=game)
+        distance_fn = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(distance_fn):
+            return set()
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None or not callable(getattr(game, "get_enemy_units", None)):
+            return set()
+        can_declare_charge_against = getattr(root, "can_declare_charge_against", None)
+        if not callable(can_declare_charge_against):
+            return set()
+
+        closest_ids: set[str] = set()
+        closest_distance: float | None = None
+        seen: set[str] = set()
+        for enemy in list(game.get_enemy_units(player) or []):
+            enemy_root = self._attached_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._unit_is_on_battlefield(enemy_root):
+                continue
+            try:
+                if not bool(can_declare_charge_against(enemy_root, game, out_of_turn=False)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            try:
+                distance = float(distance_fn(root, enemy_root))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if closest_distance is None or distance < (closest_distance - 1e-6):
+                closest_distance = distance
+                closest_ids = {enemy_id} if enemy_id else set()
+                continue
+            if closest_distance is not None and abs(distance - closest_distance) <= 1e-6 and enemy_id:
+                closest_ids.add(enemy_id)
+        return closest_ids
+
+    @staticmethod
+    def _biosanctic_effect_matches_phase_and_turn(
+        sr: dict,
+        *,
+        active_key: str,
+        phase_key: str,
+        turn_key: str,
+        phase_name: str,
+        current_turn: int,
+    ) -> bool:
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return False
+        expected_phase = str(sr.get(phase_key, "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return False
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if current_turn and effect_turn and current_turn != effect_turn:
+            return False
+        return True
+
+    @staticmethod
+    def _clear_special_rule_keys(unit, keys: tuple[str, ...]) -> None:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in keys:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            unit.special_rules = sr
 
     def _clear_temporary_weapon_keyword_effects(
         self,
@@ -2144,6 +2295,8 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
     def cleanup_on_phase_end(self, phase, active_player) -> None:
         phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
+        game = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        current_turn = self._current_turn(game=game)
         if self.is_host_of_ascension() and phase_name == "FIGHT_PHASE":
             owner_id = str(getattr(active_player, "id", "") or "")
             if owner_id:
@@ -2153,12 +2306,6 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
         if self.is_brood_brother_auxilia() and phase_name == "SHOOTING_PHASE":
             owner_id = str(getattr(active_player, "id", "") or "")
-            game = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
-            try:
-                current_turn = int(getattr(game, "turn", 0) or 0)
-            except (TypeError, ValueError):
-                current_turn = 0
-
             for root in self._iter_unit_roots():
                 sr = getattr(root, "special_rules", None)
                 if not isinstance(sr, dict) or not bool(sr.get(self._INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY)):
@@ -2189,3 +2336,89 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     if current_turn and effect_turn and effect_turn != current_turn:
                         continue
                     self._clear_integrated_tactics_target_mark(target_root)
+
+        if self.is_biosanctic_broodsurge():
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if phase_name == "SHOOTING_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._BIO_HORROR_ACTIVE_KEY,
+                    phase_key=self._BIO_HORROR_PHASE_KEY,
+                    turn_key=self._BIO_HORROR_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._BIO_HORROR_ACTIVE_KEY,
+                            self._BIO_HORROR_OWNER_KEY,
+                            self._BIO_HORROR_TURN_KEY,
+                            self._BIO_HORROR_PHASE_KEY,
+                            self._BIO_HORROR_SOURCE_KEY,
+                        ),
+                    )
+                if phase_name == "FIGHT_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._GENE_TWISTED_MUSCLE_ACTIVE_KEY,
+                    phase_key=self._GENE_TWISTED_MUSCLE_PHASE_KEY,
+                    turn_key=self._GENE_TWISTED_MUSCLE_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._GENE_TWISTED_MUSCLE_ACTIVE_KEY,
+                            self._GENE_TWISTED_MUSCLE_BONUS_KEY,
+                            self._GENE_TWISTED_MUSCLE_OWNER_KEY,
+                            self._GENE_TWISTED_MUSCLE_TURN_KEY,
+                            self._GENE_TWISTED_MUSCLE_PHASE_KEY,
+                            self._GENE_TWISTED_MUSCLE_SOURCE_KEY,
+                        ),
+                    )
+                if phase_name == "FIGHT_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._HYPER_METABOLIC_VIGOUR_ACTIVE_KEY,
+                    phase_key=self._HYPER_METABOLIC_VIGOUR_PHASE_KEY,
+                    turn_key=self._HYPER_METABOLIC_VIGOUR_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._HYPER_METABOLIC_VIGOUR_ACTIVE_KEY,
+                            self._HYPER_METABOLIC_VIGOUR_OWNER_KEY,
+                            self._HYPER_METABOLIC_VIGOUR_TURN_KEY,
+                            self._HYPER_METABOLIC_VIGOUR_PHASE_KEY,
+                            self._HYPER_METABOLIC_VIGOUR_SOURCE_KEY,
+                            "stratagem_pile_in_distance_override",
+                            "stratagem_pile_in_expires_phase",
+                            "stratagem_consolidate_distance_override",
+                            "stratagem_consolidate_expires_phase",
+                            "stratagem_choreographer_of_war_source",
+                        ),
+                    )
+                if phase_name == "CHARGE_PHASE" and self._biosanctic_effect_matches_phase_and_turn(
+                    sr,
+                    active_key=self._STIMULATED_BIO_SURGE_ACTIVE_KEY,
+                    phase_key=self._STIMULATED_BIO_SURGE_PHASE_KEY,
+                    turn_key=self._STIMULATED_BIO_SURGE_TURN_KEY,
+                    phase_name=phase_name,
+                    current_turn=current_turn,
+                ):
+                    self._clear_special_rule_keys(
+                        root,
+                        (
+                            self._STIMULATED_BIO_SURGE_ACTIVE_KEY,
+                            self._STIMULATED_BIO_SURGE_OWNER_KEY,
+                            self._STIMULATED_BIO_SURGE_TURN_KEY,
+                            self._STIMULATED_BIO_SURGE_PHASE_KEY,
+                            self._STIMULATED_BIO_SURGE_SOURCE_KEY,
+                            self._STIMULATED_BIO_SURGE_PER_TARGET_KEY,
+                            self._STIMULATED_BIO_SURGE_MAX_KEY,
+                        ),
+                    )

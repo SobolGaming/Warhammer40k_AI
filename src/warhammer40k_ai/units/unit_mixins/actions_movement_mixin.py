@@ -7983,6 +7983,38 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _gsc_gene_twisted_muscle_context(self, *, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_gene_twisted_muscle_active")):
+            return None
+        try:
+            wound_bonus = int(sr.get("gsc_gene_twisted_muscle_wound_bonus", 1) or 1)
+        except Exception:
+            wound_bonus = 1
+        source = str(sr.get("gsc_gene_twisted_muscle_source", "") or "GENE-TWISTED MUSCLE").strip() or "GENE-TWISTED MUSCLE"
+        if game is None:
+            return {"wound_bonus": int(wound_bonus), "source": source}
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("gsc_gene_twisted_muscle_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("gsc_gene_twisted_muscle_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        return {"wound_bonus": int(wound_bonus), "source": source}
+
     def _houndpack_hungry_for_combat_context(self, *, game=None) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -9424,6 +9456,26 @@ class ActionsMovementMixin:
                         if bonus:
                             mods["wound"] += int(bonus)
                             source = str(context.get("source", "") or "COORDINATED TRAP").strip() or "COORDINATED TRAP"
+                            wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
+        except Exception:
+            pass
+        try:
+            if target is not None:
+                context = self._gsc_gene_twisted_muscle_context(game=game)
+                if isinstance(context, dict):
+                    target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                    has_keyword = getattr(target_root, "has_any_keyword", None)
+                    is_monster_or_vehicle = False
+                    if callable(has_keyword):
+                        is_monster_or_vehicle = bool(has_keyword("MONSTER")) or bool(has_keyword("VEHICLE"))
+                    else:
+                        keywords = [str(value or "").strip().upper() for value in list(getattr(target_root, "keywords", []) or [])]
+                        is_monster_or_vehicle = "MONSTER" in keywords or "VEHICLE" in keywords
+                    if is_monster_or_vehicle:
+                        bonus = int(context.get("wound_bonus", 0) or 0)
+                        if bonus:
+                            mods["wound"] += int(bonus)
+                            source = str(context.get("source", "") or "GENE-TWISTED MUSCLE").strip() or "GENE-TWISTED MUSCLE"
                             wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
         except Exception:
             pass
@@ -13213,6 +13265,16 @@ class ActionsMovementMixin:
             bonus, source = gsc_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Hypermorphic Fury")))
+        gsc_stimulated_bonus_fn = (
+            getattr(gsc_mgr, "biosanctic_stimulated_bio_surge_charge_roll_bonus", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(gsc_stimulated_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = gsc_stimulated_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Stimulated Bio-Surge")))
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         csm_bonus_fn = (
             getattr(csm_mgr, "renegade_warband_empyric_symbiote_charge_roll_bonus", None)

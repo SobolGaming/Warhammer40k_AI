@@ -61,6 +61,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A DEADLY SNARE",
     "ALIEN EXPERTISE",
     "A TRAP WELL LAID",
+    "BIO-HORROR REVELATION",
     "AUTOMATED REPAIR DRONES",
     "BOUNDING ADVANCE",
     "COORDINATED ACTION",
@@ -89,6 +90,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLACK CRUSADE",
     "BROODGUARD IMPULSE",
     "COILS OF DECEPTION",
+    "EVASIVE VANGUARD",
     "DELAYED MUTATIONS",
     "DETONATOR",
     "DIABOLIC REGENERATION",
@@ -102,6 +104,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL FUSILLADE",
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
+    "GENE-TWISTED MUSCLE",
     "GUIDED FIRE",
     "CHRONOSORCEROUS BLEED",
     "DECEPTIVE GLAMOUR",
@@ -110,6 +113,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SULPHUROUS VEIL",
     "HARDENED KILLERS",
     "HORRIFIC INCURSION",
+    "HYPER-METABOLIC VIGOUR",
     "LET THE GALAXY BURN",
     "MASTERS ARE WATCHING",
     "MALICIOUS SURGE",
@@ -128,6 +132,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "PRESERVATION IMPERATIVE",
+    "SAINTLY PAROXYSM",
     "REINFORCED HIVE NODE",
     "IRRESISTIBLE WILL",
     "INVISIBLE HUNTER",
@@ -148,6 +153,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SYNAPTIC CHANNELLING",
     "SYNAPTIC GOADING",
     "SURPRISE ASSAULT",
+    "STIMULATED BIO-SURGE",
     "SEEDED BROODS",
     "HYPERSENSORY SCILLIA",
     "SYNAPTIC AMPLIFICATION",
@@ -2418,6 +2424,7 @@ class StratagemManager(
             "DISHARMONISATION CASCADE",
             "GIFT OF CHANGE",
             "PROTOCOL OF THE ETERNAL REVENANT",
+            "SAINTLY PAROXYSM",
         }:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
@@ -2624,6 +2631,7 @@ class StratagemManager(
             "EMP GRENADES",
             "DEADLY DECEIVERS",
             "FIGHTING SHADOWS",
+            "BIO-HORROR REVELATION",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -9463,6 +9471,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_genestealer_cults_biosanctic_broodsurge_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_thousand_sons_grand_coven_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
@@ -13996,6 +14008,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._process_genestealer_cults_bio_horror_revelation_shooting_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_combined_arms_stalwart_protector_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -17776,6 +17795,10 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_retaliation_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_biosanctic_saintly_paroxysm_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

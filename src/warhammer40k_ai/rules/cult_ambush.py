@@ -646,6 +646,65 @@ class CultAmbushManager:
             self.remove_marker(marker)
         self._publish_update(game)
 
+    def validate_evasive_vanguard_relocation(self, marker_id: str, point, *, game=None) -> tuple[bool, str]:
+        marker = self.get_marker(marker_id)
+        if marker is None or not bool(getattr(marker, "active", False)):
+            return (False, "Cult Ambush marker is no longer active.")
+        if game is None:
+            return (False, "Evasive Vanguard requires an active game.")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "Evasive Vanguard requires a valid point.")
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "Evasive Vanguard point must be numeric.")
+        if not self._marker_position_valid(game, x, y):
+            return (False, 'Evasive Vanguard marker must be more than 9" horizontally from all enemy units and on the battlefield.')
+        return (True, "")
+
+    def apply_evasive_vanguard_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        threatened_marker_ids: list[str] | tuple[str, ...] | None = None,
+        game=None,
+    ) -> bool:
+        valid, _reason = self.validate_evasive_vanguard_relocation(marker_id, point, game=game)
+        if not valid:
+            return False
+        marker = self.get_marker(marker_id)
+        if marker is None:
+            return False
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            return False
+        marker.x = float(x)
+        marker.y = float(y)
+        marker.z = float(z)
+        marker.active = True
+        marker.pending_relocation = False
+
+        threatened_ids = [str(value or "").strip() for value in list(threatened_marker_ids or []) if str(value or "").strip()]
+        self._clear_pending_relocation(threatened_ids)
+        chosen_id = str(marker_id or "").strip()
+        for threatened_id in threatened_ids:
+            if threatened_id == chosen_id:
+                continue
+            other = self.get_marker(threatened_id)
+            if other is None:
+                continue
+            self.remove_marker(other)
+        self._publish_update(game)
+        return True
+
+    def skip_evasive_vanguard_relocation(self, marker_ids: list[str] | tuple[str, ...] | None, *, game=None) -> None:
+        self.skip_summon_the_cult_relocation(marker_ids, game=game)
+
     def _marker_position_valid(self, game, x: float, y: float) -> bool:
         if not self._marker_position_on_battlefield(game, x, y):
             return False

@@ -11653,10 +11653,15 @@ class Game(
             return []
         if not bool(getattr(self, "is_authoritative", True)):
             return []
-        if not bool(getattr(mgr, "can_use_summon_the_cult", lambda **_kwargs: False)(game=self)):
-            return []
         player = getattr(getattr(mgr, "army", None), "player", None)
         if player is None:
+            return []
+        stratagem_mgr = getattr(player, "stratagems", None)
+        can_summon = bool(getattr(mgr, "can_use_summon_the_cult", lambda **_kwargs: False)(game=self))
+        can_evasive = bool(
+            getattr(stratagem_mgr, "_gsc_can_use_biosanctic_evasive_vanguard", lambda: False)()
+        ) if stratagem_mgr is not None else False
+        if not can_summon and not can_evasive:
             return []
 
         from .decision_kinds import DECISION_PICK_POINT
@@ -11667,7 +11672,11 @@ class Game(
                 if str(getattr(request, "decision_type", "") or "") != DECISION_PICK_POINT:
                     continue
                 context = dict(getattr(request, "context", {}) or {})
-                if str(context.get("ability", "") or "") == "summon_the_cult_marker_relocation":
+                if str(context.get("ability", "") or "") in {
+                    "summon_the_cult_marker_relocation",
+                    "evasive_vanguard_marker_relocation",
+                    "cult_ambush_threatened_marker_relocation",
+                }:
                     return []
 
         threatened = [marker for marker in list(threatened_markers or []) if marker is not None]
@@ -11682,30 +11691,69 @@ class Game(
             if not marker_id:
                 continue
             threatened_marker_ids.append(marker_id)
-            options.append(
-                DecisionOption.create(
-                    f"Marker {idx}",
-                    payload={"marker_id": marker_id},
+            if can_summon and can_evasive:
+                options.append(
+                    DecisionOption.create(
+                        f"Marker {idx} (Summon the Cult)",
+                        payload={"marker_id": marker_id, "relocation_mode": "summon_the_cult"},
+                    )
                 )
-            )
+                options.append(
+                    DecisionOption.create(
+                        f"Marker {idx} (Evasive Vanguard)",
+                        payload={"marker_id": marker_id, "relocation_mode": "evasive_vanguard"},
+                    )
+                )
+            else:
+                options.append(
+                    DecisionOption.create(
+                        f"Marker {idx}",
+                        payload={"marker_id": marker_id},
+                    )
+                )
         if len(options) <= 1:
             return []
 
         source_models = list(getattr(mgr, "get_summon_the_cult_source_models", lambda **_kwargs: [])(game=self) or [])
+        ability = "summon_the_cult_marker_relocation"
+        ability_name = "Summon the Cult"
+        prompt = (
+            "Summon the Cult: select one threatened Cult Ambush marker and a relocation point within 12\" of a model "
+            "with this ability, or Skip."
+        )
+        instruction = "Choose a threatened marker, then choose its relocation point, or Skip."
+        if can_evasive and not can_summon:
+            ability = "evasive_vanguard_marker_relocation"
+            ability_name = "Evasive Vanguard"
+            prompt = (
+                "Evasive Vanguard: select one threatened Cult Ambush marker and a relocation point more than 9\" "
+                "horizontally from all enemy units, or Skip."
+            )
+            instruction = "Choose a threatened marker, then choose its relocation point, or Skip."
+        elif can_summon and can_evasive:
+            ability = "cult_ambush_threatened_marker_relocation"
+            ability_name = "Cult Ambush Threatened Marker Relocation"
+            prompt = (
+                "Select one threatened Cult Ambush marker and a relocation point, or Skip. Summon the Cult requires "
+                "the point to be within 12\" of a model with that ability; Evasive Vanguard spends 1CP."
+            )
+            instruction = "Choose a stratagem and threatened marker, then choose its relocation point, or Skip."
         request = DecisionRequest.create(
             DECISION_PICK_POINT,
-            "Summon the Cult: select one threatened Cult Ambush marker and a relocation point within 12\" of a model with this ability, or Skip.",
+            prompt,
             player_id=getattr(player, "id", None),
             options=options,
             context={
-                "ability": "summon_the_cult_marker_relocation",
-                "ability_name": "Summon the Cult",
+                "ability": ability,
+                "ability_name": ability_name,
                 "owner_player_id": str(getattr(player, "id", "") or ""),
                 "enemy_unit_id": str(maybe_entity_id(enemy_unit) or ""),
                 "threatened_marker_ids": list(threatened_marker_ids),
                 "source_model_ids": [str(get_entity_id(model) or "") for model in list(source_models or [])],
+                "summon_the_cult_available": bool(can_summon),
+                "evasive_vanguard_available": bool(can_evasive),
                 "optional": True,
-                "instruction": "Choose a threatened marker, then choose its relocation point, or Skip.",
+                "instruction": instruction,
             },
         )
         self.request_decision(request)
@@ -11757,6 +11805,106 @@ class Game(
         player = getattr(getattr(mgr, "army", None), "player", None)
         if player is not None:
             append_action(player, "Summon the Cult: marker removed as normal.")
+
+    def _validate_evasive_vanguard_marker_relocation(self, context: dict, *, marker_id: str, point) -> tuple[bool, str]:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return (False, "Evasive Vanguard manager is unavailable.")
+        validate_fn = getattr(mgr, "validate_evasive_vanguard_relocation", None)
+        if not callable(validate_fn):
+            return (False, "Evasive Vanguard validation is unavailable.")
+        return validate_fn(str(marker_id or ""), point, game=self)
+
+    def _apply_evasive_vanguard_marker_relocation(self, context: dict, *, marker_id: str, point) -> bool:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return False
+        validate_fn = getattr(mgr, "validate_evasive_vanguard_relocation", None)
+        if callable(validate_fn):
+            valid, _reason = validate_fn(str(marker_id or ""), point, game=self)
+            if not bool(valid):
+                return False
+        player = getattr(getattr(mgr, "army", None), "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        commit_fn = getattr(stratagem_mgr, "_gsc_commit_biosanctic_evasive_vanguard", None) if stratagem_mgr is not None else None
+        if not callable(commit_fn) or not bool(commit_fn()):
+            return False
+        apply_fn = getattr(mgr, "apply_evasive_vanguard_relocation", None)
+        if not callable(apply_fn):
+            return False
+        applied = bool(
+            apply_fn(
+                str(marker_id or ""),
+                point,
+                threatened_marker_ids=list(context.get("threatened_marker_ids", []) or []),
+                game=self,
+            )
+        )
+        if not applied:
+            return False
+        from ..utility.event_bus import append_action
+
+        if player is not None:
+            append_action(player, "Evasive Vanguard: relocated a threatened Cult Ambush marker.")
+        return True
+
+    def _skip_evasive_vanguard_marker_relocation(self, context: dict) -> None:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return
+        skip_fn = getattr(mgr, "skip_evasive_vanguard_relocation", None)
+        if not callable(skip_fn):
+            return
+        skip_fn(list(context.get("threatened_marker_ids", []) or []), game=self)
+        from ..utility.event_bus import append_action
+
+        player = getattr(getattr(mgr, "army", None), "player", None)
+        if player is not None:
+            append_action(player, "Evasive Vanguard: marker removed as normal.")
+
+    def _validate_cult_ambush_threatened_marker_relocation(
+        self,
+        context: dict,
+        *,
+        marker_id: str,
+        relocation_mode: str,
+        point,
+    ) -> tuple[bool, str]:
+        mode = str(relocation_mode or "").strip().lower()
+        if mode == "summon_the_cult":
+            return self._validate_summon_the_cult_marker_relocation(context, marker_id=marker_id, point=point)
+        if mode == "evasive_vanguard":
+            return self._validate_evasive_vanguard_marker_relocation(context, marker_id=marker_id, point=point)
+        return (False, "Unknown threatened marker relocation mode.")
+
+    def _apply_cult_ambush_threatened_marker_relocation(
+        self,
+        context: dict,
+        *,
+        marker_id: str,
+        relocation_mode: str,
+        point,
+    ) -> bool:
+        mode = str(relocation_mode or "").strip().lower()
+        if mode == "summon_the_cult":
+            return bool(self._apply_summon_the_cult_marker_relocation(context, marker_id=marker_id, point=point))
+        if mode == "evasive_vanguard":
+            return bool(self._apply_evasive_vanguard_marker_relocation(context, marker_id=marker_id, point=point))
+        return False
+
+    def _skip_cult_ambush_threatened_marker_relocation(self, context: dict) -> None:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return
+        skip_fn = getattr(mgr, "skip_summon_the_cult_relocation", None)
+        if not callable(skip_fn):
+            return
+        skip_fn(list(context.get("threatened_marker_ids", []) or []), game=self)
+        from ..utility.event_bus import append_action
+
+        player = getattr(getattr(mgr, "army", None), "player", None)
+        if player is not None:
+            append_action(player, "Cult Ambush: marker removed as normal.")
 
     def _mark_cult_infiltration_phase_used(self, source_unit_id: str, phase_key: str) -> None:
         key = str(source_unit_id or "").strip()
@@ -13780,7 +13928,7 @@ class Game(
         from ..engine.roll_utils import command_reroll_available
         from ..engine.roll_explanation import infer_modifier_contributor_type
         command_reroll_ok = command_reroll_available(self, player, roll_type="charge", unit=charging_unit)
-        charge_modifiers = list(self._collect_charge_modifiers(charging_unit, target_unit=targets[0]) or [])
+        charge_modifiers = list(self._collect_charge_modifiers(charging_unit, target_unit=list(targets or [])) or [])
         charge_sum_modifier = 0
         charge_modifier_breakdown: list[dict] = []
         for raw_val, raw_source in list(charge_modifiers or []):
@@ -14719,7 +14867,6 @@ class Game(
             bonus, source = auric_charge_bonus_fn(charging_unit, target_units=target_unit, game=self)
             if int(bonus or 0):
                 modifiers.append((int(bonus), str(source or "Auric Armour").strip() or "Auric Armour"))
-
         from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
         _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)
         for val, source in list(aura_charge_mods or []):
