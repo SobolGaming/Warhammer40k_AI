@@ -191,6 +191,103 @@ _LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME = {
 }
 
 
+_NULL_MAIDEN_VIGIL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008927004": StratagemToolDescriptor(
+        stratagem_id="000008927004",
+        name="ANATHEMA BLADEMASTERY",
+        timing="fight_phase",
+        target="vigilators_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_full_melee_hit_rerolls_and_conditional_full_wound_rerolls",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_hit": "full",
+            "conditional_reroll_wound": "full",
+            "conditional_target_keywords_any": ["PSYKER"],
+            "conditional_target_battle_shocked": True,
+        },
+    ),
+    "000008927002": StratagemToolDescriptor(
+        stratagem_id="000008927002",
+        name="DESPERATION'S PRICE",
+        timing="any_phase_after_enemy_psyker_finishes_psychic_ability_or_psychic_attacks",
+        target="anathema_psykana_unit_within_18_of_enemy_psyker_unit",
+        duration="immediate",
+        effect="leadership_test_then_battle_shock_with_mortal_wounds_on_failed_test",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={"leadership_test": True, "battle_shock": True, "failed_test_mortal_wounds": 3},
+    ),
+    "000008927005": StratagemToolDescriptor(
+        stratagem_id="000008927005",
+        name="PSY-CHAFF VOLLEY",
+        timing="your_shooting_phase_after_prosecutors_unit_shoots",
+        target="that_prosecutors_unit_and_one_enemy_unit_it_hit",
+        duration="until_start_of_your_next_turn_while_source_unit_on_battlefield",
+        effect="mark_enemy_as_prosecuted_for_anathema_ap_bonus_and_conditional_hit_penalty",
+        cp_cost=1,
+        effect_params={
+            "attacker_required_keywords_any": ["ANATHEMA PSYKANA"],
+            "ap_bonus": 1,
+            "attacker_hit_penalty": -1,
+            "attacker_penalty_requires_target_keyword_any": ["PSYKER"],
+            "attacker_penalty_requires_battle_shocked": True,
+        },
+    ),
+    "000008927007": StratagemToolDescriptor(
+        stratagem_id="000008927007",
+        name="PSYCHIC ABOMINATIONS",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="anathema_psykana_infantry_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="grant_stealth_and_limit_psyker_or_battle_shocked_ranged_targeting_to_12",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "grant_stealth": True,
+            "conditional_targeting_limit": 12.0,
+            "attacker_keywords_any": ["PSYKER"],
+            "attacker_battle_shocked": True,
+        },
+    ),
+    "000008927006": StratagemToolDescriptor(
+        stratagem_id="000008927006",
+        name="PURGATION SWEEP",
+        timing="your_shooting_phase",
+        target="witchseekers_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="increase_torrent_weapon_attacks_with_larger_bonus_vs_psyker_or_battle_shocked",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "required_weapon_keywords_any": ["TORRENT"],
+            "attacks_bonus": 1,
+            "conditional_attacks_bonus": 2,
+            "conditional_target_keywords_any": ["PSYKER"],
+            "conditional_target_battle_shocked": True,
+        },
+    ),
+    "000008927003": StratagemToolDescriptor(
+        stratagem_id="000008927003",
+        name="WITCH HUNTERS",
+        timing="shooting_or_fight_phase",
+        target="anathema_psykana_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="choose_lethal_hits_or_sustained_hits_1_for_unit_weapons_with_psyker_target_lock",
+        cp_cost=1,
+        effect_params={
+            "choice_keys": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            "target_required_keywords_any": ["PSYKER"],
+        },
+    ),
+}
+
+_NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NULL_MAIDEN_VIGIL_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13349,6 +13446,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _LIONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _NULL_MAIDEN_VIGIL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -13837,6 +13937,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
     return (
         _AURIC_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
         or _LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
+        or _NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME.get(key)
         or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)

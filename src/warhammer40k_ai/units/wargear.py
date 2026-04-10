@@ -3629,6 +3629,27 @@ class WargearProfile:
                         ap_val -= int(bonus)
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "null_maiden_psy_chaff_volley_ap_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus = int(
+                    bonus_fn(
+                        attacker,
+                        target,
+                        game=game,
+                        weapon_profile=self,
+                        attack_instance=None,
+                    )
+                    or 0
+                )
+                if bonus:
+                    ap_val -= int(bonus)
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             unit_bonus = int(sr.get("enhancement_melee_ap_bonus", 0) or 0)
@@ -6570,6 +6591,27 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append(
                             f"Ability +{bonus}A ({weapon_lookup_name}) [temporary]"
                         )
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "null_maiden_purgation_sweep_attacks_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, reason = bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    game=game,
+                    weapon_profile=self,
+                    attack_instance=None,
+                )
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:null_maiden_purgation_sweep"))
+                    attack_result.attacks_special_modifiers.append(
+                        str(reason or f"PURGATION SWEEP +{int(bonus)}A").strip() or f"PURGATION SWEEP +{int(bonus)}A"
+                    )
         except Exception:
             pass
 
@@ -12928,6 +12970,29 @@ class WargearProfile:
                     target_army = get_parent_army()
             except Exception:
                 target_army = None
+            ac_mgr = getattr(target_army, "adeptus_custodes_detachments", None) if target_army is not None else None
+            penalty_fn = getattr(ac_mgr, "null_maiden_psy_chaff_volley_hit_penalty", None) if ac_mgr is not None else None
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(
+                    attacker,
+                    target,
+                    game=getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if penalty:
+                    source_name = str(source or "PSY-CHAFF VOLLEY").strip() or "PSY-CHAFF VOLLEY"
+                    _add_hit_mod(int(penalty), f"{int(penalty)} to hit from {source_name}")
+        except Exception:
+            pass
+        try:
+            target_army = None
+            try:
+                get_parent_army = getattr(target, "get_parent_army", None)
+                if callable(get_parent_army):
+                    target_army = get_parent_army()
+            except Exception:
+                target_army = None
             am_mgr = getattr(target_army, "astra_militarum_detachments", None) if target_army is not None else None
             penalty_fn = (
                 getattr(am_mgr, "recon_element_courageous_diversion_target_hit_penalty", None)
@@ -15136,6 +15201,24 @@ class WargearProfile:
                     reroll_hit_values.add(1)
                     source_name = str(source or "Auric Armour").strip() or "Auric Armour"
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            reroll_fn = getattr(ac_mgr, "null_maiden_anathema_blademastery_hit_reroll", None) if ac_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "ANATHEMA BLADEMASTERY").strip() or "ANATHEMA BLADEMASTERY"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         except Exception:
             pass
         # Adeptus Custodes (Solar Spearhead): Honoured Fallen (Aura).
@@ -21562,6 +21645,24 @@ class WargearProfile:
                     reroll_wound_values.add(1)
                     source_name = str(source or "Auric Armour").strip() or "Auric Armour"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            reroll_fn = getattr(ac_mgr, "null_maiden_anathema_blademastery_wound_reroll", None) if ac_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "ANATHEMA BLADEMASTERY").strip() or "ANATHEMA BLADEMASTERY"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
         # Imperial Agents: Ordo Malleus Daemon Hunters (Destroy the Daemonic).

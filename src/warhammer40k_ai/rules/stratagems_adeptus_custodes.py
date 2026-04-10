@@ -54,6 +54,77 @@ class AdeptusCustodesStratagemMixin:
         checker = getattr(mgr, "is_lions_of_the_emperor", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_null_maiden_vigil_detachment(self) -> bool:
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "is_null_maiden_vigil", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    @staticmethod
+    def _ac_phase_name_lower(value: Any) -> str:
+        return str(value or "").strip().lower()
+
+    @staticmethod
+    def _ac_sort_key(entity: Any) -> str:
+        return str(get_entity_id(entity) or "").strip()
+
+    @staticmethod
+    def _ac_unit_name_startswith(unit: Any, prefixes: tuple[str, ...]) -> bool:
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return any(name.startswith(str(prefix or "").strip().lower()) for prefix in tuple(prefixes or ()))
+
+    def _ac_submit_decision_request(self, request: Any) -> bool:
+        if request is None or self.game is None:
+            return False
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def _ac_pending_choose_quarry_request(
+        self,
+        *,
+        player_id: str = "",
+        ctx_filters: dict[str, Any] | None = None,
+    ) -> bool:
+        if self.game is None:
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        filters = dict(ctx_filters or {})
+        for pending in list(queue.list() or []):
+            if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            if player_id and str(getattr(pending, "player_id", "") or "") != str(player_id):
+                continue
+            context = dict(getattr(pending, "context", {}) or {})
+            matches = True
+            for key, value in filters.items():
+                if key in {"phase_name", "phase_key"}:
+                    if self._ac_phase_key(context.get(key, "") or "") != self._ac_phase_key(value):
+                        matches = False
+                        break
+                    continue
+                if key == "turn":
+                    if int(context.get("turn", 0) or 0) != int(value or 0):
+                        matches = False
+                        break
+                    continue
+                if str(context.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
     def _ac_owned_by_player(self, unit: Any, player: Any | None = None) -> bool:
         root = self._ac_root(unit)
         owner = self.player if player is None else player
@@ -72,6 +143,21 @@ class AdeptusCustodesStratagemMixin:
     def _ac_is_character_unit(self, unit: Any) -> bool:
         root = self._ac_root(unit)
         return root is not None and self._ac_is_custodes_unit(root) and self._ac_has_keyword(root, "CHARACTER")
+
+    def _ac_is_anathema_psykana_unit(self, unit: Any) -> bool:
+        root = self._ac_root(unit)
+        if root is None or not self._ac_owned_by_player(root):
+            return False
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_anathema_psykana", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._ac_has_keyword(root, "ANATHEMA PSYKANA")
+
+    @staticmethod
+    def _ac_is_battle_shocked(unit: Any) -> bool:
+        checker = getattr(unit, "is_battle_shocked", None)
+        return bool(callable(checker) and checker())
 
     def _ac_unit_on_battlefield(self, unit: Any, *, require_targetable: bool = True) -> bool:
         root = self._ac_root(unit)
@@ -209,6 +295,52 @@ class AdeptusCustodesStratagemMixin:
         return self._ac_unique_units(
             [unit for unit in list(getattr(game_map, "units", []) or []) if self._ac_is_enemy_battlefield_unit(unit)]
         )
+
+    def _ac_friendly_battlefield_units(self) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        return self._ac_unique_units(
+            [unit for unit in list(getattr(army, "units", []) or []) if self._ac_unit_on_battlefield(unit)]
+        )
+
+    def _ac_unit_has_weapon_type(self, unit: Any, attack_type: str) -> bool:
+        root = self._ac_root(unit)
+        if root is None:
+            return False
+        attack_type_l = str(attack_type or "").strip().lower()
+        for model in self._ac_alive_models(root):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                if attack_type_l == "ranged":
+                    is_match = getattr(wargear, "is_ranged", None)
+                else:
+                    is_match = getattr(wargear, "is_melee", None)
+                if callable(is_match) and bool(is_match()):
+                    return True
+        return False
+
+    def _ac_unit_has_psychic_weapon(self, unit: Any, attack_type: str) -> bool:
+        root = self._ac_root(unit)
+        if root is None:
+            return False
+        attack_type_l = str(attack_type or "").strip().lower()
+        for model in self._ac_alive_models(root):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                if attack_type_l == "ranged":
+                    type_check = getattr(wargear, "is_ranged", None)
+                else:
+                    type_check = getattr(wargear, "is_melee", None)
+                if not callable(type_check) or not bool(type_check()):
+                    continue
+                profile_check = getattr(wargear, "is_psychic", None)
+                if callable(profile_check) and bool(profile_check()):
+                    return True
+        return False
 
     def _ac_warlord_unit(self) -> Any:
         get_army = getattr(self.player, "get_army", None)
@@ -472,18 +604,621 @@ class AdeptusCustodesStratagemMixin:
             }
         )
 
+    def _null_maiden_battlefield_unit_candidates(
+        self,
+        *,
+        unit_prefixes: tuple[str, ...] = (),
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_infantry: bool = False,
+        attack_type: str = "",
+    ) -> list[Any]:
+        if not self._is_null_maiden_vigil_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._ac_friendly_battlefield_units():
+            if not self._ac_is_anathema_psykana_unit(root):
+                continue
+            if require_infantry and not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            if unit_prefixes and not self._ac_unit_name_startswith(root, unit_prefixes):
+                continue
+            if attack_type and not self._ac_unit_has_weapon_type(root, attack_type):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _null_maiden_anathema_blademastery_candidates(self) -> list[Any]:
+        return self._null_maiden_battlefield_unit_candidates(
+            unit_prefixes=("Vigilators",),
+            require_not_fought=True,
+            attack_type="melee",
+        )
+
+    def _null_maiden_purgation_sweep_candidates(self) -> list[Any]:
+        return self._null_maiden_battlefield_unit_candidates(
+            unit_prefixes=("Witchseekers",),
+            require_not_shot=True,
+            attack_type="ranged",
+        )
+
+    def _null_maiden_witch_hunters_candidates(self, *, phase_name: str) -> list[Any]:
+        phase_lower = self._ac_phase_name_lower(phase_name)
+        if phase_lower == "shooting phase":
+            return self._null_maiden_battlefield_unit_candidates(
+                require_not_shot=True,
+                attack_type="ranged",
+            )
+        if phase_lower == "fight phase":
+            return self._null_maiden_battlefield_unit_candidates(
+                require_not_fought=True,
+                attack_type="melee",
+            )
+        return []
+
+    def _null_maiden_psychic_abominations_candidates(self, target_units: list[Any]) -> list[Any]:
+        candidates: list[Any] = []
+        for root in self._ac_unique_units(list(target_units or [])):
+            if not self._ac_owned_by_player(root):
+                continue
+            if not self._ac_unit_on_battlefield(root):
+                continue
+            if not self._ac_is_anathema_psykana_unit(root):
+                continue
+            if not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _null_maiden_desperations_price_candidates(self, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._ac_root(enemy_unit)
+        if enemy_root is None or not self._ac_is_enemy_battlefield_unit(enemy_root):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        candidates: list[Any] = []
+        for root in self._null_maiden_battlefield_unit_candidates():
+            try:
+                distance = float(game_map.get_distance_between_units(root, enemy_root))
+            except (TypeError, ValueError):
+                continue
+            if distance <= 18.0:
+                candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    @staticmethod
+    def _null_maiden_witch_hunters_choice_key(value: Any) -> str:
+        text = str(value or "").strip().upper().replace(" ", "_")
+        if text == "LETHAL_HITS":
+            return "LETHAL_HITS"
+        if text in {"SUSTAINED_HITS_1", "SUSTAINED_HITS1"}:
+            return "SUSTAINED_HITS_1"
+        return ""
+
+    @staticmethod
+    def _null_maiden_witch_hunters_choice_label(choice_key: str) -> str:
+        return "Lethal Hits" if choice_key == "LETHAL_HITS" else "Sustained Hits 1"
+
+    @staticmethod
+    def _null_maiden_witch_hunters_choice_keywords(choice_key: str) -> list[str]:
+        if choice_key == "LETHAL_HITS":
+            return ["LETHAL HITS"]
+        if choice_key == "SUSTAINED_HITS_1":
+            return ["SUSTAINED HITS 1"]
+        return []
+
+    def _build_null_maiden_witch_hunters_choice_request(
+        self,
+        *,
+        unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        unit_id = self._ac_sort_key(root)
+        if not unit_id:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        turn = self._ac_current_turn()
+        turn_owner_id = self._ac_turn_owner_id()
+        phase_label = str(phase_name or "").strip() or "Fight phase"
+        if self._ac_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "adeptus_custodes_null_maiden_witch_hunters_choice",
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        attack_type = "ranged" if self._ac_phase_name_lower(phase_label) == "shooting phase" else "melee"
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'WITCH HUNTERS'}: choose a weapon ability.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    "Lethal Hits",
+                    payload={"choice_key": "LETHAL_HITS", "unit_id": unit_id},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits 1",
+                    payload={"choice_key": "SUSTAINED_HITS_1", "unit_id": unit_id},
+                ),
+            ],
+            context={
+                "ability": "adeptus_custodes_null_maiden_witch_hunters_choice",
+                "ability_name": str(stratagem_name or "").strip() or "WITCH HUNTERS",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "attack_type": attack_type,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_choice_keys": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "stratagem_name": str(stratagem_name or "").strip() or "WITCH HUNTERS",
+                "optional": False,
+            },
+        )
+
+    def validate_null_maiden_witch_hunters_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._ac_root(unit)
+        if root is None:
+            return False, "WITCH HUNTERS choice unit was not found."
+        if player is not None and player is not self.player:
+            return False, "WITCH HUNTERS choice must be resolved by the owning player."
+        if not self._is_null_maiden_vigil_detachment():
+            return False, "WITCH HUNTERS requires Null Maiden Vigil."
+        if not self._ac_owned_by_player(root):
+            return False, "WITCH HUNTERS target must belong to you."
+        if not self._ac_unit_on_battlefield(root):
+            return False, "WITCH HUNTERS target must be on the battlefield."
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return False, "WITCH HUNTERS target can no longer be selected."
+        if not self._ac_is_anathema_psykana_unit(root):
+            return False, "WITCH HUNTERS target must be an Anathema Psykana unit."
+        if game is not None:
+            current_phase = self._ac_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._ac_phase_key(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "WITCH HUNTERS choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "WITCH HUNTERS choice is no longer in the same battle round."
+            current_owner_id = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            if turn_owner_id and current_owner_id and current_owner_id != str(turn_owner_id):
+                return False, "WITCH HUNTERS choice is no longer in the same turn."
+        phase_lower = self._ac_phase_name_lower(phase_name)
+        round_state = getattr(root, "round_state", None)
+        if phase_lower == "shooting phase":
+            if bool(getattr(round_state, "shot_this_round", False)):
+                return False, "WITCH HUNTERS target has already been selected to shoot."
+            if not self._ac_unit_has_weapon_type(root, "ranged"):
+                return False, "WITCH HUNTERS target has no ranged weapons."
+        elif phase_lower == "fight phase":
+            if bool(getattr(round_state, "fought_this_phase", False)):
+                return False, "WITCH HUNTERS target has already fought."
+            if not self._ac_unit_has_weapon_type(root, "melee"):
+                return False, "WITCH HUNTERS target has no melee weapons."
+        else:
+            return False, "WITCH HUNTERS choice requires the Shooting or Fight phase."
+        expected_attack_type = "ranged" if phase_lower == "shooting phase" else "melee"
+        if attack_type and str(attack_type or "").strip().lower() != expected_attack_type:
+            return False, "WITCH HUNTERS choice payload does not match the phase."
+        choice_key = self._null_maiden_witch_hunters_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False, "WITCH HUNTERS choice must be LETHAL HITS or SUSTAINED HITS 1."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "WITCH HUNTERS":
+            return False, "WITCH HUNTERS choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_null_maiden_witch_hunters_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> Any:
+        valid, _reason = self.validate_null_maiden_witch_hunters_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            attack_type=attack_type,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        choice_key = self._null_maiden_witch_hunters_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        return self._apply_null_maiden_witch_hunters_effect(
+            root,
+            choice_key=choice_key,
+            phase_name=phase_name,
+            stratagem_name=str(stratagem_name or payload.get("stratagem_name", "") or "WITCH HUNTERS"),
+        )
+
+    def _apply_null_maiden_witch_hunters_effect(
+        self,
+        unit: Any,
+        *,
+        choice_key: str,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> dict[str, Any] | None:
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        resolved_choice = self._null_maiden_witch_hunters_choice_key(choice_key)
+        keyword_bonuses = self._null_maiden_witch_hunters_choice_keywords(resolved_choice)
+        if not keyword_bonuses:
+            return None
+        attack_type = "ranged" if self._ac_phase_name_lower(phase_name) == "shooting phase" else "melee"
+        root_id = self._ac_sort_key(root) or str(id(root))
+        for model in self._ac_alive_models(root):
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = self._ac_sort_key(model) or str(id(model))
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                type_check = getattr(wargear, "is_ranged", None) if attack_type == "ranged" else getattr(wargear, "is_melee", None)
+                if not callable(type_check) or not bool(type_check()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"custodes_null_maiden_witch_hunters:{root_id}:{model_id}:{weapon_name}:{resolved_choice}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=list(keyword_bonuses),
+                    source=str(stratagem_name or "WITCH HUNTERS").strip() or "WITCH HUNTERS",
+                    expires_phase=self._ac_phase_key(phase_name),
+                    attack_type=attack_type,
+                )
+        special_rules = dict(getattr(root, "special_rules", {}) or {})
+        special_rules["custodes_null_maiden_witch_hunters_active"] = True
+        special_rules["custodes_null_maiden_witch_hunters_choice_key"] = resolved_choice
+        special_rules["custodes_null_maiden_witch_hunters_attack_type"] = attack_type
+        special_rules["custodes_null_maiden_witch_hunters_turn"] = self._ac_current_turn()
+        special_rules["custodes_null_maiden_witch_hunters_turn_owner"] = self._ac_turn_owner_id()
+        special_rules["custodes_null_maiden_witch_hunters_expires_phase"] = self._ac_phase_key(phase_name)
+        special_rules["custodes_null_maiden_witch_hunters_source"] = str(stratagem_name or "WITCH HUNTERS").strip() or "WITCH HUNTERS"
+        root.special_rules = special_rules
+        return {
+            "unit_id": self._ac_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "choice_key": resolved_choice,
+            "choice_label": self._null_maiden_witch_hunters_choice_label(resolved_choice),
+            "attack_type": attack_type,
+            "stratagem_name": str(stratagem_name or "WITCH HUNTERS").strip() or "WITCH HUNTERS",
+        }
+
+    def _queue_null_maiden_psychic_abominations_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_null_maiden_vigil_detachment():
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "SHOOTING_PHASE":
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates = self._null_maiden_psychic_abominations_candidates(list(target_units or []))
+        if not candidates:
+            return
+        stratagem = self.get_by_name("PSYCHIC ABOMINATIONS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "PSYCHIC ABOMINATIONS":
+                continue
+            if reaction.get("attacking_unit") is attacker_root:
+                return
+        self._queue_reaction(
+            {
+                "event": "shooting_targets_selected",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "attacking_unit": attacker_root,
+                "candidates": candidates,
+                "target_unit": candidates[0] if len(candidates) == 1 else None,
+            },
+            use_timer=False,
+        )
+
+    def _queue_null_maiden_psy_chaff_volley_reaction(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: dict[Any, Any] | None,
+    ) -> None:
+        if not self._is_null_maiden_vigil_detachment():
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "SHOOTING_PHASE":
+            return
+        attacker_root = self._ac_root(attacker_unit)
+        if attacker_root is None or not self._ac_owned_by_player(attacker_root):
+            return
+        if not self._ac_unit_name_startswith(attacker_root, ("Prosecutors",)):
+            return
+        if self._unit_cannot_be_target_of_stratagem(attacker_root):
+            return
+        enemy_candidates: list[Any] = []
+        for unit, hit_count in dict(hits_by_target or {}).items():
+            try:
+                parsed_hits = int(hit_count or 0)
+            except (TypeError, ValueError):
+                parsed_hits = 0
+            if parsed_hits <= 0:
+                continue
+            root = self._ac_root(unit)
+            if root is None or not self._ac_is_enemy_battlefield_unit(root):
+                continue
+            enemy_candidates.append(root)
+        enemy_candidates = self._ac_unique_units(enemy_candidates)
+        if not enemy_candidates:
+            return
+        stratagem = self.get_by_name("PSY-CHAFF VOLLEY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "PSY-CHAFF VOLLEY":
+                continue
+            if reaction.get("unit") is attacker_root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": attacker_root,
+                "target_unit": attacker_root,
+                "enemy_candidates": enemy_candidates,
+                "enemy_unit": enemy_candidates[0] if len(enemy_candidates) == 1 else None,
+            },
+            use_timer=False,
+        )
+
+    def _capture_null_maiden_desperations_price_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        weapon_declarations: list[dict[str, Any]] | None,
+    ) -> None:
+        if not self._is_null_maiden_vigil_detachment():
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        if not self._ac_has_keyword(attacker_root, "PSYKER"):
+            return
+        has_psychic_attack = False
+        for declaration in list(weapon_declarations or []):
+            target_unit = self._ac_root(declaration.get("target_unit"))
+            if target_unit is None:
+                continue
+            profile = declaration.get("weapon_profile")
+            is_psychic = getattr(profile, "is_psychic", None)
+            if callable(is_psychic) and bool(is_psychic()):
+                has_psychic_attack = True
+                break
+        if not has_psychic_attack:
+            return
+        tracked = dict(getattr(self, "_null_maiden_desperations_price_shooting_attackers", {}) or {})
+        tracked[self._ac_sort_key(attacker_root)] = attacker_root
+        self._null_maiden_desperations_price_shooting_attackers = tracked
+
+    def _queue_null_maiden_desperations_price_reaction(
+        self,
+        *,
+        enemy_unit: Any,
+        source_event: str,
+    ) -> None:
+        if not self._is_null_maiden_vigil_detachment():
+            return
+        enemy_root = self._ac_root(enemy_unit)
+        if enemy_root is None or not self._ac_is_enemy_battlefield_unit(enemy_root):
+            return
+        if not self._ac_has_keyword(enemy_root, "PSYKER"):
+            return
+        candidates = self._null_maiden_desperations_price_candidates(enemy_root)
+        if not candidates:
+            return
+        stratagem = self.get_by_name("DESPERATION'S PRICE")
+        phase_name = self._ac_current_phase_name() or "Any phase"
+        if stratagem is None or not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            target_unit=candidates[0],
+            phase_name=phase_name,
+        ):
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        enemy_id = self._ac_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "DESPERATION'S PRICE":
+                continue
+            if str(reaction.get("enemy_unit_id", "") or "").strip() == enemy_id:
+                return
+        self._queue_reaction(
+            {
+                "event": source_event,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "enemy_unit": enemy_root,
+                "enemy_unit_id": enemy_id,
+                "candidates": candidates,
+                "target_unit": candidates[0] if len(candidates) == 1 else None,
+            },
+            use_timer=False,
+        )
+
+    def _queue_null_maiden_desperations_price_from_shooting_resolved(self, *, attacker_unit: Any) -> None:
+        attacker_root = self._ac_root(attacker_unit)
+        attacker_id = self._ac_sort_key(attacker_root)
+        tracked = dict(getattr(self, "_null_maiden_desperations_price_shooting_attackers", {}) or {})
+        tracked.pop(attacker_id, None)
+        self._null_maiden_desperations_price_shooting_attackers = tracked
+        self._queue_null_maiden_desperations_price_reaction(
+            enemy_unit=attacker_root,
+            source_event="unit_shooting_resolved",
+        )
+
+    def _on_shooting_targets_selected_adeptus_custodes_null_maiden(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        weapon_declarations=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        self._queue_null_maiden_psychic_abominations_reaction(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        self._capture_null_maiden_desperations_price_shooting_targets_selected(
+            attacking_unit=attacking_unit,
+            weapon_declarations=list(weapon_declarations or []),
+        )
+
+    def _on_unit_shooting_resolved_adeptus_custodes_null_maiden(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_psychic=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None:
+            return
+        self._queue_null_maiden_psy_chaff_volley_reaction(
+            attacker_unit=attacker_unit,
+            hits_by_target=dict(hits_by_target or {}),
+        )
+        attacker_root = self._ac_root(attacker_unit)
+        tracked = dict(getattr(self, "_null_maiden_desperations_price_shooting_attackers", {}) or {})
+        if self._ac_sort_key(attacker_root) in tracked or bool(dict(hit_models_by_target_psychic or {})):
+            self._queue_null_maiden_desperations_price_from_shooting_resolved(attacker_unit=attacker_root)
+
+    def _on_fight_attacks_resolved_adeptus_custodes_null_maiden(
+        self,
+        unit=None,
+        hit_models_by_target_psychic=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        if not bool(dict(hit_models_by_target_psychic or {})):
+            return
+        self._queue_null_maiden_desperations_price_reaction(
+            enemy_unit=unit,
+            source_event="fight_attacks_resolved",
+        )
+
+    def _on_cabal_ritual_resolved_adeptus_custodes_null_maiden(
+        self,
+        player=None,
+        caster_unit=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if player is self.player or caster_unit is None or target_unit is None:
+            return
+        self._queue_null_maiden_desperations_price_reaction(
+            enemy_unit=caster_unit,
+            source_event="cabal_ritual_resolved",
+        )
+
     def _use_adeptus_custodes_stratagem(self, stratagem, **kwargs):
         name_u = str(self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")).strip()
         handled = {
+            "ANATHEMA BLADEMASTERY",
+            "DESPERATION'S PRICE",
             "EARNING OF A NAME",
             "MANOEUVRE AND FIRE",
             "PEERLESS WARRIOR",
+            "PSY-CHAFF VOLLEY",
+            "PSYCHIC ABOMINATIONS",
+            "PURGATION SWEEP",
             "SHOULDER THE MANTLE",
             "SLAYER OF CHAMPIONS",
             "SUPERHUMAN RESERVES",
             "SWIFT AS THE EAGLE",
             "THE EMPEROR'S AUSPICE",
             "VIGIL UNENDING",
+            "WITCH HUNTERS",
         }
         if name_u not in handled:
             return None
@@ -502,10 +1237,294 @@ class AdeptusCustodesStratagemMixin:
             "SWIFT AS THE EAGLE",
         } and not self._is_lions_of_the_emperor_detachment():
             return False
+        if name_u in {
+            "ANATHEMA BLADEMASTERY",
+            "DESPERATION'S PRICE",
+            "PSY-CHAFF VOLLEY",
+            "PSYCHIC ABOMINATIONS",
+            "PURGATION SWEEP",
+            "WITCH HUNTERS",
+        } and not self._is_null_maiden_vigil_detachment():
+            return False
 
         phase_name = self._ac_current_phase_name(kwargs.get("phase_name"))
         pending = self._ac_pending_reaction(name_u)
         dequeue = bool(kwargs.get("dequeue"))
+
+        if name_u == "ANATHEMA BLADEMASTERY":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._null_maiden_anathema_blademastery_candidates()
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: ANATHEMA BLADEMASTERY: wrong phase")
+                return False
+            if source_unit is None or not self._ac_unit_name_startswith(source_unit, ("Vigilators",)):
+                logger.error("ERROR: ANATHEMA BLADEMASTERY: target must be a Vigilators unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: ANATHEMA BLADEMASTERY: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if bool(getattr(getattr(source_unit, "round_state", None), "fought_this_phase", False)):
+                logger.error("ERROR: ANATHEMA BLADEMASTERY: target has already fought this phase")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["custodes_null_maiden_anathema_blademastery_active"] = True
+            special_rules["custodes_null_maiden_anathema_blademastery_turn"] = self._ac_current_turn()
+            special_rules["custodes_null_maiden_anathema_blademastery_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_null_maiden_anathema_blademastery_expires_phase"] = "FIGHT_PHASE"
+            special_rules["custodes_null_maiden_anathema_blademastery_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "PURGATION SWEEP":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._null_maiden_purgation_sweep_candidates()
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: PURGATION SWEEP: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: PURGATION SWEEP: must be your Shooting phase")
+                return False
+            if source_unit is None or not self._ac_unit_name_startswith(source_unit, ("Witchseekers",)):
+                logger.error("ERROR: PURGATION SWEEP: target must be a Witchseekers unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: PURGATION SWEEP: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if bool(getattr(getattr(source_unit, "round_state", None), "shot_this_round", False)):
+                logger.error("ERROR: PURGATION SWEEP: target has already been selected to shoot")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["custodes_null_maiden_purgation_sweep_active"] = True
+            special_rules["custodes_null_maiden_purgation_sweep_turn"] = self._ac_current_turn()
+            special_rules["custodes_null_maiden_purgation_sweep_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_null_maiden_purgation_sweep_expires_phase"] = "SHOOTING_PHASE"
+            special_rules["custodes_null_maiden_purgation_sweep_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "WITCH HUNTERS":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            phase_lower = self._ac_phase_name_lower(phase_name)
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._null_maiden_witch_hunters_candidates(
+                phase_name=phase_name,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if phase_lower not in {"shooting phase", "fight phase"}:
+                logger.error("ERROR: WITCH HUNTERS: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: WITCH HUNTERS: target must be an Anathema Psykana unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: WITCH HUNTERS: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            choice_key = self._null_maiden_witch_hunters_choice_key(
+                kwargs.get("choice_key", "") or kwargs.get("choice", "") or kwargs.get("selected_choice", "")
+            )
+            if choice_key:
+                valid, reason = self.validate_null_maiden_witch_hunters_choice(
+                    source_unit,
+                    {"choice_key": choice_key, "stratagem_name": stratagem.name},
+                    game=self.game,
+                    player=self.player,
+                    phase_name=phase_name,
+                    attack_type="ranged" if phase_lower == "shooting phase" else "melee",
+                    turn=self._ac_current_turn(),
+                    turn_owner_id=self._ac_turn_owner_id(),
+                    stratagem_name=stratagem.name,
+                )
+                if not valid:
+                    logger.error("ERROR: WITCH HUNTERS: %s", reason)
+                    return False
+                if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                    return False
+                if self._apply_null_maiden_witch_hunters_effect(
+                    source_unit,
+                    choice_key=choice_key,
+                    phase_name=phase_name,
+                    stratagem_name=stratagem.name,
+                ) is None:
+                    return False
+                self._ac_finalize_use(stratagem, dequeue=dequeue)
+                return True
+            choice_request = self._build_null_maiden_witch_hunters_choice_request(
+                unit=source_unit,
+                phase_name=phase_name,
+                stratagem_name=str(getattr(stratagem, "name", "") or "WITCH HUNTERS"),
+            )
+            if choice_request is None:
+                logger.error("ERROR: WITCH HUNTERS: failed to build choice request")
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            if not self._ac_submit_decision_request(choice_request):
+                logger.error("ERROR: WITCH HUNTERS: failed to queue choice request")
+                return False
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "PSYCHIC ABOMINATIONS":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or (pending or {}).get("attacking_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._null_maiden_psychic_abominations_candidates(list(kwargs.get("target_units") or []))
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: PSYCHIC ABOMINATIONS: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_anathema_psykana_unit(source_unit) or not self._ac_has_keyword(source_unit, "INFANTRY"):
+                logger.error("ERROR: PSYCHIC ABOMINATIONS: target must be an Anathema Psykana Infantry unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: PSYCHIC ABOMINATIONS: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: PSYCHIC ABOMINATIONS: missing enemy attacking unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["opponent_shooting_phase_stealth_active"] = True
+            special_rules["opponent_shooting_phase_stealth_owner"] = self._ac_turn_owner_id()
+            special_rules["opponent_shooting_phase_stealth_turn"] = self._ac_current_turn()
+            special_rules["opponent_shooting_phase_stealth_source"] = stratagem.name
+            special_rules["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+            special_rules["custodes_null_maiden_psychic_abominations_active"] = True
+            special_rules["custodes_null_maiden_psychic_abominations_turn"] = self._ac_current_turn()
+            special_rules["custodes_null_maiden_psychic_abominations_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_null_maiden_psychic_abominations_expires_phase"] = "SHOOTING_PHASE"
+            special_rules["custodes_null_maiden_psychic_abominations_targeting_range"] = 12.0
+            special_rules["custodes_null_maiden_psychic_abominations_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "PSY-CHAFF VOLLEY":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("unit"))
+            enemy_unit = self._ac_root(kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit") or (pending or {}).get("enemy_unit"))
+            enemy_candidates = self._ac_unique_units(list(kwargs.get("enemy_candidates") or (pending or {}).get("enemy_candidates") or []))
+            if enemy_unit is None and len(enemy_candidates) == 1:
+                enemy_unit = enemy_candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: PSY-CHAFF VOLLEY: wrong phase")
+                return False
+            if source_unit is None or not self._ac_unit_name_startswith(source_unit, ("Prosecutors",)):
+                logger.error("ERROR: PSY-CHAFF VOLLEY: source must be a Prosecutors unit")
+                return False
+            if not self._ac_owned_by_player(source_unit) or not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if enemy_unit is None or not self._ac_is_enemy_battlefield_unit(enemy_unit):
+                logger.error("ERROR: PSY-CHAFF VOLLEY: missing enemy unit hit by the attacks")
+                return False
+            if enemy_candidates and enemy_unit not in enemy_candidates:
+                logger.error("ERROR: PSY-CHAFF VOLLEY: selected enemy is not an eligible candidate")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(enemy_unit, "special_rules", {}) or {})
+            special_rules["custodes_null_maiden_psy_chaff_volley_active"] = True
+            special_rules["custodes_null_maiden_psy_chaff_volley_source_unit_id"] = self._ac_sort_key(source_unit)
+            special_rules["custodes_null_maiden_psy_chaff_volley_turn"] = self._ac_current_turn()
+            special_rules["custodes_null_maiden_psy_chaff_volley_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            special_rules["custodes_null_maiden_psy_chaff_volley_source"] = stratagem.name
+            enemy_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "DESPERATION'S PRICE":
+            from ..units.status_effects import BattleShockEffect
+
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            enemy_unit = self._ac_root(kwargs.get("enemy_unit") or (pending or {}).get("enemy_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if enemy_unit is not None and not candidates:
+                candidates = self._null_maiden_desperations_price_candidates(enemy_unit)
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if source_unit is None or not self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: DESPERATION'S PRICE: target must be an Anathema Psykana unit")
+                return False
+            if enemy_unit is None or not self._ac_is_enemy_battlefield_unit(enemy_unit) or not self._ac_has_keyword(enemy_unit, "PSYKER"):
+                logger.error("ERROR: DESPERATION'S PRICE: missing enemy PSYKER unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: DESPERATION'S PRICE: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            game_map = getattr(getattr(self, "game", None), "map", None)
+            if game_map is None:
+                return False
+            try:
+                distance = float(game_map.get_distance_between_units(source_unit, enemy_unit))
+            except (TypeError, ValueError):
+                distance = 999.0
+            if distance > 18.0:
+                logger.error("ERROR: DESPERATION'S PRICE: target must be within 18\" of the enemy PSYKER")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            leadership_check = getattr(enemy_unit, "pass_leadership_check", None)
+            if not callable(leadership_check):
+                logger.error("ERROR: DESPERATION'S PRICE: enemy unit cannot take a Leadership test")
+                return False
+            passed = bool(leadership_check())
+            if not passed:
+                apply_mortal_wounds = getattr(source_unit, "_apply_mortal_wounds_to_unit", None)
+                if callable(apply_mortal_wounds):
+                    apply_mortal_wounds(enemy_unit, 3, game_map=game_map)
+            if not self._ac_is_battle_shocked(enemy_unit):
+                apply_status = getattr(enemy_unit, "apply_status_effect", None)
+                if callable(apply_status):
+                    apply_status(BattleShockEffect(self._ac_current_turn()))
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
 
         if name_u == "EARNING OF A NAME":
             roots = self._ac_unique_units(

@@ -590,6 +590,12 @@ class FightPhaseManager:
                             continue
                     except Exception:
                         pass
+                    try:
+                        lock_check = getattr(fighting_unit, "_adeptus_custodes_witch_hunters_target_locked_to", None)
+                        if callable(lock_check) and not bool(lock_check(enemy_root, game=self.game, attack_type="melee")):
+                            continue
+                    except Exception:
+                        pass
                     eligible_targets.append(enemy_root)
             except Exception:
                 continue

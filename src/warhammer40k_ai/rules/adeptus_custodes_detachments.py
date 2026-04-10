@@ -2263,6 +2263,219 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             source = self._RAPTOR_BLADE_SOURCE
         return int(bonus), source
 
+    def _null_maiden_phase_effect_active(self, sr: dict, prefix: str, *, game=None) -> bool:
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active")):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return True
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return False
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return False
+        return True
+
+    def _null_maiden_until_owner_next_turn_active(self, sr: dict, prefix: str, *, game=None) -> bool:
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active")):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return True
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and current_turn < effect_turn:
+            return False
+        effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and current_owner == effect_owner and effect_turn and current_turn != effect_turn:
+                return False
+        return True
+
+    def _null_maiden_psy_chaff_volley_context(self, unit, *, game=None) -> Optional[dict]:
+        root = self._root_unit(unit)
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        prefix = "custodes_null_maiden_psy_chaff_volley"
+        if not self._null_maiden_until_owner_next_turn_active(sr, prefix, game=game):
+            return None
+        source_unit_id = str(sr.get(f"{prefix}_source_unit_id", "") or "").strip()
+        if not source_unit_id:
+            return None
+        source_unit = None
+        if game is not None:
+            registry = getattr(game, "entity_registry", None)
+            getter = getattr(registry, "get", None) if registry is not None else None
+            if callable(getter):
+                source_unit = getter(source_unit_id, kind="unit")
+                if source_unit is None:
+                    source_unit = getter(source_unit_id)
+        source_root = self._root_unit(source_unit)
+        if source_root is None or not self._unit_is_active(source_root) or not self._unit_in_army(source_root):
+            return None
+        source = str(sr.get(f"{prefix}_source", "") or "PSY-CHAFF VOLLEY").strip() or "PSY-CHAFF VOLLEY"
+        return {
+            "source_unit_id": source_unit_id,
+            "source_unit": source_root,
+            "source": source,
+        }
+
+    def null_maiden_anathema_blademastery_hit_reroll(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del target_unit
+        del attack_instance
+        if not self.is_null_maiden_vigil() or attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        root = self._root_unit(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return False, ""
+        if weapon_profile is not None:
+            is_melee = getattr(weapon_profile, "parent_wargear", None)
+            is_melee_check = getattr(is_melee, "is_melee", None) if is_melee is not None else None
+            if callable(is_melee_check) and not bool(is_melee_check()):
+                return False, ""
+        sr = getattr(root, "special_rules", None)
+        prefix = "custodes_null_maiden_anathema_blademastery"
+        if not self._null_maiden_phase_effect_active(sr, prefix, game=game):
+            return False, ""
+        source = str(sr.get(f"{prefix}_source", "") or "ANATHEMA BLADEMASTERY").strip() or "ANATHEMA BLADEMASTERY"
+        return True, source
+
+    def null_maiden_anathema_blademastery_wound_reroll(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del attack_instance
+        hit_reroll, source = self.null_maiden_anathema_blademastery_hit_reroll(
+            attacker_model,
+            target_unit=target_unit,
+            game=game,
+            weapon_profile=weapon_profile,
+        )
+        if not hit_reroll:
+            return False, ""
+        target_root = self._root_unit(target_unit)
+        if target_root is None:
+            return False, ""
+        if not self._unit_has_keyword(target_root, "PSYKER") and not self._unit_is_battle_shocked(target_root):
+            return False, ""
+        return True, source
+
+    def null_maiden_purgation_sweep_attacks_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del attack_instance
+        if not self.is_null_maiden_vigil() or attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if weapon_profile is None:
+            return 0, ""
+        is_torrent = getattr(weapon_profile, "is_torrent", None)
+        if not callable(is_torrent) or not bool(is_torrent()):
+            return 0, ""
+        root = self._root_unit(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        prefix = "custodes_null_maiden_purgation_sweep"
+        if not self._null_maiden_phase_effect_active(sr, prefix, game=game):
+            return 0, ""
+        target_root = self._root_unit(target_unit)
+        is_priority_target = target_root is not None and (
+            self._unit_has_keyword(target_root, "PSYKER") or self._unit_is_battle_shocked(target_root)
+        )
+        bonus = 2 if is_priority_target else 1
+        source = str(sr.get(f"{prefix}_source", "") or "PURGATION SWEEP").strip() or "PURGATION SWEEP"
+        return int(bonus), source
+
+    def null_maiden_psy_chaff_volley_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> int:
+        del weapon_profile
+        del attack_instance
+        if not self.is_null_maiden_vigil() or attacker_model is None or not self._model_in_army(attacker_model):
+            return 0
+        if not self._model_is_anathema_psykana(attacker_model):
+            return 0
+        if self._null_maiden_psy_chaff_volley_context(target_unit, game=game) is None:
+            return 0
+        return 1
+
+    def null_maiden_psy_chaff_volley_hit_penalty(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit
+        del weapon_profile
+        del attack_instance
+        if not self.is_null_maiden_vigil() or attacker_model is None:
+            return 0, ""
+        root = self._root_unit(getattr(attacker_model, "parent_unit", None))
+        context = self._null_maiden_psy_chaff_volley_context(root, game=game)
+        if not isinstance(context, dict):
+            return 0, ""
+        if not self._unit_is_battle_shocked(root) and not self._unit_has_keyword(root, "PSYKER"):
+            return 0, ""
+        return -1, str(context.get("source", "") or "PSY-CHAFF VOLLEY").strip() or "PSY-CHAFF VOLLEY"
+
     def _assemblage_of_might_eligible_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_auric_champions():
             return []

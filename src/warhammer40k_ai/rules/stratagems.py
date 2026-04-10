@@ -91,6 +91,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
+    "ANATHEMA BLADEMASTERY",
+    "DESPERATION'S PRICE",
     "EARNING OF A NAME",
     "EXPEDITIOUS EXIT",
     "EXPERIMENTAL AMMUNITION",
@@ -133,6 +135,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARGENT WRATH",
     "POINT-BLANK PURGATION",
     "PRECOGNITIVE STRATEGIES",
+    "PSY-CHAFF VOLLEY",
+    "PSYCHIC ABOMINATIONS",
+    "PURGATION SWEEP",
     "CHRONOSORCEROUS BLEED",
     "DECEPTIVE GLAMOUR",
     "ETHEREAL PHANTASM",
@@ -416,6 +421,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SUPERHUMAN RESERVES",
     "SURGICAL STRIKES",
     "THE EMPEROR'S AUSPICE",
+    "WITCH HUNTERS",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
     "TRUESILVER CHANNELLING",
@@ -2611,6 +2617,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_renegade_warband)
         if "ALL IS ROT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_death_guard)
+        if names & {"DESPERATION'S PRICE", "PSY-CHAFF VOLLEY"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_adeptus_custodes_null_maiden)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -2799,6 +2807,8 @@ class StratagemManager(
             add("shooting_targets_selected", self._on_shooting_targets_selected)
         elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS", "STUNNING FUSILLADE"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
+        if names & {"DESPERATION'S PRICE", "PSYCHIC ABOMINATIONS"}:
+            add("shooting_targets_selected", self._on_shooting_targets_selected_adeptus_custodes_null_maiden)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
             add("fight_targets_selected", self._on_fight_targets_selected)
@@ -2834,6 +2844,9 @@ class StratagemManager(
             "SOUL HUNGER",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
+        if "DESPERATION'S PRICE" in names:
+            add("fight_attacks_resolved", self._on_fight_attacks_resolved_adeptus_custodes_null_maiden)
+            add("cabal_ritual_resolved", self._on_cabal_ritual_resolved_adeptus_custodes_null_maiden)
 
         if has_consolidate_spec:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved_consolidate_stratagems)

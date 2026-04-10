@@ -19206,6 +19206,129 @@ class GameView:
             )
             return
 
+        if name_u in ("ANATHEMA BLADEMASTERY", "PURGATION SWEEP", "PSYCHIC ABOMINATIONS", "WITCH HUNTERS") and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                phase_name = context.get("phase_name") or getattr(manager, "_current_phase_name", "") or ""
+                if not candidates:
+                    if name_u == "ANATHEMA BLADEMASTERY":
+                        getter = getattr(manager, "_null_maiden_anathema_blademastery_candidates", None)
+                        candidates = list(getter() or []) if callable(getter) else []
+                    elif name_u == "PURGATION SWEEP":
+                        getter = getattr(manager, "_null_maiden_purgation_sweep_candidates", None)
+                        candidates = list(getter() or []) if callable(getter) else []
+                    elif name_u == "WITCH HUNTERS":
+                        getter = getattr(manager, "_null_maiden_witch_hunters_candidates", None)
+                        candidates = list(getter(phase_name=phase_name) or []) if callable(getter) else []
+                    elif name_u == "PSYCHIC ABOMINATIONS":
+                        getter = getattr(manager, "_null_maiden_psychic_abominations_candidates", None)
+                        candidates = list(getter(list(context.get("target_units") or [])) or []) if callable(getter) else []
+                prompt_map = {
+                    "ANATHEMA BLADEMASTERY": "Select a Vigilators unit that has not been selected to fight.",
+                    "PURGATION SWEEP": "Select a Witchseekers unit that has not been selected to shoot.",
+                    "PSYCHIC ABOMINATIONS": "Select an Anathema Psykana Infantry unit that was just targeted.",
+                    "WITCH HUNTERS": "Select an Anathema Psykana unit to empower this phase.",
+                }
+                subtitle_map = {
+                    "ANATHEMA BLADEMASTERY": "Friendly Vigilators unit on the battlefield.",
+                    "PURGATION SWEEP": "Friendly Witchseekers unit on the battlefield.",
+                    "PSYCHIC ABOMINATIONS": "Friendly Anathema Psykana Infantry unit targeted by the enemy shooter.",
+                    "WITCH HUNTERS": "Friendly Anathema Psykana unit eligible in the current Shooting or Fight phase.",
+                }
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=prompt_map.get(name_u, f"Select unit for {name}."),
+                    title=name,
+                    subtitle=subtitle_map.get(name_u, "Choose a valid unit."),
+                    enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "PSY-CHAFF VOLLEY" and "enemy_unit" not in context and "target_enemy_unit" not in context:
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+            enemy_candidates = context.get("enemy_candidates") or []
+
+            def _after_psy_chaff_unit(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("PSY-CHAFF VOLLEY: no source unit selected")
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=list(enemy_candidates or []),
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an enemy unit hit by the Prosecutors unit.",
+                    title=name,
+                    subtitle="Enemy unit hit by one or more of that unit's attacks.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _after_psy_chaff_unit(preset_unit)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=context.get("candidates") or [],
+                on_chosen=_after_psy_chaff_unit,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select the Prosecutors unit that just shot.",
+                title=name,
+                subtitle="Friendly Prosecutors unit that just shot.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u == "DESPERATION'S PRICE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                enemy_unit = context.get("enemy_unit")
+                candidates = context.get("candidates") or []
+                if not candidates and enemy_unit is not None:
+                    getter = getattr(manager, "_null_maiden_desperations_price_candidates", None)
+                    candidates = list(getter(enemy_unit) or []) if callable(getter) else []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        unit,
+                        enemy_unit,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an Anathema Psykana unit within 18\" of the enemy PSYKER.",
+                    title=name,
+                    subtitle="Friendly Anathema Psykana unit reacting to the enemy PSYKER.",
+                    enemy_unit=enemy_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u in ("MORDIAN MINUTE", "PURGING FIRE", "VETERAN SHARPSHOOTERS") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER

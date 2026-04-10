@@ -1339,6 +1339,9 @@ class ShootingMixin:
         lock_check = getattr(root, "_space_marines_hunter_marked_for_destruction_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
             return False
+        lock_check = getattr(root, "_adeptus_custodes_witch_hunters_target_locked_to", None)
+        if callable(lock_check) and not bool(lock_check(target_unit, game=game, attack_type="ranged")):
+            return False
         acceptable_losses_target = False
         try:
             allow_target = getattr(root, "_gsc_acceptable_losses_allows_target", None)
@@ -1483,6 +1486,51 @@ class ShootingMixin:
             effective_max = weapon_profile.range.max
         if min_distance > effective_max:
             return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        except Exception:
+            target_root = target_unit
+        try:
+            target_sr = getattr(target_root, "special_rules", None)
+            if isinstance(target_sr, dict) and bool(target_sr.get("custodes_null_maiden_psychic_abominations_active")):
+                expected_phase = str(
+                    target_sr.get("custodes_null_maiden_psychic_abominations_expires_phase", "") or ""
+                ).strip().upper()
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                effect_active = not expected_phase or not current_phase or expected_phase == current_phase
+                try:
+                    effect_turn = int(target_sr.get("custodes_null_maiden_psychic_abominations_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    effect_active = False
+                effect_owner = str(target_sr.get("custodes_null_maiden_psychic_abominations_turn_owner", "") or "")
+                if effect_owner and game is not None:
+                    get_current_player = getattr(game, "get_current_player", None)
+                    current_player = get_current_player() if callable(get_current_player) else None
+                    current_owner = str(getattr(current_player, "id", "") or "")
+                    if current_owner and effect_owner != current_owner:
+                        effect_active = False
+                if effect_active:
+                    has_any_keyword = getattr(model, "has_any_keyword", None)
+                    model_is_psyker = bool(callable(has_any_keyword) and has_any_keyword("PSYKER"))
+                    if not model_is_psyker:
+                        has_keyword = getattr(model, "has_keyword", None)
+                        model_is_psyker = bool(callable(has_keyword) and has_keyword("PSYKER"))
+                    attacker_battle_shocked = bool(getattr(root, "is_battle_shocked", lambda: False)())
+                    if model_is_psyker or attacker_battle_shocked:
+                        limit = float(
+                            target_sr.get("custodes_null_maiden_psychic_abominations_targeting_range", 12.0) or 12.0
+                        )
+                        if min_distance > limit:
+                            return False
+        except Exception:
+            pass
 
         # Check line of sight (INDIRECT FIRE weapons can target without LOS)
         # For Linked Fire, check LOS from origin unit models

@@ -8429,6 +8429,47 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _adeptus_custodes_witch_hunters_target_locked_to(self, target_unit, *, game=None, attack_type: str = "") -> bool:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("custodes_null_maiden_witch_hunters_active")):
+            return True
+        effect_attack_type = str(sr.get("custodes_null_maiden_witch_hunters_attack_type", "") or "").strip().lower()
+        requested_attack_type = str(attack_type or "").strip().lower()
+        if effect_attack_type and requested_attack_type and effect_attack_type != requested_attack_type:
+            return True
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            expected_phase = str(sr.get("custodes_null_maiden_witch_hunters_expires_phase", "") or "").strip().upper()
+            if expected_phase and phase_name and expected_phase != phase_name:
+                return True
+            try:
+                effect_turn = int(sr.get("custodes_null_maiden_witch_hunters_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return True
+            effect_owner = str(sr.get("custodes_null_maiden_witch_hunters_turn_owner", "") or "")
+            if effect_owner:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                if current_owner and effect_owner != current_owner:
+                    return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        has_any_keyword = getattr(target_root, "has_any_keyword", None) if target_root is not None else None
+        if callable(has_any_keyword):
+            return bool(has_any_keyword("PSYKER"))
+        has_keyword = getattr(target_root, "has_keyword", None) if target_root is not None else None
+        return bool(callable(has_keyword) and has_keyword("PSYKER"))
+
     def _tau_alien_expertise_shoot_after_advance_active(self) -> bool:
         root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
         sr = getattr(root, "special_rules", None)
