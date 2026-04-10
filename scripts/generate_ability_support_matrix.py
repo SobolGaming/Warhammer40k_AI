@@ -20057,6 +20057,12 @@ def _stratagem_support(
     name_u = _canon_stratagem_name(name)
     det_u = _norm(detachment_name).upper()
     notes_by_id = {
+        "000008931002": "Any phase reaction after a friendly ADEPTUS CUSTODES CHARACTER unit destroys your current Assemblage of Might target: select one enemy unit on the battlefield; friendly ADEPTUS CUSTODES CHARACTER models gain +1 to wound against it until your next Command phase, and gain 1CP if the destroyed unit was a CHARACTER unit.",
+        "000008931003": "Any phase reaction after your ADEPTUS CUSTODES WARLORD uses a once-per-battle datasheet or Enhancement ability: that model gains one additional use of that same ability for a later phase this battle.",
+        "000008931004": "Opponent Shooting phase or the Fight phase reaction after an enemy selects targets: selected ADEPTUS CUSTODES CHARACTER unit gains Feel No Pain 4+ for its CHARACTER models until end of phase.",
+        "000008931005": "Fight phase: select up to two ADEPTUS CUSTODES CHARACTER units that have not been selected to fight; CHARACTER models in those units re-roll melee Hit and Wound rolls against MONSTER and VEHICLE targets until end of phase.",
+        "000008931006": "Fight phase reaction before removal: selected just-destroyed ADEPTUS CUSTODES CHARACTER model that has not fought automatically fights on death after the attacker finishes its attacks, then is removed.",
+        "000008931007": "Your Movement phase before Reinforcements: selected ADEPTUS CUSTODES CHARACTER leader not currently leading a unit attaches to one eligible friendly non-Battle-shocked bodyguard unit within 2\" horizontally and 5\" vertically.",
         "000010440002": "Start of any phase while Fortify Takeover is active: selected LEAGUES OF VOTANN CHARACTER unit can spend any amount of YP; if you have 6 or fewer YP remaining, Prioritised Efficiency switches to Hostile Acquisition until the start of your next turn, then restores automatically.",
         "000010440003": "Your Movement phase: selected HERNKYN unit that has not been selected to move treats its Advance distance this phase as a fixed +6\" instead of rolling.",
         "000010440004": "Your Shooting phase: selected HERNKYN unit that has not been selected to shoot gains full wound re-rolls against assailed units until end of phase, and can instead gain full wound re-rolls against any target by spending 2 YP.",

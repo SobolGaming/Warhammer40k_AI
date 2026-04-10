@@ -35,6 +35,94 @@ _STRATAGEM_DESCRIPTOR_NAME_OVERRIDES: dict[str, str] = {
 }
 
 
+_AURIC_CHAMPIONS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008931002": StratagemToolDescriptor(
+        stratagem_id="000008931002",
+        name="SLAYER OF CHAMPIONS",
+        timing="any_phase_after_friendly_character_destroys_assemblage_target",
+        target="adeptus_custodes_character_unit_that_destroyed_assemblage_target_and_one_enemy_unit",
+        duration="until_your_next_command_phase",
+        effect="mark_enemy_for_character_wound_bonus_and_gain_cp_if_destroyed_unit_was_character",
+        cp_cost=1,
+        effect_params={
+            "wound_bonus": 1,
+            "attacker_required_keywords_any": ["ADEPTUS CUSTODES", "CHARACTER"],
+            "cp_refund_if_destroyed_unit_has_keyword": "CHARACTER",
+        },
+    ),
+    "000008931003": StratagemToolDescriptor(
+        stratagem_id="000008931003",
+        name="SUPERHUMAN RESERVES",
+        timing="any_phase_after_warlord_uses_once_per_battle_ability",
+        target="adeptus_custodes_warlord_model_that_just_used_once_per_battle_ability",
+        duration="battle",
+        effect="grant_one_extra_use_of_same_once_per_battle_ability",
+        cp_cost=2,
+        effect_params={
+            "same_phase_reuse_forbidden": True,
+            "usage_limit": "once_per_model_and_ability_pair",
+        },
+    ),
+    "000008931004": StratagemToolDescriptor(
+        stratagem_id="000008931004",
+        name="THE EMPEROR'S AUSPICE",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="adeptus_custodes_character_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="grant_feel_no_pain_to_character_models_in_unit",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 4, "model_required_keywords_any": ["CHARACTER"]},
+    ),
+    "000008931005": StratagemToolDescriptor(
+        stratagem_id="000008931005",
+        name="EARNING OF A NAME",
+        timing="fight_phase",
+        target="one_or_two_adeptus_custodes_character_units_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_full_melee_hit_and_wound_rerolls_vs_monster_or_vehicle_for_character_models",
+        cp_cost=1,
+        effect_params={
+            "max_targets": 2,
+            "attack_type": "melee",
+            "model_required_keywords_any": ["CHARACTER"],
+            "target_required_keywords_any": ["MONSTER", "VEHICLE"],
+            "reroll_hit": "full",
+            "reroll_wound": "full",
+        },
+    ),
+    "000008931006": StratagemToolDescriptor(
+        stratagem_id="000008931006",
+        name="VIGIL UNENDING",
+        timing="fight_phase_on_friendly_character_model_destroyed_before_removal",
+        target="just_destroyed_adeptus_custodes_character_model_that_has_not_fought",
+        duration="immediate",
+        effect="automatic_melee_fight_on_death_after_attacking_unit_finishes",
+        cp_cost=2,
+        effect_params={"attack_type": "melee", "automatic": True, "before_removal": True},
+    ),
+    "000008931007": StratagemToolDescriptor(
+        stratagem_id="000008931007",
+        name="SHOULDER THE MANTLE",
+        timing="your_movement_phase_before_reinforcements_step",
+        target="adeptus_custodes_character_leader_not_currently_leading_and_one_eligible_bodyguard_unit",
+        duration="immediate",
+        effect="attach_leader_to_nearby_eligible_bodyguard_unit",
+        cp_cost=1,
+        range_in=2.0,
+        effect_params={
+            "horizontal_range": 2.0,
+            "vertical_range": 5.0,
+            "requires_bodyguard_not_battle_shocked": True,
+            "requires_bodyguard_not_attached": True,
+        },
+    ),
+}
+
+_AURIC_CHAMPIONS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AURIC_CHAMPIONS_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13187,6 +13275,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         return _with_override(_ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get("000010681005"))
 
     if stratagem_id:
+        desc = _AURIC_CHAMPIONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -13673,7 +13764,8 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
     if override_id:
         return get_stratagem_tool_descriptor(stratagem_id=override_id)
     return (
-        _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
+        _AURIC_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
+        or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)
         or _TRAITORIS_LANCE_STRATAGEM_BY_NAME.get(key)

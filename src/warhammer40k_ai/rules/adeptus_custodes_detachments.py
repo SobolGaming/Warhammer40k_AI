@@ -32,6 +32,8 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         super().__init__(army=army)
         self.assemblage_of_might_target_unit_id: str = ""
         self.assemblage_of_might_target_name: str = ""
+        self.slayer_of_champions_target_unit_id: str = ""
+        self.slayer_of_champions_target_name: str = ""
         self.martial_mastery_mode: str = ""
         self.martial_mastery_active_round: Optional[int] = None
         self.martial_mastery_resolved_round: Optional[int] = None
@@ -433,6 +435,59 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self._assemblage_of_might_attacker_eligible(attacker_model):
             return 0
         if not self.is_assemblage_of_might_target(target_unit):
+            return 0
+        return 1
+
+    def clear_slayer_of_champions_target(self) -> None:
+        self.slayer_of_champions_target_unit_id = ""
+        self.slayer_of_champions_target_name = ""
+        if self.army is not None:
+            setattr(self.army, "slayer_of_champions_target_unit_id", "")
+            setattr(self.army, "slayer_of_champions_target_name", "")
+
+    def set_slayer_of_champions_target(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        root = self._root_unit(target_unit)
+        if root is None:
+            return False
+        rid = str(maybe_entity_id(root) or "").strip()
+        if not rid:
+            return False
+        self.slayer_of_champions_target_unit_id = rid
+        self.slayer_of_champions_target_name = str(getattr(root, "name", "") or "")
+        if self.army is not None:
+            setattr(self.army, "slayer_of_champions_target_unit_id", self.slayer_of_champions_target_unit_id)
+            setattr(self.army, "slayer_of_champions_target_name", self.slayer_of_champions_target_name)
+        return True
+
+    def is_slayer_of_champions_target(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        target_id = str(self.slayer_of_champions_target_unit_id or "").strip()
+        if not target_id:
+            return False
+        root = self._root_unit(target_unit)
+        if root is None:
+            return False
+        rid = str(maybe_entity_id(root) or "").strip()
+        return bool(rid) and rid == target_id
+
+    def slayer_of_champions_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> int:
+        del game
+        del weapon_profile
+        del attack_instance
+        if not self._assemblage_of_might_attacker_eligible(attacker_model):
+            return 0
+        if not self.is_slayer_of_champions_target(target_unit):
             return 0
         return 1
 
@@ -2526,11 +2581,12 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         return 1
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
-        self.clear_assemblage_of_might_target()
         if self.army is None or player is None:
             return
         if player is not getattr(self.army, "player", None):
             return
+        self.clear_assemblage_of_might_target()
+        self.clear_slayer_of_champions_target()
         self.clear_veteran_of_the_kataphraktoi_targets()
         self.build_assemblage_of_might_request(game=game, player=player)
         self.build_huntress_eye_requests(game=game, player=player)

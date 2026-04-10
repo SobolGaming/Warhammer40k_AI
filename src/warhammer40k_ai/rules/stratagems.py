@@ -10,6 +10,7 @@ from ..engine.stratagem_ledger import StratagemApplicationLedger
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
 from .stratagems_adepta_sororitas import AdeptaSororitasStratagemMixin
+from .stratagems_adeptus_custodes import AdeptusCustodesStratagemMixin
 from .stratagems_adeptus_mechanicus import AdeptusMechanicusStratagemMixin
 from .stratagems_astra_militarum import AstraMilitarumStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
@@ -90,6 +91,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
+    "EARNING OF A NAME",
     "EXPEDITIOUS EXIT",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL MODIFICATIONS",
@@ -405,12 +407,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RUNES OF CLAIMING",
     "SAVAGE ECHOES",
     "SHOCK BOMBARDMENT",
+    "SLAYER OF CHAMPIONS",
     "SITE-TO-SITE TELEPORTATION",
     "STALKING WOLVES",
     "STORM OF DARKNESS",
     "STRIKE FROM THE SHADOWS",
     "STRIKE NOW FOR GLORY",
+    "SUPERHUMAN RESERVES",
     "SURGICAL STRIKES",
+    "THE EMPEROR'S AUSPICE",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
     "TRUESILVER CHANNELLING",
@@ -681,6 +686,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "WILL-SAPPING SALVO",
     "WILLÃ¢â‚¬â€˜SAPPING SALVO",
     "REACTIVE REPOSITION",
+    "SHOULDER THE MANTLE",
     "RED WRATH",
     "DEADLY DEBUT",
     "FEIGNED WEAKNESS",
@@ -697,6 +703,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GO GET Ã¢â‚¬â„¢EM!",
     "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
+    "VIGIL UNENDING",
     "ARMED TO DATEEF",
     "TOO ARROGANT TO DIE",
     "ALWAYS LOOKIN' FER A FIGHT",
@@ -2078,6 +2085,7 @@ class Stratagem:
 
 class StratagemManager(
     AdeptaSororitasStratagemMixin,
+    AdeptusCustodesStratagemMixin,
     AdeptusMechanicusStratagemMixin,
     ChaosSpaceMarinesStratagemMixin,
     EmperorsChildrenStratagemMixin,
@@ -2170,6 +2178,8 @@ class StratagemManager(
         self._used_battle_round: Dict[str, int] = {}
         # Lions of the Emperor: Gilded Champion cannot target the same model twice per battle.
         self._gilded_champion_used_models: set[str] = set()
+        # Auric Champions: Superhuman Reserves cannot extend the same model/ability pair twice.
+        self._auric_superhuman_reserves_granted_pairs: set[str] = set()
 
     def _unit_cannot_be_target_of_stratagem(self, unit: Any) -> bool:
         return _unit_cannot_be_target_of_stratagem(unit)
@@ -2179,6 +2189,10 @@ class StratagemManager(
         self.game = getattr(self.player, "game", None)
         if not isinstance(getattr(self, "_gilded_champion_used_models", None), set):
             self._gilded_champion_used_models = set(getattr(self, "_gilded_champion_used_models", []) or [])
+        if not isinstance(getattr(self, "_auric_superhuman_reserves_granted_pairs", None), set):
+            self._auric_superhuman_reserves_granted_pairs = set(
+                getattr(self, "_auric_superhuman_reserves_granted_pairs", []) or []
+            )
         if not isinstance(getattr(self, "_vessels_meet_force_wounds_before", None), dict):
             self._vessels_meet_force_wounds_before = {}
         if not isinstance(getattr(self, "_aeldari_corsair_models_before_shooting", None), dict):
@@ -2243,7 +2257,7 @@ class StratagemManager(
         # Always track phase to reset per-phase usage and phase-aware reactions.
         add("phase_start", self._on_phase_start)
 
-        if "GILDED CHAMPION" in names:
+        if names & {"GILDED CHAMPION", "SUPERHUMAN RESERVES"}:
             add("once_per_battle_ability_used", self._on_once_per_battle_ability_used)
 
         if "COMMAND RE-ROLL" in names:
@@ -2451,6 +2465,7 @@ class StratagemManager(
             "THE GRISLY FEAST",
             "YOUR TIME IS NIGH",
             "FINAL REDEMPTION",
+            "SLAYER OF CHAMPIONS",
             "AVENGE THE MASTERS!",
             "AVENGE THE STAR CHILDREN",
             "REGIMENTAL REINFORCEMENTS",
@@ -2485,6 +2500,7 @@ class StratagemManager(
             "GIFT OF CHANGE",
             "PROTOCOL OF THE ETERNAL REVENANT",
             "SAINTLY PAROXYSM",
+            "VIGIL UNENDING",
         }:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
@@ -2639,6 +2655,7 @@ class StratagemManager(
             "CAPRICIOUS REACTIONS",
             "CALL DAT DAKKA?",
             "PRAISE THE FALLEN",
+            "THE EMPEROR'S AUSPICE",
             "THE FOE FORESEEN",
             "LET DUTY BE YOUR SHIELD",
             "BRAZEN CONTEMPT",
@@ -2720,6 +2737,7 @@ class StratagemManager(
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "TOO ARROGANT TO DIE",
+            "THE EMPEROR'S AUSPICE",
             "EMISSARIES OF YNNEAD",
             "HEROES' FALL",
             "HEROES\u2019 FALL",
@@ -10072,6 +10090,14 @@ class StratagemManager(
             return
         if game is None:
             game = getattr(self.player, "game", None)
+        self._queue_auric_superhuman_reserves_reaction(
+            player=player,
+            model=model,
+            ability_key=ability_key,
+            ability_name=ability_name,
+            phase_name=phase_name,
+            source=source,
+        )
         prepared = self._gilded_champion_prepare(
             model=model,
             ability_key=ability_key,
@@ -14170,6 +14196,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_auric_the_emperors_auspice_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
+        try:
             self._process_genestealer_cults_bio_horror_revelation_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15632,6 +15666,14 @@ class StratagemManager(
             raise
         if owner_player is None or owner_player is self.player:
             return
+        try:
+            self._queue_auric_the_emperors_auspice_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Fight phase",
+            )
+        except Exception:
+            raise
         try:
             self._queue_aeldari_aspect_host_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
@@ -17992,6 +18034,10 @@ class StratagemManager(
             raise
         if root is None:
             return
+        try:
+            self._queue_auric_vigil_unending_reaction(unit=root, model=model)
+        except Exception:
+            raise
 
         try:
             self._queue_hallowed_martyrs_model_destroyed_reactions(unit=root, model=model)
@@ -18202,6 +18248,13 @@ class StratagemManager(
         """
         Faction stratagem reactions that trigger when a unit is destroyed.
         """
+        try:
+            self._queue_auric_slayer_of_champions_reaction(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         try:
             self._capture_aeldari_corsair_into_the_breach_destroyed_enemy(
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -18862,6 +18915,9 @@ class StratagemManager(
         chaos_knights_result = self._use_chaos_knights_stratagem(s, **kwargs)
         if chaos_knights_result is not None:
             return chaos_knights_result
+        adeptus_custodes_result = self._use_adeptus_custodes_stratagem(s, **kwargs)
+        if adeptus_custodes_result is not None:
+            return adeptus_custodes_result
         # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
         if name_u == "GILDED CHAMPION":
             model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)

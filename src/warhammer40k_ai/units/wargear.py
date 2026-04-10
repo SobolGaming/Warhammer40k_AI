@@ -19873,6 +19873,21 @@ class WargearProfile:
             if bonus:
                 dice_modifier += bonus
                 wound_result["modifiers"].append(f"+{bonus} to wound from Assemblage of Might")
+        if mgr is not None and callable(getattr(mgr, "slayer_of_champions_wound_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            bonus = int(
+                mgr.slayer_of_champions_wound_bonus(
+                    attacker,
+                    target,
+                    game=game,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                or 0
+            )
+            if bonus:
+                dice_modifier += bonus
+                wound_result["modifiers"].append(f"+{bonus} to wound from Slayer of Champions")
         if mgr is not None and callable(getattr(mgr, "gift_of_terran_artifice_melee_wound_bonus", None)):
             game = getattr(getattr(army, "player", None), "game", None)
             bonus, source = mgr.gift_of_terran_artifice_melee_wound_bonus(

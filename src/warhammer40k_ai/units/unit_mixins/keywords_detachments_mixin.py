@@ -1,5 +1,7 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
+from typing import Any
+
 from ._common import *
 
 
@@ -1709,6 +1711,120 @@ class KeywordsDetachmentsMixin:
             return {"threshold": 4, "source": source}
         return None
 
+    def _auric_temporary_effect_state(
+        self,
+        *,
+        active_key: str,
+        source_key: str,
+        turn_key: str,
+        owner_key: str,
+        expires_phase_key: str,
+        cleanup_keys: tuple[str, ...],
+        expected_phase: str = "FIGHT_PHASE",
+    ) -> tuple[bool, str, Any, Optional[dict]]:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        if root is None:
+            return False, "", None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return False, "", root, sr if isinstance(sr, dict) else None
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        expires_phase = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        active = True
+        if expected_phase and phase_name != str(expected_phase or "").strip().upper():
+            active = False
+        if expires_phase and phase_name and expires_phase != phase_name:
+            active = False
+        if effect_turn and current_turn and effect_turn != current_turn:
+            active = False
+        if effect_owner and current_owner_id and effect_owner != current_owner_id:
+            active = False
+        if not active:
+            for key in cleanup_keys:
+                sr.pop(key, None)
+            return False, "", root, sr
+        source = str(sr.get(source_key, "") or "").strip()
+        return True, source, root, sr
+
+    def _auric_earning_of_a_name_source(
+        self,
+        model: Optional['Model'] = None,
+        *,
+        attack_type: str = "any",
+        target=None,
+    ) -> str:
+        if model is None or target is None:
+            return ""
+        attack_scope = str(attack_type or "").strip().lower()
+        if attack_scope not in {"any", "melee"}:
+            return ""
+        model_is_character = bool(
+            (hasattr(model, "has_keyword") and model.has_keyword("CHARACTER"))
+            or (hasattr(model, "has_any_keyword") and model.has_any_keyword("CHARACTER"))
+        )
+        if not model_is_character:
+            return ""
+        if not (self._target_has_keyword(target, "MONSTER") or self._target_has_keyword(target, "VEHICLE")):
+            return ""
+        active, source, _root, _sr = self._auric_temporary_effect_state(
+            active_key="auric_earning_of_a_name_active",
+            source_key="auric_earning_of_a_name_source",
+            turn_key="auric_earning_of_a_name_turn",
+            owner_key="auric_earning_of_a_name_owner",
+            expires_phase_key="auric_earning_of_a_name_expires_phase",
+            cleanup_keys=(
+                "auric_earning_of_a_name_active",
+                "auric_earning_of_a_name_source",
+                "auric_earning_of_a_name_turn",
+                "auric_earning_of_a_name_owner",
+                "auric_earning_of_a_name_expires_phase",
+            ),
+            expected_phase="FIGHT_PHASE",
+        )
+        if not active:
+            return ""
+        return source or "Earning of a Name"
+
+    def _auric_vigil_unending_rule(self, *, model: Optional['Model'] = None) -> Optional[dict]:
+        if model is None:
+            return None
+        active, source, _root, sr = self._auric_temporary_effect_state(
+            active_key="auric_vigil_unending_active",
+            source_key="auric_vigil_unending_source",
+            turn_key="auric_vigil_unending_turn",
+            owner_key="auric_vigil_unending_owner",
+            expires_phase_key="auric_vigil_unending_expires_phase",
+            cleanup_keys=(
+                "auric_vigil_unending_active",
+                "auric_vigil_unending_model_ids",
+                "auric_vigil_unending_turn",
+                "auric_vigil_unending_owner",
+                "auric_vigil_unending_expires_phase",
+                "auric_vigil_unending_source",
+            ),
+            expected_phase="FIGHT_PHASE",
+        )
+        if not active or not isinstance(sr, dict):
+            return None
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id:
+            return None
+        model_ids = {
+            str(value).strip()
+            for value in list(sr.get("auric_vigil_unending_model_ids", []) or [])
+            if str(value).strip()
+        }
+        if model_id not in model_ids:
+            return None
+        return {"automatic": True, "source": source or "Vigil Unending"}
+
     def get_melee_fight_on_death_after_attacks_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -1729,6 +1845,10 @@ class KeywordsDetachmentsMixin:
         too_arrogant_rule = self._temporary_orks_too_arrogant_to_die_rule(expected_phase="FIGHT_PHASE")
         if too_arrogant_rule is not None:
             return too_arrogant_rule
+
+        auric_vigil_rule = self._auric_vigil_unending_rule(model=model)
+        if auric_vigil_rule is not None:
+            return auric_vigil_rule
 
         try:
             sr = getattr(self, "special_rules", None)
@@ -17708,6 +17828,10 @@ class KeywordsDetachmentsMixin:
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        auric_source = self._auric_earning_of_a_name_source(model, attack_type=attack_scope, target=target)
+        if auric_source:
+            reroll_full = True
+            reroll_full_reasons.append(f"{auric_source}: re-roll Hit rolls vs MONSTER or VEHICLE targets")
         if model is not None:
             transport_id = str(getattr(getattr(self, "round_state", None), "disembarked_from_transport_id", "") or "")
             if transport_id and target is not None:
@@ -18186,6 +18310,9 @@ class KeywordsDetachmentsMixin:
 
     def get_model_wound_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="wound")
+        attack_scope = str(attack_type or "").strip().lower()
+        if attack_scope not in {"melee", "ranged"}:
+            attack_scope = "any"
         reroll_values = set(mods.get("reroll_values", ()) or ())
         reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
         reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
@@ -18194,6 +18321,10 @@ class KeywordsDetachmentsMixin:
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        auric_source = self._auric_earning_of_a_name_source(model, attack_type=attack_scope, target=target)
+        if auric_source:
+            reroll_full = True
+            reroll_full_reasons.append(f"{auric_source}: re-roll Wound rolls vs MONSTER or VEHICLE targets")
         if model is not None:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
