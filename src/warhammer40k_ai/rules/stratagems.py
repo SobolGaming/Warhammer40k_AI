@@ -123,6 +123,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GENE-TWISTED MUSCLE",
     "GUIDED FIRE",
     "HEXWROUGHT REPRISAL",
+    "TRUESILVER WILL",
+    "ABOMINUS-CLASS TARGETS",
+    "ARMOURED AEGIS",
+    "REDOUBLED ASSAULT",
+    "FORCE WAVE",
+    "ARGENT WRATH",
     "POINT-BLANK PURGATION",
     "PRECOGNITIVE STRATEGIES",
     "CHRONOSORCEROUS BLEED",
@@ -2491,6 +2497,7 @@ class StratagemManager(
             "SHIELD OF DENIAL",
             "SHIELD OF FAITH",
             "THIEVES OF PAIN",
+            "TRUESILVER WILL",
         }:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
         if names & {"PROTECTION OF THE DARK PRINCE", "THIEVES OF PAIN"}:
@@ -9265,6 +9272,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_sanctic_spearhead_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_brotherhood_strike_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10689,6 +10700,7 @@ class StratagemManager(
             self._cleanup_augurium_phase_end_effects(phase=phase)
             self._cleanup_banishers_phase_end_effects(phase=phase)
             self._cleanup_hallowed_conclave_phase_end_effects(phase=phase)
+            self._cleanup_sanctic_spearhead_phase_end_effects(phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
@@ -12810,6 +12822,7 @@ class StratagemManager(
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_banishers_move_end_reactions(unit=unit, action=action)
         self._queue_hallowed_conclave_move_end_reactions(unit=unit, action=action)
+        self._queue_sanctic_spearhead_move_end_reactions(unit=unit, action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
@@ -17674,6 +17687,15 @@ class StratagemManager(
             self._track_banishers_hexwrought_mortal_wound(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_sanctic_spearhead_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
                 phase_name=phase_name,
             )
         except Exception:

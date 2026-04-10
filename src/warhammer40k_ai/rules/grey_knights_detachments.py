@@ -1793,6 +1793,90 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
                 return None, {}
         return root, sr
 
+    def _sanctic_spearhead_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = False,
+        require_turn_match: bool = True,
+        require_owner_match: bool = True,
+    ) -> tuple[object | None, dict]:
+        if not self.is_sanctic_spearhead():
+            return None, {}
+        root = self._attached_root(unit)
+        if root is None:
+            return None, {}
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not self.army:
+            return None, {}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, {}
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if require_phase_match:
+            if not bool(sr.get(f"{prefix}_active", False)):
+                return None, {}
+            expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            current_phase = self._phase_name(game_obj) if game_obj is not None else ""
+            if expected_phase and current_phase and current_phase != expected_phase:
+                return None, {}
+        else:
+            active_keys = [key for key in sr.keys() if key.startswith(prefix) and key.endswith("_active")]
+            if not active_keys or not any(bool(sr.get(key, False)) for key in active_keys):
+                return None, {}
+        if require_turn_match and game_obj is not None:
+            try:
+                effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn > 0 and current_turn > 0 and effect_turn != current_turn:
+                return None, {}
+        if require_owner_match and game_obj is not None:
+            effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return None, {}
+        return root, sr
+
+    def sanctic_spearhead_redoubled_assault_can_shoot_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._sanctic_spearhead_phase_effect_state(
+            unit,
+            prefix="sanctic_spearhead_redoubled_assault",
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return False
+        round_state = getattr(root, "round_state", None)
+        return bool(getattr(round_state, "fell_back_this_round", False))
+
+    def sanctic_spearhead_redoubled_assault_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._sanctic_spearhead_phase_effect_state(
+            unit,
+            prefix="sanctic_spearhead_redoubled_assault",
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return False
+        round_state = getattr(root, "round_state", None)
+        return bool(getattr(round_state, "fell_back_this_round", False))
+
     def banishers_celerity_can_charge_after_advance(self, unit, *, game=None) -> bool:
         root, _sr = self._banishers_phase_effect_state(
             unit,

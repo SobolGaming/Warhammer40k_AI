@@ -80,6 +80,11 @@ class GreyKnightsStratagemMixin:
         checker = getattr(mgr, "is_hallowed_conclave", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_sanctic_spearhead(self) -> bool:
+        mgr = self._get_gk_mgr()
+        checker = getattr(mgr, "is_sanctic_spearhead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_gk_unit(self, unit: Any) -> bool:
         root = self._gk_root(unit)
         if root is None:
@@ -120,6 +125,16 @@ class GreyKnightsStratagemMixin:
             return bool(has_keyword("TERMINATOR"))
         has_any_keyword = getattr(unit, "has_any_keyword", None)
         return bool(has_any_keyword("TERMINATOR")) if callable(has_any_keyword) else False
+
+    @staticmethod
+    def _is_gk_vehicle_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword):
+            return bool(has_keyword("VEHICLE"))
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        return bool(has_any_keyword("VEHICLE")) if callable(has_any_keyword) else False
 
     def _is_purifier_squad_unit(self, unit: Any) -> bool:
         root = self._gk_root(unit)
@@ -262,6 +277,20 @@ class GreyKnightsStratagemMixin:
         if phase_key == "fight phase":
             return bool(getattr(round_state, "fought_this_phase", False))
         return False
+
+    @staticmethod
+    def _gk_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
+    @staticmethod
+    def _gk_selected_to_charge_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "attempted_charge_this_round", False))
 
     def _augurium_phase_candidates(self, *, phase_name: str) -> list[Any]:
         phase_key = str(phase_name or "").strip().lower()
@@ -974,6 +1003,182 @@ class GreyKnightsStratagemMixin:
             candidates.append(enemy_root)
         return sorted(candidates, key=self._gk_sort_key)
 
+    def _sanctic_spearhead_units(
+        self,
+        *,
+        require_psyker: bool = False,
+        require_vehicle: bool = False,
+        require_on_battlefield: bool = True,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_sanctic_spearhead():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        units: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if require_psyker and not self._is_gk_psyker_unit(root):
+                continue
+            if require_vehicle and not self._is_gk_vehicle_unit(root):
+                continue
+            if require_on_battlefield and not self._gk_is_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            units.append(root)
+        return sorted(units, key=self._gk_sort_key)
+
+    @staticmethod
+    def _sanctic_spearhead_unit_has_missing_wounds(unit: Any) -> bool:
+        if unit is None:
+            return False
+        for model in list(getattr(unit, "models", []) or []):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            if base_wounds > current_wounds:
+                return True
+        return False
+
+    def _sanctic_spearhead_truesilver_will_candidates(self, *, target_unit: Any) -> list[Any]:
+        root = self._gk_root(target_unit)
+        if root is None:
+            return []
+        if not self._gk_owned_by_player(root, self.player):
+            return []
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return []
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root) or not self._is_gk_vehicle_unit(root):
+            return []
+        return [root]
+
+    def _sanctic_spearhead_abominus_class_targets_candidates(self, *, phase_name: str) -> list[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "shooting phase" and active_player is not self.player:
+            return []
+        candidates: list[Any] = []
+        for root in list(
+            self._sanctic_spearhead_units(
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_key):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _sanctic_spearhead_armoured_aegis_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(
+            self._sanctic_spearhead_units(
+                require_psyker=True,
+                require_vehicle=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            if not self._sanctic_spearhead_unit_has_missing_wounds(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _sanctic_spearhead_force_wave_candidates(self, *, phase_name: str) -> list[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"movement phase", "charge phase"}:
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        candidates: list[Any] = []
+        for root in list(
+            self._sanctic_spearhead_units(
+                require_vehicle=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            if phase_key == "movement phase" and self._gk_selected_to_move_this_phase(root):
+                continue
+            if phase_key == "charge phase" and self._gk_selected_to_charge_this_phase(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _sanctic_spearhead_redoubled_assault_candidates(self, *, unit: Any) -> list[Any]:
+        root = self._gk_root(unit)
+        if root is None:
+            return []
+        if not self._gk_owned_by_player(root, self.player):
+            return []
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return []
+        if not self._is_gk_unit(root) or not self._is_gk_vehicle_unit(root):
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return []
+        return [root]
+
+    def _sanctic_spearhead_argent_wrath_enemy_candidates(self, unit: Any) -> list[Any]:
+        root = self._gk_root(unit)
+        if root is None:
+            return []
+        if not self._gk_owned_by_player(root, self.player):
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if not callable(get_enemy_units):
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._gk_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._gk_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._gk_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 3.0, use_attached_aggregate=True):
+                continue
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._gk_sort_key)
+
     def _brotherhood_strike_combat_manifestation_candidates(self) -> list[Any]:
         if not self._is_brotherhood_strike():
             return []
@@ -1339,6 +1544,120 @@ class GreyKnightsStratagemMixin:
                         source=str(source or "").strip() or "Weapon bonus",
                         expires_phase=str(expires_phase or "").strip().upper(),
                     )
+
+    def _gk_apply_temporary_weapon_wound_bonuses(
+        self,
+        root: Any,
+        *,
+        key_prefix: str,
+        expires_phase: str,
+        source: str,
+        weapon_filter: Any,
+        wound_bonus: int = 0,
+        target_keywords_any: list[str] | None = None,
+    ) -> None:
+        if root is None:
+            return
+        for member in list(self._gk_member_units(root) or [root]):
+            for model in list(self._gk_alive_models(member) or []):
+                model_id = str(get_entity_id(model) or "")
+                set_bonus = getattr(model, "set_temporary_weapon_wound_crit_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None or not callable(weapon_filter) or not bool(weapon_filter(wargear)):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    set_bonus(
+                        key=f"{key_prefix}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        wound_bonus=int(wound_bonus or 0),
+                        target_keywords_any=list(target_keywords_any or []),
+                        source=str(source or "").strip() or "Weapon wound bonus",
+                        expires_phase=str(expires_phase or "").strip().upper(),
+                    )
+
+    @staticmethod
+    def _gk_merge_phase_move_types(
+        special_rules: dict[str, Any],
+        rule_key: str,
+        added_key: str,
+        values: set[str],
+    ) -> None:
+        current = set(special_rules.get(rule_key) or [])
+        added = sorted([move_type for move_type in values if move_type not in current])
+        merged = sorted(current.union(set(values)))
+        if merged:
+            special_rules[rule_key] = merged
+        else:
+            special_rules.pop(rule_key, None)
+        if added:
+            special_rules[added_key] = added
+        else:
+            special_rules.pop(added_key, None)
+
+    @staticmethod
+    def _gk_remove_phase_move_types(
+        special_rules: dict[str, Any],
+        rule_key: str,
+        added_key: str,
+    ) -> None:
+        added = set(special_rules.get(added_key) or [])
+        if not added:
+            return
+        current = list(special_rules.get(rule_key) or [])
+        kept = [item for item in current if item not in added]
+        if kept:
+            special_rules[rule_key] = kept
+        else:
+            special_rules.pop(rule_key, None)
+        special_rules.pop(added_key, None)
+
+    @staticmethod
+    def _gk_heal_most_damaged_model_in_unit(unit: Any, amount: int) -> int:
+        if unit is None:
+            return 0
+        heal_amount = int(amount or 0)
+        if heal_amount <= 0:
+            return 0
+        models = [model for model in list(getattr(unit, "models", []) or []) if bool(getattr(model, "is_alive", True))]
+        if not models:
+            return 0
+        candidate = None
+        max_missing = 0
+        for model in models:
+            base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            missing = max(0, int(base_wounds - current_wounds))
+            if missing <= 0:
+                continue
+            if missing > max_missing:
+                max_missing = missing
+                candidate = model
+        if candidate is None or max_missing <= 0:
+            return 0
+        applied = min(int(heal_amount), int(max_missing))
+        if applied <= 0:
+            return 0
+        heal = getattr(candidate, "heal", None)
+        if callable(heal):
+            heal(int(applied))
+        else:
+            candidate.wounds = int(getattr(candidate, "wounds", 0) or 0) + int(applied)
+        return int(applied)
+
+    @staticmethod
+    def _gk_phase_label(phase_name: str) -> str:
+        phase_key = str(phase_name or "").strip().upper().replace(" ", "_")
+        return {
+            "COMMAND_PHASE": "Command phase",
+            "MOVEMENT_PHASE": "Movement phase",
+            "SHOOTING_PHASE": "Shooting phase",
+            "CHARGE_PHASE": "Charge phase",
+            "FIGHT_PHASE": "Fight phase",
+        }.get(phase_key, str(phase_name or "").replace("_", " ").title())
 
     def _warpbane_aegis_eternal_candidates(self, target_units: Any) -> list[Any]:
         candidates: list[Any] = []
@@ -2388,6 +2707,265 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_sanctic_spearhead_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_sanctic_spearhead():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "COMMAND_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Command phase"
+            stratagem_name = "ARMOURED AEGIS"
+            candidates = self._sanctic_spearhead_armoured_aegis_candidates()
+        elif phase_key == "MOVEMENT_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Movement phase"
+            stratagem_name = "FORCE WAVE"
+            candidates = self._sanctic_spearhead_force_wave_candidates(phase_name=phase_name)
+        elif phase_key == "SHOOTING_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Shooting phase"
+            stratagem_name = "ABOMINUS-CLASS TARGETS"
+            candidates = self._sanctic_spearhead_abominus_class_targets_candidates(phase_name=phase_name)
+        elif phase_key == "CHARGE_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Charge phase"
+            stratagem_name = "FORCE WAVE"
+            candidates = self._sanctic_spearhead_force_wave_candidates(phase_name=phase_name)
+        elif phase_key == "FIGHT_PHASE":
+            phase_name = "Fight phase"
+            stratagem_name = "ABOMINUS-CLASS TARGETS"
+            candidates = self._sanctic_spearhead_abominus_class_targets_candidates(phase_name=phase_name)
+        else:
+            return
+        if not candidates:
+            return
+        stratagem = self.get_by_name(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_sanctic_spearhead_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_sanctic_spearhead():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        moving_root = self._gk_root(unit)
+        if moving_root is None or not self._gk_is_alive(moving_root) or not self._gk_is_on_battlefield(moving_root):
+            return
+        if active_player is not self.player or not self._gk_owned_by_player(moving_root, self.player):
+            return
+
+        if phase_name == "movement phase":
+            if action_key not in {"fall_back", "fallback"}:
+                return
+            stratagem = self.get_by_name("REDOUBLED ASSAULT")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+                return
+            name_u = str(stratagem.name or "").strip().upper()
+            if name_u in self._used_stratagems_this_phase:
+                return
+            candidates = self._sanctic_spearhead_redoubled_assault_candidates(unit=moving_root)
+            if not candidates:
+                return
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("event", "") or "") != "unit_move_ended":
+                    continue
+                if str(reaction.get("phase_name", "") or "").strip().lower() != "movement phase":
+                    continue
+                if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                    continue
+                if self._gk_root(reaction.get("target_unit") or reaction.get("unit")) is moving_root:
+                    return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": moving_root,
+                "target_unit": moving_root,
+                "action": action,
+                "candidates": candidates,
+            }
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_name != "charge phase":
+            return
+        if action_key not in {"charge", "charge_move"}:
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(moving_root)):
+            return
+        if not self._is_gk_unit(moving_root) or not self._is_gk_vehicle_unit(moving_root):
+            return
+        stratagem = self.get_by_name("ARGENT WRATH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = self._sanctic_spearhead_argent_wrath_enemy_candidates(moving_root)
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "charge phase":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._gk_root(reaction.get("target_unit") or reaction.get("unit")) is moving_root:
+                return
+        moving_id = self._gk_sort_key(moving_root)
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": moving_root,
+            "target_unit": moving_root,
+            "action": action,
+            "candidates": [moving_root],
+            "enemy_candidates_by_unit_id": {moving_id: enemy_candidates},
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_sanctic_spearhead_mortal_wound_reactions(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any = None,
+        target_model: Any = None,
+        phase_name: str = "",
+    ) -> None:
+        if target_unit is None or not self._is_sanctic_spearhead():
+            return
+        phase_label = self._gk_phase_label(phase_name or self._current_phase_name or "")
+        if not str(phase_label or "").strip():
+            return
+        candidates = self._sanctic_spearhead_truesilver_will_candidates(target_unit=target_unit)
+        if not candidates:
+            return
+        stratagem = self.get_by_name("TRUESILVER WILL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        root = candidates[0]
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "mortal_wound_allocated":
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != phase_label.lower():
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._gk_root(reaction.get("target_unit") or reaction.get("unit")) is root:
+                return
+        payload = {
+            "event": "mortal_wound_allocated",
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "attacker_unit": self._gk_root(attacker_unit),
+            "target_model": target_model,
+            "candidates": candidates,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_sanctic_spearhead_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_sanctic_spearhead():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_name in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                force_wave_expires = str(sr.get("sanctic_spearhead_force_wave_expires_phase", "") or "").strip().upper()
+                if force_wave_expires == phase_name:
+                    self._gk_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_terrain_only_types",
+                        "sanctic_spearhead_force_wave_added_phase_move_terrain_only_types",
+                    )
+                    for key in (
+                        "sanctic_spearhead_force_wave_active",
+                        "sanctic_spearhead_force_wave_turn_owner",
+                        "sanctic_spearhead_force_wave_turn",
+                        "sanctic_spearhead_force_wave_expires_phase",
+                        "sanctic_spearhead_force_wave_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+                    changed = True
+            if phase_name == "FIGHT_PHASE":
+                for key in (
+                    "sanctic_spearhead_redoubled_assault_shoot_active",
+                    "sanctic_spearhead_redoubled_assault_charge_active",
+                    "sanctic_spearhead_redoubled_assault_turn_owner",
+                    "sanctic_spearhead_redoubled_assault_turn",
+                    "sanctic_spearhead_redoubled_assault_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if not changed:
+                continue
+            root.special_rules = sr
+            self._gk_clear_ability_cache(root)
+
     def _cleanup_augurium_phase_end_effects(self, *, phase: Any) -> None:
         if not self._is_augurium_task_force():
             return
@@ -2856,6 +3434,18 @@ class GreyKnightsStratagemMixin:
             return self._use_hallowed_conclave_grind_them_underfoot(stratagem, **kwargs)
         if name_u == "HEXWROUGHT REPRISAL":
             return self._use_banishers_hexwrought_reprisal(stratagem, **kwargs)
+        if name_u == "TRUESILVER WILL":
+            return self._use_sanctic_spearhead_truesilver_will(stratagem, **kwargs)
+        if name_u == "ABOMINUS-CLASS TARGETS":
+            return self._use_sanctic_spearhead_abominus_class_targets(stratagem, **kwargs)
+        if name_u == "ARMOURED AEGIS":
+            return self._use_sanctic_spearhead_armoured_aegis(stratagem, **kwargs)
+        if name_u == "REDOUBLED ASSAULT":
+            return self._use_sanctic_spearhead_redoubled_assault(stratagem, **kwargs)
+        if name_u == "FORCE WAVE":
+            return self._use_sanctic_spearhead_force_wave(stratagem, **kwargs)
+        if name_u == "ARGENT WRATH":
+            return self._use_sanctic_spearhead_argent_wrath(stratagem, **kwargs)
         if name_u == "POINT-BLANK PURGATION":
             return self._use_hallowed_conclave_point_blank_purgation(stratagem, **kwargs)
         if name_u == "PRECOGNITIVE STRATEGIES":
@@ -4259,6 +4849,426 @@ class GreyKnightsStratagemMixin:
             "INFO: GRIND THEM UNDERFOOT: %s rolled charge-end mortals against %s.",
             getattr(root, "name", "Unit"),
             getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_sanctic_spearhead_truesilver_will(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("TRUESILVER WILL")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TRUESILVER WILL: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_label = self._gk_phase_label(str(kwargs.get("phase_name") or self._current_phase_name or ""))
+        phase_key = self._gk_phase_key(phase_label)
+        if not phase_key:
+            logger.error("ERROR: TRUESILVER WILL: missing phase context")
+            return False
+        eligible = candidates or self._sanctic_spearhead_truesilver_will_candidates(target_unit=root)
+        if eligible and root not in eligible:
+            logger.error("ERROR: TRUESILVER WILL: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: TRUESILVER WILL: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TRUESILVER WILL: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root) or not self._is_gk_vehicle_unit(root):
+            logger.error("ERROR: TRUESILVER WILL: target must be a GREY KNIGHTS PSYKER VEHICLE unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "TRUESILVER WILL").strip() or "TRUESILVER WILL"
+        for member in list(self._gk_member_units(root) or [root]):
+            for model in list(self._gk_alive_models(member) or []):
+                set_fnp = getattr(model, "set_temporary_fnp", None)
+                if not callable(set_fnp):
+                    continue
+                set_fnp(
+                    key=f"sanctic_spearhead_truesilver_will:{get_entity_id(model)}".lower(),
+                    value=4,
+                    source=source_name,
+                    condition="against mortal wounds",
+                    expires_phase=phase_key,
+                )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TRUESILVER WILL: %s gains Feel No Pain 4+ against mortal wounds until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_sanctic_spearhead_abominus_class_targets(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("ABOMINUS-CLASS TARGETS")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: only usable in your Shooting phase")
+            return False
+        eligible = candidates or self._sanctic_spearhead_abominus_class_targets_candidates(phase_name=phase_name)
+        if eligible and root not in eligible:
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root):
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: target must be a GREY KNIGHTS unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+            logger.error("ERROR: ABOMINUS-CLASS TARGETS: target has already been selected this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source_name = str(getattr(stratagem, "name", "") or "ABOMINUS-CLASS TARGETS").strip() or "ABOMINUS-CLASS TARGETS"
+        self._gk_apply_temporary_weapon_wound_bonuses(
+            root,
+            key_prefix="sanctic_spearhead_abominus_class_targets",
+            expires_phase=phase_key,
+            source=source_name,
+            weapon_filter=lambda _wargear: True,
+            wound_bonus=1,
+            target_keywords_any=["MONSTER", "VEHICLE"],
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ABOMINUS-CLASS TARGETS: %s gains +1 to wound against MONSTER and VEHICLE units until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_sanctic_spearhead_armoured_aegis(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("ARMOURED AEGIS")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ARMOURED AEGIS: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: ARMOURED AEGIS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ARMOURED AEGIS: only usable in your Command phase")
+            return False
+        eligible = candidates or self._sanctic_spearhead_armoured_aegis_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: ARMOURED AEGIS: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: ARMOURED AEGIS: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ARMOURED AEGIS: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root) or not self._is_gk_vehicle_unit(root):
+            logger.error("ERROR: ARMOURED AEGIS: target must be a GREY KNIGHTS PSYKER VEHICLE unit")
+            return False
+        if not self._sanctic_spearhead_unit_has_missing_wounds(root):
+            logger.error("ERROR: ARMOURED AEGIS: target unit has no model with lost wounds")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        healed = self._gk_heal_most_damaged_model_in_unit(root, 3)
+        if healed <= 0:
+            logger.error("ERROR: ARMOURED AEGIS: failed to heal a model in the target unit")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ARMOURED AEGIS: %s healed %d lost wound(s).",
+            getattr(root, "name", "Unit"),
+            int(healed),
+        )
+        return True
+
+    def _use_sanctic_spearhead_redoubled_assault(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("REDOUBLED ASSAULT")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REDOUBLED ASSAULT: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: REDOUBLED ASSAULT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: REDOUBLED ASSAULT: only usable in your Movement phase")
+            return False
+        eligible = candidates or self._sanctic_spearhead_redoubled_assault_candidates(unit=root)
+        if eligible and root not in eligible:
+            logger.error("ERROR: REDOUBLED ASSAULT: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: REDOUBLED ASSAULT: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: REDOUBLED ASSAULT: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_vehicle_unit(root):
+            logger.error("ERROR: REDOUBLED ASSAULT: target must be a GREY KNIGHTS VEHICLE unit")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: REDOUBLED ASSAULT: target must have Fallen Back")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["sanctic_spearhead_redoubled_assault_shoot_active"] = True
+        sr["sanctic_spearhead_redoubled_assault_charge_active"] = True
+        sr["sanctic_spearhead_redoubled_assault_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["sanctic_spearhead_redoubled_assault_turn"] = self._gk_current_turn()
+        sr["sanctic_spearhead_redoubled_assault_source"] = (
+            str(getattr(stratagem, "name", "") or "REDOUBLED ASSAULT").strip() or "REDOUBLED ASSAULT"
+        )
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REDOUBLED ASSAULT: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_sanctic_spearhead_force_wave(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("FORCE WAVE")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FORCE WAVE: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: FORCE WAVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FORCE WAVE: only usable in your Movement or Charge phase")
+            return False
+        eligible = candidates or self._sanctic_spearhead_force_wave_candidates(phase_name=phase_name)
+        if eligible and root not in eligible:
+            logger.error("ERROR: FORCE WAVE: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: FORCE WAVE: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FORCE WAVE: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_vehicle_unit(root):
+            logger.error("ERROR: FORCE WAVE: target must be a GREY KNIGHTS VEHICLE unit")
+            return False
+        if phase_name == "movement phase" and self._gk_selected_to_move_this_phase(root):
+            logger.error("ERROR: FORCE WAVE: target has already been selected to move this phase")
+            return False
+        if phase_name == "charge phase" and self._gk_selected_to_charge_this_phase(root):
+            logger.error("ERROR: FORCE WAVE: target has already been selected to charge this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        move_types = {"move", "advance"} if phase_name == "movement phase" else {"charge"}
+        self._gk_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_terrain_only_types",
+            "sanctic_spearhead_force_wave_added_phase_move_terrain_only_types",
+            set(move_types),
+        )
+        sr["sanctic_spearhead_force_wave_active"] = True
+        sr["sanctic_spearhead_force_wave_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["sanctic_spearhead_force_wave_turn"] = self._gk_current_turn()
+        sr["sanctic_spearhead_force_wave_expires_phase"] = (
+            "MOVEMENT_PHASE" if phase_name == "movement phase" else "CHARGE_PHASE"
+        )
+        sr["sanctic_spearhead_force_wave_source"] = (
+            str(getattr(stratagem, "name", "") or "FORCE WAVE").strip() or "FORCE WAVE"
+        )
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FORCE WAVE: %s can move horizontally through terrain features this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_sanctic_spearhead_argent_wrath(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_sanctic_spearhead():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_candidates_by_unit_id = dict(kwargs.get("enemy_candidates_by_unit_id") or {})
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("ARGENT WRATH")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if not enemy_candidates_by_unit_id and pending is not None:
+            enemy_candidates_by_unit_id = dict(pending.get("enemy_candidates_by_unit_id") or {})
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ARGENT WRATH: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: ARGENT WRATH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ARGENT WRATH: only usable in your Charge phase")
+            return False
+        eligible = candidates or [root]
+        if eligible and root not in eligible:
+            logger.error("ERROR: ARGENT WRATH: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: ARGENT WRATH: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ARGENT WRATH: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_vehicle_unit(root):
+            logger.error("ERROR: ARGENT WRATH: target must be a GREY KNIGHTS VEHICLE unit")
+            return False
+        root_id = self._gk_sort_key(root)
+        enemy_candidates = list(enemy_candidates_by_unit_id.get(root_id) or [])
+        if not enemy_candidates:
+            enemy_candidates = self._sanctic_spearhead_argent_wrath_enemy_candidates(root)
+        if not enemy_candidates:
+            logger.error("ERROR: ARGENT WRATH: no enemy units are within 3\" of the target")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "ARGENT WRATH").strip() or "ARGENT WRATH"
+        current_turn = self._gk_current_turn()
+        affected = 0
+        for enemy in list(enemy_candidates or []):
+            enemy_root = self._gk_root(enemy)
+            if enemy_root is None or self._gk_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+                continue
+            force_test = getattr(enemy_root, "force_battle_shock_test", None)
+            if callable(force_test):
+                force_test(int(current_turn or 1), modifier=-1, source=source_name)
+                affected += 1
+                continue
+            sr = dict(getattr(enemy_root, "special_rules", None) or {})
+            sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) - 1
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append(f"{source_name}: -1")
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            enemy_root.special_rules = sr
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(current_turn or 1))
+                affected += 1
+        if affected <= 0:
+            logger.error("ERROR: ARGENT WRATH: failed to force Battle-shock tests on nearby enemy units")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ARGENT WRATH: %s forced %d nearby enemy unit(s) to take Battle-shock tests at -1.",
+            getattr(root, "name", "Unit"),
+            int(affected),
         )
         return True
 

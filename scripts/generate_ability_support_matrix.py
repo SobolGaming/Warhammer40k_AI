@@ -19911,6 +19911,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010353005": "Grind Them Underfoot: after a GREY KNIGHTS TERMINATOR unit ends a Charge move, select an enemy unit within Engagement Range and roll one D6 for each engaged model in the charging unit; each 4+ inflicts 1 mortal wound, to a maximum of 6.",
         "000010353006": "Precognitive Strategies: opponent Movement phase after an enemy Normal, Advance, or Fall Back move ends, a selected GREY KNIGHTS INFANTRY unit within 9\" and not engaged can make a reactive Normal move up to D6\".",
         "000010353007": "Shining Resolve: opponent Shooting phase reaction after enemy targets are selected; a selected GREY KNIGHTS INFANTRY unit targeted by that attacker imposes -1 to wound when the attack's Strength exceeds the unit's Toughness until end of phase.",
+        "000010361002": "Truesilver Will: after a GREY KNIGHTS PSYKER VEHICLE unit suffers a mortal wound, that unit gains Feel No Pain 4+ against mortal wounds until end of phase.",
+        "000010361003": "Abominus-class Targets: in your Shooting phase or the Fight phase, a selected GREY KNIGHTS unit that has not yet been selected gains +1 to wound against MONSTER and VEHICLE units until end of phase.",
+        "000010361004": "Armoured Aegis: in your Command phase, one model in a selected GREY KNIGHTS PSYKER VEHICLE unit regains up to 3 lost wounds.",
+        "000010361005": "Redoubled Assault: after a GREY KNIGHTS VEHICLE unit Falls Back in your Movement phase, it can shoot and declare a charge after Falling Back until end of turn.",
+        "000010361006": "Force Wave: in your Movement or Charge phase, a selected GREY KNIGHTS VEHICLE unit that has not yet been selected can move horizontally through terrain features for that phase.",
+        "000010361007": "Argent Wrath: after a GREY KNIGHTS VEHICLE unit ends a Charge move, each enemy unit within 3\" of it must take a Battle-shock test at -1.",
         "000008367002": "Follow Me Ladz: while leading, bearer unit gains +2\" Move.",
         "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
         "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
@@ -21662,6 +21668,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Opponent Shooting phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit targeted by that attacker imposes -1 to wound when the attack's Strength exceeds the unit's Toughness until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010361002":
+        return (
+            "Implemented",
+            "After a GREY KNIGHTS PSYKER VEHICLE unit suffers a mortal wound, that unit gains Feel No Pain 4+ against mortal wounds until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010361003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected GREY KNIGHTS unit that has not yet been selected to shoot or fight gains +1 to wound against MONSTER and VEHICLE units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010361004":
+        return (
+            "Implemented",
+            "Your Command phase: one model in a selected GREY KNIGHTS PSYKER VEHICLE unit regains up to 3 lost wounds.",
+            name_u,
+        )
+    if stratagem_id == "000010361005":
+        return (
+            "Implemented",
+            "Your Movement phase after a GREY KNIGHTS VEHICLE unit Falls Back: that unit can shoot and declare a charge after Falling Back until end of turn.",
+            name_u,
+        )
+    if stratagem_id == "000010361006":
+        return (
+            "Implemented",
+            "Your Movement or Charge phase: selected GREY KNIGHTS VEHICLE unit that has not yet been selected can move horizontally through terrain features until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010361007":
+        return (
+            "Implemented",
+            "Your Charge phase after a GREY KNIGHTS VEHICLE unit ends a Charge move: each enemy unit within 3\" of it must take a Battle-shock test at -1.",
             name_u,
         )
     if stratagem_id == "000010401002":

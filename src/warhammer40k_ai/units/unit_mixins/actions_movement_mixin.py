@@ -19204,6 +19204,16 @@ class ActionsMovementMixin:
             if mgr is not None and getattr(mgr, "duty_before_all_applies", None):
                 if mgr.duty_before_all_applies(self):
                     found = True
+            if not found:
+                apply_fn = (
+                    getattr(mgr, "sanctic_spearhead_redoubled_assault_can_shoot_after_fall_back", None)
+                    if mgr is not None
+                    else None
+                )
+                if callable(apply_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if bool(apply_fn(self, game=game)):
+                        found = True
         except Exception:
             pass
         if not found:
@@ -20678,6 +20688,15 @@ class ActionsMovementMixin:
             mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "duty_before_all_applies", None):
                 if mgr.duty_before_all_applies(self):
+                    return True
+            apply_fn = (
+                getattr(mgr, "sanctic_spearhead_redoubled_assault_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

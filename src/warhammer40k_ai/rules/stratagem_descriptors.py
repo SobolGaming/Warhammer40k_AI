@@ -4209,6 +4209,74 @@ _HALLOWED_CONCLAVE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HALLOWED_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SANCTIC_SPEARHEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010361002": StratagemToolDescriptor(
+        stratagem_id="000010361002",
+        name="Truesilver Will",
+        timing="any_phase_after_mortal_wound_allocated",
+        target="grey_knights_psyker_vehicle_unit_allocated_mortal_wound",
+        duration="until_end_of_phase",
+        effect="fnp_vs_mortal_wounds",
+        cp_cost=1,
+        effect_params={"fnp": 4},
+    ),
+    "000010361003": StratagemToolDescriptor(
+        stratagem_id="000010361003",
+        name="Abominus-class Targets",
+        timing="your_shooting_or_fight_phase",
+        target="grey_knights_unit_not_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_wound_bonus_vs_monster_or_vehicle",
+        cp_cost=1,
+        effect_params={"wound_bonus": 1, "target_keywords_any": ["MONSTER", "VEHICLE"]},
+    ),
+    "000010361004": StratagemToolDescriptor(
+        stratagem_id="000010361004",
+        name="Armoured Aegis",
+        timing="your_command_phase",
+        target="grey_knights_psyker_vehicle_unit",
+        duration="immediate",
+        effect="heal_model_in_unit",
+        cp_cost=1,
+        effect_params={"heal_amount": 3},
+    ),
+    "000010361005": StratagemToolDescriptor(
+        stratagem_id="000010361005",
+        name="Redoubled Assault",
+        timing="your_movement_phase_after_fall_back",
+        target="grey_knights_vehicle_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={"grants_shoot": True, "grants_charge": True},
+    ),
+    "000010361006": StratagemToolDescriptor(
+        stratagem_id="000010361006",
+        name="Force Wave",
+        timing="your_movement_or_charge_phase",
+        target="grey_knights_vehicle_unit_not_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={"move_types_by_phase": {"movement": ["move", "advance"], "charge": ["charge"]}},
+    ),
+    "000010361007": StratagemToolDescriptor(
+        stratagem_id="000010361007",
+        name="Argent Wrath",
+        timing="your_charge_phase_after_vehicle_charge_move_end",
+        target="grey_knights_vehicle_unit",
+        duration="immediate",
+        effect="charge_end_force_battle_shock",
+        cp_cost=1,
+        range_in=3.0,
+        effect_params={"battle_shock_modifier": -1},
+    ),
+}
+
+_SANCTIC_SPEARHEAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SANCTIC_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010152002": StratagemToolDescriptor(
         stratagem_id="000010152002",
@@ -13260,6 +13328,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HALLOWED_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SANCTIC_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13649,6 +13720,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_CONCLAVE_STRATAGEM_BY_NAME.get(key)
+        or _SANCTIC_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)
