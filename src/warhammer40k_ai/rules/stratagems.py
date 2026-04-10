@@ -68,8 +68,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BIO-HORROR REVELATION",
     "AUTOMATED REPAIR DRONES",
     "BOUNDING ADVANCE",
+    "CELERITY",
     "COORDINATED ACTION",
     "COURAGEOUS DIVERSION",
+    "CHAOS BANE",
+    "CIRCLE OF SANCTUARY",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "CONNOISSEURS OF PAIN",
@@ -115,6 +118,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GLIMMERSHIFT PORTAL",
     "GENE-TWISTED MUSCLE",
     "GUIDED FIRE",
+    "HEXWROUGHT REPRISAL",
     "CHRONOSORCEROUS BLEED",
     "DECEPTIVE GLAMOUR",
     "ETHEREAL PHANTASM",
@@ -271,6 +275,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SEIZE THE PRIZE",
     "SECURE BIOMASS",
     "SHIELD OF DENIAL",
+    "SHADOW OF ANARCH",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "DESECRATION OF WORLDS",
@@ -282,6 +287,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CYBERSPIRIT MACHINATIONS",
     "ENSORCELLED INFUSION",
     "WARPFLAME GARGOYLES",
+    "WARDING CHANT",
     "WARDING HEX",
     "WRATH OF THE DOOMED",
     "STRANDS OF TIME",
@@ -2463,6 +2469,7 @@ class StratagemManager(
             "ANGELIC GRACE",
             "BALEFUL BLESSING",
             "FUELLED BY FAITH",
+            "HEXWROUGHT REPRISAL",
             "LAYERED WARDS",
             "PROTECTION OF THE DARK PRINCE",
             "SHIELD OF DENIAL",
@@ -9226,6 +9233,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_banishers_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_first_company_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10641,7 +10652,9 @@ class StratagemManager(
             self._resolve_space_marines_vindication_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
+            self._queue_banishers_phase_end_reactions(player=player, phase=phase)
             self._cleanup_augurium_phase_end_effects(phase=phase)
+            self._cleanup_banishers_phase_end_effects(phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
@@ -12760,6 +12773,7 @@ class StratagemManager(
         self._maybe_queue_red_wrath(unit, action)
         self._maybe_queue_cut_down_the_weak(unit, action)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
+        self._queue_banishers_move_end_reactions(unit=unit, action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
@@ -14156,6 +14170,13 @@ class StratagemManager(
             raise
         try:
             self._queue_veterans_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_banishers_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15718,6 +15739,13 @@ class StratagemManager(
             self._queue_thousand_sons_grand_coven_target_reactions(
                 event_name="fight_targets_selected",
                 phase_name="FIGHT_PHASE",
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_banishers_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -17579,6 +17607,14 @@ class StratagemManager(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._track_banishers_hexwrought_mortal_wound(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
                 phase_name=phase_name,
             )
         except Exception:

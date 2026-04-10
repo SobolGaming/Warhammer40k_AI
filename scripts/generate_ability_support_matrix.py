@@ -3200,6 +3200,30 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Banishers: each time an eligible GREY KNIGHTS unit is selected to fight, choose None or a Leadership-test option; "
             "on a passed test, psychic melee weapons gain either [LETHAL HITS] or [SUSTAINED HITS 1] until end of phase.",
         ),
+        "Celerity": (
+            "Supported",
+            "Banishers: your Charge phase reaction for a GREY KNIGHTS PSYKER INFANTRY unit that Advanced this round; the selected unit can declare a charge after Advancing until end of turn.",
+        ),
+        "Chaos Bane": (
+            "Supported",
+            "Banishers: your Shooting phase reaction for a GREY KNIGHTS PSYKER unit that has not yet been selected to shoot; its ranged weapons gain [ANTI-CHAOS 4+] until end of phase.",
+        ),
+        "Circle of Sanctuary": (
+            "Supported",
+            "Banishers: start of your opponent's Movement phase, select a GREY KNIGHTS CHARACTER model; enemy Reinforcements cannot be set up within 12\" horizontally of that model until end of phase.",
+        ),
+        "Hexwrought Reprisal": (
+            "Supported",
+            "Banishers: end of any phase, a GREY KNIGHTS PSYKER unit that suffered mortal wounds this phase can target an enemy unit that inflicted them; roll one D6 per mortal wound suffered, inflicting one psychic mortal wound on each 2+ up to 6.",
+        ),
+        "Shadow of Anarch": (
+            "Supported",
+            "Banishers: your opponent's Movement phase after an enemy Normal, Advance, or Fall Back move ends; a GREY KNIGHTS PSYKER unit within 9\" and not engaged can make a 6\" Normal move or enter Strategic Reserves if it has Deep Strike.",
+        ),
+        "Warding Chant": (
+            "Supported",
+            "Banishers: after an enemy unit selects targets in your opponent's Shooting phase or in the Fight phase, a targeted GREY KNIGHTS PSYKER unit gains Feel No Pain 5+ against attacks with an unmodified Damage characteristic of 1 until end of phase.",
+        ),
         "Prescient Redeployment": (
             "Supported",
             "Augurium Task Force: from battle round 2 onward at the start of your Movement phase, if fewer than the Gate of Infinity max units were selected at the end of the opponent's previous turn, choose one eligible GREY KNIGHTS unit to enter Strategic Reserves.",
@@ -21525,6 +21549,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit rolls a D6 each time one of its models is destroyed this phase and, on a result greater than the current battle round number, that model fights on death after the attacker finishes its attacks.",
+            name_u,
+        )
+    if stratagem_id == "000010357002":
+        return (
+            "Implemented",
+            "End of any phase: selected GREY KNIGHTS PSYKER unit on the battlefield that suffered mortal wounds this phase rolls one D6 per mortal wound suffered and inflicts one psychic mortal wound on the chosen enemy unit that inflicted those mortal wounds on each 2+, to a maximum of 6.",
+            name_u,
+        )
+    if stratagem_id == "000010357003":
+        return (
+            "Implemented",
+            "Opponent Shooting phase or the Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS PSYKER unit targeted by that attacker gains Feel No Pain 5+ against attacks with an unmodified Damage characteristic of 1 until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010357004":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected GREY KNIGHTS PSYKER unit that has not yet been selected to shoot gains [ANTI-CHAOS 4+] on ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010357005":
+        return (
+            "Implemented",
+            "Your Charge phase: selected GREY KNIGHTS PSYKER INFANTRY unit that Advanced this round can declare a charge after Advancing until end of turn.",
+            name_u,
+        )
+    if stratagem_id == "000010357006":
+        return (
+            "Implemented",
+            "Start of your opponent's Movement phase: selected GREY KNIGHTS CHARACTER model projects a 12\" horizontal Reinforcements denial aura until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010357007":
+        return (
+            "Implemented",
+            "Opponent Movement phase after an enemy Normal, Advance, or Fall Back move ends: selected GREY KNIGHTS PSYKER unit within 9\" and not engaged can make a Normal move up to 6\" or enter Strategic Reserves if it has Deep Strike.",
             name_u,
         )
     if stratagem_id == "000010401002":

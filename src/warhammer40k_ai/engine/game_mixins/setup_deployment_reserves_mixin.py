@@ -1570,6 +1570,21 @@ class GameSetupDeploymentReservesMixin:
                     denial_range = 0.0
                 if denial_range > 0.0:
                     ranges.append(dict(entry))
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        circle_denial_fn = (
+            getattr(gk_mgr, "banishers_circle_of_sanctuary_reserves_denial", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(circle_denial_fn):
+            entry = circle_denial_fn(root, game=self)
+            if isinstance(entry, dict):
+                try:
+                    denial_range = float(entry.get("range", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    denial_range = 0.0
+                if denial_range > 0.0:
+                    ranges.append(dict(entry))
         return ranges
 
     def _reserves_denial_violated(self, unit, prospective: list[Tuple[float, float, float, float]]) -> bool:

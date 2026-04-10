@@ -2010,6 +2010,26 @@ class PositioningAttackBonusesMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            keyword_rule_fn = (
+                getattr(gk_mgr, "banishers_chaos_bane_attack_keyword_rule", None)
+                if gk_mgr is not None
+                else None
+            )
+            if callable(keyword_rule_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                keyword_rule = keyword_rule_fn(
+                    model,
+                    attack_type=attack_type or "any",
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if isinstance(keyword_rule, dict):
+                    rules.append(dict(keyword_rule))
+        except Exception:
+            pass
         if model is not None and target is not None:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
             gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None

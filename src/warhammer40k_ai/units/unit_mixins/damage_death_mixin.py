@@ -3106,6 +3106,15 @@ class DamageDeathMixin:
             candidate_models = [m for m in (getattr(source_unit, "models", []) or []) if getattr(m, "is_alive", True)]
             if len(candidate_models) == 1:
                 source_model = candidate_models[0]
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        phase_name_map = {
+            "COMMAND_PHASE": "Command phase",
+            "MOVEMENT_PHASE": "Movement phase",
+            "SHOOTING_PHASE": "Shooting phase",
+            "CHARGE_PHASE": "Charge phase",
+            "FIGHT_PHASE": "Fight phase",
+        }
+        phase_label = phase_name_map.get(phase_key, phase_key.title().replace("_", " ")) if phase_key else ""
 
         # Apply mortal wounds one at a time to models in the unit
         while remaining > 0:
@@ -3203,6 +3212,17 @@ class DamageDeathMixin:
                     game_map=game_map,
                     is_psychic_attack=is_psychic_attack,
                     damage_source=ctx.damage_source or "mortal",
+                )
+
+            if apply_fn is None and game is not None and hasattr(game, "event_system"):
+                game.event_system.publish(
+                    "mortal_wound_allocated",
+                    attacker_model=source_model,
+                    attacker_unit=source_unit,
+                    target_model=current_model,
+                    target_unit=target_unit,
+                    weapon_profile=None,
+                    phase_name=phase_label,
                 )
 
             remaining -= 1

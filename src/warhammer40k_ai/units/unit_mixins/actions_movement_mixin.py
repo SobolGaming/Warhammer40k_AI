@@ -20394,6 +20394,16 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "banishers_celerity_can_charge_after_advance", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
         spec_fn = getattr(self, "_advance_and_charge_once_per_battle_spec", None)
         if callable(spec_fn):
             return spec_fn() is not None

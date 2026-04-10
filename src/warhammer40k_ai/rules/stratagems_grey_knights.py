@@ -65,6 +65,11 @@ class GreyKnightsStratagemMixin:
         checker = getattr(mgr, "is_augurium_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_banishers(self) -> bool:
+        mgr = self._get_gk_mgr()
+        checker = getattr(mgr, "is_banishers", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_brotherhood_strike(self) -> bool:
         mgr = self._get_gk_mgr()
         checker = getattr(mgr, "is_brotherhood_strike", None) if mgr is not None else None
@@ -377,6 +382,354 @@ class GreyKnightsStratagemMixin:
             if unit_within_range_of_unit(root, enemy_root, 12.0, use_attached_aggregate=True):
                 out.append(root)
         return sorted(out, key=self._gk_sort_key)
+
+    @staticmethod
+    def _gk_phase_key(phase_name: Any) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _gk_current_turn(self) -> int:
+        try:
+            return int(getattr(self.game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _gk_current_turn_owner_id(self) -> str:
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        return str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or "")
+
+    def _gk_pending_reaction_by_name(self, stratagem_name: str) -> Optional[dict[str, Any]]:
+        target = str(stratagem_name or "").strip().upper()
+        if not target:
+            return None
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() == target:
+                return reaction
+        return None
+
+    @staticmethod
+    def _gk_member_units(root: Any) -> list[Any]:
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        return [member for member in list(members or []) if member is not None] or [root]
+
+    @staticmethod
+    def _gk_alive_models(unit: Any) -> list[Any]:
+        if unit is None:
+            return []
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        alive_models: list[Any] = []
+        for model in list(models or []):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if is_alive:
+                alive_models.append(model)
+        return alive_models
+
+    @staticmethod
+    def _gk_is_character_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("CHARACTER")):
+            return True
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        return bool(has_any_keyword("CHARACTER")) if callable(has_any_keyword) else False
+
+    def _banishers_units(
+        self,
+        *,
+        require_psyker: bool = False,
+        require_infantry: bool = False,
+        require_on_battlefield: bool = True,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_banishers():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        units: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if require_psyker and not self._is_gk_psyker_unit(root):
+                continue
+            if require_infantry and not self._is_gk_infantry_unit(root):
+                continue
+            if require_on_battlefield and not self._gk_is_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            units.append(root)
+        return sorted(units, key=self._gk_sort_key)
+
+    def _banishers_chaos_bane_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(self._banishers_units(require_psyker=True) or []):
+            if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="shooting phase"):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _banishers_celerity_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(self._banishers_units(require_psyker=True, require_infantry=True) or []):
+            round_state = getattr(root, "round_state", None)
+            if not bool(getattr(round_state, "advanced_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _banishers_circle_of_sanctuary_candidates(self) -> list[Any]:
+        if not self._is_banishers():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            for member in self._gk_member_units(root):
+                if not self._gk_is_character_unit(member):
+                    continue
+                if not self._gk_alive_models(member):
+                    continue
+                candidate_id = self._gk_sort_key(member) or self._gk_sort_key(root)
+                if candidate_id and candidate_id in seen:
+                    continue
+                if candidate_id:
+                    seen.add(candidate_id)
+                candidates.append(member)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _banishers_shadow_of_anarch_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._gk_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        if self._gk_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        candidates: list[Any] = []
+        for root in list(self._banishers_units(require_psyker=True) or []):
+            if self._gk_has_enemy_within_engagement_range(root):
+                continue
+            if unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
+                candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _banishers_warding_chant_candidates(self, target_units: Any) -> list[Any]:
+        if not self._is_banishers():
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    @staticmethod
+    def _banishers_shadow_of_anarch_choice_keys(root: Any) -> list[str]:
+        choices = ["NORMAL_MOVE"]
+        if GreyKnightsStratagemMixin._gk_has_deep_strike(root):
+            choices.append("STRATEGIC_RESERVES")
+        return choices
+
+    @staticmethod
+    def _normalize_banishers_shadow_choice(choice: Any) -> str:
+        raw = str(choice or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in {"MOVE", "NORMAL", "NORMAL_MOVE"}:
+            return "NORMAL_MOVE"
+        if raw in {"RESERVES", "STRATEGIC_RESERVES", "STRATEGIC"}:
+            return "STRATEGIC_RESERVES"
+        return raw
+
+    def _banishers_hexwrought_clear_tracking_on_root(self, root: Any) -> None:
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in (
+            "banishers_hexwrought_reprisal_total_mortal_wounds",
+            "banishers_hexwrought_reprisal_enemy_unit_ids",
+            "banishers_hexwrought_reprisal_phase",
+            "banishers_hexwrought_reprisal_turn",
+            "banishers_hexwrought_reprisal_turn_owner",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def _track_banishers_hexwrought_mortal_wound(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any = None,
+        phase_name: str = "",
+    ) -> None:
+        if not self._is_banishers() or target_unit is None:
+            return
+        root = self._gk_root(target_unit)
+        if root is None:
+            return
+        if not self._gk_owned_by_player(root, self.player):
+            return
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            return
+        game = getattr(self, "game", None)
+        phase_key = self._gk_phase_key(phase_name or getattr(getattr(game, "phase", None), "name", "") or "")
+        if not phase_key:
+            return
+        turn = self._gk_current_turn()
+        turn_owner_id = self._gk_current_turn_owner_id()
+        sr = dict(getattr(root, "special_rules", None) or {})
+        stored_phase = self._gk_phase_key(sr.get("banishers_hexwrought_reprisal_phase", ""))
+        try:
+            stored_turn = int(sr.get("banishers_hexwrought_reprisal_turn", 0) or 0)
+        except (TypeError, ValueError):
+            stored_turn = 0
+        stored_owner_id = str(sr.get("banishers_hexwrought_reprisal_turn_owner", "") or "")
+        if stored_phase != phase_key or stored_turn != turn or stored_owner_id != turn_owner_id:
+            sr["banishers_hexwrought_reprisal_total_mortal_wounds"] = 0
+            sr["banishers_hexwrought_reprisal_enemy_unit_ids"] = []
+        try:
+            total = int(sr.get("banishers_hexwrought_reprisal_total_mortal_wounds", 0) or 0)
+        except (TypeError, ValueError):
+            total = 0
+        sr["banishers_hexwrought_reprisal_total_mortal_wounds"] = int(total) + 1
+        sr["banishers_hexwrought_reprisal_phase"] = str(phase_key)
+        sr["banishers_hexwrought_reprisal_turn"] = int(turn)
+        sr["banishers_hexwrought_reprisal_turn_owner"] = str(turn_owner_id)
+        enemy_root = self._gk_root(attacker_unit)
+        if enemy_root is not None and not self._gk_owned_by_player(enemy_root, self.player):
+            existing = {
+                str(value or "").strip()
+                for value in list(sr.get("banishers_hexwrought_reprisal_enemy_unit_ids", []) or [])
+                if str(value or "").strip()
+            }
+            enemy_id = self._gk_sort_key(enemy_root)
+            if enemy_id:
+                existing.add(enemy_id)
+            sr["banishers_hexwrought_reprisal_enemy_unit_ids"] = sorted(existing)
+        root.special_rules = sr
+
+    def _banishers_hexwrought_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_banishers():
+            return []
+        phase_key = self._gk_phase_key(phase_name)
+        turn = self._gk_current_turn()
+        turn_owner_id = self._gk_current_turn_owner_id()
+        candidates: list[Any] = []
+        for root in list(self._banishers_units(require_psyker=True) or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if self._gk_phase_key(sr.get("banishers_hexwrought_reprisal_phase", "")) != phase_key:
+                continue
+            try:
+                stored_turn = int(sr.get("banishers_hexwrought_reprisal_turn", 0) or 0)
+            except (TypeError, ValueError):
+                stored_turn = 0
+            if stored_turn != turn:
+                continue
+            if str(sr.get("banishers_hexwrought_reprisal_turn_owner", "") or "") != str(turn_owner_id):
+                continue
+            try:
+                total = int(sr.get("banishers_hexwrought_reprisal_total_mortal_wounds", 0) or 0)
+            except (TypeError, ValueError):
+                total = 0
+            enemy_ids = [
+                str(value or "").strip()
+                for value in list(sr.get("banishers_hexwrought_reprisal_enemy_unit_ids", []) or [])
+                if str(value or "").strip()
+            ]
+            if total <= 0 or not enemy_ids:
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _banishers_hexwrought_enemy_candidates(self, unit: Any) -> list[Any]:
+        root = self._gk_root(unit)
+        if root is None:
+            return []
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        enemy_ids = [
+            str(value or "").strip()
+            for value in list(sr.get("banishers_hexwrought_reprisal_enemy_unit_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        if not enemy_ids:
+            return []
+        registry = getattr(self.game, "entity_registry", None) if self.game is not None else None
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy_id in enemy_ids:
+            enemy = registry.get(enemy_id, kind="unit") if registry is not None else None
+            enemy_root = self._gk_root(enemy)
+            if enemy_root is None:
+                continue
+            resolved_id = self._gk_sort_key(enemy_root)
+            if not resolved_id or resolved_id in seen:
+                continue
+            if self._gk_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+                continue
+            seen.add(resolved_id)
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._gk_sort_key)
 
     def _warpbane_units(
         self,
@@ -839,6 +1192,250 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_banishers_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_banishers():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Shooting phase"
+            stratagem_name = "CHAOS BANE"
+            candidates = self._banishers_chaos_bane_candidates()
+        elif phase_key == "CHARGE_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Charge phase"
+            stratagem_name = "CELERITY"
+            candidates = self._banishers_celerity_candidates()
+        elif phase_key == "MOVEMENT_PHASE":
+            if player is self.player or active_player is self.player:
+                return
+            phase_name = "Movement phase"
+            stratagem_name = "CIRCLE OF SANCTUARY"
+            candidates = self._banishers_circle_of_sanctuary_candidates()
+        else:
+            return
+        if not candidates:
+            return
+        stratagem = self.get_by_name(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_banishers_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_banishers() or unit is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        enemy_root = self._gk_root(unit)
+        if enemy_root is None or self._gk_owned_by_player(enemy_root, self.player):
+            return
+        if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+            return
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"move", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        stratagem = self.get_by_name("SHADOW OF ANARCH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._banishers_shadow_of_anarch_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            enemy_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": action,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["allowed_choice_keys"] = self._banishers_shadow_of_anarch_choice_keys(candidates[0])
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_banishers_shooting_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_banishers():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            return
+        if not self._gk_is_alive(attacking_root) or not self._gk_is_on_battlefield(attacking_root):
+            return
+        stratagem = self.get_by_name("WARDING CHANT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._banishers_warding_chant_candidates(target_units)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_root,
+            "attacking_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_banishers_fight_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_banishers():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            return
+        if not self._gk_is_alive(attacking_root) or not self._gk_is_on_battlefield(attacking_root):
+            return
+        stratagem = self.get_by_name("WARDING CHANT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._banishers_warding_chant_candidates(target_units)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_root,
+            "attacking_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_banishers_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_banishers():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        phase_label = {
+            "COMMAND_PHASE": "Command phase",
+            "MOVEMENT_PHASE": "Movement phase",
+            "SHOOTING_PHASE": "Shooting phase",
+            "CHARGE_PHASE": "Charge phase",
+            "FIGHT_PHASE": "Fight phase",
+        }.get(phase_name, str(phase_name).replace("_", " ").title())
+        stratagem = self.get_by_name("HEXWROUGHT REPRISAL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._banishers_hexwrought_candidates(phase_name=phase_name)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name=phase_label,
+        ):
+            return
+        enemy_candidates_by_unit_id: dict[str, list[Any]] = {}
+        mortal_wounds_by_unit_id: dict[str, int] = {}
+        for root in list(candidates or []):
+            root_id = self._gk_sort_key(root)
+            enemy_candidates_by_unit_id[root_id] = self._banishers_hexwrought_enemy_candidates(root)
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                try:
+                    mortal_wounds_by_unit_id[root_id] = int(
+                        sr.get("banishers_hexwrought_reprisal_total_mortal_wounds", 0) or 0
+                    )
+                except (TypeError, ValueError):
+                    mortal_wounds_by_unit_id[root_id] = 0
+        payload = {
+            "event": "phase_end",
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "enemy_candidates_by_unit_id": enemy_candidates_by_unit_id,
+            "mortal_wounds_by_unit_id": mortal_wounds_by_unit_id,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            enemy_candidates = enemy_candidates_by_unit_id.get(self._gk_sort_key(candidates[0]), [])
+            if len(enemy_candidates) == 1:
+                payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_warpbane_shooting_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
         if attacking_unit is None or not self._is_warpbane_task_force():
             return
@@ -946,6 +1543,66 @@ class GreyKnightsStratagemMixin:
                 continue
             root.special_rules = sr
             self._gk_clear_ability_cache(root)
+
+    def _cleanup_banishers_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_banishers():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        keys_by_phase: dict[str, tuple[str, ...]] = {
+            "MOVEMENT_PHASE": (
+                "banishers_circle_of_sanctuary_active",
+                "banishers_circle_of_sanctuary_turn_owner",
+                "banishers_circle_of_sanctuary_turn",
+                "banishers_circle_of_sanctuary_expires_phase",
+                "banishers_circle_of_sanctuary_source",
+                "banishers_circle_of_sanctuary_range",
+                "banishers_circle_of_sanctuary_source_model_id",
+            ),
+            "SHOOTING_PHASE": (
+                "banishers_chaos_bane_active",
+                "banishers_chaos_bane_turn_owner",
+                "banishers_chaos_bane_turn",
+                "banishers_chaos_bane_expires_phase",
+                "banishers_chaos_bane_source",
+            ),
+            "FIGHT_PHASE": (
+                "banishers_celerity_active",
+                "banishers_celerity_turn_owner",
+                "banishers_celerity_turn",
+                "banishers_celerity_source",
+            ),
+        }
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in keys_by_phase.get(phase_name, ()):
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if "banishers_hexwrought_reprisal_phase" in sr:
+                self._banishers_hexwrought_clear_tracking_on_root(root)
+                sr = getattr(root, "special_rules", None)
+                changed = True
+            if changed:
+                root.special_rules = sr
+                self._gk_clear_ability_cache(root)
 
     @staticmethod
     def _warpbane_effect_is_active(
@@ -1183,14 +1840,26 @@ class GreyKnightsStratagemMixin:
             return self._use_augurium_aggressive_anticipation(stratagem, **kwargs)
         if name_u == "APPOINTED HOUR":
             return self._use_augurium_appointed_hour(stratagem, **kwargs)
+        if name_u == "CELERITY":
+            return self._use_banishers_celerity(stratagem, **kwargs)
+        if name_u == "CHAOS BANE":
+            return self._use_banishers_chaos_bane(stratagem, **kwargs)
+        if name_u == "CIRCLE OF SANCTUARY":
+            return self._use_banishers_circle_of_sanctuary(stratagem, **kwargs)
         if name_u == "COMBAT MANIFESTATION":
             return self._use_brotherhood_strike_combat_manifestation(stratagem, **kwargs)
+        if name_u == "HEXWROUGHT REPRISAL":
+            return self._use_banishers_hexwrought_reprisal(stratagem, **kwargs)
         if name_u == "MIRAGE OF ECHOES":
             return self._use_augurium_mirage_of_echoes(stratagem, **kwargs)
         if name_u == "NECESSARY END":
             return self._use_augurium_necessary_end(stratagem, **kwargs)
         if name_u == "REDIRECTED STRIKE":
             return self._use_augurium_redirected_strike(stratagem, **kwargs)
+        if name_u == "SHADOW OF ANARCH":
+            return self._use_banishers_shadow_of_anarch(stratagem, **kwargs)
+        if name_u == "WARDING CHANT":
+            return self._use_banishers_warding_chant(stratagem, **kwargs)
         if name_u == "SANCTIFIED KILL ZONE":
             return self._use_warpbane_sanctified_kill_zone(stratagem, **kwargs)
         if name_u == "HALLOWED BEACON":
@@ -1554,6 +2223,529 @@ class GreyKnightsStratagemMixin:
         logger.info(
             "INFO: MIRAGE OF ECHOES: %s entered Strategic Reserves.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_celerity(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("CELERITY")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CELERITY: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: CELERITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CELERITY: not your Charge phase")
+            return False
+        eligible = candidates or self._banishers_celerity_candidates()
+        if eligible and root not in [self._gk_root(candidate) for candidate in list(eligible or [])]:
+            logger.error("ERROR: CELERITY: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: CELERITY: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CELERITY: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: CELERITY: target must be a GREY KNIGHTS PSYKER INFANTRY unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "advanced_this_round", False)):
+            logger.error("ERROR: CELERITY: target must have Advanced this round")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["banishers_celerity_active"] = True
+        sr["banishers_celerity_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["banishers_celerity_turn"] = self._gk_current_turn()
+        sr["banishers_celerity_source"] = str(getattr(stratagem, "name", "") or "CELERITY").strip() or "CELERITY"
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CELERITY: %s can declare a charge after Advancing this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_chaos_bane(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("CHAOS BANE")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CHAOS BANE: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CHAOS BANE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CHAOS BANE: not your Shooting phase")
+            return False
+        eligible = candidates or self._banishers_chaos_bane_candidates()
+        if eligible and root not in [self._gk_root(candidate) for candidate in list(eligible or [])]:
+            logger.error("ERROR: CHAOS BANE: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: CHAOS BANE: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CHAOS BANE: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: CHAOS BANE: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="shooting phase"):
+            logger.error("ERROR: CHAOS BANE: target has already been selected to shoot this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["banishers_chaos_bane_active"] = True
+        sr["banishers_chaos_bane_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["banishers_chaos_bane_turn"] = self._gk_current_turn()
+        sr["banishers_chaos_bane_expires_phase"] = "SHOOTING_PHASE"
+        sr["banishers_chaos_bane_source"] = str(getattr(stratagem, "name", "") or "CHAOS BANE").strip() or "CHAOS BANE"
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CHAOS BANE: %s gains [ANTI-CHAOS 4+] on ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_circle_of_sanctuary(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+        target_model = kwargs.get("model") or kwargs.get("target_model")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("CIRCLE OF SANCTUARY")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit") or pending.get("source_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if target_model is None and pending is not None:
+            target_model = pending.get("model") or pending.get("target_model")
+        if target_model is not None and unit is None:
+            unit = getattr(target_model, "parent_unit", None)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CIRCLE OF SANCTUARY: no target Character unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CIRCLE OF SANCTUARY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: CIRCLE OF SANCTUARY: only usable in your opponent's Movement phase")
+            return False
+        eligible = candidates or self._banishers_circle_of_sanctuary_candidates()
+        if unit not in eligible:
+            matching = [candidate for candidate in list(eligible or []) if self._gk_root(candidate) is root]
+            if len(matching) == 1:
+                unit = matching[0]
+            else:
+                logger.error("ERROR: CIRCLE OF SANCTUARY: selected Character is not currently eligible")
+                return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: CIRCLE OF SANCTUARY: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CIRCLE OF SANCTUARY: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._gk_is_character_unit(unit):
+            logger.error("ERROR: CIRCLE OF SANCTUARY: target must be a GREY KNIGHTS CHARACTER model")
+            return False
+        alive_models = self._gk_alive_models(unit)
+        if target_model is None and len(alive_models) == 1:
+            target_model = alive_models[0]
+        if target_model is None:
+            logger.error("ERROR: CIRCLE OF SANCTUARY: no target Character model provided")
+            return False
+        if target_model not in alive_models:
+            logger.error("ERROR: CIRCLE OF SANCTUARY: selected model is not an alive model in the chosen unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["banishers_circle_of_sanctuary_active"] = True
+        sr["banishers_circle_of_sanctuary_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["banishers_circle_of_sanctuary_turn"] = self._gk_current_turn()
+        sr["banishers_circle_of_sanctuary_expires_phase"] = "MOVEMENT_PHASE"
+        sr["banishers_circle_of_sanctuary_source"] = (
+            str(getattr(stratagem, "name", "") or "CIRCLE OF SANCTUARY").strip() or "CIRCLE OF SANCTUARY"
+        )
+        sr["banishers_circle_of_sanctuary_range"] = 12.0
+        sr["banishers_circle_of_sanctuary_source_model_id"] = self._gk_sort_key(target_model)
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CIRCLE OF SANCTUARY: %s projects a 12\" horizontal Reinforcements denial aura this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_shadow_of_anarch(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or enemy_unit is None or not candidates or action is None:
+            pending = self._gk_pending_reaction_by_name("SHADOW OF ANARCH")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if enemy_unit is None and pending is not None:
+            enemy_unit = pending.get("enemy_unit") or pending.get("attacking_unit")
+        if action is None and pending is not None:
+            action = pending.get("action")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SHADOW OF ANARCH: no target unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: SHADOW OF ANARCH: missing enemy movement trigger unit")
+            return False
+        root = self._gk_root(unit)
+        enemy_root = self._gk_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SHADOW OF ANARCH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SHADOW OF ANARCH: only usable in your opponent's Movement phase")
+            return False
+        if self._gk_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: SHADOW OF ANARCH: trigger unit must be an enemy unit")
+            return False
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"move", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: SHADOW OF ANARCH: invalid trigger action")
+            return False
+        eligible = candidates or self._banishers_shadow_of_anarch_candidates(enemy_unit=enemy_root)
+        if eligible and root not in [self._gk_root(candidate) for candidate in list(eligible or [])]:
+            logger.error("ERROR: SHADOW OF ANARCH: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: SHADOW OF ANARCH: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SHADOW OF ANARCH: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: SHADOW OF ANARCH: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        if self._gk_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: SHADOW OF ANARCH: target cannot be within Engagement Range")
+            return False
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
+            logger.error("ERROR: SHADOW OF ANARCH: target must be within 9\" of the triggering enemy unit")
+            return False
+        choice_key = self._normalize_banishers_shadow_choice(
+            kwargs.get("choice_key")
+            or kwargs.get("choice")
+            or kwargs.get("key")
+            or kwargs.get("selection")
+            or (pending.get("choice_key") if isinstance(pending, dict) else "")
+        )
+        allowed_choice_keys = self._banishers_shadow_of_anarch_choice_keys(root)
+        if not choice_key and len(allowed_choice_keys) == 1:
+            choice_key = allowed_choice_keys[0]
+        if choice_key not in allowed_choice_keys:
+            logger.error("ERROR: SHADOW OF ANARCH: choice must be one of %s", ", ".join(allowed_choice_keys))
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        if choice_key == "STRATEGIC_RESERVES":
+            if not self._gk_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "")):
+                logger.error("ERROR: SHADOW OF ANARCH: failed to place target into Strategic Reserves")
+                return False
+            self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: SHADOW OF ANARCH: %s entered Strategic Reserves.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: SHADOW OF ANARCH: reactive move queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="grey_knights_shadow_of_anarch",
+            movement_type="move",
+            reactive_movement_type="shadow_of_anarch",
+            source=str(getattr(stratagem, "name", "") or "SHADOW OF ANARCH"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+        )
+        if request is None:
+            logger.error("ERROR: SHADOW OF ANARCH: failed to queue reactive move")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHADOW OF ANARCH: %s can make a Normal move of up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_warding_chant(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or attacking_unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("WARDING CHANT")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if attacking_unit is None and pending is not None:
+            attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+        if not target_units and pending is not None:
+            target_units = list(pending.get("target_units") or [])
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: WARDING CHANT: no target unit provided")
+            return False
+        if attacking_unit is None:
+            logger.error("ERROR: WARDING CHANT: missing enemy attacking unit")
+            return False
+        root = self._gk_root(unit)
+        attacking_root = self._gk_root(attacking_unit)
+        if root is None or attacking_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: WARDING CHANT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: WARDING CHANT: only usable in your opponent's Shooting phase")
+            return False
+        if self._gk_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: WARDING CHANT: trigger requires an enemy attacking unit")
+            return False
+        eligible = candidates or self._banishers_warding_chant_candidates(target_units)
+        if eligible and root not in [self._gk_root(candidate) for candidate in list(eligible or [])]:
+            logger.error("ERROR: WARDING CHANT: target unit was not selected as an attack target")
+            return False
+        if target_units and root not in [self._gk_root(target) for target in list(target_units or [])]:
+            logger.error("ERROR: WARDING CHANT: target unit was not selected as an attack target")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: WARDING CHANT: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: WARDING CHANT: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: WARDING CHANT: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._gk_phase_key(getattr(getattr(self.game, "phase", None), "name", "") or phase_name)
+        source_name = str(getattr(stratagem, "name", "") or "WARDING CHANT").strip() or "WARDING CHANT"
+        for model in list(self._gk_alive_models(root) or []):
+            set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+            if not callable(set_temporary_fnp):
+                continue
+            set_temporary_fnp(
+                key=f"banishers_warding_chant:{self._gk_current_turn()}:{phase_key}:{self._gk_sort_key(model)}",
+                value=5,
+                source=source_name,
+                condition="against attacks with an unmodified Damage characteristic of 1",
+                expires_phase=phase_key,
+            )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WARDING CHANT: %s gains Feel No Pain 5+ against attacks with Damage 1 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_banishers_hexwrought_reprisal(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_banishers():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_candidates_by_unit_id = dict(kwargs.get("enemy_candidates_by_unit_id") or {})
+        mortal_wounds_by_unit_id = dict(kwargs.get("mortal_wounds_by_unit_id") or {})
+        pending = None
+        if unit is None or (enemy_unit is None and not enemy_candidates_by_unit_id) or not candidates:
+            pending = self._gk_pending_reaction_by_name("HEXWROUGHT REPRISAL")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if enemy_unit is None and pending is not None:
+            enemy_unit = pending.get("enemy_unit") or pending.get("attacking_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if not enemy_candidates_by_unit_id and pending is not None:
+            enemy_candidates_by_unit_id = dict(pending.get("enemy_candidates_by_unit_id") or {})
+        if not mortal_wounds_by_unit_id and pending is not None:
+            mortal_wounds_by_unit_id = dict(pending.get("mortal_wounds_by_unit_id") or {})
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HEXWROUGHT REPRISAL: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if not phase_name:
+            phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "")
+        eligible = candidates or self._banishers_hexwrought_candidates(phase_name=phase_name)
+        if eligible and root not in [self._gk_root(candidate) for candidate in list(eligible or [])]:
+            logger.error("ERROR: HEXWROUGHT REPRISAL: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: HEXWROUGHT REPRISAL: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: HEXWROUGHT REPRISAL: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root):
+            logger.error("ERROR: HEXWROUGHT REPRISAL: target must be a GREY KNIGHTS PSYKER unit")
+            return False
+        root_id = self._gk_sort_key(root)
+        enemy_candidates = list(enemy_candidates_by_unit_id.get(root_id) or [])
+        if not enemy_candidates:
+            enemy_candidates = self._banishers_hexwrought_enemy_candidates(root)
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if enemy_unit is None:
+            logger.error("ERROR: HEXWROUGHT REPRISAL: no enemy unit provided")
+            return False
+        enemy_root = self._gk_root(enemy_unit)
+        if enemy_root is None:
+            return False
+        if enemy_candidates and enemy_root not in [self._gk_root(candidate) for candidate in list(enemy_candidates or [])]:
+            logger.error("ERROR: HEXWROUGHT REPRISAL: selected enemy unit did not inflict mortal wounds on the target")
+            return False
+        if self._gk_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: HEXWROUGHT REPRISAL: selected enemy unit is invalid")
+            return False
+        if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+            logger.error("ERROR: HEXWROUGHT REPRISAL: selected enemy unit is no longer on the battlefield")
+            return False
+        try:
+            mortal_wounds_suffered = int(mortal_wounds_by_unit_id.get(root_id, 0) or 0)
+        except (TypeError, ValueError):
+            mortal_wounds_suffered = 0
+        if mortal_wounds_suffered <= 0:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                try:
+                    mortal_wounds_suffered = int(
+                        sr.get("banishers_hexwrought_reprisal_total_mortal_wounds", 0) or 0
+                    )
+                except (TypeError, ValueError):
+                    mortal_wounds_suffered = 0
+        if mortal_wounds_suffered <= 0:
+            logger.error("ERROR: HEXWROUGHT REPRISAL: target unit did not suffer mortal wounds this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        successes = 0
+        for _ in range(int(mortal_wounds_suffered)):
+            roll = int(dice_module.get_roll("D6") or 0)
+            if roll >= 2:
+                successes += 1
+        mortal_wounds = min(6, int(successes))
+        if mortal_wounds > 0:
+            apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
+            if not callable(apply_mortals):
+                logger.error("ERROR: HEXWROUGHT REPRISAL: mortal wound application helper unavailable")
+                return False
+            apply_mortals(
+                enemy_root,
+                int(mortal_wounds),
+                game_map=getattr(self.game, "map", None) if self.game is not None else None,
+                attacker_unit=root,
+                attacker_model=None,
+                is_psychic_attack=True,
+                damage_source=str(getattr(stratagem, "name", "") or "HEXWROUGHT REPRISAL"),
+            )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HEXWROUGHT REPRISAL: %s inflicted %d psychic mortal wound(s) on %s.",
+            getattr(root, "name", "Unit"),
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Unit"),
         )
         return True
 

@@ -3912,6 +3912,88 @@ _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BANISHERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010357002": StratagemToolDescriptor(
+        stratagem_id="000010357002",
+        name="Hexwrought Reprisal",
+        timing="end_of_any_phase",
+        target="grey_knights_psyker_unit_on_battlefield_that_suffered_mortal_wounds_this_phase",
+        duration="immediate",
+        effect="reflect_mortal_wounds_as_psychic",
+        cp_cost=1,
+        effect_params={
+            "requires_enemy_source_unit": True,
+            "dice_per_mortal_wound_suffered": True,
+            "success_threshold": 2,
+            "max_mortal_wounds": 6,
+            "psychic_attack": True,
+        },
+    ),
+    "000010357003": StratagemToolDescriptor(
+        stratagem_id="000010357003",
+        name="Warding Chant",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="grey_knights_psyker_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_against_damage_1",
+        cp_cost=1,
+        effect_params={
+            "feel_no_pain": 5,
+            "condition": "against attacks with an unmodified Damage characteristic of 1",
+        },
+    ),
+    "000010357004": StratagemToolDescriptor(
+        stratagem_id="000010357004",
+        name="Chaos Bane",
+        timing="your_shooting_phase_before_select_to_shoot",
+        target="grey_knights_psyker_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_anti_chaos_4plus",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "grant_keywords": ["ANTI-CHAOS 4+"]},
+    ),
+    "000010357005": StratagemToolDescriptor(
+        stratagem_id="000010357005",
+        name="Celerity",
+        timing="your_charge_phase",
+        target="grey_knights_psyker_infantry_unit_that_advanced",
+        duration="until_end_of_turn",
+        effect="charge_after_advance",
+        cp_cost=1,
+        effect_params={"charge_after_advance": True},
+    ),
+    "000010357006": StratagemToolDescriptor(
+        stratagem_id="000010357006",
+        name="Circle of Sanctuary",
+        timing="opponent_movement_phase_start",
+        target="grey_knights_character_model",
+        duration="until_end_of_phase",
+        effect="reserves_denial_aura",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"horizontal_only": True, "reinforcements_denial": True},
+    ),
+    "000010357007": StratagemToolDescriptor(
+        stratagem_id="000010357007",
+        name="Shadow of Anarch",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="grey_knights_psyker_unit_within_9_not_engaged",
+        duration="immediate",
+        effect="reactive_move_or_enter_strategic_reserves_if_deep_strike",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "reactive_move_distance_in": 6.0,
+            "trigger_move_types": ["normal_move", "advance", "fall_back"],
+            "requires_deep_strike_for_reserves_mode": True,
+        },
+    ),
+}
+
+_BANISHERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BANISHERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010365002": StratagemToolDescriptor(
         stratagem_id="000010365002",
@@ -13033,6 +13115,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BANISHERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13424,6 +13509,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CHAMPIONS_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _PENITENT_HOST_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _BANISHERS_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)

@@ -1,4 +1,4 @@
-﻿# Adepta Sororitas Ability Support
+# Adepta Sororitas Ability Support
 
 Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.
 

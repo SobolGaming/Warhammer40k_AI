@@ -1701,6 +1701,171 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return None, {}
         return root, sr
 
+    def _banishers_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+        require_turn_match: bool = True,
+        require_owner_match: bool = True,
+    ) -> tuple[object | None, dict]:
+        if not self.is_banishers():
+            return None, {}
+        root = self._attached_root(unit)
+        if root is None:
+            return None, {}
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not self.army:
+            return None, {}
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(f"{prefix}_active", False))):
+            return None, {}
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is None:
+            return root, sr
+        if require_phase_match:
+            expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            current_phase = self._phase_name(game_obj)
+            if expected_phase and current_phase and current_phase != expected_phase:
+                return None, {}
+        if require_turn_match:
+            try:
+                effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn > 0 and current_turn > 0 and effect_turn != current_turn:
+                return None, {}
+        if require_owner_match:
+            effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return None, {}
+        return root, sr
+
+    def banishers_celerity_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._banishers_phase_effect_state(
+            unit,
+            prefix="banishers_celerity",
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "PSYKER"):
+            return False
+        if not self._attached_unit_has_keyword(root, "INFANTRY"):
+            return False
+        round_state = getattr(root, "round_state", None)
+        return bool(getattr(round_state, "advanced_this_round", False))
+
+    def banishers_chaos_bane_attack_keyword_rule(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None:
+            return None
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("", "any", "ranged"):
+            return None
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+            if callable(is_ranged) and not bool(is_ranged()):
+                return None
+        root, sr = self._banishers_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="banishers_chaos_bane",
+            game=game,
+        )
+        if root is None or not self._is_grey_knights_unit(root):
+            return None
+        if not self._attached_unit_has_keyword(root, "PSYKER"):
+            return None
+        source = str(sr.get("banishers_chaos_bane_source", "") or "CHAOS BANE").strip() or "CHAOS BANE"
+        return {
+            "attack_type": "ranged",
+            "keyword": "ANTI-CHAOS 4+",
+            "source": source,
+        }
+
+    def banishers_circle_of_sanctuary_reserves_denial(self, unit, *, game=None) -> dict | None:
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is None or not bool(getattr(game_obj, "reinforcements_step_active", False)):
+            return None
+        try:
+            step_turn = int(getattr(game_obj, "reinforcements_step_turn", 0) or 0)
+        except (TypeError, ValueError):
+            step_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if step_turn and current_turn and step_turn != current_turn:
+            return None
+        step_player_id = str(getattr(game_obj, "reinforcements_step_player_id", "") or "").strip()
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        if step_player_id and current_player_id and step_player_id != current_player_id:
+            return None
+        root, sr = self._banishers_phase_effect_state(
+            unit,
+            prefix="banishers_circle_of_sanctuary",
+            game=game_obj,
+        )
+        if root is None or not self._is_grey_knights_unit(root) or not self._unit_is_active(root):
+            return None
+        try:
+            min_distance = float(sr.get("banishers_circle_of_sanctuary_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            min_distance = 12.0
+        if min_distance <= 0.0:
+            return None
+        source_model_id = str(sr.get("banishers_circle_of_sanctuary_source_model_id", "") or "").strip()
+        source_model = None
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            model_id = str(get_entity_id(model) or "").strip()
+            if source_model_id and model_id != source_model_id:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            source_model = model
+            if model_id:
+                source_model_id = model_id
+            break
+        if source_model is None:
+            return None
+        source = str(
+            sr.get("banishers_circle_of_sanctuary_source", "") or "CIRCLE OF SANCTUARY"
+        ).strip() or "CIRCLE OF SANCTUARY"
+        return {
+            "range": float(min_distance),
+            "horizontal_only": True,
+            "source": source,
+            "source_model_id": source_model_id,
+        }
+
     def augurium_aggressive_anticipation_ignore_hit_modifiers_rule(
         self,
         attacker_model,
