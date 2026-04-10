@@ -2369,6 +2369,26 @@ class KeywordsDetachmentsMixin:
                         ),
                     }
 
+        ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        ac_rule_fn = (
+            getattr(ac_mgr, "solar_spearhead_emperors_vengeance_fight_on_death_rule", None)
+            if ac_mgr is not None
+            else None
+        )
+        if callable(ac_rule_fn):
+            ac_rule = ac_rule_fn(self, model=model, game=game)
+            if isinstance(ac_rule, dict):
+                try:
+                    threshold = int(ac_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(ac_rule.get("source", "") or "EMPEROR'S VENGEANCE").strip() or "EMPEROR'S VENGEANCE"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                    }
+
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
             resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(

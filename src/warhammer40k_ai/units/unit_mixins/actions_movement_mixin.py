@@ -19589,6 +19589,20 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            apply_fn = (
+                getattr(mgr, "solar_spearhead_relentless_persecution_can_shoot_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "interlocking_tactics_shoot_after_advance_applies", None):
                 if mgr.interlocking_tactics_shoot_after_advance_applies(self, profile):
@@ -20243,6 +20257,20 @@ class ActionsMovementMixin:
             if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr.can_charge_after_advance(self, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            apply_fn = (
+                getattr(mgr, "solar_spearhead_relentless_persecution_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

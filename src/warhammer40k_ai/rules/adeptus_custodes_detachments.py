@@ -1494,6 +1494,141 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             return bool(is_ranged())
         return True
 
+    def _solar_spearhead_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+        require_turn_match: bool = True,
+    ) -> tuple[Optional[object], Optional[dict]]:
+        if not self.is_solar_spearhead():
+            return None, None
+        root = self._root_unit(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active")):
+            return None, None
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            resolved_game = getattr(player, "game", None) if player is not None else None
+        if resolved_game is not None:
+            current_phase = str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            current_owner_id = str(getattr(getattr(resolved_game, "get_current_player", lambda: None)(), "id", "") or "").strip()
+            try:
+                current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+                return None, None
+            effect_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+            if require_turn_match and effect_owner and current_owner_id and effect_owner != current_owner_id:
+                return None, None
+            try:
+                effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if require_turn_match and effect_turn and current_turn and effect_turn != current_turn:
+                return None, None
+        return root, sr
+
+    def solar_spearhead_emperors_vengeance_fight_on_death_rule(
+        self,
+        unit,
+        *,
+        model=None,
+        game=None,
+    ) -> Optional[dict]:
+        _ = model
+        root, sr = self._solar_spearhead_phase_effect_state(
+            unit,
+            prefix="custodes_solar_spearhead_emperors_vengeance",
+            game=game,
+        )
+        if root is None or not self._unit_is_custodes(root) or not isinstance(sr, dict):
+            return None
+        try:
+            threshold = int(sr.get("custodes_solar_spearhead_emperors_vengeance_threshold", 0) or 0)
+        except (TypeError, ValueError):
+            threshold = 0
+        if threshold <= 0:
+            return None
+        source = str(
+            sr.get("custodes_solar_spearhead_emperors_vengeance_source", "")
+            or "EMPEROR'S VENGEANCE"
+        ).strip() or "EMPEROR'S VENGEANCE"
+        return {
+            "threshold": int(max(2, min(6, threshold))),
+            "source": source,
+        }
+
+    def solar_spearhead_punishment_inescapable_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> Optional[dict]:
+        if attacker_model is None:
+            return None
+        root, sr = self._solar_spearhead_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="custodes_solar_spearhead_punishment_inescapable",
+            game=game,
+        )
+        if root is None or not self._unit_is_custodes(root) or not isinstance(sr, dict):
+            return None
+        source = str(
+            sr.get("custodes_solar_spearhead_punishment_inescapable_source", "")
+            or "PUNISHMENT INESCAPABLE"
+        ).strip() or "PUNISHMENT INESCAPABLE"
+        default_choice = str(
+            sr.get("custodes_solar_spearhead_punishment_inescapable_default_choice", "")
+            or "ignore_all"
+        ).strip().lower()
+        return {
+            "name": source,
+            "attack_type": "ranged",
+            "skill_kinds": {"ballistic"},
+            "allow_hit": True,
+            "default_choice": default_choice,
+        }
+
+    def solar_spearhead_relentless_persecution_can_shoot_after_advance(
+        self,
+        unit,
+        profile=None,
+        *,
+        game=None,
+    ) -> bool:
+        root, _sr = self._solar_spearhead_phase_effect_state(
+            unit,
+            prefix="custodes_solar_spearhead_relentless_persecution",
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_custodes_vehicle(root):
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def solar_spearhead_relentless_persecution_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._solar_spearhead_phase_effect_state(
+            unit,
+            prefix="custodes_solar_spearhead_relentless_persecution",
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_custodes_vehicle(root):
+            return False
+        return bool(self._unit_is_walker(root))
+
     def auric_armour_move_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if unit is None:
             unit = getattr(model, "parent_unit", None)

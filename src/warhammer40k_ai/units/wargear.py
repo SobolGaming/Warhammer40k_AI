@@ -10547,6 +10547,22 @@ class WargearProfile:
                 gk_rule = None
             if isinstance(gk_rule, dict) and gk_rule:
                 return gk_rule
+        ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        punishment_rule_fn = (
+            getattr(ac_mgr, "solar_spearhead_punishment_inescapable_ignore_hit_modifiers_rule", None)
+            if ac_mgr is not None
+            else None
+        )
+        if callable(punishment_rule_fn):
+            try:
+                ac_rule = punishment_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                ac_rule = None
+            if isinstance(ac_rule, dict) and ac_rule:
+                return ac_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None

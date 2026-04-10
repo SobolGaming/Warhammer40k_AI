@@ -64,6 +64,11 @@ class AdeptusCustodesStratagemMixin:
         checker = getattr(mgr, "is_shield_host", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_solar_spearhead_detachment(self) -> bool:
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "is_solar_spearhead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _ac_phase_name_lower(value: Any) -> str:
         return str(value or "").strip().lower()
@@ -492,6 +497,207 @@ class AdeptusCustodesStratagemMixin:
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._ac_sort_key)
+
+    def _solar_spearhead_battlefield_unit_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_vehicle: bool = False,
+        require_vehicle_or_mounted: bool = False,
+        require_advanced: bool = False,
+        attack_type: str = "",
+    ) -> list[Any]:
+        if not self._is_solar_spearhead_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._ac_friendly_battlefield_units():
+            if not self._ac_is_custodes_unit(root):
+                continue
+            is_vehicle = bool(getattr(root, "is_vehicle", False)) or self._ac_has_keyword(root, "VEHICLE")
+            is_mounted = bool(getattr(root, "is_mounted", False)) or self._ac_has_keyword(root, "MOUNTED")
+            if require_vehicle and not is_vehicle:
+                continue
+            if require_vehicle_or_mounted and not (is_vehicle or is_mounted):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_advanced and not bool(getattr(round_state, "advanced_this_round", False)):
+                continue
+            if attack_type and not self._ac_unit_has_weapon_type(root, attack_type):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _solar_spearhead_targeted_unit_candidates(
+        self,
+        target_units: list[Any],
+        *,
+        require_vehicle: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        for root in self._ac_unique_units(list(target_units or [])):
+            if not self._ac_owned_by_player(root):
+                continue
+            if not self._ac_unit_on_battlefield(root):
+                continue
+            if not self._ac_is_custodes_unit(root):
+                continue
+            if require_vehicle:
+                is_vehicle = bool(getattr(root, "is_vehicle", False)) or self._ac_has_keyword(root, "VEHICLE")
+                if not is_vehicle:
+                    continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _queue_solar_spearhead_emperors_vengeance_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_solar_spearhead_detachment():
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "FIGHT_PHASE":
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates = self._solar_spearhead_targeted_unit_candidates(list(target_units or []))
+        if not candidates:
+            return
+        stratagem = self.get_by_name("EMPEROR'S VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        attacker_id = self._ac_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "EMPEROR'S VENGEANCE":
+                continue
+            if str(reaction.get("attacking_unit_id", "") or "").strip() == attacker_id:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "attacking_unit_id": attacker_id,
+            "candidates": candidates,
+            "target_units": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_solar_spearhead_flawless_construction_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+    ) -> None:
+        if not self._is_solar_spearhead_detachment():
+            return
+        phase_key = self._ac_phase_key(phase_name)
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates = self._solar_spearhead_targeted_unit_candidates(list(target_units or []), require_vehicle=True)
+        if not candidates:
+            return
+        stratagem = self.get_by_name("FLAWLESS CONSTRUCTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        attacker_id = self._ac_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "FLAWLESS CONSTRUCTION":
+                continue
+            if str(reaction.get("attacking_unit_id", "") or "").strip() == attacker_id:
+                return
+        payload = {
+            "event": "shooting_targets_selected" if phase_key == "SHOOTING_PHASE" else "fight_targets_selected",
+            "phase_name": "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "attacking_unit_id": attacker_id,
+            "candidates": candidates,
+            "target_units": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_solar_spearhead_relentless_persecution_reaction(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower() != "advance":
+            return
+        root = self._ac_root(unit)
+        if root is None or not self._is_solar_spearhead_detachment():
+            return
+        if not self._ac_is_custodes_unit(root) or not self._ac_unit_on_battlefield(root):
+            return
+        is_vehicle = bool(getattr(root, "is_vehicle", False)) or self._ac_has_keyword(root, "VEHICLE")
+        if not is_vehicle or self._unit_cannot_be_target_of_stratagem(root):
+            return
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "advanced_this_round", False)):
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("RELENTLESS PERSECUTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "RELENTLESS PERSECUTION":
+                continue
+            if reaction.get("unit") is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "advance",
+            },
+            use_timer=False,
+        )
 
     def _ac_units_within_shoulder_range(self, leader_unit: Any, bodyguard_unit: Any) -> bool:
         source_models = self._ac_alive_models(leader_unit)
@@ -1936,6 +2142,87 @@ class AdeptusCustodesStratagemMixin:
             "stratagem_name": str(stratagem_name or "VIGILANCE ETERNAL").strip() or "VIGILANCE ETERNAL",
         }
 
+    def _cleanup_adeptus_custodes_phase_end_effects(self, *, phase: Any) -> None:
+        phase_key = self._ac_phase_key(getattr(phase, "name", "") or "")
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ac_root(unit)
+            unit_id = self._ac_sort_key(root)
+            if root is None or (unit_id and unit_id in seen):
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "MOVEMENT_PHASE" or phase_key == "CHARGE_PHASE":
+                exp = str(sr.get("custodes_solar_spearhead_unstoppable_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_solar_spearhead_unstoppable_active") and (not exp or exp == phase_key):
+                    added = set(sr.get("custodes_solar_spearhead_unstoppable_added_phase_move_terrain_only_types") or [])
+                    if added:
+                        current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                        else:
+                            sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                    for key in (
+                        "custodes_solar_spearhead_unstoppable_active",
+                        "custodes_solar_spearhead_unstoppable_expires_phase",
+                        "custodes_solar_spearhead_unstoppable_turn_owner",
+                        "custodes_solar_spearhead_unstoppable_turn",
+                        "custodes_solar_spearhead_unstoppable_source",
+                        "custodes_solar_spearhead_unstoppable_added_phase_move_terrain_only_types",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if phase_key == "SHOOTING_PHASE":
+                exp = str(sr.get("custodes_solar_spearhead_punishment_inescapable_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_solar_spearhead_punishment_inescapable_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_solar_spearhead_punishment_inescapable_active",
+                        "custodes_solar_spearhead_punishment_inescapable_expires_phase",
+                        "custodes_solar_spearhead_punishment_inescapable_turn_owner",
+                        "custodes_solar_spearhead_punishment_inescapable_turn",
+                        "custodes_solar_spearhead_punishment_inescapable_source",
+                        "custodes_solar_spearhead_punishment_inescapable_default_choice",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if phase_key == "FIGHT_PHASE":
+                exp = str(sr.get("custodes_solar_spearhead_emperors_vengeance_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_solar_spearhead_emperors_vengeance_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_solar_spearhead_emperors_vengeance_active",
+                        "custodes_solar_spearhead_emperors_vengeance_expires_phase",
+                        "custodes_solar_spearhead_emperors_vengeance_turn_owner",
+                        "custodes_solar_spearhead_emperors_vengeance_turn",
+                        "custodes_solar_spearhead_emperors_vengeance_threshold",
+                        "custodes_solar_spearhead_emperors_vengeance_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+                exp = str(sr.get("custodes_solar_spearhead_relentless_persecution_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_solar_spearhead_relentless_persecution_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_solar_spearhead_relentless_persecution_active",
+                        "custodes_solar_spearhead_relentless_persecution_expires_phase",
+                        "custodes_solar_spearhead_relentless_persecution_turn_owner",
+                        "custodes_solar_spearhead_relentless_persecution_turn",
+                        "custodes_solar_spearhead_relentless_persecution_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+
     def _use_adeptus_custodes_stratagem(self, stratagem, **kwargs):
         name_u = str(self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")).strip()
         handled = {
@@ -1945,20 +2232,26 @@ class AdeptusCustodesStratagemMixin:
             "AVENGE THE FALLEN",
             "DESPERATION'S PRICE",
             "EARNING OF A NAME",
+            "EMPEROR'S VENGEANCE",
+            "FLAWLESS CONSTRUCTION",
             "MANOEUVRE AND FIRE",
             "MULTIPOTENTIALITY",
             "PEERLESS WARRIOR",
             "PSY-CHAFF VOLLEY",
             "PSYCHIC ABOMINATIONS",
+            "PUNISHMENT INESCAPABLE",
             "PURGATION SWEEP",
+            "RELENTLESS PERSECUTION",
             "SHOULDER THE MANTLE",
             "SLAYER OF CHAMPIONS",
             "SUPERHUMAN RESERVES",
             "SWIFT AS THE EAGLE",
             "THE EMPEROR'S AUSPICE",
+            "UNSTOPPABLE",
             "UNWAVERING SENTINELS",
             "VIGIL UNENDING",
             "VIGILANCE ETERNAL",
+            "WRATHFUL ADVANCE",
             "WITCH HUNTERS",
         }
         if name_u not in handled:
@@ -1986,6 +2279,15 @@ class AdeptusCustodesStratagemMixin:
             "UNWAVERING SENTINELS",
             "VIGILANCE ETERNAL",
         } and not self._is_shield_host_detachment():
+            return False
+        if name_u in {
+            "EMPEROR'S VENGEANCE",
+            "FLAWLESS CONSTRUCTION",
+            "PUNISHMENT INESCAPABLE",
+            "RELENTLESS PERSECUTION",
+            "UNSTOPPABLE",
+            "WRATHFUL ADVANCE",
+        } and not self._is_solar_spearhead_detachment():
             return False
         if name_u in {
             "ANATHEMA BLADEMASTERY",
@@ -2332,6 +2634,310 @@ class AdeptusCustodesStratagemMixin:
                 stratagem_name=str(getattr(stratagem, "name", "") or "VIGILANCE ETERNAL"),
             ) is None:
                 return False
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "EMPEROR'S VENGEANCE":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or (pending or {}).get("attacking_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._solar_spearhead_targeted_unit_candidates(list(kwargs.get("target_units") or []))
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: EMPEROR'S VENGEANCE: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: EMPEROR'S VENGEANCE: target must be an Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: EMPEROR'S VENGEANCE: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: EMPEROR'S VENGEANCE: missing enemy attacking unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            threshold = 3 if self._ac_has_keyword(source_unit, "WALKER") else 4
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["custodes_solar_spearhead_emperors_vengeance_active"] = True
+            special_rules["custodes_solar_spearhead_emperors_vengeance_turn"] = self._ac_current_turn()
+            special_rules["custodes_solar_spearhead_emperors_vengeance_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_solar_spearhead_emperors_vengeance_expires_phase"] = "FIGHT_PHASE"
+            special_rules["custodes_solar_spearhead_emperors_vengeance_threshold"] = int(threshold)
+            special_rules["custodes_solar_spearhead_emperors_vengeance_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "FLAWLESS CONSTRUCTION":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or (pending or {}).get("attacking_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._solar_spearhead_targeted_unit_candidates(
+                    list(kwargs.get("target_units") or []),
+                    require_vehicle=True,
+                )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            phase_key = self._ac_phase_key(phase_name)
+            if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if phase_key == "SHOOTING_PHASE" and active_player is self.player:
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: must be your opponent's Shooting phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: target must be an Adeptus Custodes unit")
+                return False
+            is_vehicle = bool(getattr(source_unit, "is_vehicle", False)) or self._ac_has_keyword(source_unit, "VEHICLE")
+            if not is_vehicle:
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: target must be a Vehicle unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: FLAWLESS CONSTRUCTION: missing enemy attacking unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            self._append_defensive_effect(
+                source_unit,
+                "defensive_wound_mods",
+                {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": phase_key,
+                    "source": str(getattr(stratagem, "name", "") or "FLAWLESS CONSTRUCTION"),
+                    "requires_strength_gt_toughness": True,
+                },
+            )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "PUNISHMENT INESCAPABLE":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._solar_spearhead_battlefield_unit_candidates(
+                require_not_shot=True,
+                attack_type="ranged",
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: must be your Shooting phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: target must be an Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if bool(getattr(getattr(source_unit, "round_state", None), "shot_this_round", False)):
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: target has already been selected to shoot")
+                return False
+            if not self._ac_unit_has_weapon_type(source_unit, "ranged"):
+                logger.error("ERROR: PUNISHMENT INESCAPABLE: target must have ranged weapons")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            root_id = self._ac_sort_key(source_unit) or str(id(source_unit))
+            phase_key = self._ac_phase_key(phase_name)
+            for model in self._ac_alive_models(source_unit):
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                model_id = self._ac_sort_key(model) or str(id(model))
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_ranged = getattr(wargear, "is_ranged", None)
+                    if not callable(is_ranged) or not bool(is_ranged()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    set_keywords(
+                        key=f"custodes_solar_spearhead_punishment_inescapable:{root_id}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["IGNORES COVER"],
+                        source=str(getattr(stratagem, "name", "") or "PUNISHMENT INESCAPABLE"),
+                        expires_phase=phase_key,
+                        attack_type="ranged",
+                    )
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["custodes_solar_spearhead_punishment_inescapable_active"] = True
+            special_rules["custodes_solar_spearhead_punishment_inescapable_turn"] = self._ac_current_turn()
+            special_rules["custodes_solar_spearhead_punishment_inescapable_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_solar_spearhead_punishment_inescapable_expires_phase"] = "SHOOTING_PHASE"
+            special_rules["custodes_solar_spearhead_punishment_inescapable_source"] = stratagem.name
+            special_rules["custodes_solar_spearhead_punishment_inescapable_default_choice"] = "ignore_all"
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "RELENTLESS PERSECUTION":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._solar_spearhead_battlefield_unit_candidates(
+                require_vehicle=True,
+                require_advanced=True,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "movement phase":
+                logger.error("ERROR: RELENTLESS PERSECUTION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: RELENTLESS PERSECUTION: must be your Movement phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: RELENTLESS PERSECUTION: target must be an Adeptus Custodes unit")
+                return False
+            is_vehicle = bool(getattr(source_unit, "is_vehicle", False)) or self._ac_has_keyword(source_unit, "VEHICLE")
+            if not is_vehicle:
+                logger.error("ERROR: RELENTLESS PERSECUTION: target must be a Vehicle unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: RELENTLESS PERSECUTION: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not bool(getattr(getattr(source_unit, "round_state", None), "advanced_this_round", False)):
+                logger.error("ERROR: RELENTLESS PERSECUTION: target must have Advanced this phase")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["custodes_solar_spearhead_relentless_persecution_active"] = True
+            special_rules["custodes_solar_spearhead_relentless_persecution_turn"] = self._ac_current_turn()
+            special_rules["custodes_solar_spearhead_relentless_persecution_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_solar_spearhead_relentless_persecution_expires_phase"] = "FIGHT_PHASE"
+            special_rules["custodes_solar_spearhead_relentless_persecution_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "UNSTOPPABLE":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._solar_spearhead_battlefield_unit_candidates(
+                require_vehicle_or_mounted=True,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            phase_key = self._ac_phase_key(phase_name)
+            if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                logger.error("ERROR: UNSTOPPABLE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: UNSTOPPABLE: must be your Movement or Charge phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: UNSTOPPABLE: target must be an Adeptus Custodes unit")
+                return False
+            is_vehicle = bool(getattr(source_unit, "is_vehicle", False)) or self._ac_has_keyword(source_unit, "VEHICLE")
+            is_mounted = bool(getattr(source_unit, "is_mounted", False)) or self._ac_has_keyword(source_unit, "MOUNTED")
+            if not (is_vehicle or is_mounted):
+                logger.error("ERROR: UNSTOPPABLE: target must be a Vehicle or Mounted unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: UNSTOPPABLE: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            move_types = {"charge"} if phase_key == "CHARGE_PHASE" else {"move", "advance", "fall_back"}
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            current = set(special_rules.get("bearer_unit_phase_move_terrain_only_types") or [])
+            added = set()
+            for move_type in move_types:
+                if move_type not in current:
+                    current.add(move_type)
+                    added.add(move_type)
+            if current:
+                special_rules["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+            if added:
+                special_rules["custodes_solar_spearhead_unstoppable_added_phase_move_terrain_only_types"] = sorted(added)
+            special_rules["custodes_solar_spearhead_unstoppable_active"] = True
+            special_rules["custodes_solar_spearhead_unstoppable_turn"] = self._ac_current_turn()
+            special_rules["custodes_solar_spearhead_unstoppable_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_solar_spearhead_unstoppable_expires_phase"] = phase_key
+            special_rules["custodes_solar_spearhead_unstoppable_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "WRATHFUL ADVANCE":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._solar_spearhead_battlefield_unit_candidates(
+                require_not_fought=True,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: WRATHFUL ADVANCE: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: WRATHFUL ADVANCE: target must be an Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: WRATHFUL ADVANCE: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if bool(getattr(getattr(source_unit, "round_state", None), "fought_this_phase", False)):
+                logger.error("ERROR: WRATHFUL ADVANCE: target has already fought this phase")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            max_distance = float(max(1, int(dice_module.get_roll("D3") or 0)) + 3)
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["stratagem_pile_in_distance_override"] = max(
+                float(special_rules.get("stratagem_pile_in_distance_override", 0.0) or 0.0),
+                max_distance,
+            )
+            special_rules["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+            special_rules["stratagem_pile_in_source"] = stratagem.name
+            source_unit.special_rules = special_rules
             self._ac_finalize_use(stratagem, dequeue=dequeue)
             return True
 

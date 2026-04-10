@@ -385,6 +385,99 @@ _SHIELD_HOST_STRATAGEM_BY_NAME = {
 }
 
 
+_SOLAR_SPEARHEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009754003": StratagemToolDescriptor(
+        stratagem_id="000009754003",
+        name="EMPEROR'S VENGEANCE",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_custodes_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={
+            "roll": "D6",
+            "threshold": 4,
+            "walker_bonus": 1,
+            "deferred_until_attacker_finishes": True,
+        },
+    ),
+    "000009754002": StratagemToolDescriptor(
+        stratagem_id="000009754002",
+        name="FLAWLESS CONSTRUCTION",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="adeptus_custodes_vehicle_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="wound_roll_penalty_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={
+            "penalty": 1,
+            "comparison": "strength_gt_toughness",
+            "required_keywords_any": ["VEHICLE"],
+        },
+    ),
+    "000009754007": StratagemToolDescriptor(
+        stratagem_id="000009754007",
+        name="PUNISHMENT INESCAPABLE",
+        timing="your_shooting_phase",
+        target="adeptus_custodes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_ignores_cover_and_ignore_ballistic_skill_and_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "grant_ranged_keywords": ["IGNORES COVER"],
+            "ignore_skill_modifier_kinds": ["ballistic"],
+            "allow_hit": True,
+        },
+    ),
+    "000009754006": StratagemToolDescriptor(
+        stratagem_id="000009754006",
+        name="RELENTLESS PERSECUTION",
+        timing="your_movement_phase_after_advance",
+        target="adeptus_custodes_vehicle_unit_that_just_advanced",
+        duration="until_end_of_turn",
+        effect="shoot_after_advance_and_charge_after_advance_if_walker",
+        cp_cost=1,
+        effect_params={
+            "advance_and_shoot": True,
+            "advance_and_charge_if_keywords_any": ["WALKER"],
+            "required_keywords_any": ["VEHICLE"],
+        },
+    ),
+    "000009754005": StratagemToolDescriptor(
+        stratagem_id="000009754005",
+        name="UNSTOPPABLE",
+        timing="your_movement_or_charge_phase",
+        target="adeptus_custodes_vehicle_or_mounted_unit",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "move_types_by_phase": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            },
+            "required_keywords_any": ["VEHICLE", "MOUNTED"],
+        },
+    ),
+    "000009754004": StratagemToolDescriptor(
+        stratagem_id="000009754004",
+        name="WRATHFUL ADVANCE",
+        timing="fight_phase_before_pile_in",
+        target="adeptus_custodes_unit",
+        duration="until_end_of_phase",
+        effect="pile_in_distance_override",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance_roll": "D3+3",
+        },
+    ),
+}
+
+_SOLAR_SPEARHEAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SOLAR_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13549,6 +13642,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SHIELD_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SOLAR_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -14039,6 +14135,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME.get(key)
         or _SHIELD_HOST_STRATAGEM_BY_NAME.get(key)
+        or _SOLAR_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
         or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)

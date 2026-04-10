@@ -97,6 +97,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AVENGE THE FALLEN",
     "DESPERATION'S PRICE",
     "EARNING OF A NAME",
+    "EMPEROR'S VENGEANCE",
+    "FLAWLESS CONSTRUCTION",
+    "PUNISHMENT INESCAPABLE",
+    "RELENTLESS PERSECUTION",
+    "UNSTOPPABLE",
+    "WRATHFUL ADVANCE",
     "EXPEDITIOUS EXIT",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL MODIFICATIONS",
@@ -2675,6 +2681,7 @@ class StratagemManager(
             "THE FOE FORESEEN",
             "LET DUTY BE YOUR SHIELD",
             "BRAZEN CONTEMPT",
+            "FLAWLESS CONSTRUCTION",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "BLINDING RADIANCE",
@@ -2769,6 +2776,7 @@ class StratagemManager(
             "THE FOE FORESEEN",
             "FIGHT TO THE END",
             "FINAL RETRIBUTION",
+            "EMPEROR'S VENGEANCE",
             "SELFLESS DEMISE",
             "MASTERS ARE WATCHING",
             "IN THE SHADOW OF BRASS IDOLS",
@@ -2804,6 +2812,7 @@ class StratagemManager(
             "DOUBLE-CROSS",
             "FIGHTING SHADOWS",
             "FATEFUL ROLE",
+            "FLAWLESS CONSTRUCTION",
             "TRENCH FIGHTERS",
             "UNWAVERING SENTINELS",
             "UNENDING FIDELITY",
@@ -10557,6 +10566,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._cleanup_adeptus_custodes_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_houndpack_lance_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -12875,6 +12888,7 @@ class StratagemManager(
         self._queue_thousand_sons_hexwarp_fall_back_reactions(unit=unit, action=action)
         self._queue_lions_manoeuvre_and_fire_reaction(unit=unit, action=action)
         self._queue_shield_host_multipotentiality_reaction(unit=unit, action=action)
+        self._queue_solar_spearhead_relentless_persecution_reaction(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -14243,6 +14257,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_solar_spearhead_flawless_construction_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
+        try:
             self._process_genestealer_cults_bio_horror_revelation_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15522,6 +15544,21 @@ class StratagemManager(
             self._queue_shield_host_unwavering_sentinels_reaction(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_solar_spearhead_emperors_vengeance_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_solar_spearhead_flawless_construction_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Fight phase",
             )
         except Exception:
             raise
