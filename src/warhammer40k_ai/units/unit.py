@@ -2336,6 +2336,12 @@ class Unit(
                     if int(bonus or 0):
                         source_name = str(source or "Noospheric Transference").strip() or "Noospheric Transference"
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+                motive_bonus_fn = getattr(adm_mgr, "motive_imperative_movement_bonus", None) if adm_mgr is not None else None
+                if callable(motive_bonus_fn):
+                    bonus, source = motive_bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Motive Imperative").strip() or "Motive Imperative"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             except Exception:
                 pass
             try:
@@ -2928,6 +2934,12 @@ class Unit(
             if not isinstance(rule, dict):
                 try:
                     rule_fn = getattr(self, "_adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule", None)
+                    rule = rule_fn(kind=ckey) if callable(rule_fn) else None
+                except Exception:
+                    rule = None
+            if not isinstance(rule, dict):
+                try:
+                    rule_fn = getattr(self, "_adeptus_mechanicus_machine_superiority_ignore_modifiers_rule", None)
                     rule = rule_fn(kind=ckey) if callable(rule_fn) else None
                 except Exception:
                     rule = None

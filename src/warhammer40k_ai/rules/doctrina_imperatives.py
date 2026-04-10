@@ -155,10 +155,25 @@ class DoctrinaImperativesManager:
             return False
         return bool(checker(unit, game=game))
 
+    def _transcendent_cogitation_applies(self, unit, *, game=None) -> bool:
+        if self.army is None or unit is None:
+            return False
+        adm_mgr = getattr(self.army, "adeptus_mechanicus_detachments", None)
+        if adm_mgr is None:
+            return False
+        checker = getattr(adm_mgr, "transcendent_cogitation_applies", None)
+        if not callable(checker):
+            return False
+        return bool(checker(unit, game=game))
+
     def get_active_imperative_keys_for_unit(self, unit, *, game=None) -> set[str]:
         active_keys: set[str] = set()
         game = self._resolve_game(unit=unit, game=game)
-        if self._haloscreed_cognitive_reinforcement_applies(unit) or self._skitarii_cantic_thrallnet_applies(unit, game=game):
+        if (
+            self._haloscreed_cognitive_reinforcement_applies(unit)
+            or self._skitarii_cantic_thrallnet_applies(unit, game=game)
+            or self._transcendent_cogitation_applies(unit, game=game)
+        ):
             active_keys.add(PROTECTOR_IMPERATIVE.key)
             active_keys.add(CONQUEROR_IMPERATIVE.key)
         if not self._unit_has_doctrina(unit):

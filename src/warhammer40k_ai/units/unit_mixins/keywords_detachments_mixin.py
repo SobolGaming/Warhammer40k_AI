@@ -17120,6 +17120,14 @@ class KeywordsDetachmentsMixin:
                 attack_skill_override_dynamic = True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            is_cohort = getattr(adm_mgr, "is_cohort_cybernetica", None) if adm_mgr is not None else None
+            if callable(is_cohort) and bool(is_cohort()):
+                attack_skill_override_dynamic = True
+        except Exception:
+            pass
         cache_key = f"model_attack_skill_override:{str(get_entity_id(model) or '')}:{attack_key}:{weapon_key}"
         if (not attack_skill_override_dynamic) and cache_key in getattr(self, "_ability_cache", {}):
             cached = self._ability_cache.get(cache_key)
@@ -17180,6 +17188,32 @@ class KeywordsDetachmentsMixin:
             override_fn = (
                 getattr(mgr, "hurons_marauders_hardened_killers_attack_skill_override", None)
                 if mgr is not None
+                else None
+            )
+            if callable(override_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                override = override_fn(
+                    model,
+                    attack_type=attack_key,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if isinstance(override, dict):
+                    try:
+                        value = int(override.get("value", 0) or 0)
+                    except Exception:
+                        value = 0
+                    if value > 0 and (best_rule is None or value < best_value):
+                        best_value = int(value)
+                        best_rule = dict(override)
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            override_fn = (
+                getattr(adm_mgr, "auto_divinatory_targeting_attack_skill_override", None)
+                if adm_mgr is not None
                 else None
             )
             if callable(override_fn):
@@ -17945,6 +17979,17 @@ class KeywordsDetachmentsMixin:
                             reroll_full_reasons.append(reason_text)
                     if bool(sigil_mods.get("reroll_full", sigil_mods.get("reroll_hit_full", False))):
                         reroll_full = True
+        if model is not None:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            reroll_fn = getattr(mgr, "machine_spirit_resurgent_hit_reroll", None) if mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = reroll_fn(self, game=game)
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Machine Spirit Resurgent").strip() or "Machine Spirit Resurgent"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):
@@ -18366,6 +18411,14 @@ class KeywordsDetachmentsMixin:
                         reroll_values.add(1)
                         reason = str(source or "Acquisition At Any Cost").strip() or "Acquisition At Any Cost"
                         reroll_reasons.append(f"{reason}: re-roll Wound rolls of 1")
+            wound_reroll_fn = getattr(mgr, "machine_spirit_resurgent_wound_reroll", None) if mgr is not None else None
+            if callable(wound_reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = wound_reroll_fn(self, game=game)
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Machine Spirit Resurgent").strip() or "Machine Spirit Resurgent"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):

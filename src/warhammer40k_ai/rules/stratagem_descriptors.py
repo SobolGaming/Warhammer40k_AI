@@ -4014,6 +4014,77 @@ _RAD_ZONE_CORPS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COHORT_CYBERNETICA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008573002": StratagemToolDescriptor(
+        stratagem_id="000008573002",
+        name="Motive Imperative",
+        timing="command_phase",
+        target="adeptus_mechanicus_vehicle_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="move_and_advance_charge_bonus",
+        cp_cost=1,
+        effect_params={"move_bonus": 3, "advance_roll_bonus": 1, "charge_roll_bonus": 1},
+    ),
+    "000008573003": StratagemToolDescriptor(
+        stratagem_id="000008573003",
+        name="Auto-divinatory Targeting",
+        timing="command_phase",
+        target="legio_cybernetica_or_adeptus_mechanicus_vehicle_unit_and_objective",
+        duration="until_start_of_your_next_command_phase",
+        effect="ranged_bs_three_plus_ignores_cover_with_objective_target_lock",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "ballistic_skill_value": 3,
+            "grant_ignores_cover": True,
+            "restrict_targets_to_selected_objective": True,
+        },
+    ),
+    "000008573004": StratagemToolDescriptor(
+        stratagem_id="000008573004",
+        name="Machine Spirit Resurgent",
+        timing="command_phase",
+        target="legio_cybernetica_or_adeptus_mechanicus_vehicle_unit_below_starting_strength",
+        duration="until_start_of_your_next_command_phase",
+        effect="full_hit_reroll_with_conditional_full_wound_reroll_when_below_half_strength",
+        cp_cost=1,
+        effect_params={"reroll_hit_full": True, "reroll_wound_full_if_below_half_strength": True},
+    ),
+    "000008573005": StratagemToolDescriptor(
+        stratagem_id="000008573005",
+        name="Machine Superiority",
+        timing="command_phase",
+        target="legio_cybernetica_or_adeptus_mechanicus_vehicle_unit",
+        duration="until_end_of_turn",
+        effect="ignore_characteristic_and_roll_modifiers_except_saves",
+        cp_cost=1,
+        effect_params={"can_shoot_after_fall_back": True},
+    ),
+    "000008573006": StratagemToolDescriptor(
+        stratagem_id="000008573006",
+        name="Transcendent Cogitation",
+        timing="command_phase",
+        target="legio_cybernetica_or_adeptus_mechanicus_vehicle_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="grant_both_doctrina_imperatives",
+        cp_cost=1,
+    ),
+    "000008573007": StratagemToolDescriptor(
+        stratagem_id="000008573007",
+        name="Benevolence of the Omnissiah",
+        timing="command_phase",
+        target="legio_cybernetica_or_adeptus_mechanicus_vehicle_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="feel_no_pain_with_mortal_bonus",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 6, "mortal_wound_feel_no_pain": 5},
+    ),
+}
+
+_COHORT_CYBERNETICA_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COHORT_CYBERNETICA_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008469004": StratagemToolDescriptor(
         stratagem_id="000008469004",
@@ -13857,6 +13928,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COHORT_CYBERNETICA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14275,6 +14349,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _SIEGE_REGIMENT_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
+        or _COHORT_CYBERNETICA_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)

@@ -1439,6 +1439,39 @@ class GameView:
             )
         self._request_extinction_order_objective = _request_extinction_order_objective
 
+        def _request_auto_divinatory_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker for Auto-divinatory Targeting.",
+                title="Auto-divinatory Targeting",
+                header="Select an objective marker.",
+                subtitle="The selected unit can only target enemies within range of that marker.",
+                context={"ability": "auto_divinatory_targeting"},
+                allow_skip=True,
+            )
+        self._request_auto_divinatory_objective = _request_auto_divinatory_objective
+
         def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -19515,6 +19548,100 @@ class GameView:
                 )
             return
 
+        if name_u in (
+            "BENEVOLENCE OF THE OMNISSIAH",
+            "MACHINE SPIRIT RESURGENT",
+            "MACHINE SUPERIORITY",
+            "MOTIVE IMPERATIVE",
+            "TRANSCENDENT COGITATION",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "BENEVOLENCE OF THE OMNISSIAH": "_cohort_benevolence_primary_candidates",
+                        "MACHINE SPIRIT RESURGENT": "_cohort_machine_spirit_primary_candidates",
+                        "MACHINE SUPERIORITY": "_cohort_machine_superiority_primary_candidates",
+                        "MOTIVE IMPERATIVE": "_cohort_motive_imperative_primary_candidates",
+                        "TRANSCENDENT COGITATION": "_cohort_transcendent_cogitation_primary_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "BENEVOLENCE OF THE OMNISSIAH": "LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit.",
+                    "MACHINE SPIRIT RESURGENT": "LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit below Starting Strength.",
+                    "MACHINE SUPERIORITY": "LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit.",
+                    "MOTIVE IMPERATIVE": "ADEPTUS MECHANICUS VEHICLE unit.",
+                    "TRANSCENDENT COGITATION": "LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit.",
+                }.get(name_u, "Select an eligible ADEPTUS MECHANICUS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "AUTO-DIVINATORY TARGETING" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_auto_divinatory_objective", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Auto-divinatory Targeting: no unit selected")
+                    return
+                objective_candidates = list(manager._cohort_auto_divinatory_objective_candidates(chosen_unit) or [])
+                self._request_auto_divinatory_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_auto_divinatory_targeting(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        objective,
+                    ),
+                )
+
+            if unit is not None:
+                _pick_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_cohort_auto_divinatory_primary_candidates"):
+                    candidates = list(manager._cohort_auto_divinatory_primary_candidates() or [])
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Auto-divinatory Targeting unit.",
+                    title="Auto-divinatory Targeting",
+                    subtitle="LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u == "EXTINCTION ORDER" and ("objective" not in context and "objective_marker" not in context):
             if not callable(getattr(self, "_request_extinction_order_objective", None)):
                 return
@@ -21112,6 +21239,26 @@ class GameView:
             return
         if objective is None:
             logger.info("Extinction Order: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_auto_divinatory_targeting(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Auto-divinatory Targeting: no unit selected")
+            return
+        if objective is None:
+            logger.info("Auto-divinatory Targeting: no objective selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit

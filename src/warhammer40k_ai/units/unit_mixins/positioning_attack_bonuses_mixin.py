@@ -235,6 +235,34 @@ class PositioningAttackBonusesMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            keyword_fn = (
+                getattr(adm_mgr, "auto_divinatory_targeting_attack_keywords", None)
+                if adm_mgr is not None
+                else None
+            )
+            if callable(keyword_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                keywords, source = keyword_fn(
+                    model,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                source_name = str(source or "Auto-divinatory Targeting").strip() or "Auto-divinatory Targeting"
+                for keyword in list(keywords or []):
+                    keyword_name = str(keyword or "").strip().upper()
+                    if keyword_name:
+                        rules = list(rules or []) + [
+                            {
+                                "attack_type": "ranged",
+                                "keyword": keyword_name,
+                                "source": source_name,
+                            }
+                        ]
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self

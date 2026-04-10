@@ -14,6 +14,12 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
 
     _COHORT_CYBERNETICA_NAME = "Cohort Cybernetica"
     _CYBER_PSALM_PROGRAMMING_SOURCE = "Cyber-Psalm Programming"
+    _COHORT_AUTO_DIVINATORY_SOURCE = "Auto-divinatory Targeting"
+    _COHORT_BENEVOLENCE_SOURCE = "Benevolence of the Omnissiah"
+    _COHORT_MACHINE_SPIRIT_SOURCE = "Machine Spirit Resurgent"
+    _COHORT_MACHINE_SUPERIORITY_SOURCE = "Machine Superiority"
+    _COHORT_MOTIVE_SOURCE = "Motive Imperative"
+    _COHORT_TRANSCENDENT_SOURCE = "Transcendent Cogitation"
     _LEGIO_CYBERNETICA_KEYWORD = "LEGIO CYBERNETICA"
     _EXPLORATOR_MANIPLE_NAME = "Explorator Maniple"
     _ACQUISITION_ABILITY_KEY = "acquisition_at_any_cost"
@@ -679,6 +685,157 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return None
         return root
 
+    def _cohort_cybernetica_eligible_root(
+        self,
+        unit,
+        *,
+        require_vehicle: bool = False,
+        allow_legio: bool = True,
+    ):
+        if not self.is_cohort_cybernetica():
+            return None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        is_admech = self._unit_has_keyword_or_faction(root, "ADEPTUS MECHANICUS", faction_id=self.faction_id)
+        is_vehicle = bool(getattr(root, "is_vehicle", False)) or self._unit_has_keyword(root, "VEHICLE")
+        is_legio = self._unit_has_keyword(root, self._LEGIO_CYBERNETICA_KEYWORD)
+        if require_vehicle:
+            if not is_vehicle or not is_admech:
+                return None
+            return root
+        if is_vehicle and is_admech:
+            return root
+        if allow_legio and is_legio:
+            return root
+        return None
+
+    def _cohort_effect_source_name(self, sr, prefix: str, default_name: str) -> str:
+        if not isinstance(sr, dict):
+            return str(default_name or "").strip() or "Cohort Cybernetica"
+        return str(sr.get(f"{prefix}_source", "") or default_name).strip() or str(default_name or "Cohort Cybernetica")
+
+    def _clear_cohort_effect(
+        self,
+        root,
+        prefix: str,
+        *,
+        extra_keys: tuple[str, ...] = (),
+        fnp_source_key: str = "",
+    ) -> None:
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            f"{prefix}_active",
+            f"{prefix}_turn_owner",
+            f"{prefix}_turn",
+            f"{prefix}_source",
+            *tuple(extra_keys or ()),
+        ):
+            sr.pop(key, None)
+        if fnp_source_key:
+            entries = list(sr.get("bearer_unit_fnp") or [])
+            keep = []
+            for entry in entries:
+                if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == fnp_source_key:
+                    continue
+                keep.append(entry)
+            if keep:
+                sr["bearer_unit_fnp"] = keep
+            else:
+                sr.pop("bearer_unit_fnp", None)
+        root.special_rules = sr
+
+    def _cohort_command_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        default_source: str,
+        game=None,
+        extra_keys: tuple[str, ...] = (),
+        fnp_source_key: str = "",
+    ) -> tuple[object, dict | None, str]:
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(f"{prefix}_active", False))):
+            return root, None, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if game is not None and effect_turn > 0:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn >= effect_turn + 1:
+                self._clear_cohort_effect(
+                    root,
+                    prefix,
+                    extra_keys=extra_keys,
+                    fnp_source_key=fnp_source_key,
+                )
+                return root, None, ""
+        return root, sr, self._cohort_effect_source_name(sr, prefix, default_source)
+
+    def _cohort_turn_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        default_source: str,
+        game=None,
+        extra_keys: tuple[str, ...] = (),
+    ) -> tuple[object, dict | None, str]:
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(f"{prefix}_active", False))):
+            return root, None, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if game is not None and effect_turn > 0:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn != effect_turn:
+                self._clear_cohort_effect(root, prefix, extra_keys=extra_keys)
+                return root, None, ""
+        return root, sr, self._cohort_effect_source_name(sr, prefix, default_source)
+
+    def _cohort_objective_from_sr(self, sr, *, game=None):
+        if not isinstance(sr, dict):
+            return None
+        objective_id = str(sr.get("cohort_auto_divinatory_targeting_objective_id", "") or "").strip()
+        if not objective_id:
+            return None
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return None
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if str(self._entity_id(objective) or "") == objective_id:
+                return objective
+        return None
+
     def cyber_psalm_programming_movement_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if model is None:
             return 0, ""
@@ -697,6 +854,287 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if self._unit_is_battle_shocked(root):
             return 0, ""
         return 1, self._CYBER_PSALM_PROGRAMMING_SOURCE
+
+    def auto_divinatory_targeting_attack_skill_override(
+        self,
+        model,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> dict | None:
+        _ = weapon_profile
+        if model is None:
+            return None
+        attack_key = str(attack_type or "").strip().lower()
+        if attack_key not in {"any", "ranged"}:
+            return None
+        source_unit = getattr(model, "parent_unit", None)
+        root = self._cohort_cybernetica_eligible_root(source_unit, allow_legio=True)
+        if root is None:
+            return None
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_auto_divinatory_targeting",
+            default_source=self._COHORT_AUTO_DIVINATORY_SOURCE,
+            game=game,
+            extra_keys=("cohort_auto_divinatory_targeting_objective_id",),
+        )
+        if sr is None:
+            return None
+        return {
+            "value": 3,
+            "source": str(source or self._COHORT_AUTO_DIVINATORY_SOURCE),
+            "attack_type": "ranged",
+            "source_model_id": str(get_entity_id(model) or ""),
+        }
+
+    def auto_divinatory_targeting_attack_keywords(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[list[str], str]:
+        _ = weapon_profile
+        if attacker_model is None:
+            return [], ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._cohort_cybernetica_eligible_root(attacker_unit, allow_legio=True)
+        if root is None:
+            return [], ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_auto_divinatory_targeting",
+            default_source=self._COHORT_AUTO_DIVINATORY_SOURCE,
+            game=game,
+            extra_keys=("cohort_auto_divinatory_targeting_objective_id",),
+        )
+        if sr is None:
+            return [], ""
+        return ["IGNORES COVER"], str(source or self._COHORT_AUTO_DIVINATORY_SOURCE)
+
+    def auto_divinatory_targeting_requires_objective_targets(self, unit, *, game=None) -> bool:
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return False
+        _root, sr, _source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_auto_divinatory_targeting",
+            default_source=self._COHORT_AUTO_DIVINATORY_SOURCE,
+            game=game,
+            extra_keys=("cohort_auto_divinatory_targeting_objective_id",),
+        )
+        return sr is not None
+
+    def auto_divinatory_targeting_target_is_legal(self, attacker_unit, target_unit, *, game=None) -> bool:
+        attacker_root = self._cohort_cybernetica_eligible_root(attacker_unit, allow_legio=True)
+        if attacker_root is None:
+            return True
+        _root, sr, _source = self._cohort_command_phase_effect_state(
+            attacker_root,
+            prefix="cohort_auto_divinatory_targeting",
+            default_source=self._COHORT_AUTO_DIVINATORY_SOURCE,
+            game=game,
+            extra_keys=("cohort_auto_divinatory_targeting_objective_id",),
+        )
+        if sr is None:
+            return True
+        objective = self._cohort_objective_from_sr(sr, game=game)
+        location = getattr(objective, "location", None) if objective is not None else None
+        if location is None:
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        in_range = getattr(target_root, "is_within_objective_range", None)
+        if callable(in_range):
+            return bool(in_range(location))
+        return False
+
+    def motive_imperative_movement_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        _ = game
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._cohort_cybernetica_eligible_root(source_unit, require_vehicle=True, allow_legio=False)
+        if root is None:
+            return 0, ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_motive_imperative",
+            default_source=self._COHORT_MOTIVE_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return 0, ""
+        return 3, str(source or self._COHORT_MOTIVE_SOURCE)
+
+    def motive_imperative_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        root = self._cohort_cybernetica_eligible_root(unit, require_vehicle=True, allow_legio=False)
+        if root is None:
+            return 0, ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_motive_imperative",
+            default_source=self._COHORT_MOTIVE_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return 0, ""
+        return 1, str(source or self._COHORT_MOTIVE_SOURCE)
+
+    def motive_imperative_charge_roll_bonus(self, unit, target_units=None, *, game=None) -> tuple[int, str]:
+        _ = target_units
+        root = self._cohort_cybernetica_eligible_root(unit, require_vehicle=True, allow_legio=False)
+        if root is None:
+            return 0, ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_motive_imperative",
+            default_source=self._COHORT_MOTIVE_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return 0, ""
+        return 1, str(source or self._COHORT_MOTIVE_SOURCE)
+
+    def machine_superiority_ignore_modifier_rule(self, unit, *, kind: str, game=None) -> dict | None:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+        }:
+            return None
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return None
+        _root, sr, source = self._cohort_turn_effect_state(
+            root,
+            prefix="cohort_machine_superiority",
+            default_source=self._COHORT_MACHINE_SUPERIORITY_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return None
+        return {
+            "source": str(source or self._COHORT_MACHINE_SUPERIORITY_SOURCE),
+            "default_choice": "ignore_negative",
+        }
+
+    def machine_superiority_can_shoot_after_fall_back(self, unit, *, profile=None, game=None) -> bool:
+        _ = profile
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return False
+        _root, sr, _source = self._cohort_turn_effect_state(
+            root,
+            prefix="cohort_machine_superiority",
+            default_source=self._COHORT_MACHINE_SUPERIORITY_SOURCE,
+            game=game,
+        )
+        return sr is not None
+
+    def machine_spirit_resurgent_hit_reroll(self, unit, *, game=None) -> tuple[bool, str]:
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return False, ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_machine_spirit_resurgent",
+            default_source=self._COHORT_MACHINE_SPIRIT_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return False, ""
+        return True, str(source or self._COHORT_MACHINE_SPIRIT_SOURCE)
+
+    def machine_spirit_resurgent_wound_reroll(self, unit, *, game=None) -> tuple[bool, str]:
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return False, ""
+        _root, sr, source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_machine_spirit_resurgent",
+            default_source=self._COHORT_MACHINE_SPIRIT_SOURCE,
+            game=game,
+        )
+        if sr is None:
+            return False, ""
+        below_half_fn = getattr(root, "is_below_half_strength", None)
+        below_half = bool(below_half_fn()) if callable(below_half_fn) else False
+        if not below_half:
+            return False, ""
+        return True, str(source or self._COHORT_MACHINE_SPIRIT_SOURCE)
+
+    def transcendent_cogitation_applies(self, unit, *, game=None) -> bool:
+        root = self._cohort_cybernetica_eligible_root(unit, allow_legio=True)
+        if root is None:
+            return False
+        _root, sr, _source = self._cohort_command_phase_effect_state(
+            root,
+            prefix="cohort_transcendent_cogitation",
+            default_source=self._COHORT_TRANSCENDENT_SOURCE,
+            game=game,
+        )
+        return sr is not None
+
+    def _cleanup_expired_cohort_cybernetica_command_phase_effects(self, *, game=None) -> None:
+        if not self.is_cohort_cybernetica() or self.army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            self._cohort_command_phase_effect_state(
+                root,
+                prefix="cohort_auto_divinatory_targeting",
+                default_source=self._COHORT_AUTO_DIVINATORY_SOURCE,
+                game=game,
+                extra_keys=("cohort_auto_divinatory_targeting_objective_id",),
+            )
+            self._cohort_command_phase_effect_state(
+                root,
+                prefix="cohort_benevolence_of_the_omnissiah",
+                default_source=self._COHORT_BENEVOLENCE_SOURCE,
+                game=game,
+                fnp_source_key="cohort_benevolence_of_the_omnissiah",
+            )
+            self._cohort_command_phase_effect_state(
+                root,
+                prefix="cohort_machine_spirit_resurgent",
+                default_source=self._COHORT_MACHINE_SPIRIT_SOURCE,
+                game=game,
+            )
+            self._cohort_command_phase_effect_state(
+                root,
+                prefix="cohort_motive_imperative",
+                default_source=self._COHORT_MOTIVE_SOURCE,
+                game=game,
+            )
+            self._cohort_command_phase_effect_state(
+                root,
+                prefix="cohort_transcendent_cogitation",
+                default_source=self._COHORT_TRANSCENDENT_SOURCE,
+                game=game,
+            )
+            self._cohort_turn_effect_state(
+                root,
+                prefix="cohort_machine_superiority",
+                default_source=self._COHORT_MACHINE_SUPERIORITY_SOURCE,
+                game=game,
+            )
 
     def _data_psalm_cult_mechanicus_root(self, unit):
         if not self.is_data_psalm_conclave():
@@ -3268,6 +3706,8 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not bool(getattr(game, "is_authoritative", True)):
             return
         battle_round = int(getattr(game, "turn", 0) or 0)
+        if self.is_cohort_cybernetica():
+            self._cleanup_expired_cohort_cybernetica_command_phase_effects(game=game)
         if self.is_haloscreed_battle_clade():
             self.queue_noospheric_unit_selection_request(
                 game=game,

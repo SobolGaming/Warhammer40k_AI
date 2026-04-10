@@ -11246,6 +11246,12 @@ class ActionsMovementMixin:
         if isinstance(sororitas_rule, dict) and sororitas_rule:
             return sororitas_rule
         try:
+            admech_rule = self._adeptus_mechanicus_machine_superiority_ignore_modifiers_rule(kind="move")
+        except Exception:
+            admech_rule = None
+        if isinstance(admech_rule, dict) and admech_rule:
+            return admech_rule
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
@@ -11413,6 +11419,45 @@ class ActionsMovementMixin:
         rule_fn = (
             getattr(as_mgr, "light_of_the_emperor_ignore_modifier_rule", None)
             if as_mgr is not None
+            else None
+        )
+        if not callable(rule_fn):
+            return None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            rule = rule_fn(root, kind=kind_key, game=game)
+        except Exception:
+            rule = None
+        return rule if isinstance(rule, dict) and rule else None
+
+    def _adeptus_mechanicus_machine_superiority_ignore_modifiers_rule(self, *, kind: str) -> Optional[dict]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+            "save",
+        }:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        rule_fn = (
+            getattr(adm_mgr, "machine_superiority_ignore_modifier_rule", None)
+            if adm_mgr is not None
             else None
         )
         if not callable(rule_fn):
@@ -12054,6 +12099,13 @@ class ActionsMovementMixin:
                 bonus, source = symbiote_advance_fn(self, game=game)
                 if int(bonus or 0):
                     source_name = str(source or "Empyric Symbiote").strip() or "Empyric Symbiote"
+                    mods.append((int(bonus), source_name))
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            motive_bonus_fn = getattr(adm_mgr, "motive_imperative_advance_roll_bonus", None) if adm_mgr is not None else None
+            if callable(motive_bonus_fn):
+                bonus, source = motive_bonus_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Motive Imperative").strip() or "Motive Imperative"
                     mods.append((int(bonus), source_name))
         except Exception:
             pass
@@ -13627,6 +13679,13 @@ class ActionsMovementMixin:
             bonus, source = necrons_spreading_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Spreading Madness")))
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        motive_bonus_fn = getattr(adm_mgr, "motive_imperative_charge_roll_bonus", None) if adm_mgr is not None else None
+        if callable(motive_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = motive_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Motive Imperative")))
 
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         gsc_bonus_fn = (
@@ -19885,6 +19944,16 @@ class ActionsMovementMixin:
             if callable(veteran_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(veteran_apply_fn(self, profile=profile, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "machine_superiority_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
                     return True
         except Exception:
             pass

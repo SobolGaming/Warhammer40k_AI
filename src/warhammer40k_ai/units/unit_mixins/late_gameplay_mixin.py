@@ -2263,6 +2263,19 @@ class LateGameplayMixin:
 
         result = list(cached)
         try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        cleanup_fn = (
+            getattr(adm_mgr, "_cleanup_expired_cohort_cybernetica_command_phase_effects", None)
+            if adm_mgr is not None
+            else None
+        )
+        if callable(cleanup_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            cleanup_fn(game=game)
+        try:
             sr = getattr(self, "special_rules", None)
             entries = sr.get("bearer_unit_fnp") if isinstance(sr, dict) else None
             if isinstance(entries, list):

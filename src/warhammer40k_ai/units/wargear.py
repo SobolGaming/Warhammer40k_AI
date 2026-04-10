@@ -10638,6 +10638,27 @@ class WargearProfile:
                     "forced_choice": str(sororitas_rule.get("forced_choice", "") or "").strip(),
                     "default_choice": str(sororitas_rule.get("default_choice", "") or "").strip(),
                 }
+        admech_rule_fn = (
+            getattr(root, "_adeptus_mechanicus_machine_superiority_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(admech_rule_fn):
+            try:
+                admech_rule = admech_rule_fn(kind="hit")
+            except Exception:
+                admech_rule = None
+            if isinstance(admech_rule, dict) and admech_rule:
+                return {
+                    "name": str(
+                        admech_rule.get("source", "") or "Machine Superiority"
+                    ).strip() or "Machine Superiority",
+                    "attack_type": "any",
+                    "skill_kinds": {"ballistic", "weapon"},
+                    "allow_hit": True,
+                    "forced_choice": str(admech_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(admech_rule.get("default_choice", "") or "").strip(),
+                }
 
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         patient_rule_fn = (
@@ -10909,6 +10930,26 @@ class WargearProfile:
                     "allow_wound": True,
                     "forced_choice": str(sororitas_rule.get("forced_choice", "") or "").strip(),
                     "default_choice": str(sororitas_rule.get("default_choice", "") or "").strip(),
+                }
+        admech_rule_fn = (
+            getattr(root, "_adeptus_mechanicus_machine_superiority_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(admech_rule_fn):
+            try:
+                admech_rule = admech_rule_fn(kind="wound")
+            except Exception:
+                admech_rule = None
+            if isinstance(admech_rule, dict) and admech_rule:
+                return {
+                    "name": str(
+                        admech_rule.get("source", "") or "Machine Superiority"
+                    ).strip() or "Machine Superiority",
+                    "attack_type": "any",
+                    "allow_wound": True,
+                    "forced_choice": str(admech_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(admech_rule.get("default_choice", "") or "").strip(),
                 }
         if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="wound"):
             return {

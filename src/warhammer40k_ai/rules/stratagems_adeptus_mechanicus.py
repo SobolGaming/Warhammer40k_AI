@@ -33,6 +33,11 @@ class AdeptusMechanicusStratagemMixin:
         checker = getattr(mgr, "is_rad_zone_corps", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_cohort_cybernetica(self) -> bool:
+        mgr = self._get_adeptus_mechanicus_mgr()
+        checker = getattr(mgr, "is_cohort_cybernetica", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _admech_owned_by_player(self, unit: Any) -> bool:
         if unit is None:
             return False
@@ -154,6 +159,98 @@ class AdeptusMechanicusStratagemMixin:
 
     def _rad_zone_aggressor_imperative_primary_candidates(self) -> list[Any]:
         return self._admech_battlefield_units(require_not_moved=True, require_skitarii=True)
+
+    def _cohort_cybernetica_primary_candidates(
+        self,
+        *,
+        require_vehicle: bool = False,
+        allow_legio: bool = True,
+        require_below_starting: bool = False,
+    ) -> list[Any]:
+        if not self._is_cohort_cybernetica():
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        eligible_fn = getattr(mgr, "_cohort_cybernetica_eligible_root", None) if mgr is not None else None
+        if not callable(eligible_fn):
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root):
+                continue
+            if not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            candidate = eligible_fn(root, require_vehicle=require_vehicle, allow_legio=allow_legio)
+            if candidate is None:
+                continue
+            if require_below_starting:
+                below_starting_fn = getattr(candidate, "is_below_starting_strength", None)
+                if not callable(below_starting_fn) or not bool(below_starting_fn()):
+                    continue
+            out.append(candidate)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _cohort_auto_divinatory_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(require_vehicle=False, allow_legio=True)
+
+    def _cohort_benevolence_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(require_vehicle=False, allow_legio=True)
+
+    def _cohort_machine_spirit_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(
+            require_vehicle=False,
+            allow_legio=True,
+            require_below_starting=True,
+        )
+
+    def _cohort_machine_superiority_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(require_vehicle=False, allow_legio=True)
+
+    def _cohort_motive_imperative_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(require_vehicle=True, allow_legio=False)
+
+    def _cohort_transcendent_cogitation_primary_candidates(self) -> list[Any]:
+        return self._cohort_cybernetica_primary_candidates(require_vehicle=False, allow_legio=True)
+
+    def _cohort_auto_divinatory_objective_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_cohort_cybernetica():
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        eligible_fn = getattr(mgr, "_cohort_cybernetica_eligible_root", None) if mgr is not None else None
+        if not callable(eligible_fn):
+            return []
+        source_root = self._admech_root(source_unit)
+        if eligible_fn(source_root, require_vehicle=False, allow_legio=True) is None:
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None or getattr(objective, "location", None) is None:
+                continue
+            oid = self._admech_sort_key(objective)
+            if oid and oid in seen:
+                continue
+            if oid:
+                seen.add(oid)
+            out.append(objective)
+        return sorted(out, key=self._admech_sort_key)
 
     def _rad_zone_baleful_halo_primary_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
         if not self._is_rad_zone_corps():
@@ -409,6 +506,21 @@ class AdeptusMechanicusStratagemMixin:
             return None
         return self._admech_root(resolver(value_id))
 
+    def _admech_resolve_objective_from_kwargs(self, kwargs: dict[str, Any]) -> Any:
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        if objective is not None:
+            return objective
+        objective_id = str(kwargs.get("objective_id", "") or "").strip()
+        if not objective_id:
+            return None
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return None
+        for candidate in list(getattr(game_map, "objectives", []) or []):
+            if str(get_entity_id(candidate) or "") == objective_id:
+                return candidate
+        return None
+
     def _admech_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         preview = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -515,6 +627,101 @@ class AdeptusMechanicusStratagemMixin:
             },
         )
 
+    def _mark_cohort_command_phase_effect(
+        self,
+        unit: Any,
+        *,
+        prefix: str,
+        source_name: str,
+        extra_rules: dict[str, Any] | None = None,
+    ) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr[f"{prefix}_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr[f"{prefix}_source"] = source_name
+        for key, value in dict(extra_rules or {}).items():
+            sr[key] = value
+        root.special_rules = sr
+
+    def _mark_cohort_auto_divinatory_targeting(self, unit: Any, objective: Any, *, source_name: str) -> None:
+        objective_id = str(get_entity_id(objective) or "") if objective is not None else ""
+        self._mark_cohort_command_phase_effect(
+            unit,
+            prefix="cohort_auto_divinatory_targeting",
+            source_name=source_name,
+            extra_rules={"cohort_auto_divinatory_targeting_objective_id": objective_id},
+        )
+
+    def _mark_cohort_benevolence_of_the_omnissiah(self, unit: Any, *, source_name: str) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        keep: list[Any] = []
+        for entry in list(sr.get("bearer_unit_fnp") or []):
+            if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "cohort_benevolence_of_the_omnissiah":
+                continue
+            keep.append(entry)
+        keep.append(
+            {
+                "value": 6,
+                "condition": None,
+                "source": source_name,
+                "source_key": "cohort_benevolence_of_the_omnissiah",
+            }
+        )
+        keep.append(
+            {
+                "value": 5,
+                "condition": "against mortal wounds",
+                "source": source_name,
+                "source_key": "cohort_benevolence_of_the_omnissiah",
+            }
+        )
+        sr["bearer_unit_fnp"] = keep
+        root.special_rules = sr
+        self._mark_cohort_command_phase_effect(
+            root,
+            prefix="cohort_benevolence_of_the_omnissiah",
+            source_name=source_name,
+        )
+
+    def _mark_cohort_machine_spirit_resurgent(self, unit: Any, *, source_name: str) -> None:
+        self._mark_cohort_command_phase_effect(
+            unit,
+            prefix="cohort_machine_spirit_resurgent",
+            source_name=source_name,
+        )
+
+    def _mark_cohort_machine_superiority(self, unit: Any, *, source_name: str) -> None:
+        self._mark_cohort_command_phase_effect(
+            unit,
+            prefix="cohort_machine_superiority",
+            source_name=source_name,
+        )
+
+    def _mark_cohort_motive_imperative(self, unit: Any, *, source_name: str) -> None:
+        self._mark_cohort_command_phase_effect(
+            unit,
+            prefix="cohort_motive_imperative",
+            source_name=source_name,
+        )
+
+    def _mark_cohort_transcendent_cogitation(self, unit: Any, *, source_name: str) -> None:
+        self._mark_cohort_command_phase_effect(
+            unit,
+            prefix="cohort_transcendent_cogitation",
+            source_name=source_name,
+        )
+
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "BALEFUL HALO":
@@ -529,7 +736,288 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_rad_zone_lethal_dosage(stratagem, **kwargs)
         if name_u == "PRE-CALIBRATED PURGE SOLUTION":
             return self._use_rad_zone_pre_calibrated_purge_solution(stratagem, **kwargs)
+        if name_u == "AUTO-DIVINATORY TARGETING":
+            return self._use_cohort_auto_divinatory_targeting(stratagem, **kwargs)
+        if name_u == "BENEVOLENCE OF THE OMNISSIAH":
+            return self._use_cohort_benevolence_of_the_omnissiah(stratagem, **kwargs)
+        if name_u == "MACHINE SPIRIT RESURGENT":
+            return self._use_cohort_machine_spirit_resurgent(stratagem, **kwargs)
+        if name_u == "MACHINE SUPERIORITY":
+            return self._use_cohort_machine_superiority(stratagem, **kwargs)
+        if name_u == "MOTIVE IMPERATIVE":
+            return self._use_cohort_motive_imperative(stratagem, **kwargs)
+        if name_u == "TRANSCENDENT COGITATION":
+            return self._use_cohort_transcendent_cogitation(stratagem, **kwargs)
         return None
+
+    def _use_cohort_auto_divinatory_targeting(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: no LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE unit selected")
+            return False
+
+        eligible_primary = self._cohort_auto_divinatory_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: AUTO-DIVINATORY TARGETING: target must be an eligible LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE"
+            )
+            return False
+
+        objective = self._admech_resolve_objective_from_kwargs(kwargs)
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_candidates = self._cohort_auto_divinatory_objective_candidates(primary)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: no objective marker selected")
+            return False
+        if objective not in objective_candidates:
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: selected objective marker is not eligible")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, objective=objective, phase_name="Command phase"):
+            logger.error("ERROR: AUTO-DIVINATORY TARGETING: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "AUTO-DIVINATORY TARGETING")
+        self._mark_cohort_auto_divinatory_targeting(primary, objective, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AUTO-DIVINATORY TARGETING: %s gains BS 3+, [IGNORES COVER], and objective-locked targeting until your next Command phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_cohort_benevolence_of_the_omnissiah(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: BENEVOLENCE OF THE OMNISSIAH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BENEVOLENCE OF THE OMNISSIAH: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: BENEVOLENCE OF THE OMNISSIAH: no eligible target selected")
+            return False
+
+        eligible_primary = self._cohort_benevolence_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: BENEVOLENCE OF THE OMNISSIAH: target must be an eligible LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Command phase"):
+            logger.error("ERROR: BENEVOLENCE OF THE OMNISSIAH: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BENEVOLENCE OF THE OMNISSIAH")
+        self._mark_cohort_benevolence_of_the_omnissiah(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BENEVOLENCE OF THE OMNISSIAH: %s gains Feel No Pain 6+ (5+ vs mortal wounds) until your next Command phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_cohort_machine_spirit_resurgent(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: MACHINE SPIRIT RESURGENT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MACHINE SPIRIT RESURGENT: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: MACHINE SPIRIT RESURGENT: no eligible target selected")
+            return False
+
+        eligible_primary = self._cohort_machine_spirit_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: MACHINE SPIRIT RESURGENT: target must be an eligible LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE that is below Starting Strength"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Command phase"):
+            logger.error("ERROR: MACHINE SPIRIT RESURGENT: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "MACHINE SPIRIT RESURGENT")
+        self._mark_cohort_machine_spirit_resurgent(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MACHINE SPIRIT RESURGENT: %s re-rolls Hit rolls until your next Command phase, and re-rolls Wound rolls while Below Half-strength.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_cohort_machine_superiority(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: MACHINE SUPERIORITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MACHINE SUPERIORITY: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: MACHINE SUPERIORITY: no eligible target selected")
+            return False
+
+        eligible_primary = self._cohort_machine_superiority_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: MACHINE SUPERIORITY: target must be an eligible LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Command phase"):
+            logger.error("ERROR: MACHINE SUPERIORITY: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "MACHINE SUPERIORITY")
+        self._mark_cohort_machine_superiority(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MACHINE SUPERIORITY: %s can shoot after Falling Back and can ignore non-save modifiers until end of turn.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_cohort_motive_imperative(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: MOTIVE IMPERATIVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MOTIVE IMPERATIVE: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: MOTIVE IMPERATIVE: no eligible ADEPTUS MECHANICUS VEHICLE selected")
+            return False
+
+        eligible_primary = self._cohort_motive_imperative_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error("ERROR: MOTIVE IMPERATIVE: target must be an eligible ADEPTUS MECHANICUS VEHICLE")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Command phase"):
+            logger.error("ERROR: MOTIVE IMPERATIVE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "MOTIVE IMPERATIVE")
+        self._mark_cohort_motive_imperative(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MOTIVE IMPERATIVE: %s gains +3\" Move and +1 to Advance and Charge rolls until your next Command phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_cohort_transcendent_cogitation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: TRANSCENDENT COGITATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TRANSCENDENT COGITATION: not your Command phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: TRANSCENDENT COGITATION: no eligible target selected")
+            return False
+
+        eligible_primary = self._cohort_transcendent_cogitation_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: TRANSCENDENT COGITATION: target must be an eligible LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Command phase"):
+            logger.error("ERROR: TRANSCENDENT COGITATION: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "TRANSCENDENT COGITATION")
+        self._mark_cohort_transcendent_cogitation(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TRANSCENDENT COGITATION: %s counts as affected by both Protector and Conqueror Imperatives until your next Command phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
 
     def _use_rad_zone_baleful_halo(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_rad_zone_corps():

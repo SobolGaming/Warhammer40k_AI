@@ -54,6 +54,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BALEFUL HALO",
     "BLAZING ADVANCE",
     "BLAZING IRE",
+    "BENEVOLENCE OF THE OMNISSIAH",
     "CLEANSING FLAMES",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
@@ -68,6 +69,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A TRAP WELL LAID",
     "BIO-HORROR REVELATION",
     "AUTOMATED REPAIR DRONES",
+    "AUTO-DIVINATORY TARGETING",
     "BOUNDING ADVANCE",
     "CELERITY",
     "COORDINATED ACTION",
@@ -100,6 +102,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EMPEROR'S EXECUTIONERS",
     "EMPEROR'S VENGEANCE",
     "EMPYRIC SEVERANCE",
+    "MACHINE SPIRIT RESURGENT",
+    "MACHINE SUPERIORITY",
     "FLAWLESS CONSTRUCTION",
     "HUNT AS ONE",
     "PUNISHMENT INESCAPABLE",
@@ -107,6 +111,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHIELD OF HONOUR",
     "TALONED PINCER",
     "TALONS INTERLOCKED",
+    "TRANSCENDENT COGITATION",
     "UNSTOPPABLE",
     "WRATHFUL ADVANCE",
     "EXPEDITIOUS EXIT",
@@ -177,6 +182,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FESTERING MIASMA",
     "MASSIVE IMPACT",
     "MULTISENSORY SCANNING",
+    "MOTIVE IMPERATIVE",
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
@@ -6253,6 +6259,23 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires SKITARII unit on the battlefield that has not been selected to move this phase"
             return result
+        if name_u == "AUTO-DIVINATORY TARGETING":
+            source_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = (
+                [source_unit]
+                if source_unit is not None
+                else list(self._cohort_auto_divinatory_primary_candidates() or [])
+            )
+            for candidate in candidate_units:
+                objective_candidates = list(context.get("objective_candidates") or [])
+                if not objective_candidates:
+                    objective_candidates = list(self._cohort_auto_divinatory_objective_candidates(candidate) or [])
+                if objective_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield and an objective marker"
+            return result
         if name_u == "BALEFUL HALO":
             target_units = list(context.get("target_units") or context.get("candidates") or [])
             selected_unit = context.get("target_unit") or context.get("unit")
@@ -6274,6 +6297,13 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires SKITARII unit selected as a target of an enemy Shooting attack"
+            return result
+        if name_u == "BENEVOLENCE OF THE OMNISSIAH":
+            if self._cohort_benevolence_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield"
             return result
         if name_u == "EXTINCTION ORDER":
             source_unit = context.get("target_unit") or context.get("unit")
@@ -6299,12 +6329,40 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
             return result
+        if name_u == "MACHINE SPIRIT RESURGENT":
+            if self._cohort_machine_spirit_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield that is below Starting Strength"
+            return result
+        if name_u == "MACHINE SUPERIORITY":
+            if self._cohort_machine_superiority_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield"
+            return result
+        if name_u == "MOTIVE IMPERATIVE":
+            if self._cohort_motive_imperative_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS VEHICLE on the battlefield"
+            return result
         if name_u == "PRE-CALIBRATED PURGE SOLUTION":
             if self._rad_zone_pre_calibrated_purge_solution_primary_candidates():
                 result["available"] = True
                 result["reason"] = None
                 return result
             result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
+            return result
+        if name_u == "TRANSCENDENT COGITATION":
+            if self._cohort_transcendent_cogitation_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield"
             return result
         if name_u == "VOW OF RETRIBUTION":
             if self._imperial_knights_vow_of_retribution_candidates():

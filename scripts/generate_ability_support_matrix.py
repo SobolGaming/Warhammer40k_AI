@@ -19559,6 +19559,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008421002": "Power of the Hive Mind: the bearer's Psychic weapons gain +1 Strength and improve AP by 1.",
         "000008421003": "Psychostatic Disruption: enemy units arriving from Reserves cannot be set up within 12\" of the bearer, and once per battle in battle round 1 or 2 you can select the bearer via CHOOSE_QUARRY when an enemy unit in Strategic Reserves declares an arrival; on a 4+ that unit cannot arrive this turn.",
         "000008421005": "The Dirgeheart of Kharis (Aura): enemy units within 9\" of the bearer suffer -1 Leadership.",
+        "000008573002": "Your Command phase: selected ADEPTUS MECHANICUS VEHICLE gains +3\" Move and +1 to Advance and Charge rolls until your next Command phase.",
+        "000008573003": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE selects one objective marker; until your next Command phase its ranged weapons have Ballistic Skill 3+, gain [IGNORES COVER], and can only target units within range of the selected objective marker.",
+        "000008573004": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE below Starting Strength gains full Hit re-rolls until your next Command phase, and also gains full Wound re-rolls while it is Below Half-strength.",
+        "000008573005": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE can shoot after Falling Back until end of turn and can deterministically ignore negative Move, Advance, Charge, Hit, Wound, Toughness, Leadership, and Objective Control modifiers, but not save modifiers.",
+        "000008573006": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE counts as having both Protector Imperative and Conqueror Imperative active until your next Command phase.",
+        "000008573007": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE gains Feel No Pain 6+, improved to Feel No Pain 5+ against mortal wounds, until your next Command phase.",
         "000009737002": "Synaptic Tyrant: Neurotyrant bearers can attach to Tyranid Warriors with Melee/Ranged Bio-weapons during Declare Battle Formations.",
         "000009737003": "Ocular Adaptation: while the bearer is alive, models in the bearer's unit add 1 to Hit rolls.",
         "000009737004": "Sensory Assimilation: while the bearer is alive, attacks targeting the bearer's unit suffer -1 to hit.",
@@ -20895,6 +20901,15 @@ def _stratagem_support(
         "000008517005",
         "000008517006",
         "000008517007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008573002",
+        "000008573003",
+        "000008573004",
+        "000008573005",
+        "000008573006",
+        "000008573007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

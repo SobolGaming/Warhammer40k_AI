@@ -802,6 +802,14 @@ class ShootingDeclarationDialog(BaseDialog):
                     return (False, reason)
         except Exception:
             pass
+        try:
+            restriction_fn = getattr(self.unit, "_adeptus_mechanicus_auto_divinatory_target_restriction_reason", None)
+            if callable(restriction_fn):
+                reason = str(restriction_fn(target_unit, game=self.game) or "").strip()
+                if reason:
+                    return (False, reason)
+        except Exception:
+            pass
 
         # Determine max range
         weapon_range_max = 0
@@ -875,6 +883,14 @@ class ShootingDeclarationDialog(BaseDialog):
             pass
         try:
             restriction_fn = getattr(self.unit, "_space_marines_bastion_heresy_undone_target_restriction_reason", None)
+            if callable(restriction_fn):
+                reason = str(restriction_fn(target_unit, game=self.game) or "").strip()
+                if reason:
+                    return (False, reason)
+        except Exception:
+            pass
+        try:
+            restriction_fn = getattr(self.unit, "_adeptus_mechanicus_auto_divinatory_target_restriction_reason", None)
             if callable(restriction_fn):
                 reason = str(restriction_fn(target_unit, game=self.game) or "").strip()
                 if reason:

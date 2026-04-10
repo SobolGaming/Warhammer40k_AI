@@ -1040,6 +1040,26 @@ class ShootingMixin:
             return ""
         return "Heresy Undone: target must be an auspex scanned unit after Advancing or Falling Back"
 
+    def _adeptus_mechanicus_auto_divinatory_target_restriction_reason(self, target_unit, *, game=None) -> str:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        requires_fn = (
+            getattr(adm_mgr, "auto_divinatory_targeting_requires_objective_targets", None)
+            if adm_mgr is not None
+            else None
+        )
+        legal_fn = getattr(adm_mgr, "auto_divinatory_targeting_target_is_legal", None) if adm_mgr is not None else None
+        if not callable(requires_fn) or not callable(legal_fn):
+            return ""
+        if not requires_fn(self, game=game):
+            return ""
+        if legal_fn(self, target_unit, game=game):
+            return ""
+        return "Auto-divinatory Targeting: target must be within range of the selected objective marker"
+
     def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None, linked_fire_mode=None) -> dict:
         """Validate a shooting declaration"""
         # Check if target is an enemy unit
@@ -1071,6 +1091,9 @@ class ShootingMixin:
         if reason:
             return {"valid": False, "reason": reason}
         reason = self._space_marines_bastion_heresy_undone_target_restriction_reason(target_unit, game=game)
+        if reason:
+            return {"valid": False, "reason": reason}
+        reason = self._adeptus_mechanicus_auto_divinatory_target_restriction_reason(target_unit, game=game)
         if reason:
             return {"valid": False, "reason": reason}
 
@@ -1254,6 +1277,11 @@ class ShootingMixin:
             pass
         try:
             if self._space_marines_bastion_heresy_undone_target_restriction_reason(target_unit, game=game):
+                return False
+        except Exception:
+            pass
+        try:
+            if self._adeptus_mechanicus_auto_divinatory_target_restriction_reason(target_unit, game=game):
                 return False
         except Exception:
             pass
