@@ -4126,6 +4126,89 @@ _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HALLOWED_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010353002": StratagemToolDescriptor(
+        stratagem_id="000010353002",
+        name="Giants of the Battlefield",
+        timing="fight_phase",
+        target="grey_knights_terminator_unit_not_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_attacks_bonus",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "attacks_bonus": 1},
+    ),
+    "000010353003": StratagemToolDescriptor(
+        stratagem_id="000010353003",
+        name="Unending Fidelity",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="grey_knights_infantry_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_or_shoot_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "shoot_on_death_threshold": 4,
+            "fight_on_death_threshold": 4,
+        },
+    ),
+    "000010353004": StratagemToolDescriptor(
+        stratagem_id="000010353004",
+        name="Point-blank Purgation",
+        timing="your_shooting_phase",
+        target="grey_knights_infantry_unit_not_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_storm_bolter_keywords",
+        cp_cost=1,
+        effect_params={
+            "weapon_name_contains": "storm bolter",
+            "granted_weapon_keywords": ["PISTOL", "TWIN-LINKED"],
+        },
+    ),
+    "000010353005": StratagemToolDescriptor(
+        stratagem_id="000010353005",
+        name="Grind Them Underfoot",
+        timing="your_charge_phase_after_terminator_charge_move_end",
+        target="grey_knights_terminator_unit_with_selected_enemy_in_engagement_range",
+        duration="immediate",
+        effect="charge_end_mortal_wounds_per_engaged_model",
+        cp_cost=1,
+        effect_params={
+            "threshold": 4,
+            "mortal_per_success": 1,
+            "max_mortal_wounds": 6,
+        },
+    ),
+    "000010353006": StratagemToolDescriptor(
+        stratagem_id="000010353006",
+        name="Precognitive Strategies",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="grey_knights_infantry_unit_within_9_not_engaged",
+        duration="immediate",
+        effect="reactive_move_d6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "movement_type": "normal_move",
+            "distance_roll": "D6",
+            "trigger_move_types": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+    "000010353007": StratagemToolDescriptor(
+        stratagem_id="000010353007",
+        name="Shining Resolve",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="grey_knights_infantry_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="wound_roll_penalty_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={"penalty": 1, "comparison": "strength_gt_toughness"},
+    ),
+}
+
+_HALLOWED_CONCLAVE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HALLOWED_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010152002": StratagemToolDescriptor(
         stratagem_id="000010152002",
@@ -13174,6 +13257,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HALLOWED_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -13562,6 +13648,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BANISHERS_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
+        or _HALLOWED_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)

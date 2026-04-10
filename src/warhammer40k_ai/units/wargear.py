@@ -20079,6 +20079,27 @@ class WargearProfile:
                     wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
         except Exception:
             pass
+        # Grey Knights: Hallowed Conclave (Shining Resolve) defensive wound penalty.
+        target_get_army = getattr(target, "get_parent_army", None)
+        target_army = target_get_army() if callable(target_get_army) else None
+        gk_mgr = getattr(target_army, "grey_knights_detachments", None) if target_army is not None else None
+        gk_penalty_fn = (
+            getattr(gk_mgr, "hallowed_conclave_shining_resolve_wound_roll_penalty", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(gk_penalty_fn):
+            game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+            gk_penalty, gk_source = gk_penalty_fn(
+                target,
+                strength=strength,
+                target_toughness=target_toughness,
+                game=game,
+            )
+            if gk_penalty:
+                source_name = str(gk_source or "Shining Resolve").strip() or "Shining Resolve"
+                dice_modifier -= int(gk_penalty)
+                wound_result["modifiers"].append(f"-{int(gk_penalty)} to wound from {source_name}")
         # Space Marines: Emperor's Shield (Malodraxian Standard) defensive wound penalty.
         try:
             target_army = target.get_parent_army()

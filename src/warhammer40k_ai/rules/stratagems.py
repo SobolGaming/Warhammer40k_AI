@@ -78,6 +78,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
     "DUTY UNENDING",
+    "GIANTS OF THE BATTLEFIELD",
+    "GRIND THEM UNDERFOOT",
     "COMBAT DEBARKATION",
     "CRACK SHOTS",
     "CRASH THROUGH",
@@ -121,6 +123,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GENE-TWISTED MUSCLE",
     "GUIDED FIRE",
     "HEXWROUGHT REPRISAL",
+    "POINT-BLANK PURGATION",
+    "PRECOGNITIVE STRATEGIES",
     "CHRONOSORCEROUS BLEED",
     "DECEPTIVE GLAMOUR",
     "ETHEREAL PHANTASM",
@@ -128,6 +132,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SULPHUROUS VEIL",
     "HARDENED KILLERS",
     "HORRIFIC INCURSION",
+    "SHINING RESOLVE",
     "HYPERFEROCITY",
     "HYPER-METABOLIC VIGOUR",
     "LET THE GALAXY BURN",
@@ -403,6 +408,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
     "TRUESILVER CHANNELLING",
+    "UNENDING FIDELITY",
     "UNBOWED CONVICTION",
     "UNTO THE BURNING SKIES",
     "UNBREAKABLE LINES",
@@ -2364,6 +2370,8 @@ class StratagemManager(
             "RAPID FEINT",
             "HARRYING HOUNDS",
             "DUTY UNENDING",
+            "GRIND THEM UNDERFOOT",
+            "PRECOGNITIVE STRATEGIES",
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
         }:
@@ -2683,6 +2691,8 @@ class StratagemManager(
             "PSI SURGE",
             "BIO-HORROR REVELATION",
             "SHINING VEIL",
+            "SHINING RESOLVE",
+            "UNENDING FIDELITY",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -2754,6 +2764,7 @@ class StratagemManager(
             "FIGHTING SHADOWS",
             "FATEFUL ROLE",
             "TRENCH FIGHTERS",
+            "UNENDING FIDELITY",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -3000,9 +3011,12 @@ class StratagemManager(
             "WARP STALKERS",
             "AEGIS ETERNAL",
             "FIRES OF COVENANT",
+            "GIANTS OF THE BATTLEFIELD",
             "HALLOWED BEACON",
+            "POINT-BLANK PURGATION",
             "REPELLING SPHERE",
             "SANCTIFIED KILL ZONE",
+            "SHINING RESOLVE",
             "RIGHTEOUS VENGEANCE",
             "SUFFERING AND SACRIFICE",
             "SPIRIT OF THE MARTYR",
@@ -3055,6 +3069,7 @@ class StratagemManager(
             "RUTHLESS KILLERS",
             "SKYBORNE ANNIHILATION",
             "TO THEIR FINAL BREATH",
+            "UNENDING FIDELITY",
             "WARRIOR FOCUS",
             "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
@@ -9246,6 +9261,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_hallowed_conclave_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_brotherhood_strike_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10669,6 +10688,7 @@ class StratagemManager(
             self._queue_brotherhood_strike_phase_end_reactions(player=player, phase=phase)
             self._cleanup_augurium_phase_end_effects(phase=phase)
             self._cleanup_banishers_phase_end_effects(phase=phase)
+            self._cleanup_hallowed_conclave_phase_end_effects(phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
@@ -12789,6 +12809,7 @@ class StratagemManager(
         self._maybe_queue_cut_down_the_weak(unit, action)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_banishers_move_end_reactions(unit=unit, action=action)
+        self._queue_hallowed_conclave_move_end_reactions(unit=unit, action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
@@ -14194,6 +14215,13 @@ class StratagemManager(
             raise
         try:
             self._queue_banishers_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hallowed_conclave_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15770,6 +15798,13 @@ class StratagemManager(
             raise
         try:
             self._queue_banishers_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hallowed_conclave_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

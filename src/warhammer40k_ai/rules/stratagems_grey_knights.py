@@ -75,6 +75,11 @@ class GreyKnightsStratagemMixin:
         checker = getattr(mgr, "is_brotherhood_strike", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_hallowed_conclave(self) -> bool:
+        mgr = self._get_gk_mgr()
+        checker = getattr(mgr, "is_hallowed_conclave", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_gk_unit(self, unit: Any) -> bool:
         root = self._gk_root(unit)
         if root is None:
@@ -810,6 +815,165 @@ class GreyKnightsStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._gk_sort_key)
 
+    def _hallowed_conclave_units(
+        self,
+        *,
+        require_infantry: bool = False,
+        require_terminator: bool = False,
+        require_on_battlefield: bool = True,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_hallowed_conclave():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        units: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if require_infantry and not self._is_gk_infantry_unit(root):
+                continue
+            if require_terminator and not self._is_gk_terminator_unit(root):
+                continue
+            if require_on_battlefield and not self._gk_is_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            units.append(root)
+        return sorted(units, key=self._gk_sort_key)
+
+    def _hallowed_conclave_giants_of_the_battlefield_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(
+            self._hallowed_conclave_units(
+                require_terminator=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _hallowed_conclave_point_blank_purgation_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(
+            self._hallowed_conclave_units(
+                require_infantry=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="shooting phase"):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _hallowed_conclave_precognitive_strategies_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._gk_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        if self._gk_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        candidates: list[Any] = []
+        for root in list(
+            self._hallowed_conclave_units(
+                require_infantry=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            if self._gk_has_enemy_within_engagement_range(root):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _hallowed_conclave_targeted_infantry_candidates(self, target_units: Any) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _hallowed_conclave_shining_resolve_candidates(self, *, target_units: Any) -> list[Any]:
+        return self._hallowed_conclave_targeted_infantry_candidates(target_units)
+
+    def _hallowed_conclave_unending_fidelity_candidates(self, *, target_units: Any) -> list[Any]:
+        return self._hallowed_conclave_targeted_infantry_candidates(target_units)
+
+    def _hallowed_conclave_grind_them_underfoot_enemy_candidates(self, unit: Any) -> list[Any]:
+        root = self._gk_root(unit)
+        if root is None:
+            return []
+        if not self._gk_owned_by_player(root, self.player):
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._gk_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._gk_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._gk_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+                continue
+            if not bool(is_within_engagement_range(root, enemy_root)):
+                continue
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._gk_sort_key)
+
     def _brotherhood_strike_combat_manifestation_candidates(self) -> list[Any]:
         if not self._is_brotherhood_strike():
             return []
@@ -1126,6 +1290,54 @@ class GreyKnightsStratagemMixin:
                         source=str(source or "").strip() or "Weapon keyword bonus",
                         expires_phase=str(expires_phase or "").strip().upper(),
                         attack_type=str(attack_type or "").strip().lower() or "any",
+                    )
+
+    @staticmethod
+    def _gk_wargear_name_contains(wargear: Any, *, needle: str) -> bool:
+        if wargear is None:
+            return False
+        target = str(needle or "").strip().lower()
+        if not target:
+            return False
+        weapon_name = str(getattr(wargear, "name", "") or "").strip().lower()
+        return target in weapon_name
+
+    def _gk_apply_temporary_weapon_bonuses(
+        self,
+        root: Any,
+        *,
+        key_prefix: str,
+        expires_phase: str,
+        source: str,
+        weapon_filter: Any,
+        attacks_bonus: int = 0,
+        strength_bonus: int = 0,
+        ap_bonus: int = 0,
+        damage_bonus: int = 0,
+    ) -> None:
+        if root is None:
+            return
+        for member in list(self._gk_member_units(root) or [root]):
+            for model in list(self._gk_alive_models(member) or []):
+                model_id = str(get_entity_id(model) or "")
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None or not callable(weapon_filter) or not bool(weapon_filter(wargear)):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    set_bonus(
+                        key=f"{key_prefix}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        attacks_bonus=int(attacks_bonus or 0),
+                        strength_bonus=int(strength_bonus or 0),
+                        ap_bonus=int(ap_bonus or 0),
+                        damage_bonus=int(damage_bonus or 0),
+                        source=str(source or "").strip() or "Weapon bonus",
+                        expires_phase=str(expires_phase or "").strip().upper(),
                     )
 
     def _warpbane_aegis_eternal_candidates(self, target_units: Any) -> list[Any]:
@@ -1948,6 +2160,234 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_hallowed_conclave_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_hallowed_conclave():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            phase_name = "Shooting phase"
+            stratagem_name = "POINT-BLANK PURGATION"
+            candidates = self._hallowed_conclave_point_blank_purgation_candidates()
+        elif phase_key == "FIGHT_PHASE":
+            phase_name = "Fight phase"
+            stratagem_name = "GIANTS OF THE BATTLEFIELD"
+            candidates = self._hallowed_conclave_giants_of_the_battlefield_candidates()
+        else:
+            return
+        if not candidates:
+            return
+        stratagem = self.get_by_name(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_hallowed_conclave_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_hallowed_conclave():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        moving_root = self._gk_root(unit)
+        if moving_root is None or not self._gk_is_alive(moving_root) or not self._gk_is_on_battlefield(moving_root):
+            return
+
+        if phase_name == "movement phase" and active_player is not self.player:
+            if self._gk_owned_by_player(moving_root, self.player):
+                return
+            if action_key not in {"move", "normal_move", "advance", "fall_back", "fallback"}:
+                return
+            stratagem = self.get_by_name("PRECOGNITIVE STRATEGIES")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+                return
+            name_u = str(stratagem.name or "").strip().upper()
+            if name_u in self._used_stratagems_this_phase:
+                return
+            candidates = self._hallowed_conclave_precognitive_strategies_candidates(enemy_unit=moving_root)
+            if not candidates:
+                return
+            if self._warpbane_reaction_already_queued(
+                event_name="unit_move_ended",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+                enemy_unit=moving_root,
+            ):
+                return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "enemy_unit": moving_root,
+                "attacking_unit": moving_root,
+                "moving_unit": moving_root,
+                "action": action,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_name != "charge phase" or active_player is not self.player:
+            return
+        if not self._gk_owned_by_player(moving_root, self.player):
+            return
+        if action_key not in {"charge", "charge_move"}:
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(moving_root)):
+            return
+        if not self._is_gk_unit(moving_root) or not self._is_gk_terminator_unit(moving_root):
+            return
+        stratagem = self.get_by_name("GRIND THEM UNDERFOOT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = self._hallowed_conclave_grind_them_underfoot_enemy_candidates(moving_root)
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "charge phase":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("unit") is moving_root:
+                return
+        moving_id = self._gk_sort_key(moving_root)
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": moving_root,
+            "target_unit": moving_root,
+            "action": action,
+            "candidates": [moving_root],
+            "enemy_candidates_by_unit_id": {moving_id: enemy_candidates},
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_hallowed_conclave_shooting_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_hallowed_conclave():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            return
+        if not self._gk_is_alive(attacking_root) or not self._gk_is_on_battlefield(attacking_root):
+            return
+        candidates = self._hallowed_conclave_targeted_infantry_candidates(target_units)
+        if not candidates:
+            return
+        for stratagem_name in ("SHINING RESOLVE", "UNENDING FIDELITY"):
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+                continue
+            name_u = str(stratagem.name or "").strip().upper()
+            if name_u in self._used_stratagems_this_phase:
+                continue
+            if self._warpbane_reaction_already_queued(
+                event_name="shooting_targets_selected",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+                enemy_unit=attacking_root,
+            ):
+                continue
+            payload = {
+                "event": "shooting_targets_selected",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "enemy_unit": attacking_root,
+                "attacking_unit": attacking_root,
+                "target_units": list(target_units or []),
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_hallowed_conclave_fight_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_hallowed_conclave():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            return
+        if not self._gk_is_alive(attacking_root) or not self._gk_is_on_battlefield(attacking_root):
+            return
+        stratagem = self.get_by_name("UNENDING FIDELITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        name_u = str(stratagem.name or "").strip().upper()
+        if name_u in self._used_stratagems_this_phase:
+            return
+        candidates = self._hallowed_conclave_unending_fidelity_candidates(target_units=target_units)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_root,
+            "attacking_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_augurium_phase_end_effects(self, *, phase: Any) -> None:
         if not self._is_augurium_task_force():
             return
@@ -2333,6 +2773,65 @@ class GreyKnightsStratagemMixin:
                 root.special_rules = sr
                 self._gk_clear_ability_cache(root)
 
+    def _cleanup_hallowed_conclave_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_hallowed_conclave():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        keys_by_phase: dict[str, tuple[str, ...]] = {
+            "SHOOTING_PHASE": (
+                "hallowed_conclave_shining_resolve_active",
+                "hallowed_conclave_shining_resolve_turn_owner",
+                "hallowed_conclave_shining_resolve_turn",
+                "hallowed_conclave_shining_resolve_expires_phase",
+                "hallowed_conclave_shining_resolve_source",
+                "hallowed_conclave_unending_fidelity_active",
+                "hallowed_conclave_unending_fidelity_mode",
+                "hallowed_conclave_unending_fidelity_threshold",
+                "hallowed_conclave_unending_fidelity_turn_owner",
+                "hallowed_conclave_unending_fidelity_turn",
+                "hallowed_conclave_unending_fidelity_expires_phase",
+                "hallowed_conclave_unending_fidelity_source",
+            ),
+            "FIGHT_PHASE": (
+                "hallowed_conclave_unending_fidelity_active",
+                "hallowed_conclave_unending_fidelity_mode",
+                "hallowed_conclave_unending_fidelity_threshold",
+                "hallowed_conclave_unending_fidelity_turn_owner",
+                "hallowed_conclave_unending_fidelity_turn",
+                "hallowed_conclave_unending_fidelity_expires_phase",
+                "hallowed_conclave_unending_fidelity_source",
+            ),
+        }
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        keys = keys_by_phase.get(phase_name, ())
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if not changed:
+                continue
+            root.special_rules = sr
+            self._gk_clear_ability_cache(root)
+
     def _use_grey_knights_warpbane_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "AGGRESSIVE ANTICIPATION":
@@ -2351,8 +2850,16 @@ class GreyKnightsStratagemMixin:
             return self._use_brotherhood_strike_duty_unending(stratagem, **kwargs)
         if name_u == "EXPEDITIOUS EXIT":
             return self._use_brotherhood_strike_expeditious_exit(stratagem, **kwargs)
+        if name_u == "GIANTS OF THE BATTLEFIELD":
+            return self._use_hallowed_conclave_giants_of_the_battlefield(stratagem, **kwargs)
+        if name_u == "GRIND THEM UNDERFOOT":
+            return self._use_hallowed_conclave_grind_them_underfoot(stratagem, **kwargs)
         if name_u == "HEXWROUGHT REPRISAL":
             return self._use_banishers_hexwrought_reprisal(stratagem, **kwargs)
+        if name_u == "POINT-BLANK PURGATION":
+            return self._use_hallowed_conclave_point_blank_purgation(stratagem, **kwargs)
+        if name_u == "PRECOGNITIVE STRATEGIES":
+            return self._use_hallowed_conclave_precognitive_strategies(stratagem, **kwargs)
         if name_u == "MIRAGE OF ECHOES":
             return self._use_augurium_mirage_of_echoes(stratagem, **kwargs)
         if name_u == "NECESSARY END":
@@ -2363,10 +2870,14 @@ class GreyKnightsStratagemMixin:
             return self._use_augurium_redirected_strike(stratagem, **kwargs)
         if name_u == "SHADOW OF ANARCH":
             return self._use_banishers_shadow_of_anarch(stratagem, **kwargs)
+        if name_u == "SHINING RESOLVE":
+            return self._use_hallowed_conclave_shining_resolve(stratagem, **kwargs)
         if name_u == "SHINING VEIL":
             return self._use_brotherhood_strike_shining_veil(stratagem, **kwargs)
         if name_u == "TRUESILVER CHANNELLING":
             return self._use_brotherhood_strike_truesilver_channelling(stratagem, **kwargs)
+        if name_u == "UNENDING FIDELITY":
+            return self._use_hallowed_conclave_unending_fidelity(stratagem, **kwargs)
         if name_u == "WARDING CHANT":
             return self._use_banishers_warding_chant(stratagem, **kwargs)
         if name_u == "SANCTIFIED KILL ZONE":
@@ -3254,6 +3765,499 @@ class GreyKnightsStratagemMixin:
             "INFO: HEXWROUGHT REPRISAL: %s inflicted %d psychic mortal wound(s) on %s.",
             getattr(root, "name", "Unit"),
             int(mortal_wounds),
+            getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hallowed_conclave_giants_of_the_battlefield(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("GIANTS OF THE BATTLEFIELD")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: wrong phase")
+            return False
+        eligible = candidates or self._hallowed_conclave_giants_of_the_battlefield_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_terminator_unit(root):
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: target must be a GREY KNIGHTS TERMINATOR unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="fight phase"):
+            logger.error("ERROR: GIANTS OF THE BATTLEFIELD: target has already been selected to fight this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "GIANTS OF THE BATTLEFIELD").strip()
+        source_name = source_name or "GIANTS OF THE BATTLEFIELD"
+        self._gk_apply_temporary_weapon_bonuses(
+            root,
+            key_prefix="hallowed_conclave_giants_of_the_battlefield",
+            expires_phase="FIGHT_PHASE",
+            source=source_name,
+            weapon_filter=lambda wargear: bool(
+                callable(getattr(wargear, "is_melee", None)) and wargear.is_melee()
+            ),
+            attacks_bonus=1,
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GIANTS OF THE BATTLEFIELD: %s gains +1 Attacks on melee weapons until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hallowed_conclave_point_blank_purgation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("POINT-BLANK PURGATION")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: POINT-BLANK PURGATION: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: POINT-BLANK PURGATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: POINT-BLANK PURGATION: only usable in your Shooting phase")
+            return False
+        eligible = candidates or self._hallowed_conclave_point_blank_purgation_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: POINT-BLANK PURGATION: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: POINT-BLANK PURGATION: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: POINT-BLANK PURGATION: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: POINT-BLANK PURGATION: target must be a GREY KNIGHTS INFANTRY unit")
+            return False
+        if self._gk_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="shooting phase"):
+            logger.error("ERROR: POINT-BLANK PURGATION: target has already been selected to shoot this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "POINT-BLANK PURGATION").strip()
+        source_name = source_name or "POINT-BLANK PURGATION"
+        self._gk_apply_temporary_weapon_keyword_bonuses(
+            root,
+            key_prefix="hallowed_conclave_point_blank_purgation",
+            keywords=["PISTOL", "TWIN-LINKED"],
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+            source=source_name,
+            weapon_filter=lambda wargear: self._gk_wargear_name_contains(wargear, needle="storm bolter"),
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POINT-BLANK PURGATION: %s gains [PISTOL] and [TWIN-LINKED] on storm bolters until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hallowed_conclave_precognitive_strategies(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("moving_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or enemy_unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("PRECOGNITIVE STRATEGIES")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if enemy_unit is None and pending is not None:
+            enemy_unit = pending.get("enemy_unit") or pending.get("attacking_unit") or pending.get("moving_unit")
+        if action is None and pending is not None:
+            action = pending.get("action")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: no target unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: missing triggering enemy unit")
+            return False
+        root = self._gk_root(unit)
+        enemy_root = self._gk_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: only usable in your opponent's Movement phase")
+            return False
+        if self._gk_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: trigger unit must be an enemy unit")
+            return False
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"move", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: invalid trigger move type")
+            return False
+        eligible = candidates or self._hallowed_conclave_precognitive_strategies_candidates(enemy_unit=enemy_root)
+        if eligible and root not in eligible:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target must be a GREY KNIGHTS INFANTRY unit")
+            return False
+        if self._gk_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target cannot be within Engagement Range")
+            return False
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: target must be within 9\" of the triggering enemy unit")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: reactive move queue unavailable")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        max_distance = int(dice_module.get_roll("D6") or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: failed to determine reactive move distance")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="hallowed_conclave_precognitive_strategies",
+            movement_type="move",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "PRECOGNITIVE STRATEGIES"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: PRECOGNITIVE STRATEGIES: failed to queue reactive move")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PRECOGNITIVE STRATEGIES: %s can make a reactive Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_hallowed_conclave_shining_resolve(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or attacking_unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("SHINING RESOLVE")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if attacking_unit is None and pending is not None:
+            attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+        if not target_units and pending is not None:
+            target_units = list(pending.get("target_units") or [])
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SHINING RESOLVE: no target unit provided")
+            return False
+        if attacking_unit is None:
+            logger.error("ERROR: SHINING RESOLVE: missing enemy attacking unit")
+            return False
+        root = self._gk_root(unit)
+        attacking_root = self._gk_root(attacking_unit)
+        if root is None or attacking_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SHINING RESOLVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SHINING RESOLVE: only usable in your opponent's Shooting phase")
+            return False
+        if self._gk_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: SHINING RESOLVE: trigger requires an enemy attacking unit")
+            return False
+        eligible = candidates or self._hallowed_conclave_shining_resolve_candidates(target_units=target_units)
+        if eligible and root not in eligible:
+            logger.error("ERROR: SHINING RESOLVE: target unit was not selected as an attack target")
+            return False
+        if target_units and root not in [self._gk_root(target) for target in list(target_units or [])]:
+            logger.error("ERROR: SHINING RESOLVE: target unit was not selected as an attack target")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: SHINING RESOLVE: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SHINING RESOLVE: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: SHINING RESOLVE: target must be a GREY KNIGHTS INFANTRY unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["hallowed_conclave_shining_resolve_active"] = True
+        sr["hallowed_conclave_shining_resolve_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["hallowed_conclave_shining_resolve_turn"] = self._gk_current_turn()
+        sr["hallowed_conclave_shining_resolve_expires_phase"] = "SHOOTING_PHASE"
+        sr["hallowed_conclave_shining_resolve_source"] = (
+            str(getattr(stratagem, "name", "") or "SHINING RESOLVE").strip() or "SHINING RESOLVE"
+        )
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHINING RESOLVE: %s imposes -1 to wound when an attack's Strength exceeds its Toughness this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hallowed_conclave_unending_fidelity(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = None
+        if unit is None or attacking_unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("UNENDING FIDELITY")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if attacking_unit is None and pending is not None:
+            attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+        if not target_units and pending is not None:
+            target_units = list(pending.get("target_units") or [])
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNENDING FIDELITY: no target unit provided")
+            return False
+        if attacking_unit is None:
+            logger.error("ERROR: UNENDING FIDELITY: missing enemy attacking unit")
+            return False
+        root = self._gk_root(unit)
+        attacking_root = self._gk_root(attacking_unit)
+        if root is None or attacking_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: UNENDING FIDELITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: UNENDING FIDELITY: only usable in your opponent's Shooting phase")
+            return False
+        if self._gk_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: UNENDING FIDELITY: trigger requires an enemy attacking unit")
+            return False
+        eligible = candidates or self._hallowed_conclave_unending_fidelity_candidates(target_units=target_units)
+        if eligible and root not in eligible:
+            logger.error("ERROR: UNENDING FIDELITY: target unit was not selected as an attack target")
+            return False
+        if target_units and root not in [self._gk_root(target) for target in list(target_units or [])]:
+            logger.error("ERROR: UNENDING FIDELITY: target unit was not selected as an attack target")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: UNENDING FIDELITY: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNENDING FIDELITY: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: UNENDING FIDELITY: target must be a GREY KNIGHTS INFANTRY unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        mode = "shoot" if phase_name == "shooting phase" else "fight"
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["hallowed_conclave_unending_fidelity_active"] = True
+        sr["hallowed_conclave_unending_fidelity_mode"] = mode
+        sr["hallowed_conclave_unending_fidelity_threshold"] = 4
+        sr["hallowed_conclave_unending_fidelity_turn_owner"] = self._gk_current_turn_owner_id()
+        sr["hallowed_conclave_unending_fidelity_turn"] = self._gk_current_turn()
+        sr["hallowed_conclave_unending_fidelity_expires_phase"] = (
+            "SHOOTING_PHASE" if mode == "shoot" else "FIGHT_PHASE"
+        )
+        sr["hallowed_conclave_unending_fidelity_source"] = (
+            str(getattr(stratagem, "name", "") or "UNENDING FIDELITY").strip() or "UNENDING FIDELITY"
+        )
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNENDING FIDELITY: %s gains %s on-death attacks on 4+ until end of phase.",
+            getattr(root, "name", "Unit"),
+            "shoot" if mode == "shoot" else "fight",
+        )
+        return True
+
+    def _use_hallowed_conclave_grind_them_underfoot(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hallowed_conclave():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_candidates_by_unit_id = dict(kwargs.get("enemy_candidates_by_unit_id") or {})
+        pending = None
+        if unit is None or not candidates:
+            pending = self._gk_pending_reaction_by_name("GRIND THEM UNDERFOOT")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if enemy_unit is None and pending is not None:
+            enemy_unit = pending.get("enemy_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if not enemy_candidates_by_unit_id and pending is not None:
+            enemy_candidates_by_unit_id = dict(pending.get("enemy_candidates_by_unit_id") or {})
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: GRIND THEM UNDERFOOT: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: GRIND THEM UNDERFOOT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: GRIND THEM UNDERFOOT: only usable in your Charge phase")
+            return False
+        eligible = candidates or [root]
+        if eligible and root not in eligible:
+            logger.error("ERROR: GRIND THEM UNDERFOOT: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_terminator_unit(root):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: target must be a GREY KNIGHTS TERMINATOR unit")
+            return False
+        root_id = self._gk_sort_key(root)
+        enemy_candidates = list(enemy_candidates_by_unit_id.get(root_id) or [])
+        if not enemy_candidates:
+            enemy_candidates = self._hallowed_conclave_grind_them_underfoot_enemy_candidates(root)
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if enemy_unit is None:
+            logger.error("ERROR: GRIND THEM UNDERFOOT: no enemy unit provided")
+            return False
+        enemy_root = self._gk_root(enemy_unit)
+        if enemy_root is None:
+            return False
+        if enemy_candidates and enemy_root not in [self._gk_root(candidate) for candidate in list(enemy_candidates or [])]:
+            logger.error("ERROR: GRIND THEM UNDERFOOT: selected enemy unit is not within Engagement Range")
+            return False
+        if self._gk_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: selected enemy unit is invalid")
+            return False
+        if not self._gk_is_alive(enemy_root) or not self._gk_is_on_battlefield(enemy_root):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: selected enemy unit is no longer on the battlefield")
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if callable(within_engagement) and not bool(within_engagement(root, enemy_root)):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: selected enemy unit is not within Engagement Range")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        resolve_charge_end = getattr(self.game, "resolve_charge_end_mortal_wounds", None) if self.game is not None else None
+        if not callable(resolve_charge_end):
+            logger.error("ERROR: GRIND THEM UNDERFOOT: charge-end mortal wounds resolver unavailable")
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "GRIND THEM UNDERFOOT").strip() or "GRIND THEM UNDERFOOT"
+        resolve_charge_end(
+            root,
+            enemy_root,
+            {
+                "kind": "per_model_engagement_flat_cap",
+                "name": source_name,
+                "threshold": 4,
+                "mortal_per_success": 1,
+                "max_mortal_wounds": 6,
+            },
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GRIND THEM UNDERFOOT: %s rolled charge-end mortals against %s.",
+            getattr(root, "name", "Unit"),
             getattr(enemy_root, "name", "Unit"),
         )
         return True

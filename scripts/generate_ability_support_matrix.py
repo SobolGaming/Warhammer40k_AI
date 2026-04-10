@@ -19905,6 +19905,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010352003": "Inescapable Judgement: each time an enemy unit Falls Back from the bearer's unit, optional CHOOSE_QUARRY activation (with None) rolls D6; on 2-5 that enemy suffers D3 mortal wounds, and on 6 it suffers D3+3 mortal wounds.",
         "000010352004": "Sanctic Reaper: the bearer model gains +3 Attacks for melee weapons while the bearer lives.",
         "000010352005": "Nemesis Rounds: each time the bearer's unit is targeted with Fire Overwatch, hits are scored on unmodified Hit rolls of 5+ while the bearer lives.",
+        "000010353002": "Giants of the Battlefield: in the Fight phase, a selected GREY KNIGHTS TERMINATOR unit that has not yet been selected to fight gains +1 Attacks on melee weapons until end of phase.",
+        "000010353003": "Unending Fidelity: opponent Shooting phase or either Fight phase reaction after enemy targets are selected; a selected GREY KNIGHTS INFANTRY unit targeted by that attacker gains 4+ shoot-on-death or fight-on-death after the attacker finishes its attacks, depending on the phase.",
+        "000010353004": "Point-blank Purgation: in your Shooting phase, a selected GREY KNIGHTS INFANTRY unit that has not yet been selected to shoot gains [PISTOL] and [TWIN-LINKED] on storm bolters until end of phase.",
+        "000010353005": "Grind Them Underfoot: after a GREY KNIGHTS TERMINATOR unit ends a Charge move, select an enemy unit within Engagement Range and roll one D6 for each engaged model in the charging unit; each 4+ inflicts 1 mortal wound, to a maximum of 6.",
+        "000010353006": "Precognitive Strategies: opponent Movement phase after an enemy Normal, Advance, or Fall Back move ends, a selected GREY KNIGHTS INFANTRY unit within 9\" and not engaged can make a reactive Normal move up to D6\".",
+        "000010353007": "Shining Resolve: opponent Shooting phase reaction after enemy targets are selected; a selected GREY KNIGHTS INFANTRY unit targeted by that attacker imposes -1 to wound when the attack's Strength exceeds the unit's Toughness until end of phase.",
         "000008367002": "Follow Me Ladz: while leading, bearer unit gains +2\" Move.",
         "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
         "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
@@ -21620,6 +21626,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Opponent Movement phase after an enemy Normal, Advance, or Fall Back move ends: selected GREY KNIGHTS PSYKER unit within 9\" and not engaged can make a Normal move up to 6\" or enter Strategic Reserves if it has Deep Strike.",
+            name_u,
+        )
+    if stratagem_id == "000010353002":
+        return (
+            "Implemented",
+            "Fight phase: selected GREY KNIGHTS TERMINATOR unit that has not yet been selected to fight gains +1 Attacks on melee weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010353003":
+        return (
+            "Implemented",
+            "Opponent Shooting phase or the Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit targeted by that attacker gains 4+ shoot-on-death or fight-on-death after the attacking unit finishes making its attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010353004":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected GREY KNIGHTS INFANTRY unit that has not yet been selected to shoot gains [PISTOL] and [TWIN-LINKED] on storm bolters until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010353005":
+        return (
+            "Implemented",
+            "Your Charge phase after a GREY KNIGHTS TERMINATOR unit ends a Charge move: select one enemy unit within Engagement Range and roll one D6 for each engaged model in the charging unit; each 4+ inflicts 1 mortal wound, to a maximum of 6.",
+            name_u,
+        )
+    if stratagem_id == "000010353006":
+        return (
+            "Implemented",
+            "Opponent Movement phase after an enemy Normal, Advance, or Fall Back move ends: selected GREY KNIGHTS INFANTRY unit within 9\" and not engaged can make a reactive Normal move up to D6\".",
+            name_u,
+        )
+    if stratagem_id == "000010353007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit targeted by that attacker imposes -1 to wound when the attack's Strength exceeds the unit's Toughness until end of phase.",
             name_u,
         )
     if stratagem_id == "000010401002":

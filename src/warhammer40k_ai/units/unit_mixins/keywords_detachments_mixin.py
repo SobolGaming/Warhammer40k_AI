@@ -2226,6 +2226,28 @@ class KeywordsDetachmentsMixin:
                             gk_rule.get("allow_any_fight_phase_destruction", False)
                         ),
                     }
+        hallowed_gk_rule_fn = (
+            getattr(gk_mgr, "hallowed_conclave_unending_fidelity_fight_on_death_rule", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(hallowed_gk_rule_fn):
+            hallowed_gk_rule = hallowed_gk_rule_fn(self, model=model, game=game)
+            if isinstance(hallowed_gk_rule, dict):
+                try:
+                    threshold = int(hallowed_gk_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(hallowed_gk_rule.get("source", "") or "Unending Fidelity").strip()
+                    source = source or "Unending Fidelity"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                        "allow_any_fight_phase_destruction": bool(
+                            hallowed_gk_rule.get("allow_any_fight_phase_destruction", False)
+                        ),
+                    }
 
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
@@ -2451,6 +2473,32 @@ class KeywordsDetachmentsMixin:
         too_arrogant_rule = self._temporary_orks_too_arrogant_to_die_rule(expected_phase="SHOOTING_PHASE")
         if too_arrogant_rule is not None:
             return too_arrogant_rule
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        hallowed_gk_rule_fn = (
+            getattr(gk_mgr, "hallowed_conclave_unending_fidelity_shoot_on_death_rule", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(hallowed_gk_rule_fn):
+            hallowed_gk_rule = hallowed_gk_rule_fn(self, model=model, game=game)
+            if isinstance(hallowed_gk_rule, dict):
+                try:
+                    threshold = int(hallowed_gk_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(hallowed_gk_rule.get("source", "") or "Unending Fidelity").strip()
+                    source = source or "Unending Fidelity"
+                    attack_type = str(hallowed_gk_rule.get("attack_type", "any") or "any").strip().lower() or "any"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                        "attack_type": attack_type,
+                    }
 
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
