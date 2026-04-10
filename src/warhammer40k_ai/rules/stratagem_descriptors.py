@@ -4228,6 +4228,93 @@ _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009746002": StratagemToolDescriptor(
+        stratagem_id="000009746002",
+        name="Eradication Protocols",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="adeptus_mechanicus_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="reroll_wound_ones_with_halo_hit_reroll_ones",
+        cp_cost=1,
+        effect_params={"reroll_wound": "ones", "reroll_hit_if_halo_override": "ones"},
+    ),
+    "000009746003": StratagemToolDescriptor(
+        stratagem_id="000009746003",
+        name="Targeting Override",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="adeptus_mechanicus_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="critical_hits_on_five_plus",
+        cp_cost=1,
+        effect_params={"crit_hit_threshold": 5},
+    ),
+    "000009746004": StratagemToolDescriptor(
+        stratagem_id="000009746004",
+        name="Neural Overload",
+        timing="your_movement_phase",
+        target="adeptus_mechanicus_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="grant_selected_halo_override_ability",
+        cp_cost=1,
+        effect_params={
+            "choice_keys": [
+                "ELECTROMOTIVE_ENERGISATION",
+                "MICROACTUATOR_BRACING",
+                "PREDATION_PROTOCOLS",
+                "MUTED_SERVOMOTORS",
+            ],
+            "mortal_wounds_if_halo_override": "D3",
+            "stacks_with_existing_halo_override": True,
+        },
+    ),
+    "000009746005": StratagemToolDescriptor(
+        stratagem_id="000009746005",
+        name="Aggressive Impulse",
+        timing="your_movement_phase",
+        target="skorpius_dunerider_that_has_not_been_selected_to_move",
+        duration="until_end_of_turn",
+        effect="disembark_charge_after_normal_move",
+        cp_cost=1,
+        effect_params={"transport_name": "Skorpius Dunerider", "allow_charge_after_normal_move": True},
+    ),
+    "000009746006": StratagemToolDescriptor(
+        stratagem_id="000009746006",
+        name="Guided Retreat",
+        timing="your_movement_phase_after_fall_back",
+        target="that_adeptus_mechanicus_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+            "reroll_desperate_escape_tests_if_halo_override": True,
+        },
+    ),
+    "000009746007": StratagemToolDescriptor(
+        stratagem_id="000009746007",
+        name="Analytical Divination",
+        timing="opponent_movement_phase_after_enemy_move_ended",
+        target="adeptus_mechanicus_infantry_unit_within_9_and_not_in_engagement_range_excluding_kataphrons",
+        duration="immediate",
+        effect="reactive_normal_move_d6_or_six_if_halo_override",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "movement_type": "normal_move",
+            "distance_roll": "D6",
+            "distance_if_halo_override": 6.0,
+            "required_keywords_any": ["INFANTRY"],
+            "excluded_keywords_any": ["KATAPHRON"],
+        },
+    ),
+}
+
+_HALOSCREED_BATTLE_CLADE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008469004": StratagemToolDescriptor(
         stratagem_id="000008469004",
@@ -14080,6 +14167,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14501,6 +14591,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COHORT_CYBERNETICA_STRATAGEM_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME.get(key)
+        or _HALOSCREED_BATTLE_CLADE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)

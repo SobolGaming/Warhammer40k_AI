@@ -19722,6 +19722,156 @@ class GameView:
                 )
             return
 
+        if name_u == "NEURAL OVERLOAD" and "choice_key" not in context and "override_key" not in context:
+            if not callable(getattr(self, "_resolve_option_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_SELECT_OVERWATCH_SHOOTER
+            from ..engine.decisions import DecisionOption
+
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            admech_mgr = getattr(army, "adeptus_mechanicus_detachments", None)
+            if admech_mgr is None:
+                return
+
+            def _pick_neural_overload_choice(primary_unit):
+                if primary_unit is None:
+                    logger.info("Neural Overload: no unit selected")
+                    return
+                choice_rows = list(admech_mgr.noospheric_override_choices() or [])
+                if not choice_rows:
+                    logger.info("Neural Overload: no HALO OVERRIDE abilities available")
+                    return
+                allowed_choice_keys = [
+                    str(row[0] or "").strip().upper()
+                    for row in choice_rows
+                    if row and str(row[0] or "").strip()
+                ]
+                options = [
+                    DecisionOption.create(
+                        str(label or key).strip() or str(key).strip(),
+                        payload={"choice_key": str(key).strip().upper()},
+                    )
+                    for key, label, _description in choice_rows
+                    if str(key or "").strip()
+                ]
+                if not options:
+                    logger.info("Neural Overload: no valid HALO OVERRIDE options available")
+                    return
+                unit_id = str(get_entity_id(primary_unit) or "")
+                self._resolve_option_selection_dialog(
+                    player=player,
+                    options=options,
+                    on_chosen=lambda choice: self._finalize_haloscreed_neural_overload(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        choice,
+                    ),
+                    decision_type=DECISION_CHOOSE_QUARRY,
+                    prompt="Select a HALO OVERRIDE ability for Neural Overload.",
+                    title="Neural Overload",
+                    header="Choose HALO OVERRIDE ability",
+                    subtitle="Select the ability that unit gains until the end of the phase.",
+                    context={
+                        "ability": "haloscreed_neural_overload_choice",
+                        "ability_name": "Neural Overload",
+                        "unit_id": unit_id,
+                        "allowed_choice_keys": allowed_choice_keys,
+                        "optional": False,
+                    },
+                    allow_skip=False,
+                )
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+            if preset_unit is not None:
+                _pick_neural_overload_choice(preset_unit)
+                return
+
+            candidates = context.get("candidates") or []
+            if not candidates and callable(getattr(manager, "_haloscreed_neural_overload_candidates", None)):
+                candidates = list(manager._haloscreed_neural_overload_candidates() or [])
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_pick_neural_overload_choice,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Neural Overload unit.",
+                title="Neural Overload",
+                subtitle="ADEPTUS MECHANICUS unit eligible to gain a HALO OVERRIDE ability this phase.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u in (
+            "AGGRESSIVE IMPULSE",
+            "ANALYTICAL DIVINATION",
+            "ERADICATION PROTOCOLS",
+            "GUIDED RETREAT",
+            "TARGETING OVERRIDE",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+                from ..utility.constants import FightPhase
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "AGGRESSIVE IMPULSE": "_haloscreed_aggressive_impulse_candidates",
+                        "ANALYTICAL DIVINATION": "_haloscreed_analytical_divination_candidates",
+                        "ERADICATION PROTOCOLS": "_haloscreed_phase_buff_candidates",
+                        "GUIDED RETREAT": "_haloscreed_guided_retreat_candidates",
+                        "TARGETING OVERRIDE": "_haloscreed_phase_buff_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        if name_u in ("ERADICATION PROTOCOLS", "TARGETING OVERRIDE"):
+                            phase = getattr(self.game, "current_phase", None)
+                            if isinstance(phase, FightPhase):
+                                candidates = list(getter(require_not_fought=True) or [])
+                            else:
+                                candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "ANALYTICAL DIVINATION":
+                            moving_unit = (
+                                context.get("enemy_unit")
+                                or context.get("moving_unit")
+                                or context.get("attacking_unit")
+                            )
+                            candidates = list(getter(moving_unit=moving_unit) or [])
+                        elif name_u == "GUIDED RETREAT":
+                            candidates = list(
+                                getter(
+                                    unit=context.get("unit") or context.get("target_unit"),
+                                    action=str(context.get("action") or ""),
+                                )
+                                or []
+                            )
+                        else:
+                            candidates = list(getter() or [])
+                subtitle = {
+                    "AGGRESSIVE IMPULSE": "Skorpius Dunerider that has not been selected to move this phase.",
+                    "ANALYTICAL DIVINATION": "ADEPTUS MECHANICUS INFANTRY (excluding KATAPHRON) within 9\" of the enemy mover and not in Engagement Range.",
+                    "ERADICATION PROTOCOLS": "ADEPTUS MECHANICUS unit that has not been selected to shoot or fight this phase.",
+                    "GUIDED RETREAT": "ADEPTUS MECHANICUS unit that just made a Fall Back move.",
+                    "TARGETING OVERRIDE": "ADEPTUS MECHANICUS unit that has not been selected to shoot or fight this phase.",
+                }.get(name_u, "Select an eligible ADEPTUS MECHANICUS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit") or context.get("moving_unit") or context.get("attacking_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u in ("AUTO-ORACULAR RETRIEVAL", "PRIORITY RECLAMATION") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -21397,6 +21547,37 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_haloscreed_neural_overload(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        unit,
+        choice,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Neural Overload: no unit selected")
+            return
+        choice_key = choice
+        if isinstance(choice, dict):
+            choice_key = choice.get("choice_key") or choice.get("override_key")
+        choice_key = str(choice_key or "").strip().upper()
+        if not choice_key:
+            logger.info("Neural Overload: no HALO OVERRIDE ability selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["choice_key"] = choice_key
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")

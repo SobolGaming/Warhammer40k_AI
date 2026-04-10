@@ -18010,6 +18010,14 @@ class KeywordsDetachmentsMixin:
                     reroll_full = True
                     source_name = str(source or "Machine Spirit Resurgent").strip() or "Machine Spirit Resurgent"
                     reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+            haloscreed_reroll_fn = getattr(mgr, "haloscreed_eradication_protocols_hit_reroll_ones", None) if mgr is not None else None
+            if callable(haloscreed_reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = haloscreed_reroll_fn(self, game=game)
+                if bool(applies):
+                    reroll_values.add(1)
+                    source_name = str(source or "Eradication Protocols").strip() or "Eradication Protocols"
+                    reroll_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):
@@ -18439,6 +18447,14 @@ class KeywordsDetachmentsMixin:
                     reroll_full = True
                     source_name = str(source or "Machine Spirit Resurgent").strip() or "Machine Spirit Resurgent"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+            haloscreed_wound_reroll_fn = getattr(mgr, "haloscreed_eradication_protocols_wound_reroll_ones", None) if mgr is not None else None
+            if callable(haloscreed_wound_reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = haloscreed_wound_reroll_fn(self, game=game)
+                if bool(applies):
+                    reroll_values.add(1)
+                    source_name = str(source or "Eradication Protocols").strip() or "Eradication Protocols"
+                    reroll_reasons.append(f"{source_name}: re-roll Wound rolls of 1")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):

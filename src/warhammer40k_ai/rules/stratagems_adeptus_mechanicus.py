@@ -603,6 +603,82 @@ class AdeptusMechanicusStratagemMixin:
             out.append(transport)
         return sorted(out, key=self._admech_sort_key)
 
+    @staticmethod
+    def _admech_unit_name(unit: Any) -> str:
+        return str(getattr(unit, "name", "") or "").strip().upper()
+
+    def _haloscreed_phase_buff_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        if not self._is_haloscreed_battle_clade():
+            return []
+        return self._admech_battlefield_units(
+            require_not_shot=require_not_shot,
+            require_not_fought=require_not_fought,
+        )
+
+    def _haloscreed_neural_overload_candidates(self) -> list[Any]:
+        if not self._is_haloscreed_battle_clade():
+            return []
+        return self._admech_battlefield_units()
+
+    def _haloscreed_aggressive_impulse_candidates(self) -> list[Any]:
+        if not self._is_haloscreed_battle_clade():
+            return []
+        out = [
+            unit
+            for unit in list(self._admech_battlefield_units(require_not_moved=True) or [])
+            if self._admech_unit_name(unit) == "SKORPIUS DUNERIDER"
+        ]
+        return sorted(out, key=self._admech_sort_key)
+
+    def _haloscreed_guided_retreat_candidates(self, *, unit: Any = None, action: str = "") -> list[Any]:
+        if not self._is_haloscreed_battle_clade():
+            return []
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key != "fall_back":
+            return []
+        root = self._admech_root(unit)
+        if root is None:
+            return []
+        if not self._admech_on_battlefield(root) or not self._admech_owned_by_player(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)) or not self._is_adeptus_mechanicus_unit(root):
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return []
+        return [root]
+
+    def _haloscreed_analytical_divination_candidates(self, *, moving_unit: Any = None) -> list[Any]:
+        if not self._is_haloscreed_battle_clade():
+            return []
+        enemy_root = self._admech_root(moving_unit)
+        if enemy_root is None or self._admech_owned_by_player(enemy_root):
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        for root in list(self._admech_battlefield_units() or []):
+            if not self._admech_has_any_keyword(root, "INFANTRY"):
+                continue
+            if self._admech_has_any_keyword(root, "KATAPHRON") or "KATAPHRON" in self._admech_unit_name(root):
+                continue
+            distance = self._admech_distance_between_units(root, enemy_root)
+            if distance is None or distance > 9.0 + 1e-6:
+                continue
+            enemies = list(game_map.get_enemy_units(root) or [])
+            if any(
+                enemy is not None and game_map.is_within_engagement_range(root, enemy)
+                for enemy in enemies
+            ):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
     def _queue_explorator_incense_exhausts_reactions(
         self,
         *,
@@ -777,6 +853,96 @@ class AdeptusMechanicusStratagemMixin:
             payload["unit"] = eligible_primary[0]
             if len(transport_candidates) == 1:
                 payload["transport_unit"] = transport_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_haloscreed_guided_retreat_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_haloscreed_battle_clade():
+            return
+        if self.game is None:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("GUIDED RETREAT")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._haloscreed_guided_retreat_candidates(unit=unit, action=action)
+        if not candidates:
+            return
+        root = candidates[0]
+        if self._admech_effective_cp_cost(stratagem, target_unit=root) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_ended"
+                and reaction.get("stratagem") == stratagem.name
+                and self._admech_root(reaction.get("unit")) is root
+            ):
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "fall_back",
+                "candidates": candidates,
+            }
+        )
+
+    def _queue_haloscreed_analytical_divination_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_haloscreed_battle_clade():
+            return
+        if self.game is None:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"move", "normal_move", "advance", "fall_back"}:
+            return
+        enemy_root = self._admech_root(unit)
+        if enemy_root is None or self._admech_owned_by_player(enemy_root):
+            return
+        stratagem = self.get_by_name("ANALYTICAL DIVINATION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._haloscreed_analytical_divination_candidates(moving_unit=enemy_root)
+        if not candidates:
+            return
+        affordable = [
+            candidate
+            for candidate in list(candidates or [])
+            if self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+        ]
+        if not affordable:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_ended"
+                and reaction.get("stratagem") == stratagem.name
+                and self._admech_root(reaction.get("moving_unit")) is enemy_root
+            ):
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "moving_unit": enemy_root,
+            "action": action_key,
+            "candidates": affordable,
+        }
+        if len(affordable) == 1:
+            payload["unit"] = affordable[0]
+            payload["target_unit"] = affordable[0]
         self._queue_reaction(payload)
 
     def _queue_data_psalm_luminescent_blessing_reactions(
@@ -1495,6 +1661,165 @@ class AdeptusMechanicusStratagemMixin:
             },
         )
 
+    def _mark_haloscreed_phase_effect(
+        self,
+        unit: Any,
+        *,
+        prefix: str,
+        source_name: str,
+        extra_rules: dict[str, Any] | None = None,
+    ) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        mgr = self._get_adeptus_mechanicus_mgr()
+        normalize_phase = getattr(mgr, "_normalize_phase_key", None) if mgr is not None else None
+        raw_phase_name = str(self._current_phase_name or getattr(getattr(self.game, "phase", None), "name", "") or "")
+        if callable(normalize_phase):
+            phase_name = normalize_phase(raw_phase_name)
+        else:
+            phase_name = raw_phase_name.strip().upper().replace("-", "_").replace(" ", "_")
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr[f"{prefix}_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr[f"{prefix}_expires_phase"] = phase_name
+        sr[f"{prefix}_source"] = source_name
+        for key, value in dict(extra_rules or {}).items():
+            sr[key] = value
+        root.special_rules = sr
+
+    def _mark_haloscreed_turn_effect(
+        self,
+        unit: Any,
+        *,
+        prefix: str,
+        source_name: str,
+        extra_rules: dict[str, Any] | None = None,
+    ) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr[f"{prefix}_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr[f"{prefix}_source"] = source_name
+        for key, value in dict(extra_rules or {}).items():
+            sr[key] = value
+        root.special_rules = sr
+
+    def _mark_haloscreed_aggressive_impulse(self, unit: Any, *, source_name: str) -> None:
+        self._mark_haloscreed_phase_effect(
+            unit,
+            prefix="haloscreed_aggressive_impulse",
+            source_name=source_name,
+        )
+
+    def _mark_haloscreed_guided_retreat(self, unit: Any, *, source_name: str) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        self._mark_haloscreed_turn_effect(
+            root,
+            prefix="haloscreed_guided_retreat",
+            source_name=source_name,
+        )
+        mgr = self._get_adeptus_mechanicus_mgr()
+        has_halo_fn = getattr(mgr, "_unit_has_halo_override_keyword", None) if mgr is not None else None
+        if not callable(has_halo_fn) or not bool(has_halo_fn(root)):
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sources = [
+            str(src or "").strip()
+            for src in list(sr.get("unit_reroll_desperate_escape_sources", []) or [])
+            if str(src or "").strip()
+        ]
+        if source_name not in sources:
+            sources.append(source_name)
+        sr["unit_reroll_desperate_escape_tests"] = True
+        sr["unit_reroll_desperate_escape_sources"] = list(dict.fromkeys(sources))
+        sr["haloscreed_guided_retreat_desperate_escape_reroll_granted"] = True
+        root.special_rules = sr
+
+    def _cleanup_adeptus_mechanicus_phase_end_effects(self, *, player=None, phase=None) -> None:
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return
+        mgr = self._get_adeptus_mechanicus_mgr()
+        normalize_phase = getattr(mgr, "_normalize_phase_key", None) if mgr is not None else None
+        raw_phase_name = str(getattr(phase, "name", "") or phase or "")
+        if callable(normalize_phase):
+            phase_name = normalize_phase(raw_phase_name)
+        else:
+            phase_name = raw_phase_name.strip().upper().replace("-", "_").replace(" ", "_")
+        if not phase_name:
+            return
+        clear_cache = getattr(mgr, "_clear_unit_ability_cache", None) if mgr is not None else None
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            updated = dict(sr)
+            changed = False
+            for prefix in (
+                "haloscreed_eradication_protocols",
+                "haloscreed_targeting_override",
+                "haloscreed_aggressive_impulse",
+            ):
+                raw_exp = str(updated.get(f"{prefix}_expires_phase", "") or "")
+                if callable(normalize_phase):
+                    exp = normalize_phase(raw_exp)
+                else:
+                    exp = raw_exp.strip().upper().replace("-", "_").replace(" ", "_")
+                if bool(updated.get(f"{prefix}_active", False)) and (not exp or exp == phase_name):
+                    for key in list(updated.keys()):
+                        if key == f"{prefix}_active" or key.startswith(f"{prefix}_"):
+                            updated.pop(key, None)
+                    changed = True
+            if phase_name == "FIGHT_PHASE" and player is self.player and bool(updated.get("haloscreed_guided_retreat_active", False)):
+                source_name = str(updated.get("haloscreed_guided_retreat_source", "") or "GUIDED RETREAT").strip() or "GUIDED RETREAT"
+                granted_reroll = bool(updated.get("haloscreed_guided_retreat_desperate_escape_reroll_granted", False))
+                for key in list(updated.keys()):
+                    if key == "haloscreed_guided_retreat_active" or key.startswith("haloscreed_guided_retreat_"):
+                        updated.pop(key, None)
+                if granted_reroll:
+                    sources = [
+                        str(src or "").strip()
+                        for src in list(updated.get("unit_reroll_desperate_escape_sources", []) or [])
+                        if str(src or "").strip() and str(src or "").strip().lower() != source_name.lower()
+                    ]
+                    if sources:
+                        updated["unit_reroll_desperate_escape_sources"] = sources
+                        updated["unit_reroll_desperate_escape_tests"] = True
+                    else:
+                        updated.pop("unit_reroll_desperate_escape_sources", None)
+                        updated.pop("unit_reroll_desperate_escape_tests", None)
+                changed = True
+            if changed:
+                root.special_rules = updated
+                if callable(clear_cache):
+                    clear_cache(root)
+                else:
+                    invalidate = getattr(root, "_invalidate_ability_cache", None)
+                    if callable(invalidate):
+                        invalidate()
+
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "BALEFUL HALO":
@@ -1513,12 +1838,20 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_auto_divinatory_targeting(stratagem, **kwargs)
         if name_u == "BENEVOLENCE OF THE OMNISSIAH":
             return self._use_cohort_benevolence_of_the_omnissiah(stratagem, **kwargs)
+        if name_u == "ERADICATION PROTOCOLS":
+            return self._use_haloscreed_eradication_protocols(stratagem, **kwargs)
         if name_u == "AUTO-ORACULAR RETRIEVAL":
             return self._use_explorator_auto_oracular_retrieval(stratagem, **kwargs)
+        if name_u == "AGGRESSIVE IMPULSE":
+            return self._use_haloscreed_aggressive_impulse(stratagem, **kwargs)
+        if name_u == "ANALYTICAL DIVINATION":
+            return self._use_haloscreed_analytical_divination(stratagem, **kwargs)
         if name_u == "CACHED ACQUISITION":
             return self._use_explorator_cached_acquisition(stratagem, **kwargs)
         if name_u == "CHANT OF THE REMORSELESS FIST":
             return self._use_data_psalm_chant_of_the_remorseless_fist(stratagem, **kwargs)
+        if name_u == "GUIDED RETREAT":
+            return self._use_haloscreed_guided_retreat(stratagem, **kwargs)
         if name_u == "INCANTATION OF THE IRON SOUL":
             return self._use_data_psalm_incantation_of_the_iron_soul(stratagem, **kwargs)
         if name_u == "INCENSE EXHAUSTS":
@@ -1535,10 +1868,14 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_machine_superiority(stratagem, **kwargs)
         if name_u == "MOTIVE IMPERATIVE":
             return self._use_cohort_motive_imperative(stratagem, **kwargs)
+        if name_u == "NEURAL OVERLOAD":
+            return self._use_haloscreed_neural_overload(stratagem, **kwargs)
         if name_u == "PRIORITY RECLAMATION":
             return self._use_explorator_priority_reclamation(stratagem, **kwargs)
         if name_u == "REACTIVE SAFEGUARD":
             return self._use_explorator_reactive_safeguard(stratagem, **kwargs)
+        if name_u == "TARGETING OVERRIDE":
+            return self._use_haloscreed_targeting_override(stratagem, **kwargs)
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
             return self._use_data_psalm_tribute_of_emphatic_veneration(stratagem, **kwargs)
         if name_u == "TRANSCENDENT COGITATION":
@@ -1546,6 +1883,306 @@ class AdeptusMechanicusStratagemMixin:
         if name_u == "VERSE OF VENGEANCE":
             return self._use_data_psalm_verse_of_vengeance(stratagem, **kwargs)
         return None
+
+    def _use_haloscreed_eradication_protocols(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: ERADICATION PROTOCOLS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: ERADICATION PROTOCOLS: not your Shooting phase")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: ERADICATION PROTOCOLS: no unit selected")
+            return False
+        if phase_name == "shooting phase":
+            eligible = self._haloscreed_phase_buff_candidates(require_not_shot=True)
+            phase_label = "Shooting phase"
+        else:
+            eligible = self._haloscreed_phase_buff_candidates(require_not_fought=True)
+            phase_label = "Fight phase"
+        if primary not in eligible:
+            logger.error("ERROR: ERADICATION PROTOCOLS: target must be an eligible ADEPTUS MECHANICUS unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_label):
+            logger.error("ERROR: ERADICATION PROTOCOLS: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "ERADICATION PROTOCOLS")
+        self._mark_haloscreed_phase_effect(
+            primary,
+            prefix="haloscreed_eradication_protocols",
+            source_name=source_name,
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ERADICATION PROTOCOLS: %s re-rolls Wound rolls of 1, and gains re-roll Hit rolls of 1 while it has HALO OVERRIDE, until end of phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_haloscreed_targeting_override(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: TARGETING OVERRIDE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: TARGETING OVERRIDE: not your Shooting phase")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: TARGETING OVERRIDE: no unit selected")
+            return False
+        if phase_name == "shooting phase":
+            eligible = self._haloscreed_phase_buff_candidates(require_not_shot=True)
+            phase_label = "Shooting phase"
+        else:
+            eligible = self._haloscreed_phase_buff_candidates(require_not_fought=True)
+            phase_label = "Fight phase"
+        if primary not in eligible:
+            logger.error("ERROR: TARGETING OVERRIDE: target must be an eligible ADEPTUS MECHANICUS unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_label):
+            logger.error("ERROR: TARGETING OVERRIDE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "TARGETING OVERRIDE")
+        self._mark_haloscreed_phase_effect(
+            primary,
+            prefix="haloscreed_targeting_override",
+            source_name=source_name,
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TARGETING OVERRIDE: %s scores a Critical Hit on an unmodified Hit roll of 5+ until end of phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_haloscreed_neural_overload(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: NEURAL OVERLOAD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: NEURAL OVERLOAD: not your turn")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: NEURAL OVERLOAD: no unit selected")
+            return False
+        eligible = self._haloscreed_neural_overload_candidates()
+        if primary not in eligible:
+            logger.error("ERROR: NEURAL OVERLOAD: target must be an eligible ADEPTUS MECHANICUS unit")
+            return False
+        mgr = self._get_adeptus_mechanicus_mgr()
+        normalize_choice = getattr(mgr, "_normalize_noospheric_override_choice_key", None) if mgr is not None else None
+        raw_choice = kwargs.get("choice_key") or kwargs.get("override_key")
+        choice_key = str(raw_choice or "").strip()
+        if isinstance(raw_choice, dict):
+            choice_key = str(raw_choice.get("choice_key", "") or raw_choice.get("override_key", "") or "").strip()
+        choice_key = normalize_choice(choice_key) if callable(normalize_choice) else str(choice_key or "").strip().upper()
+        if not choice_key:
+            logger.error("ERROR: NEURAL OVERLOAD: no HALO OVERRIDE ability selected")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Movement phase"):
+            logger.error("ERROR: NEURAL OVERLOAD: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "NEURAL OVERLOAD")
+        has_halo_fn = getattr(mgr, "_unit_has_halo_override_keyword", None) if mgr is not None else None
+        if callable(has_halo_fn) and bool(has_halo_fn(primary)):
+            mortal_wounds = max(1, int(dice_module.get_roll("D3") or 0))
+            apply_mortal_wounds = getattr(primary, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(primary, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+        is_alive = getattr(primary, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: NEURAL OVERLOAD: %s was destroyed while resolving the overload.",
+                getattr(primary, "name", "Unit"),
+            )
+            return True
+        mark_fn = getattr(mgr, "haloscreed_mark_neural_overload", None) if mgr is not None else None
+        outcome = mark_fn(primary, choice_key=choice_key, source_name=source_name, game=self.game) if callable(mark_fn) else None
+        if outcome is None:
+            logger.error("ERROR: NEURAL OVERLOAD: failed to record selected HALO OVERRIDE ability")
+            return False
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: NEURAL OVERLOAD: %s gains %s until your next Command phase.",
+            getattr(primary, "name", "Unit"),
+            str((outcome or {}).get("choice_label", "") or choice_key.replace("_", " ").title()),
+        )
+        return True
+
+    def _use_haloscreed_aggressive_impulse(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: AGGRESSIVE IMPULSE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AGGRESSIVE IMPULSE: not your turn")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: AGGRESSIVE IMPULSE: no transport selected")
+            return False
+        eligible = self._haloscreed_aggressive_impulse_candidates()
+        if primary not in eligible:
+            logger.error("ERROR: AGGRESSIVE IMPULSE: target must be an eligible Skorpius Dunerider")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Movement phase"):
+            logger.error("ERROR: AGGRESSIVE IMPULSE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "AGGRESSIVE IMPULSE")
+        self._mark_haloscreed_aggressive_impulse(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AGGRESSIVE IMPULSE: units disembarking from %s after it makes a Normal move can declare a charge this turn.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_haloscreed_guided_retreat(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: GUIDED RETREAT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: GUIDED RETREAT: not your turn")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        action = kwargs.get("action")
+        if (unit is None or not action) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GUIDED RETREAT":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not action:
+                    action = reaction.get("action")
+                break
+        candidates = self._haloscreed_guided_retreat_candidates(unit=unit, action=str(action or ""))
+        if not candidates:
+            logger.error("ERROR: GUIDED RETREAT: target must be an ADEPTUS MECHANICUS unit that just fell back")
+            return False
+        primary = candidates[0]
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Movement phase"):
+            logger.error("ERROR: GUIDED RETREAT: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "GUIDED RETREAT")
+        self._mark_haloscreed_guided_retreat(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GUIDED RETREAT: %s can shoot and charge after Falling Back this turn.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_haloscreed_analytical_divination(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_haloscreed_battle_clade():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: ANALYTICAL DIVINATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ANALYTICAL DIVINATION: not opponent's Movement phase")
+            return False
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit") or kwargs.get("attacking_unit")
+        if enemy_unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ANALYTICAL DIVINATION":
+                    continue
+                enemy_unit = reaction.get("moving_unit") or reaction.get("enemy_unit")
+                if enemy_unit is not None:
+                    break
+        enemy_root = self._admech_root(enemy_unit)
+        if enemy_root is None or self._admech_owned_by_player(enemy_root):
+            logger.error("ERROR: ANALYTICAL DIVINATION: moving unit must be an enemy unit")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or self._haloscreed_analytical_divination_candidates(moving_unit=enemy_root))
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: ANALYTICAL DIVINATION: no friendly unit selected")
+            return False
+        eligible = self._haloscreed_analytical_divination_candidates(moving_unit=enemy_root)
+        if primary not in eligible:
+            logger.error("ERROR: ANALYTICAL DIVINATION: target must be an eligible ADEPTUS MECHANICUS INFANTRY unit within 9\" and not in Engagement Range")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: ANALYTICAL DIVINATION: reactive move queue unavailable")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Movement phase"):
+            logger.error("ERROR: ANALYTICAL DIVINATION: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        mgr = self._get_adeptus_mechanicus_mgr()
+        has_halo_fn = getattr(mgr, "_unit_has_halo_override_keyword", None) if mgr is not None else None
+        max_distance = 6 if callable(has_halo_fn) and bool(has_halo_fn(primary)) else max(0, int(dice_module.get_roll("D6") or 0))
+        request = queue_move(
+            player=self.player,
+            unit=primary,
+            max_distance=int(max_distance),
+            kind="haloscreed_analytical_divination",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "ANALYTICAL DIVINATION"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+        )
+        if request is None:
+            logger.error("ERROR: ANALYTICAL DIVINATION: failed to queue reactive move")
+            return False
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANALYTICAL DIVINATION: %s can make a reactive Normal move of up to %d\".",
+            getattr(primary, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
 
     def _use_explorator_auto_oracular_retrieval(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_explorator_maniple():

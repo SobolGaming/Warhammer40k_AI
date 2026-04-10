@@ -45,7 +45,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSIVE ONSLAUGHT",
     "AGGRESSIVE ANTICIPATION",
     "AGGRESSIVE MOBILITY",
+    "AGGRESSIVE IMPULSE",
     "AGGRESSOR IMPERATIVE",
+    "ANALYTICAL DIVINATION",
     "AUTO-ORACULAR RETRIEVAL",
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
@@ -105,6 +107,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EMPEROR'S EXECUTIONERS",
     "EMPEROR'S VENGEANCE",
     "EMPYRIC SEVERANCE",
+    "ERADICATION PROTOCOLS",
     "MACHINE SPIRIT RESURGENT",
     "MACHINE SUPERIORITY",
     "FLAWLESS CONSTRUCTION",
@@ -114,11 +117,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFOSLAVE SKULL",
     "LITANY OF THE ELECTROMANCER",
     "LUMINESCENT BLESSING",
+    "NEURAL OVERLOAD",
     "PUNISHMENT INESCAPABLE",
     "RELENTLESS PERSECUTION",
     "SHIELD OF HONOUR",
+    "GUIDED RETREAT",
     "TALONED PINCER",
     "TALONS INTERLOCKED",
+    "TARGETING OVERRIDE",
     "TRIBUTE OF EMPHATIC VENERATION",
     "TRANSCENDENT COGITATION",
     "UNSTOPPABLE",
@@ -2978,6 +2984,7 @@ class StratagemManager(
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
+            "AGGRESSIVE IMPULSE",
             "AGGRESSOR IMPERATIVE",
             "A TRAP WELL LAID",
             "CONDEMNATORY INFO-SCREED",
@@ -3009,6 +3016,8 @@ class StratagemManager(
             "FRENZIED RESILIENCE",
             "DEFIANT TO THE LAST",
             "CRUCIBLE OF BATTLE",
+            "ERADICATION PROTOCOLS",
+            "GUIDED RETREAT",
             "ONSLAUGHT OF FIRE",
             "FLESHY AVALANCHE",
             "RELENTLESS GRIND",
@@ -3016,6 +3025,7 @@ class StratagemManager(
             "HIDDEN AMONGST THE DEAD",
             "SHAMBLING WALL",
             "SMEARED WITH FILTH",
+            "TARGETING OVERRIDE",
             "STINKING MIRE",
             "FEINT AND THRUST",
             "MOBILE LETHALITY",
@@ -6285,6 +6295,29 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires SKITARII unit on the battlefield that has not been selected to move this phase"
             return result
+        if name_u == "AGGRESSIVE IMPULSE":
+            if self._haloscreed_aggressive_impulse_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a Skorpius Dunerider on the battlefield that has not been selected to move this phase"
+            return result
+        if name_u == "ANALYTICAL DIVINATION":
+            moving_unit = context.get("moving_unit") or context.get("enemy_unit") or context.get("attacking_unit")
+            if moving_unit is not None and self._haloscreed_analytical_divination_candidates(moving_unit=moving_unit):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ANALYTICAL DIVINATION":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires an enemy unit to finish a Normal, Advance, or Fall Back move within 9\" of an eligible ADEPTUS MECHANICUS INFANTRY unit"
+            return result
         if name_u == "AUTO-DIVINATORY TARGETING":
             source_unit = context.get("target_unit") or context.get("unit")
             candidate_units = (
@@ -6308,6 +6341,21 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that disembarked from a Transport this turn"
+            return result
+        if name_u == "ERADICATION PROTOCOLS":
+            phase_name = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name == "fight phase":
+                if self._haloscreed_phase_buff_candidates(require_not_fought=True):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+                result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to fight this phase"
+                return result
+            if self._haloscreed_phase_buff_candidates(require_not_shot=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
             return result
         if name_u == "BALEFUL HALO":
             target_units = list(context.get("target_units") or context.get("candidates") or [])
@@ -6415,6 +6463,23 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a mortal wound to be allocated to a CULT MECHANICUS unit this phase"
             return result
+        if name_u == "GUIDED RETREAT":
+            selected_unit = context.get("target_unit") or context.get("unit")
+            action = context.get("action") or "fall_back"
+            if selected_unit is not None and self._haloscreed_guided_retreat_candidates(unit=selected_unit, action=action):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GUIDED RETREAT":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires an ADEPTUS MECHANICUS unit from your army to have just made a Fall Back move"
+            return result
         if name_u == "LITANY OF THE ELECTROMANCER":
             if self._data_psalm_cult_mechanicus_primary_candidates():
                 result["available"] = True
@@ -6440,6 +6505,13 @@ class StratagemManager(
                     result["reason"] = None
                     return result
             result["reason"] = "Requires CULT MECHANICUS unit selected as a target of an enemy Shooting attack"
+            return result
+        if name_u == "NEURAL OVERLOAD":
+            if self._haloscreed_neural_overload_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an ADEPTUS MECHANICUS unit on the battlefield during your Movement phase"
             return result
         if name_u == "INFOSLAVE SKULL":
             source_unit = context.get("target_unit") or context.get("unit")
@@ -6542,6 +6614,21 @@ class StratagemManager(
                     result["reason"] = None
                     return result
             result["reason"] = "Requires an ADEPTUS MECHANICUS INFANTRY charge target within an Acquisition objective and a friendly TRANSPORT within 3\""
+            return result
+        if name_u == "TARGETING OVERRIDE":
+            phase_name = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name == "fight phase":
+                if self._haloscreed_phase_buff_candidates(require_not_fought=True):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+                result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to fight this phase"
+                return result
+            if self._haloscreed_phase_buff_candidates(require_not_shot=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
             return result
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
             source_unit = context.get("target_unit") or context.get("unit")
@@ -8690,21 +8777,27 @@ class StratagemManager(
             "SWARM-GUIDED SALVOES": "Shooting phase: target your TYRANIDS MONSTER unit that has not been selected to shoot; its ranged weapons gain [IGNORES COVER] and it can ignore Ballistic Skill and Hit roll modifiers this phase",
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
+            "AGGRESSIVE IMPULSE": "Target: SKORPIUS DUNERIDER that has not been selected to move; units disembarking from it after it makes a Normal move can still declare a charge this turn",
+            "ANALYTICAL DIVINATION": "Opponent Movement phase reaction after an enemy unit finishes a move: target your ADEPTUS MECHANICUS INFANTRY unit within 9\" and not in Engagement Range; it makes a reactive Normal move up to D6\", or 6\" if it has HALO OVERRIDE",
             "AUTO-ORACULAR RETRIEVAL": "Target: ADEPTUS MECHANICUS unit that disembarked from a TRANSPORT this turn; its ranged attacks gain +1 to wound against targets within an Acquisition objective this phase",
             "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "CHANT OF THE REMORSELESS FIST": "Target: CULT MECHANICUS unit that has not been selected to fight this phase; its melee attacks gain +1 to wound until end of phase",
             "BULWARK IMPERATIVE": "Target: SKITARII unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "CACHED ACQUISITION": "Target: just-destroyed ADEPTUS MECHANICUS unit within a controlled objective marker; selected objective remains sticky until your opponent controls it",
+            "ERADICATION PROTOCOLS": "Shooting or Fight phase: target your ADEPTUS MECHANICUS unit that has not yet been selected; it re-rolls Wound rolls of 1, and if it has HALO OVERRIDE it also re-rolls Hit rolls of 1, until end of phase",
             "INCANTATION OF THE IRON SOUL": "Any phase, just after a mortal wound is allocated: target CULT MECHANICUS unit; its models gain Feel No Pain 4+ against mortal wounds until end of phase",
             "INCENSE EXHAUSTS": "Target: ADEPTUS MECHANICUS INFANTRY unit selected as a target of an enemy Shooting attack and a friendly SMOKE unit within 6\"; both gain Stealth and Benefit of Cover until end of phase",
             "INFOSLAVE SKULL": "Target: one TECH-PRIEST model and one non-Acquisition objective marker within 24\" of it; that marker also counts as an Acquisition objective until your next Command phase",
             "EXTINCTION ORDER": "Target: one TECH-PRIEST model and one objective marker within 24\" of it",
+            "GUIDED RETREAT": "Movement phase, just after your ADEPTUS MECHANICUS unit Falls Back: it can shoot and charge this turn, and if it has HALO OVERRIDE it can re-roll Desperate Escape tests until end of turn",
             "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "LITANY OF THE ELECTROMANCER": "Target: CULT MECHANICUS unit; roll for each enemy unit within 6\" and on 5+ deal D3 mortal wounds (+1 to the roll for ELECTRO-PRIESTS)",
             "LUMINESCENT BLESSING": "Target: CULT MECHANICUS unit selected as a target of an enemy Shooting attack; its models gain a 4+ invulnerable save until end of phase",
+            "NEURAL OVERLOAD": "Movement phase: target your ADEPTUS MECHANICUS unit; select one HALO OVERRIDE ability for it until your next Command phase, and if it already has HALO OVERRIDE it suffers D3 mortal wounds",
             "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "PRIORITY RECLAMATION": "Fight phase, just before an ADEPTUS MECHANICUS unit consolidates: it can Consolidate up to 6\" this phase, provided it ends within an Acquisition objective",
             "REACTIVE SAFEGUARD": "Opponent Charge phase reaction after an enemy unit declares a charge: selected ADEPTUS MECHANICUS INFANTRY unit within an Acquisition objective can embark within a friendly TRANSPORT within 3\"",
+            "TARGETING OVERRIDE": "Shooting or Fight phase: target your ADEPTUS MECHANICUS unit that has not yet been selected; unmodified Hit rolls of 5+ score Critical Hits until end of phase",
             "TRIBUTE OF EMPHATIC VENERATION": "Target: one CULT MECHANICUS unit and one enemy unit within 18\" of it; enemy takes a Battle-shock test and, on a failure, its attacks are -1 to hit until your next Command phase",
             "VERSE OF VENGEANCE": "Target: CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought; destroyed models in that unit fight on death on 4+ this phase",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
@@ -10938,6 +11031,10 @@ class StratagemManager(
                     game=self.game,
                     battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
                 )
+        except Exception:
+            raise
+        try:
+            self._cleanup_adeptus_mechanicus_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -13264,6 +13361,8 @@ class StratagemManager(
         self._queue_hammer_blazing_advance_reactions(unit=unit, action=action)
         self._queue_hammer_tactical_withdrawal_reactions(unit=unit, action=action)
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
+        self._queue_haloscreed_guided_retreat_reactions(unit=unit, action=action)
+        self._queue_haloscreed_analytical_divination_reactions(unit=unit, action=action)
         self._queue_recon_draw_them_out_reactions(unit=unit, action=action)
         self._queue_genestealer_cults_outlander_move_end_reactions(unit=unit, action=action)
         self._queue_brotherhood_strike_move_end_reactions(unit=unit, action=action)

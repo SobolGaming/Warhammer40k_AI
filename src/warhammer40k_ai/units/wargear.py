@@ -17409,6 +17409,20 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            threshold_fn = getattr(adm_mgr, "haloscreed_targeting_override_crit_hit_threshold", None) if adm_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                threshold, source = threshold_fn(attacker, weapon_profile=self, game=game)
+                if int(threshold or 0):
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    source_name = str(source or "Targeting Override").strip() or "Targeting Override"
+                    crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
             drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
             threshold_fn = getattr(drukhari_mgr, "kabalite_tailored_toxins_crit_hit_threshold", None) if drukhari_mgr is not None else None
             if callable(threshold_fn):

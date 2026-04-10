@@ -4552,6 +4552,35 @@ class ShootingMixin:
                 if turn and current_turn and turn != current_turn:
                     return overrides
             overrides["allow_charge_after_normal_move"] = True
+        if isinstance(tsr, dict) and tsr.get("haloscreed_aggressive_impulse_active"):
+            impulse_active = True
+            exp = str(tsr.get("haloscreed_aggressive_impulse_expires_phase", "") or "").strip().upper()
+            if exp:
+                try:
+                    phase = getattr(game, "phase", None)
+                    phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                if phase_name and phase_name != exp:
+                    impulse_active = False
+            owner = str(tsr.get("haloscreed_aggressive_impulse_turn_owner", "") or "")
+            turn = int(tsr.get("haloscreed_aggressive_impulse_turn", 0) or 0)
+            if impulse_active and game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    impulse_active = False
+                if turn and current_turn and turn != current_turn:
+                    impulse_active = False
+            if impulse_active:
+                overrides["allow_charge_after_normal_move"] = True
         return overrides
 
     def _apply_aggressive_deployment_scouts(self, transport_unit: Optional['Unit'] = None) -> None:

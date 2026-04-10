@@ -10070,6 +10070,21 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not valid:
             return (str(reason or "Noospheric Transference override selection is not legal."),)
         return ()
+    if ability == "haloscreed_neural_overload_choice":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip()
+        if not choice_key:
+            return ("Neural Overload requires choice_key.",)
+        allowed_keys = {
+            str(val or "").strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val or "").strip()
+        }
+        if allowed_keys and str(choice_key).strip().upper() not in allowed_keys:
+            return ("Neural Overload choice is not an eligible candidate.",)
+        return ()
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return ("Rad-bombardment cannot be skipped.",)
@@ -19298,6 +19313,15 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Noospheric Transference: selected {label} for friendly HALO OVERRIDE units until your next Command phase.",
             )
         return outcome
+    if ability == "haloscreed_neural_overload_choice":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip().upper()
+        if not choice_key:
+            return None
+        label = str(payload.get("choice_label", "") or choice_key.replace("_", " ").title()).strip()
+        return {"choice_key": choice_key, "choice_label": label}
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return None

@@ -19955,6 +19955,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, profile=profile, game=game)):
                     return True
+            guided_retreat_fn = getattr(mgr, "haloscreed_guided_retreat_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(guided_retreat_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(guided_retreat_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()
@@ -21034,6 +21039,16 @@ class ActionsMovementMixin:
                 turn_key="space_marines_angelic_host_death_from_the_skies_turn",
             ):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            guided_retreat_fn = getattr(mgr, "haloscreed_guided_retreat_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(guided_retreat_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(guided_retreat_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         return self._has_simple_eligibility_rule([

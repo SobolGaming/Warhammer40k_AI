@@ -36,6 +36,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _HALOSCREED_COGNITIVE_SOURCE = "Cognitive Reinforcement"
     _HALOSCREED_SANCTIFIED_SOURCE = "Sanctified Ordnance"
     _HALOSCREED_INLOADED_SOURCE = "Inloaded Lethality"
+    _HALOSCREED_NEURAL_OVERLOAD_SOURCE = "Neural Overload"
     _NOOSPHERIC_ELECTROMOTIVE_KEY = "ELECTROMOTIVE_ENERGISATION"
     _NOOSPHERIC_MICROACTUATOR_KEY = "MICROACTUATOR_BRACING"
     _NOOSPHERIC_PREDATION_KEY = "PREDATION_PROTOCOLS"
@@ -124,6 +125,36 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._SKITARII_HUNTER_COHORT_NAME)
+
+    @staticmethod
+    def _clear_prefixed_special_rules(sr: dict[str, object], prefix: str) -> None:
+        for key in list(sr.keys()):
+            if key == f"{prefix}_active" or key.startswith(f"{prefix}_"):
+                sr.pop(key, None)
+
+    @staticmethod
+    def _clear_unit_ability_cache(unit) -> None:
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None) if unit is not None else None
+        if callable(get_root):
+            root = get_root()
+        if root is None:
+            return
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+        else:
+            cache = getattr(root, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.clear()
+                root._ability_cache = cache
+        invalidate_activity = getattr(root, "_invalidate_ability_activity_cache", None)
+        if callable(invalidate_activity):
+            invalidate_activity()
+
+    @staticmethod
+    def _normalize_phase_key(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace("-", "_").replace(" ", "_")
 
     @classmethod
     def _normalize_data_psalm_choice_key(cls, choice_key: str) -> str:
@@ -2255,11 +2286,21 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
+            had_flags = any(
+                key in sr
+                for key in (
+                    self._NOOSPHERIC_ACTIVE_FLAG_KEY,
+                    self._NOOSPHERIC_SOURCE_FLAG_KEY,
+                    self._NOOSPHERIC_OVERRIDE_FLAG_KEY,
+                )
+            )
             updated = dict(sr)
             updated.pop(self._NOOSPHERIC_ACTIVE_FLAG_KEY, None)
             updated.pop(self._NOOSPHERIC_SOURCE_FLAG_KEY, None)
             updated.pop(self._NOOSPHERIC_OVERRIDE_FLAG_KEY, None)
             root.special_rules = updated
+            if had_flags:
+                self._clear_unit_ability_cache(root)
 
     def _apply_noospheric_flags_to_selected_units(self) -> None:
         self._clear_noospheric_flags_on_army_units()
@@ -2289,6 +2330,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             else:
                 updated.pop(self._NOOSPHERIC_OVERRIDE_FLAG_KEY, None)
             root.special_rules = updated
+            self._clear_unit_ability_cache(root)
 
     def clear_noospheric_transference_state(self) -> None:
         self.active_noospheric_unit_ids = []
@@ -2625,37 +2667,284 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False
         return str(self.active_noospheric_override_key or "").strip().upper() == normalized
 
+    def _haloscreed_timed_effect_source(self, unit, *, prefix: str, game=None) -> str:
+        if not self.is_haloscreed_battle_clade():
+            return ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return ""
+        gm = game
+        if gm is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            gm = getattr(owner, "game", None) if owner is not None else None
+        if gm is not None:
+            expected_phase = self._normalize_phase_key(str(sr.get(f"{prefix}_expires_phase", "") or ""))
+            if expected_phase:
+                phase_name = self._normalize_phase_key(str(getattr(getattr(gm, "phase", None), "name", "") or ""))
+                if phase_name and phase_name != expected_phase:
+                    return ""
+            owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+            current_player = getattr(gm, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if not expected_phase and owner_id and current_owner_id and owner_id != current_owner_id:
+                return ""
+            try:
+                turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            try:
+                current_turn = int(getattr(gm, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if turn and current_turn and turn != current_turn:
+                return ""
+        return str(sr.get(f"{prefix}_source", "") or prefix.replace("_", " ").title()).strip() or prefix.replace("_", " ").title()
+
+    def _haloscreed_clear_neural_overload_effect(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        if not bool(sr.get("haloscreed_neural_overload_active", False)):
+            return
+        updated = dict(sr)
+        self._clear_prefixed_special_rules(updated, "haloscreed_neural_overload")
+        root.special_rules = updated
+        self._clear_unit_ability_cache(root)
+
+    def _clear_expired_haloscreed_neural_overload_state(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> None:
+        if not self.is_haloscreed_battle_clade() or self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if owner is None or player is not owner:
+            return
+        try:
+            current_round = int(battle_round or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if current_round <= 0:
+            return
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("haloscreed_neural_overload_active", False)):
+                continue
+            effect_owner = str(sr.get("haloscreed_neural_overload_turn_owner", "") or "")
+            if effect_owner and effect_owner != str(getattr(owner, "id", "") or ""):
+                continue
+            try:
+                expires_round = int(sr.get("haloscreed_neural_overload_expires_round", 0) or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if expires_round and current_round >= expires_round:
+                self._haloscreed_clear_neural_overload_effect(root)
+
+    def _haloscreed_neural_overload_choice_for_unit(self, unit, *, game=None) -> tuple[str, str]:
+        if not self.is_haloscreed_battle_clade():
+            return "", ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return "", ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("haloscreed_neural_overload_active", False)):
+            return "", ""
+        normalized = self._normalize_noospheric_override_choice_key(
+            str(sr.get("haloscreed_neural_overload_override_key", "") or "")
+        )
+        if not normalized:
+            return "", ""
+        gm = game
+        if gm is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            gm = getattr(owner, "game", None) if owner is not None else None
+        if gm is not None:
+            try:
+                current_round = int(getattr(gm, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            try:
+                expires_round = int(sr.get("haloscreed_neural_overload_expires_round", 0) or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if expires_round and current_round >= expires_round:
+                phase_name = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+                owner_id = str(sr.get("haloscreed_neural_overload_turn_owner", "") or "")
+                current_player = getattr(gm, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(current_player, "id", "") or "")
+                if current_round > expires_round or (phase_name == "COMMAND_PHASE" and owner_id and owner_id == current_owner_id):
+                    self._haloscreed_clear_neural_overload_effect(root)
+                    return "", ""
+        source_name = str(
+            sr.get("haloscreed_neural_overload_source", "") or self._HALOSCREED_NEURAL_OVERLOAD_SOURCE
+        ).strip() or self._HALOSCREED_NEURAL_OVERLOAD_SOURCE
+        return normalized, source_name
+
+    def haloscreed_active_override_keys(self, unit, *, game=None) -> tuple[str, ...]:
+        if not self.is_haloscreed_battle_clade():
+            return ()
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return ()
+        ordered_keys = [key for key, _label in self.noospheric_override_choices()]
+        has_halo_override = self._unit_has_halo_override_keyword(root)
+        neural_key, _source_name = self._haloscreed_neural_overload_choice_for_unit(root, game=game)
+        if not has_halo_override:
+            return (neural_key,) if neural_key else ()
+        active: set[str] = set()
+        global_key = self._normalize_noospheric_override_choice_key(self.active_noospheric_override_key)
+        if global_key:
+            active.add(global_key)
+        if neural_key:
+            active.add(neural_key)
+        return tuple(key for key in ordered_keys if key in active)
+
+    def haloscreed_override_source_for_unit(self, unit, choice_key: str, *, game=None) -> str:
+        normalized = self._normalize_noospheric_override_choice_key(choice_key)
+        if not normalized:
+            return ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return ""
+        has_halo_override = self._unit_has_halo_override_keyword(root)
+        neural_key, neural_source = self._haloscreed_neural_overload_choice_for_unit(root, game=game)
+        if not has_halo_override and neural_key == normalized:
+            return neural_source
+        global_key = self._normalize_noospheric_override_choice_key(self.active_noospheric_override_key)
+        if global_key == normalized:
+            return self._NOOSPHERIC_SOURCE
+        if neural_key == normalized:
+            return neural_source
+        return ""
+
+    def haloscreed_mark_neural_overload(
+        self,
+        unit,
+        *,
+        choice_key: str,
+        source_name: str,
+        game=None,
+    ) -> dict[str, object] | None:
+        if not self.is_haloscreed_battle_clade():
+            return None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        normalized = self._normalize_noospheric_override_choice_key(choice_key)
+        if not normalized:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        try:
+            current_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_round = 0
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        updated["haloscreed_neural_overload_active"] = True
+        updated["haloscreed_neural_overload_override_key"] = normalized
+        updated["haloscreed_neural_overload_turn_owner"] = str(getattr(owner, "id", "") or "")
+        updated["haloscreed_neural_overload_turn"] = int(current_round)
+        updated["haloscreed_neural_overload_started_round"] = int(current_round)
+        updated["haloscreed_neural_overload_expires_round"] = int(current_round + 1) if current_round > 0 else 0
+        updated["haloscreed_neural_overload_source"] = str(source_name or self._HALOSCREED_NEURAL_OVERLOAD_SOURCE)
+        root.special_rules = updated
+        self._clear_unit_ability_cache(root)
+        labels = {key: label for key, label in self.noospheric_override_choices()}
+        return {
+            "choice_key": normalized,
+            "choice_label": str(labels.get(normalized, normalized.replace("_", " ").title())),
+            "source": str(source_name or self._HALOSCREED_NEURAL_OVERLOAD_SOURCE),
+        }
+
     def noospheric_transference_movement_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if model is None:
             return 0, ""
-        if not self._noospheric_override_active(self._NOOSPHERIC_ELECTROMOTIVE_KEY):
-            return 0, ""
         source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
-        if not self._unit_selected_for_noospheric(source_unit):
+        if self._NOOSPHERIC_ELECTROMOTIVE_KEY not in self.haloscreed_active_override_keys(source_unit):
             return 0, ""
-        return 2, f"{self._NOOSPHERIC_SOURCE} (Electromotive Energisation)"
+        source_name = self.haloscreed_override_source_for_unit(source_unit, self._NOOSPHERIC_ELECTROMOTIVE_KEY)
+        return 2, f"{source_name or self._NOOSPHERIC_SOURCE} (Electromotive Energisation)"
 
     def noospheric_transference_toughness_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if model is None:
             return 0, ""
-        if not self._noospheric_override_active(self._NOOSPHERIC_MICROACTUATOR_KEY):
-            return 0, ""
         source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
-        if not self._unit_selected_for_noospheric(source_unit):
+        if self._NOOSPHERIC_MICROACTUATOR_KEY not in self.haloscreed_active_override_keys(source_unit):
             return 0, ""
-        return 1, f"{self._NOOSPHERIC_SOURCE} (Microactuator Bracing)"
+        source_name = self.haloscreed_override_source_for_unit(source_unit, self._NOOSPHERIC_MICROACTUATOR_KEY)
+        return 1, f"{source_name or self._NOOSPHERIC_SOURCE} (Microactuator Bracing)"
 
     def noospheric_transference_charge_after_advance_applies(self, unit, *, game=None) -> bool:
-        _ = game
-        if not self._noospheric_override_active(self._NOOSPHERIC_PREDATION_KEY):
-            return False
-        return self._unit_selected_for_noospheric(unit)
+        return self._NOOSPHERIC_PREDATION_KEY in self.haloscreed_active_override_keys(unit, game=game)
 
     def noospheric_transference_stealth_applies(self, unit, *, game=None) -> bool:
-        _ = game
-        if not self._noospheric_override_active(self._NOOSPHERIC_MUTED_KEY):
-            return False
-        return self._unit_selected_for_noospheric(unit)
+        return self._NOOSPHERIC_MUTED_KEY in self.haloscreed_active_override_keys(unit, game=game)
+
+    def haloscreed_eradication_protocols_hit_reroll_ones(self, unit, *, game=None) -> tuple[bool, str]:
+        source_name = self._haloscreed_timed_effect_source(
+            unit,
+            prefix="haloscreed_eradication_protocols",
+            game=game,
+        )
+        if not source_name:
+            return False, ""
+        if not self._unit_has_halo_override_keyword(unit):
+            return False, ""
+        return True, source_name
+
+    def haloscreed_eradication_protocols_wound_reroll_ones(self, unit, *, game=None) -> tuple[bool, str]:
+        source_name = self._haloscreed_timed_effect_source(
+            unit,
+            prefix="haloscreed_eradication_protocols",
+            game=game,
+        )
+        return (bool(source_name), source_name)
+
+    def haloscreed_targeting_override_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        source_name = self._haloscreed_timed_effect_source(
+            attacker_unit,
+            prefix="haloscreed_targeting_override",
+            game=game,
+        )
+        if not source_name:
+            return 0, ""
+        return 5, source_name
+
+    def haloscreed_guided_retreat_can_shoot_after_fall_back(self, unit, *, game=None) -> bool:
+        return bool(self._haloscreed_timed_effect_source(unit, prefix="haloscreed_guided_retreat", game=game))
+
+    def haloscreed_guided_retreat_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        return bool(self._haloscreed_timed_effect_source(unit, prefix="haloscreed_guided_retreat", game=game))
+
+    def haloscreed_guided_retreat_reroll_desperate_escape_tests(self, unit, *, game=None) -> tuple[bool, str]:
+        source_name = self._haloscreed_timed_effect_source(unit, prefix="haloscreed_guided_retreat", game=game)
+        if not source_name:
+            return False, ""
+        if not self._unit_has_halo_override_keyword(unit):
+            return False, ""
+        return True, source_name
 
     def haloscreed_transoracular_halo_override_applies(self, unit) -> bool:
         root = self._attached_root(unit)
@@ -3954,6 +4243,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if self.is_cohort_cybernetica():
             self._cleanup_expired_cohort_cybernetica_command_phase_effects(game=game)
         if self.is_haloscreed_battle_clade():
+            self._clear_expired_haloscreed_neural_overload_state(
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+            )
             self.queue_noospheric_unit_selection_request(
                 game=game,
                 player=player,
