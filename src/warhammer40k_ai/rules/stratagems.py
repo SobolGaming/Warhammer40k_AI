@@ -58,6 +58,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLAZING ADVANCE",
     "BLAZING IRE",
     "BENEVOLENCE OF THE OMNISSIAH",
+    "BINHARIC OFFENCE",
+    "BIONIC ENDURANCE",
     "CHANT OF THE REMORSELESS FIST",
     "CACHED ACQUISITION",
     "CLEANSING FLAMES",
@@ -108,6 +110,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EMPEROR'S VENGEANCE",
     "EMPYRIC SEVERANCE",
     "ERADICATION PROTOCOLS",
+    "EXPEDITED PURGE PROTOCOL",
     "MACHINE SPIRIT RESURGENT",
     "MACHINE SUPERIORITY",
     "FLAWLESS CONSTRUCTION",
@@ -115,11 +118,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INCANTATION OF THE IRON SOUL",
     "INCENSE EXHAUSTS",
     "INFOSLAVE SKULL",
+    "ISOLATE AND DESTROY",
     "LITANY OF THE ELECTROMANCER",
     "LUMINESCENT BLESSING",
     "NEURAL OVERLOAD",
     "PUNISHMENT INESCAPABLE",
+    "PROGRAMMED WITHDRAWAL",
     "RELENTLESS PERSECUTION",
+    "SHROUD PROTOCOLS",
     "SHIELD OF HONOUR",
     "GUIDED RETREAT",
     "TALONED PINCER",
@@ -9983,6 +9989,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_skitarii_hunter_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_tyranids_invasion_fleet_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
@@ -11031,6 +11041,10 @@ class StratagemManager(
                     game=self.game,
                     battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
                 )
+        except Exception:
+            raise
+        try:
+            self._queue_skitarii_hunter_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -14754,6 +14768,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_skitarii_hunter_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_veterans_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -16372,6 +16393,13 @@ class StratagemManager(
             raise
         try:
             self._queue_data_psalm_verse_of_vengeance_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_skitarii_hunter_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

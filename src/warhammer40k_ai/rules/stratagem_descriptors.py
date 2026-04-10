@@ -4228,6 +4228,73 @@ _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SKITARII_HUNTER_COHORT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008561002": StratagemToolDescriptor(
+        stratagem_id="000008561002",
+        name="Bionic Endurance",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="friendly_sicarian_pteraxii_or_sydonian_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain_value": 5},
+    ),
+    "000008561003": StratagemToolDescriptor(
+        stratagem_id="000008561003",
+        name="Binharic Offence",
+        timing="shooting_or_fight_phase_start",
+        target="two_skitarii_units_not_yet_selected_to_shoot_or_fight_and_one_enemy_unit",
+        duration="until_end_of_phase",
+        effect="paired_units_ap_bonus",
+        cp_cost=2,
+        effect_params={"ap_bonus": 1, "selected_units": 2},
+    ),
+    "000008561004": StratagemToolDescriptor(
+        stratagem_id="000008561004",
+        name="Expedited Purge Protocol",
+        timing="your_charge_phase",
+        target="one_skitarii_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+        effect_params={"charge_after_advance": True},
+    ),
+    "000008561005": StratagemToolDescriptor(
+        stratagem_id="000008561005",
+        name="Isolate and Destroy",
+        timing="your_shooting_phase",
+        target="eligible_sicarian_pteraxii_sydonian_ironstrider_ballistarii_or_skitarii_mounted_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="conditional_ranged_wound_bonus_vs_isolated_target",
+        cp_cost=1,
+        effect_params={"wound_bonus": 1, "attack_type": "ranged", "isolation_range": 6.0},
+    ),
+    "000008561006": StratagemToolDescriptor(
+        stratagem_id="000008561006",
+        name="Shroud Protocols",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="friendly_skitarii_infantry_unit_selected_as_ranged_target",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        effect_params={"max_targeting_distance": 18, "attack_type": "ranged"},
+    ),
+    "000008561007": StratagemToolDescriptor(
+        stratagem_id="000008561007",
+        name="Programmed Withdrawal",
+        timing="opponent_fight_phase_end",
+        target="up_to_two_sicarian_units_or_one_skitarii_infantry_or_mounted_unit",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={"max_units": 2},
+    ),
+}
+
+_SKITARII_HUNTER_COHORT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SKITARII_HUNTER_COHORT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009746002": StratagemToolDescriptor(
         stratagem_id="000009746002",
@@ -14167,6 +14234,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SKITARII_HUNTER_COHORT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14591,6 +14661,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COHORT_CYBERNETICA_STRATAGEM_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME.get(key)
+        or _SKITARII_HUNTER_COHORT_STRATAGEM_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)

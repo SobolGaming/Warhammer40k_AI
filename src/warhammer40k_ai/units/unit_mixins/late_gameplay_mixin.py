@@ -4709,6 +4709,17 @@ class LateGameplayMixin:
             dist, source = deadly_limit_fn(root, game=game)
             if float(dist or 0.0) > 0.0:
                 _consider(float(dist), source or "Deadly Deceivers")
+        admech_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        shroud_limit_fn = (
+            getattr(admech_mgr, "skitarii_hunter_shroud_protocols_range_limit", None)
+            if admech_mgr is not None
+            else None
+        )
+        if callable(shroud_limit_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            dist, source = shroud_limit_fn(root, game=game)
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "SHROUD PROTOCOLS")
 
         try:
             sr = getattr(root, "special_rules", None)

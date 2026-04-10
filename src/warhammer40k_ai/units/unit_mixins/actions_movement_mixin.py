@@ -20514,6 +20514,20 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            apply_fn = (
+                getattr(mgr, "skitarii_hunter_expedited_purge_protocol_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
             twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_charge_after_advance", None) if mgr is not None else None
             if callable(twisted_apply_fn):

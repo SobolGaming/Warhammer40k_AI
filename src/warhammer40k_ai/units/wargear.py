@@ -3602,6 +3602,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "skitarii_hunter_binharic_offence_ap_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)
                 if outcast_source:
@@ -19948,6 +19965,25 @@ class WargearProfile:
                     source_name = str(source or "Armoured Fist").strip() or "Armoured Fist"
                     dice_modifier += int(bonus)
                     wound_result['modifiers'].append(f"+{int(bonus)} to wound from {source_name}")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "skitarii_hunter_isolate_and_destroy_wound_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                wound_bonus, wound_source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(wound_bonus or 0):
+                    source_name = str(wound_source or "Isolate and Destroy").strip() or "Isolate and Destroy"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
         except Exception:
             pass
         unit = getattr(attacker, "parent_unit", None)

@@ -1656,6 +1656,8 @@ class GameView:
             subtitle: Optional[str] = None,
             instruction: Optional[str] = None,
             skip_label: Optional[str] = None,
+            context: Optional[dict] = None,
+            prompt: Optional[str] = None,
         ):
             from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
             from ..engine.decisions import DecisionOption, DecisionRequest
@@ -1681,9 +1683,10 @@ class GameView:
                 "max_units": int(max_units or 2),
                 "outside_shadow_unit_ids": [str(v) for v in list(outside_ids or []) if v is not None],
             }
+            ctx.update(dict(context or {}))
             req = _require_pending_decision_request(game_ctx,
                 DECISION_SELECT_REALM_OF_CHAOS_UNITS,
-                "Select up to two LEGIONES DAEMONICA units.",
+                str(prompt or "Select up to two LEGIONES DAEMONICA units."),
                 player_id=getattr(player, "id", None),
                 options=options,
                 context=ctx,
@@ -19806,6 +19809,195 @@ class GameView:
             )
             return
 
+        if name_u == "BINHARIC OFFENCE" and not (
+            "units" in context
+            or "target_units" in context
+            or "selected_units" in context
+            or "unit" in context
+            or "target_unit" in context
+        ):
+            if not callable(getattr(self, "_resolve_option_selection_dialog", None)) or not callable(
+                getattr(self, "_resolve_unit_selection_dialog", None)
+            ):
+                return
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_SELECT_OVERWATCH_SHOOTER
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            phase = getattr(self.game, "current_phase", None)
+            phase_name = str(context.get("phase_name") or getattr(phase, "name", "") or "")
+            pair_options = []
+            try:
+                getter = getattr(manager, "_skitarii_hunter_binharic_pair_options", None)
+                if callable(getter):
+                    pair_options = list(getter(phase_name=phase_name) or [])
+            except Exception:
+                pair_options = []
+            choice_options = []
+            candidate_unit_ids = []
+            for pair in list(pair_options or []):
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                    continue
+                primary, secondary = pair
+                primary_id = str(get_entity_id(primary) or "")
+                secondary_id = str(get_entity_id(secondary) or "")
+                if not primary_id or not secondary_id:
+                    continue
+                choice_options.append(
+                    DecisionOption.create(
+                        f"{getattr(primary, 'name', 'Unit')} + {getattr(secondary, 'name', 'Unit')}",
+                        payload={"selected_unit_ids": [primary_id, secondary_id]},
+                    )
+                )
+                candidate_unit_ids.extend([primary_id, secondary_id])
+            if not choice_options:
+                logger.info("Binharic Offence: no eligible SKITARII pairs available")
+                return
+
+            def _after_pair(choice):
+                if choice is None:
+                    logger.info("Binharic Offence: no units selected")
+                    return
+                selected_unit_ids = []
+                if isinstance(choice, dict):
+                    selected_unit_ids = list(choice.get("selected_unit_ids") or [])
+                elif isinstance(choice, (list, tuple)):
+                    selected_unit_ids = [
+                        str(get_entity_id(item) or "")
+                        for item in list(choice or [])
+                        if get_entity_id(item)
+                    ]
+                selected_units = []
+                for unit_id in list(selected_unit_ids or []):
+                    unit = self._resolve_unit_by_id(str(unit_id or ""))
+                    if unit is None:
+                        continue
+                    selected_units.append(unit)
+                if len(selected_units) != 2:
+                    logger.info("Binharic Offence: invalid SKITARII pair selection")
+                    return
+                enemy_candidates = list(context.get("enemy_candidates") or [])
+                if not enemy_candidates:
+                    try:
+                        enemy_getter = getattr(manager, "_admech_enemy_battlefield_units", None)
+                        if callable(enemy_getter):
+                            enemy_candidates = list(enemy_getter() or [])
+                    except Exception:
+                        enemy_candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_units_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        selected_units,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Binharic Offence enemy unit.",
+                    title="Binharic Offence",
+                    subtitle="Enemy unit on the battlefield.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            self._resolve_option_selection_dialog(
+                player=player,
+                options=choice_options,
+                on_chosen=_after_pair,
+                decision_type=DECISION_CHOOSE_QUARRY,
+                prompt="Select two eligible SKITARII units for Binharic Offence.",
+                title="Binharic Offence",
+                header="Choose two SKITARII units",
+                subtitle="Select exactly two eligible SKITARII units that have not been selected this phase.",
+                context={
+                    "ability": "skitarii_hunter_binharic_offence_pair",
+                    "ability_name": "Binharic Offence",
+                    "candidate_unit_ids": sorted(set(candidate_unit_ids)),
+                    "max_selections": 2,
+                    "optional": True,
+                },
+                allow_skip=True,
+            )
+            return
+
+        if name_u in (
+            "BIONIC ENDURANCE",
+            "EXPEDITED PURGE PROTOCOL",
+            "ISOLATE AND DESTROY",
+            "SHROUD PROTOCOLS",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "BIONIC ENDURANCE": "_skitarii_hunter_bionic_endurance_candidates",
+                        "EXPEDITED PURGE PROTOCOL": "_skitarii_hunter_expedited_purge_protocol_candidates",
+                        "ISOLATE AND DESTROY": "_skitarii_hunter_isolate_and_destroy_candidates",
+                        "SHROUD PROTOCOLS": "_skitarii_hunter_shroud_protocols_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            if name_u in ("BIONIC ENDURANCE", "SHROUD PROTOCOLS"):
+                                candidates = list(getter(target_units=list(context.get("target_units") or [])) or [])
+                            else:
+                                candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "BIONIC ENDURANCE": "SICARIAN, PTERAXII or SYDONIAN unit selected as a target of the attack.",
+                    "EXPEDITED PURGE PROTOCOL": "SKITARII unit from your army.",
+                    "ISOLATE AND DESTROY": "Eligible SICARIAN, PTERAXII, SYDONIAN, IRONSTRIDER BALLISTARII or SKITARII MOUNTED unit.",
+                    "SHROUD PROTOCOLS": "SKITARII INFANTRY unit selected as a target of the attack.",
+                }.get(name_u, "Select an eligible SKITARII HUNTER COHORT unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "PROGRAMMED WITHDRAWAL" and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                candidates = context.get("candidates") or []
+                if not candidates and callable(getattr(manager, "_skitarii_hunter_programmed_withdrawal_candidates", None)):
+                    try:
+                        candidates = list(manager._skitarii_hunter_programmed_withdrawal_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda units: self._finalize_multi_unit_stratagem(player, name, context, units),
+                    max_units=2,
+                    title=name,
+                    subtitle="Select up to two SICARIAN units, or one SKITARII INFANTRY or SKITARII MOUNTED unit.",
+                    instruction="Choose eligible unit(s) to place into Strategic Reserves, then confirm or skip.",
+                    context={
+                        "ability": "skitarii_hunter_programmed_withdrawal",
+                        "ability_name": "Programmed Withdrawal",
+                        "phase": "End of opponent's Fight phase",
+                        "optional": True,
+                    },
+                    prompt="Select unit(s) for Programmed Withdrawal.",
+                )
+            return
+
         if name_u in (
             "AGGRESSIVE IMPULSE",
             "ANALYTICAL DIVINATION",
@@ -21609,6 +21801,39 @@ class GameView:
             ctx["target_unit"] = selected_units[0]
         if spend_pain_token is not None:
             ctx["spend_pain_token"] = bool(spend_pain_token)
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_units_and_enemy_stratagem(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        units,
+        enemy_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        selected_units = [unit for unit in list(units or []) if unit is not None]
+        if not selected_units or enemy_unit is None:
+            logger.info(f"{name}: missing unit or enemy selection")
+            return
+        ctx = dict(context)
+        ctx["units"] = list(selected_units)
+        ctx["selected_units"] = list(selected_units)
+        ctx["target_units"] = list(selected_units)
+        if len(selected_units) >= 1:
+            ctx["unit"] = selected_units[0]
+            ctx["target_unit"] = selected_units[0]
+        if len(selected_units) >= 2:
+            ctx["secondary_unit"] = selected_units[1]
+            ctx["support_unit"] = selected_units[1]
+        ctx["enemy_unit"] = enemy_unit
+        ctx["target_enemy_unit"] = enemy_unit
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")

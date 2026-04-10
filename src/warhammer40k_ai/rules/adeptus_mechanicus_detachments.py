@@ -3659,6 +3659,120 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, f"{self._STEALTH_OPTIMISATION_SOURCE} (Sicarian cover beyond 12\")"
 
+    def _skitarii_hunter_phase_effect_source(self, unit, *, prefix: str, game=None) -> str:
+        if not self.is_skitarii_hunter_cohort():
+            return ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return ""
+        gm = game
+        if gm is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            gm = getattr(owner, "game", None) if owner is not None else None
+        if gm is not None:
+            expected_phase = self._normalize_phase_key(str(sr.get(f"{prefix}_expires_phase", "") or ""))
+            if expected_phase:
+                phase_name = self._normalize_phase_key(str(getattr(getattr(gm, "phase", None), "name", "") or ""))
+                if phase_name and phase_name != expected_phase:
+                    return ""
+            try:
+                effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(gm, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return ""
+        return str(sr.get(f"{prefix}_source", "") or prefix.replace("_", " ").title()).strip() or prefix.replace("_", " ").title()
+
+    def skitarii_hunter_binharic_offence_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = target_unit
+        _ = weapon_profile
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        source_name = self._skitarii_hunter_phase_effect_source(
+            attacker_unit,
+            prefix="skitarii_hunter_binharic_offence",
+            game=game,
+        )
+        if not source_name:
+            return 0, ""
+        return 1, source_name
+
+    def skitarii_hunter_expedited_purge_protocol_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        return bool(
+            self._skitarii_hunter_phase_effect_source(
+                unit,
+                prefix="skitarii_hunter_expedited_purge_protocol",
+                game=game,
+            )
+        )
+
+    def skitarii_hunter_isolate_and_destroy_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._weapon_is_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        source_name = self._skitarii_hunter_phase_effect_source(
+            attacker_unit,
+            prefix="skitarii_hunter_isolate_and_destroy",
+            game=game,
+        )
+        if not source_name:
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        gm = game
+        if gm is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            gm = getattr(owner, "game", None) if owner is not None else None
+        game_map = getattr(gm, "map", None) if gm is not None else None
+        if game_map is None:
+            return 0, ""
+        enemy_player = getattr(getattr(target_root, "get_parent_army", lambda: None)(), "player", None)
+        for other_root in self._iter_player_unit_roots(enemy_player):
+            if other_root is target_root or not self._unit_is_on_battlefield(other_root):
+                continue
+            try:
+                distance = float(game_map.get_distance_between_units(target_root, other_root))
+            except (TypeError, ValueError):
+                continue
+            if distance <= 6.0 + 1e-6:
+                return 0, ""
+        return 1, source_name
+
+    def skitarii_hunter_shroud_protocols_range_limit(self, unit, *, game=None) -> tuple[float, str]:
+        source_name = self._skitarii_hunter_phase_effect_source(
+            unit,
+            prefix="skitarii_hunter_shroud_protocols",
+            game=game,
+        )
+        if not source_name:
+            return 0.0, ""
+        return 18.0, source_name
+
     def emanatus_force_field_invulnerable_save(
         self,
         target_model,

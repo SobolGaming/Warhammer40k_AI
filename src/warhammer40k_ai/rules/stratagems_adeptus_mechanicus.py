@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import combinations
 from typing import Any, Optional
 
 import logging
@@ -652,6 +653,165 @@ class AdeptusMechanicusStratagemMixin:
             return []
         return [root]
 
+    def _admech_enemy_battlefield_units(self) -> list[Any]:
+        if self.game is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for player in list(getattr(self.game, "players", []) or []):
+            if player is None or player is self.player:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._admech_root(unit)
+                if root is None or not self._admech_on_battlefield(root):
+                    continue
+                uid = self._admech_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _skitarii_hunter_is_infantry_or_mounted_skitarii(self, unit: Any) -> bool:
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        return self._is_skitarii_unit(root) and (
+            self._admech_has_any_keyword(root, "INFANTRY") or self._admech_has_any_keyword(root, "MOUNTED")
+        )
+
+    def _skitarii_hunter_is_sicarian(self, unit: Any) -> bool:
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        return self._admech_has_any_keyword(root, "SICARIAN") or "SICARIAN" in self._admech_unit_name(root)
+
+    def _skitarii_hunter_is_pteraxii_or_sydonian(self, unit: Any) -> bool:
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        return self._admech_has_any_keyword(root, "PTERAXII") or self._admech_has_any_keyword(root, "SYDONIAN")
+
+    def _skitarii_hunter_is_ironstrider_ballistarii(self, unit: Any) -> bool:
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        return "IRONSTRIDER BALLISTARII" in self._admech_unit_name(root)
+
+    def _skitarii_hunter_binharic_candidates(self, *, phase_name: str = "") -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        phase_key = str(phase_name or self._current_phase_name or "").strip().lower()
+        require_not_shot = phase_key == "shooting phase"
+        require_not_fought = phase_key == "fight phase"
+        return self._admech_battlefield_units(
+            require_not_shot=require_not_shot,
+            require_not_fought=require_not_fought,
+            require_skitarii=True,
+        )
+
+    def _skitarii_hunter_bionic_endurance_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None or not self._admech_owned_by_player(root) or not self._admech_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not (
+                self._skitarii_hunter_is_sicarian(root)
+                or self._skitarii_hunter_is_pteraxii_or_sydonian(root)
+            ):
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _skitarii_hunter_expedited_purge_protocol_candidates(self) -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        return self._admech_battlefield_units(require_skitarii=True)
+
+    def _skitarii_hunter_isolate_and_destroy_candidates(self) -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        out: list[Any] = []
+        for root in list(self._admech_battlefield_units(require_not_shot=True) or []):
+            if (
+                self._skitarii_hunter_is_sicarian(root)
+                or self._skitarii_hunter_is_pteraxii_or_sydonian(root)
+                or self._skitarii_hunter_is_ironstrider_ballistarii(root)
+                or (self._is_skitarii_unit(root) and self._admech_has_any_keyword(root, "MOUNTED"))
+            ):
+                out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _skitarii_hunter_shroud_protocols_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None or not self._admech_owned_by_player(root) or not self._admech_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._skitarii_hunter_is_infantry_or_mounted_skitarii(root):
+                continue
+            if not self._admech_has_any_keyword(root, "INFANTRY"):
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _skitarii_hunter_programmed_withdrawal_candidates(self) -> list[Any]:
+        if not self._is_skitarii_hunter_cohort():
+            return []
+        out: list[Any] = []
+        for root in list(self._admech_battlefield_units() or []):
+            if self._skitarii_hunter_is_sicarian(root) or self._skitarii_hunter_is_infantry_or_mounted_skitarii(root):
+                out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _skitarii_hunter_programmed_withdrawal_valid_units(self, units: list[Any] | None = None) -> list[Any]:
+        selected: list[Any] = []
+        seen: set[str] = set()
+        eligible = {self._admech_sort_key(unit): unit for unit in self._skitarii_hunter_programmed_withdrawal_candidates()}
+        for unit in list(units or []):
+            root = self._admech_root(unit)
+            uid = self._admech_sort_key(root)
+            if root is None or not uid or uid in seen or uid not in eligible:
+                return []
+            seen.add(uid)
+            selected.append(eligible[uid])
+        if not selected or len(selected) > 2:
+            return []
+        if len(selected) == 2:
+            if not all(self._skitarii_hunter_is_sicarian(unit) for unit in selected):
+                return []
+        return selected
+
+    def _skitarii_hunter_binharic_pair_options(self, *, phase_name: str = "") -> list[tuple[Any, Any]]:
+        candidates = list(self._skitarii_hunter_binharic_candidates(phase_name=phase_name) or [])
+        return list(combinations(candidates, 2))
+
     def _haloscreed_analytical_divination_candidates(self, *, moving_unit: Any = None) -> list[Any]:
         if not self._is_haloscreed_battle_clade():
             return []
@@ -944,6 +1104,191 @@ class AdeptusMechanicusStratagemMixin:
             payload["unit"] = affordable[0]
             payload["target_unit"] = affordable[0]
         self._queue_reaction(payload)
+
+    def _queue_skitarii_hunter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_skitarii_hunter_cohort() or self.game is None or player is not self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        stratagem = self.get_by_name("BINHARIC OFFENCE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        pair_options = list(self._skitarii_hunter_binharic_pair_options(phase_name="Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase") or [])
+        enemy_candidates = list(self._admech_enemy_battlefield_units() or [])
+        if not pair_options or not enemy_candidates:
+            return
+        if self._admech_effective_cp_cost(stratagem, target_unit=pair_options[0][0]) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if reaction.get("event") == "phase_start" and reaction.get("stratagem") == stratagem.name:
+                return
+        self._queue_reaction(
+            {
+                "event": "phase_start",
+                "phase_name": "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(self._skitarii_hunter_binharic_candidates(
+                    phase_name="Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
+                ) or []),
+                "enemy_candidates": enemy_candidates,
+            },
+            use_timer=False,
+        )
+
+    def _queue_skitarii_hunter_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any] | None = None,
+    ) -> None:
+        if not self._is_skitarii_hunter_cohort() or attacking_unit is None:
+            return
+
+        bionic = self.get_by_name("BIONIC ENDURANCE")
+        if bionic is not None and (bionic.name or "").strip().upper() not in self._used_stratagems_this_phase:
+            candidates = self._skitarii_hunter_bionic_endurance_candidates(target_units=target_units)
+            if candidates:
+                affordable = any(
+                    self._admech_effective_cp_cost(bionic, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+                    for candidate in list(candidates)
+                )
+                if affordable:
+                    duplicate = False
+                    for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                        if (
+                            reaction.get("event") == "shooting_targets_selected"
+                            and reaction.get("stratagem") == bionic.name
+                            and reaction.get("attacking_unit") is attacking_unit
+                        ):
+                            duplicate = True
+                            break
+                    if not duplicate:
+                        payload = {
+                            "event": "shooting_targets_selected",
+                            "phase_name": "Shooting phase",
+                            "stratagem": bionic.name,
+                            "cp_cost": bionic.cp_cost,
+                            "attacking_unit": attacking_unit,
+                            "target_units": list(target_units or []),
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload)
+
+        shroud = self.get_by_name("SHROUD PROTOCOLS")
+        if shroud is None or (shroud.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._skitarii_hunter_shroud_protocols_candidates(target_units=target_units)
+        if not candidates:
+            return
+        affordable = any(
+            self._admech_effective_cp_cost(shroud, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+            for candidate in list(candidates)
+        )
+        if not affordable:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and reaction.get("stratagem") == shroud.name
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": shroud.name,
+            "cp_cost": shroud.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_skitarii_hunter_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any] | None = None,
+    ) -> None:
+        if not self._is_skitarii_hunter_cohort() or attacking_unit is None:
+            return
+        stratagem = self.get_by_name("BIONIC ENDURANCE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._skitarii_hunter_bionic_endurance_candidates(target_units=target_units)
+        if not candidates:
+            return
+        affordable = any(
+            self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+            for candidate in list(candidates)
+        )
+        if not affordable:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and reaction.get("stratagem") == stratagem.name
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_skitarii_hunter_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_skitarii_hunter_cohort() or self.game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if player is self.player or phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("PROGRAMMED WITHDRAWAL")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = list(self._skitarii_hunter_programmed_withdrawal_candidates() or [])
+        if not candidates:
+            return
+        if self._admech_effective_cp_cost(stratagem, target_unit=candidates[0]) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if reaction.get("event") == "phase_end" and reaction.get("stratagem") == stratagem.name:
+                return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "max_units": 2,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_data_psalm_luminescent_blessing_reactions(
         self,
@@ -1334,6 +1679,32 @@ class AdeptusMechanicusStratagemMixin:
             return None
         return self._admech_root(resolver(value_id))
 
+    def _admech_resolve_units_from_kwargs(self, kwargs: dict[str, Any], *keys: str) -> list[Any]:
+        resolved: list[Any] = []
+        seen: set[str] = set()
+        resolver = getattr(self.game, "_resolve_unit_by_id", None) if self.game is not None else None
+        for key in keys:
+            value = kwargs.get(key)
+            values = list(value) if isinstance(value, (list, tuple, set)) else ([value] if value is not None else [])
+            if not values:
+                value_ids = kwargs.get(f"{key}_ids")
+                if isinstance(value_ids, (list, tuple, set)):
+                    for value_id in list(value_ids):
+                        if not callable(resolver):
+                            continue
+                        candidate = resolver(str(value_id or ""))
+                        if candidate is not None:
+                            values.append(candidate)
+            for item in values:
+                root = self._admech_root(item)
+                uid = self._admech_sort_key(root)
+                if root is None or (uid and uid in seen):
+                    continue
+                if uid:
+                    seen.add(uid)
+                resolved.append(root)
+        return resolved
+
     def _admech_resolve_objective_from_kwargs(self, kwargs: dict[str, Any]) -> Any:
         objective = kwargs.get("objective") or kwargs.get("objective_marker")
         if objective is not None:
@@ -1454,6 +1825,37 @@ class AdeptusMechanicusStratagemMixin:
                 "source": source_name,
             },
         )
+
+    def _mark_skitarii_hunter_phase_effect(
+        self,
+        unit: Any,
+        *,
+        prefix: str,
+        source_name: str,
+        extra_rules: dict[str, Any] | None = None,
+    ) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        mgr = self._get_adeptus_mechanicus_mgr()
+        normalize_phase = getattr(mgr, "_normalize_phase_key", None) if mgr is not None else None
+        raw_phase_name = str(self._current_phase_name or getattr(getattr(self.game, "phase", None), "name", "") or "")
+        if callable(normalize_phase):
+            phase_name = normalize_phase(raw_phase_name)
+        else:
+            phase_name = raw_phase_name.strip().upper().replace("-", "_").replace(" ", "_")
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_turn_owner"] = str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or "")
+        sr[f"{prefix}_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr[f"{prefix}_expires_phase"] = phase_name
+        sr[f"{prefix}_source"] = source_name
+        for key, value in dict(extra_rules or {}).items():
+            sr[key] = value
+        root.special_rules = sr
 
     def _mark_data_psalm_phase_effect(
         self,
@@ -1781,6 +2183,10 @@ class AdeptusMechanicusStratagemMixin:
                 "haloscreed_eradication_protocols",
                 "haloscreed_targeting_override",
                 "haloscreed_aggressive_impulse",
+                "skitarii_hunter_binharic_offence",
+                "skitarii_hunter_expedited_purge_protocol",
+                "skitarii_hunter_isolate_and_destroy",
+                "skitarii_hunter_shroud_protocols",
             ):
                 raw_exp = str(updated.get(f"{prefix}_expires_phase", "") or "")
                 if callable(normalize_phase):
@@ -1838,8 +2244,14 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_auto_divinatory_targeting(stratagem, **kwargs)
         if name_u == "BENEVOLENCE OF THE OMNISSIAH":
             return self._use_cohort_benevolence_of_the_omnissiah(stratagem, **kwargs)
+        if name_u == "BINHARIC OFFENCE":
+            return self._use_skitarii_hunter_binharic_offence(stratagem, **kwargs)
+        if name_u == "BIONIC ENDURANCE":
+            return self._use_skitarii_hunter_bionic_endurance(stratagem, **kwargs)
         if name_u == "ERADICATION PROTOCOLS":
             return self._use_haloscreed_eradication_protocols(stratagem, **kwargs)
+        if name_u == "EXPEDITED PURGE PROTOCOL":
+            return self._use_skitarii_hunter_expedited_purge_protocol(stratagem, **kwargs)
         if name_u == "AUTO-ORACULAR RETRIEVAL":
             return self._use_explorator_auto_oracular_retrieval(stratagem, **kwargs)
         if name_u == "AGGRESSIVE IMPULSE":
@@ -1858,6 +2270,8 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_explorator_incense_exhausts(stratagem, **kwargs)
         if name_u == "INFOSLAVE SKULL":
             return self._use_explorator_infoslave_skull(stratagem, **kwargs)
+        if name_u == "ISOLATE AND DESTROY":
+            return self._use_skitarii_hunter_isolate_and_destroy(stratagem, **kwargs)
         if name_u == "LITANY OF THE ELECTROMANCER":
             return self._use_data_psalm_litany_of_the_electromancer(stratagem, **kwargs)
         if name_u == "LUMINESCENT BLESSING":
@@ -1870,10 +2284,14 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_motive_imperative(stratagem, **kwargs)
         if name_u == "NEURAL OVERLOAD":
             return self._use_haloscreed_neural_overload(stratagem, **kwargs)
+        if name_u == "PROGRAMMED WITHDRAWAL":
+            return self._use_skitarii_hunter_programmed_withdrawal(stratagem, **kwargs)
         if name_u == "PRIORITY RECLAMATION":
             return self._use_explorator_priority_reclamation(stratagem, **kwargs)
         if name_u == "REACTIVE SAFEGUARD":
             return self._use_explorator_reactive_safeguard(stratagem, **kwargs)
+        if name_u == "SHROUD PROTOCOLS":
+            return self._use_skitarii_hunter_shroud_protocols(stratagem, **kwargs)
         if name_u == "TARGETING OVERRIDE":
             return self._use_haloscreed_targeting_override(stratagem, **kwargs)
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
@@ -1883,6 +2301,382 @@ class AdeptusMechanicusStratagemMixin:
         if name_u == "VERSE OF VENGEANCE":
             return self._use_data_psalm_verse_of_vengeance(stratagem, **kwargs)
         return None
+
+    def _use_skitarii_hunter_binharic_offence(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: BINHARIC OFFENCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: BINHARIC OFFENCE: not your Shooting phase")
+            return False
+
+        selected_units = self._admech_resolve_units_from_kwargs(kwargs, "selected_units", "units")
+        if not selected_units:
+            primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+            secondary = self._admech_resolve_unit_from_kwargs(kwargs, key="secondary_unit", fallback_key="support_unit")
+            selected_units = [unit for unit in [primary, secondary] if unit is not None]
+        enemy_unit = self._admech_resolve_unit_from_kwargs(kwargs, key="enemy_unit", fallback_key="target_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        if (len(selected_units) < 2 or enemy_unit is None) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BINHARIC OFFENCE":
+                    continue
+                if len(selected_units) < 2:
+                    selected_units = self._admech_resolve_units_from_kwargs(reaction, "selected_units", "units")
+                    if not selected_units and len(list(reaction.get("candidates") or [])) == 2:
+                        selected_units = [self._admech_root(unit) for unit in list(reaction.get("candidates") or [])]
+                if not enemy_candidates:
+                    enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                if enemy_unit is None:
+                    enemy_unit = self._admech_root(reaction.get("enemy_unit") or reaction.get("target_enemy_unit"))
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        eligible = list(self._skitarii_hunter_binharic_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        ) or [])
+        eligible_ids = {self._admech_sort_key(unit) for unit in eligible}
+        selected = []
+        seen: set[str] = set()
+        for unit in list(selected_units or []):
+            root = self._admech_root(unit)
+            uid = self._admech_sort_key(root)
+            if root is None or not uid or uid in seen:
+                continue
+            seen.add(uid)
+            selected.append(root)
+        if len(selected) != 2 or any(self._admech_sort_key(unit) not in eligible_ids for unit in selected):
+            logger.error("ERROR: BINHARIC OFFENCE: select exactly two eligible SKITARII units")
+            return False
+        if not enemy_candidates:
+            enemy_candidates = list(self._admech_enemy_battlefield_units() or [])
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if enemy_unit is None:
+            logger.error("ERROR: BINHARIC OFFENCE: no enemy unit selected")
+            return False
+        enemy_root = self._admech_root(enemy_unit)
+        if enemy_root not in list(enemy_candidates):
+            logger.error("ERROR: BINHARIC OFFENCE: enemy must be an eligible enemy unit on the battlefield")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=selected[0],
+            target_unit=selected[0],
+            enemy_unit=enemy_root,
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+        ):
+            logger.error("ERROR: BINHARIC OFFENCE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=selected[0]):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "BINHARIC OFFENCE")
+        for unit in selected:
+            self._mark_skitarii_hunter_phase_effect(
+                unit,
+                prefix="skitarii_hunter_binharic_offence",
+                source_name=source_name,
+            )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BINHARIC OFFENCE: %s and %s improve their weapon Armour Penetration by 1 this phase.",
+            getattr(selected[0], "name", "Unit"),
+            getattr(selected[1], "name", "Unit"),
+        )
+        return True
+
+    def _use_skitarii_hunter_bionic_endurance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: BIONIC ENDURANCE: wrong phase")
+            return False
+
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if not target_units:
+            target_units = list(candidates)
+        if (attacking_unit is None or not target_units) and getattr(self, "_pending_reactions", None):
+            for reaction in reversed(list(self._pending_reactions or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BIONIC ENDURANCE":
+                    continue
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or reaction.get("candidates") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if attacking_unit is not None:
+            get_parent_army = getattr(attacking_unit, "get_parent_army", None)
+            parent_army = get_parent_army() if callable(get_parent_army) else getattr(attacking_unit, "parent_army", None)
+            if getattr(parent_army, "player", None) is self.player:
+                logger.error("ERROR: BIONIC ENDURANCE: attacker is not enemy")
+                return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._skitarii_hunter_bionic_endurance_candidates(target_units=target_units)
+        if not eligible_primary and candidates:
+            eligible_primary = self._skitarii_hunter_bionic_endurance_candidates(target_units=candidates)
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: BIONIC ENDURANCE: no eligible SICARIAN, PTERAXII or SYDONIAN unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error("ERROR: BIONIC ENDURANCE: target must be an eligible unit selected as an attack target")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacking_unit,
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+        ):
+            logger.error("ERROR: BIONIC ENDURANCE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        self._append_defensive_effect(
+            primary,
+            "defensive_fnp_overrides",
+            {
+                "value": 5,
+                "attack_type": "any",
+                "attacker_key": "",
+                "expires_phase": "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE",
+                "source": str(getattr(stratagem, "name", "") or "BIONIC ENDURANCE"),
+            },
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BIONIC ENDURANCE: %s gains Feel No Pain 5+ until end of phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_skitarii_hunter_expedited_purge_protocol(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: EXPEDITED PURGE PROTOCOL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EXPEDITED PURGE PROTOCOL: not your Charge phase")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: EXPEDITED PURGE PROTOCOL: no SKITARII unit selected")
+            return False
+        eligible = self._skitarii_hunter_expedited_purge_protocol_candidates()
+        if primary not in eligible:
+            logger.error("ERROR: EXPEDITED PURGE PROTOCOL: target must be an eligible SKITARII unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Charge phase"):
+            logger.error("ERROR: EXPEDITED PURGE PROTOCOL: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        self._mark_skitarii_hunter_phase_effect(
+            primary,
+            prefix="skitarii_hunter_expedited_purge_protocol",
+            source_name=str(getattr(stratagem, "name", "") or "EXPEDITED PURGE PROTOCOL"),
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXPEDITED PURGE PROTOCOL: %s can declare a charge this phase after Advancing.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_skitarii_hunter_isolate_and_destroy(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ISOLATE AND DESTROY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ISOLATE AND DESTROY: not your Shooting phase")
+            return False
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: ISOLATE AND DESTROY: no eligible unit selected")
+            return False
+        eligible = self._skitarii_hunter_isolate_and_destroy_candidates()
+        if primary not in eligible:
+            logger.error("ERROR: ISOLATE AND DESTROY: target must be an eligible SICARIAN, PTERAXII, SYDONIAN, IRONSTRIDER BALLISTARII or SKITARII MOUNTED unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Shooting phase"):
+            logger.error("ERROR: ISOLATE AND DESTROY: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        self._mark_skitarii_hunter_phase_effect(
+            primary,
+            prefix="skitarii_hunter_isolate_and_destroy",
+            source_name=str(getattr(stratagem, "name", "") or "ISOLATE AND DESTROY"),
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ISOLATE AND DESTROY: %s gains +1 to wound against isolated targets this phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_skitarii_hunter_programmed_withdrawal(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort() or self.game is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PROGRAMMED WITHDRAWAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: PROGRAMMED WITHDRAWAL: only usable at the end of your opponent's Fight phase")
+            return False
+        selected_units = self._admech_resolve_units_from_kwargs(kwargs, "selected_units", "units")
+        if not selected_units:
+            primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+            if primary is not None:
+                selected_units = [primary]
+        candidates = list(kwargs.get("candidates") or [])
+        if not selected_units and len(candidates) == 1:
+            selected_units = [self._admech_root(candidates[0])]
+        if not selected_units and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PROGRAMMED WITHDRAWAL":
+                    continue
+                selected_units = self._admech_resolve_units_from_kwargs(reaction, "selected_units", "units")
+                if not selected_units and len(list(reaction.get("candidates") or [])) == 1:
+                    selected_units = [self._admech_root(list(reaction.get("candidates") or [])[0])]
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        valid_units = self._skitarii_hunter_programmed_withdrawal_valid_units(selected_units)
+        if not valid_units:
+            logger.error("ERROR: PROGRAMMED WITHDRAWAL: select up to two SICARIAN units, or one SKITARII INFANTRY or SKITARII MOUNTED unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=valid_units[0], target_unit=valid_units[0], phase_name="Fight phase"):
+            logger.error("ERROR: PROGRAMMED WITHDRAWAL: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=valid_units[0]):
+            return False
+        place_helpers = []
+        for unit in list(valid_units):
+            place_fn = getattr(unit, "enter_strategic_reserves_midgame", None)
+            if not callable(place_fn):
+                logger.error("ERROR: PROGRAMMED WITHDRAWAL: Strategic Reserves placement helper unavailable")
+                return False
+            place_helpers.append((unit, place_fn))
+        for unit, place_fn in place_helpers:
+            if not bool(place_fn(game=self.game, game_map=getattr(self.game, "map", None), reason=stratagem.name)):
+                logger.error(
+                    "ERROR: PROGRAMMED WITHDRAWAL: failed to place %s into Strategic Reserves",
+                    getattr(unit, "name", "Unit"),
+                )
+                return False
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PROGRAMMED WITHDRAWAL: %s enter Strategic Reserves.",
+            ", ".join(str(getattr(unit, "name", "Unit")) for unit in list(valid_units)),
+        )
+        return True
+
+    def _use_skitarii_hunter_shroud_protocols(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_skitarii_hunter_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SHROUD PROTOCOLS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SHROUD PROTOCOLS: not opponent's Shooting phase")
+            return False
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if not target_units:
+            target_units = list(candidates)
+        if (attacking_unit is None or not target_units) and getattr(self, "_pending_reactions", None):
+            for reaction in reversed(list(self._pending_reactions or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SHROUD PROTOCOLS":
+                    continue
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or reaction.get("candidates") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if attacking_unit is not None:
+            get_parent_army = getattr(attacking_unit, "get_parent_army", None)
+            parent_army = get_parent_army() if callable(get_parent_army) else getattr(attacking_unit, "parent_army", None)
+            if getattr(parent_army, "player", None) is self.player:
+                logger.error("ERROR: SHROUD PROTOCOLS: attacker is not enemy")
+                return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._skitarii_hunter_shroud_protocols_candidates(target_units=target_units)
+        if not eligible_primary and candidates:
+            eligible_primary = self._skitarii_hunter_shroud_protocols_candidates(target_units=candidates)
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: SHROUD PROTOCOLS: no eligible SKITARII INFANTRY unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error("ERROR: SHROUD PROTOCOLS: target must be an eligible SKITARII INFANTRY unit selected as a shooting target")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacking_unit,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: SHROUD PROTOCOLS: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        self._mark_skitarii_hunter_phase_effect(
+            primary,
+            prefix="skitarii_hunter_shroud_protocols",
+            source_name=str(getattr(stratagem, "name", "") or "SHROUD PROTOCOLS"),
+            extra_rules={"skitarii_hunter_shroud_protocols_targeting_range": 18},
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHROUD PROTOCOLS: %s can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
 
     def _use_haloscreed_eradication_protocols(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_haloscreed_battle_clade():
