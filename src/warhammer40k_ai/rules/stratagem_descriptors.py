@@ -4160,6 +4160,74 @@ _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DATA_PSALM_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008569002": StratagemToolDescriptor(
+        stratagem_id="000008569002",
+        name="Cached Acquisition",
+        timing="any_phase_after_friendly_unit_destroyed",
+        target="destroyed_adeptus_mechanicus_unit_and_controlled_objective_within_range",
+        duration="until_opponent_controls_objective",
+        effect="objective_marker_sticky_control_on_destroyed_unit",
+        cp_cost=1,
+    ),
+    "000008569003": StratagemToolDescriptor(
+        stratagem_id="000008569003",
+        name="Priority Reclamation",
+        timing="fight_phase_before_consolidate",
+        target="adeptus_mechanicus_unit_before_consolidate",
+        duration="until_end_of_phase",
+        effect="consolidate_distance_override_with_acquisition_objective_end_requirement",
+        cp_cost=1,
+        effect_params={"consolidate_distance": 6.0},
+    ),
+    "000008569004": StratagemToolDescriptor(
+        stratagem_id="000008569004",
+        name="Infoslave Skull",
+        timing="command_phase",
+        target="tech_priest_model_and_non_acquisition_objective_within_24",
+        duration="until_start_of_your_next_command_phase",
+        effect="additional_acquisition_objective_marker",
+        cp_cost=1,
+        range_in=24.0,
+    ),
+    "000008569005": StratagemToolDescriptor(
+        stratagem_id="000008569005",
+        name="Auto-Oracular Retrieval",
+        timing="your_shooting_phase",
+        target="adeptus_mechanicus_unit_that_disembarked_from_transport_this_turn",
+        duration="until_end_of_phase",
+        effect="ranged_wound_bonus_vs_targets_within_acquisition_objective",
+        cp_cost=2,
+        effect_params={"wound_bonus": 1, "attack_type": "ranged"},
+    ),
+    "000008569006": StratagemToolDescriptor(
+        stratagem_id="000008569006",
+        name="Incense Exhausts",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="adeptus_mechanicus_infantry_targeted_by_attacker_and_smoke_unit_within_6",
+        duration="until_end_of_phase",
+        effect="stealth_and_benefit_of_cover_for_two_units",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"grant_stealth": True, "grant_benefit_of_cover": True},
+    ),
+    "000008569007": StratagemToolDescriptor(
+        stratagem_id="000008569007",
+        name="Reactive Safeguard",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="adeptus_mechanicus_infantry_targeted_by_charge_within_acquisition_objective_and_transport",
+        duration="immediate",
+        effect="reactive_embark_and_charge_retarget",
+        cp_cost=1,
+        range_in=3.0,
+        effect_params={"embark_range": 3.0, "allow_existing_passengers": True},
+    ),
+}
+
+_EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008469004": StratagemToolDescriptor(
         stratagem_id="000008469004",
@@ -14009,6 +14077,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DATA_PSALM_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _EXPLORATOR_MANIPLE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14429,6 +14500,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_STRATAGEM_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME.get(key)
+        or _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)

@@ -1472,6 +1472,72 @@ class GameView:
             )
         self._request_auto_divinatory_objective = _request_auto_divinatory_objective
 
+        def _request_infoslave_skull_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select a non-Acquisition objective marker within 24\" of the selected TECH-PRIEST.",
+                title="Infoslave Skull",
+                header="Select an objective marker.",
+                subtitle="That marker also becomes an Acquisition objective until your next Command phase.",
+                context={"ability": "infoslave_skull"},
+                allow_skip=True,
+            )
+        self._request_infoslave_skull_objective = _request_infoslave_skull_objective
+
+        def _request_cached_acquisition_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select the objective marker that remains under your control.",
+                title="Cached Acquisition",
+                header="Select an objective marker.",
+                subtitle="The chosen marker becomes sticky until your opponent controls it.",
+                context={"ability": "cached_acquisition"},
+                allow_skip=True,
+            )
+        self._request_cached_acquisition_objective = _request_cached_acquisition_objective
+
         def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -19656,6 +19722,239 @@ class GameView:
                 )
             return
 
+        if name_u in ("AUTO-ORACULAR RETRIEVAL", "PRIORITY RECLAMATION") and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                subtitle = {
+                    "AUTO-ORACULAR RETRIEVAL": "ADEPTUS MECHANICUS unit that disembarked from a TRANSPORT this turn.",
+                    "PRIORITY RECLAMATION": "ADEPTUS MECHANICUS unit that is about to Consolidate.",
+                }.get(name_u, "Select an eligible ADEPTUS MECHANICUS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "INFOSLAVE SKULL" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_infoslave_skull_objective", None)):
+                return
+
+            tech_priest = context.get("unit") or context.get("target_unit")
+
+            def _pick_infoslave_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Infoslave Skull: no TECH-PRIEST selected")
+                    return
+                objective_candidates = []
+                try:
+                    objective_candidates = list(manager._explorator_infoslave_objective_candidates(chosen_unit) or [])
+                except Exception:
+                    objective_candidates = []
+                self._request_infoslave_skull_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_infoslave_skull(player, name, context, chosen_unit, objective),
+                )
+
+            if tech_priest is not None:
+                _pick_infoslave_objective(tech_priest)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_explorator_infoslave_tech_priest_candidates"):
+                    try:
+                        candidates = list(manager._explorator_infoslave_tech_priest_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_infoslave_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Infoslave Skull TECH-PRIEST.",
+                    title="Infoslave Skull",
+                    subtitle="TECH-PRIEST model on the battlefield.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "CACHED ACQUISITION" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_cached_acquisition_objective", None)):
+                return
+            objective_candidates = list(context.get("objective_candidates") or [])
+            if not objective_candidates and hasattr(manager, "_explorator_cached_acquisition_objective_candidates"):
+                destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+                if destroyed_unit is not None:
+                    try:
+                        objective_candidates = list(
+                            manager._explorator_cached_acquisition_objective_candidates(
+                                destroyed_unit,
+                                last_model=context.get("last_model"),
+                            )
+                            or []
+                        )
+                    except Exception:
+                        objective_candidates = []
+            self._request_cached_acquisition_objective(
+                player,
+                self.game,
+                objective_candidates,
+                lambda objective: self._finalize_cached_acquisition(player, name, context, objective),
+            )
+            return
+
+        if name_u == "INCENSE EXHAUSTS":
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_primary = context.get("unit") or context.get("target_unit")
+            target_units = list(context.get("target_units") or [])
+            attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+            candidates = context.get("candidates") or []
+
+            if not candidates and hasattr(manager, "_explorator_incense_primary_candidates"):
+                try:
+                    candidates = list(manager._explorator_incense_primary_candidates(target_units=target_units) or [])
+                except Exception:
+                    candidates = []
+
+            def _after_primary(primary_unit):
+                if primary_unit is None:
+                    logger.info("Incense Exhausts: no primary unit selected")
+                    return
+                support_candidates = []
+                try:
+                    support_candidates = list(manager._explorator_incense_support_candidates(primary_unit) or [])
+                except Exception:
+                    support_candidates = []
+                if not support_candidates:
+                    logger.info("Incense Exhausts: no SMOKE support unit available")
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=support_candidates,
+                    on_chosen=lambda support: self._finalize_admech_rad_zone_stratagem(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        support,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select supporting SMOKE unit for Incense Exhausts.",
+                    title="Incense Exhausts",
+                    subtitle="Friendly ADEPTUS MECHANICUS SMOKE unit within 6\" of the selected INFANTRY unit.",
+                    enemy_unit=attacking_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_primary is not None:
+                _after_primary(preset_primary)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_primary,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select primary unit for Incense Exhausts.",
+                title="Incense Exhausts",
+                subtitle="ADEPTUS MECHANICUS INFANTRY unit targeted by the enemy shooter.",
+                enemy_unit=attacking_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u == "REACTIVE SAFEGUARD" and ("target_unit" not in context or "transport_unit" not in context):
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_primary = context.get("unit") or context.get("target_unit")
+            target_units = list(context.get("target_units") or [])
+            charging_unit = context.get("charging_unit") or context.get("attacking_unit") or context.get("enemy_unit")
+            candidates = context.get("candidates") or []
+
+            if not candidates and hasattr(manager, "_explorator_reactive_safeguard_candidates"):
+                try:
+                    candidates = list(
+                        manager._explorator_reactive_safeguard_candidates(
+                            charging_unit=charging_unit,
+                            target_units=target_units,
+                        )
+                        or []
+                    )
+                except Exception:
+                    candidates = []
+
+            def _after_primary(primary_unit):
+                if primary_unit is None:
+                    logger.info("Reactive Safeguard: no primary unit selected")
+                    return
+                transport_candidates = []
+                try:
+                    transport_candidates = list(manager._explorator_reactive_safeguard_transport_candidates(primary_unit) or [])
+                except Exception:
+                    transport_candidates = []
+                if not transport_candidates:
+                    logger.info("Reactive Safeguard: no transport available")
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=transport_candidates,
+                    on_chosen=lambda transport: self._finalize_skyborne_sanctuary(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        transport,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Reactive Safeguard transport.",
+                    title="Reactive Safeguard",
+                    subtitle="Friendly ADEPTUS MECHANICUS TRANSPORT within 3\" of the selected INFANTRY unit.",
+                    enemy_unit=charging_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_primary is not None and context.get("transport_unit") is None:
+                _after_primary(preset_primary)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_primary,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Reactive Safeguard unit.",
+                title="Reactive Safeguard",
+                subtitle="ADEPTUS MECHANICUS INFANTRY charge target within an Acquisition objective.",
+                enemy_unit=charging_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
         if name_u == "TRIBUTE OF EMPHATIC VENERATION" and "enemy_unit" not in context:
             if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 return
@@ -21336,6 +21635,41 @@ class GameView:
             return
         if objective is None:
             logger.info("No Retreat!: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_cached_acquisition(self, player, name: str, context: Dict[str, Any], objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if objective is None:
+            logger.info("Cached Acquisition: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_infoslave_skull(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Infoslave Skull: no TECH-PRIEST selected")
+            return
+        if objective is None:
+            logger.info("Infoslave Skull: no objective selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit

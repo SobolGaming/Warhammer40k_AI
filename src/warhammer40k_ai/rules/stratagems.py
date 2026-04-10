@@ -46,6 +46,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSIVE ANTICIPATION",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
+    "AUTO-ORACULAR RETRIEVAL",
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
     "BASTION OF FAITH",
@@ -56,6 +57,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLAZING IRE",
     "BENEVOLENCE OF THE OMNISSIAH",
     "CHANT OF THE REMORSELESS FIST",
+    "CACHED ACQUISITION",
     "CLEANSING FLAMES",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
@@ -108,6 +110,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FLAWLESS CONSTRUCTION",
     "HUNT AS ONE",
     "INCANTATION OF THE IRON SOUL",
+    "INCENSE EXHAUSTS",
+    "INFOSLAVE SKULL",
     "LITANY OF THE ELECTROMANCER",
     "LUMINESCENT BLESSING",
     "PUNISHMENT INESCAPABLE",
@@ -189,6 +193,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MASSIVE IMPACT",
     "MULTISENSORY SCANNING",
     "MOTIVE IMPERATIVE",
+    "PRIORITY RECLAMATION",
+    "REACTIVE SAFEGUARD",
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
@@ -756,6 +762,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
+    "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
     "SQUIG FLINGIN'",
@@ -1028,6 +1035,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLIND GRENADES",
     "COMBAT EMBARKATION",
     "COORDINATE TO ENGAGE",
+    "INCENSE EXHAUSTS",
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
@@ -2321,7 +2329,8 @@ class StratagemManager(
             "OVERWATCH",
             "FIRE OVERWATCH",
             "APOPLECTIC FRENZY",
-            "PHASE MELDING",
+    "PHASE MELDING",
+    "PRIORITY RECLAMATION",
             "PUNISH THE CRAVEN",
             "CUT'EM DOWN",
             "CUTÃ¢â‚¬â„¢EM DOWN",
@@ -2446,6 +2455,7 @@ class StratagemManager(
             "GRAV-INHIBITOR FIELD",
             "HASTY EXTRACTION",
             "PHOTON GRENADES",
+            "REACTIVE SAFEGUARD",
             "SHADE PATH",
             "TANGLEFOOT GRENADES",
             "CHRONOSORCEROUS BLEED",
@@ -2509,6 +2519,7 @@ class StratagemManager(
             "AVENGE THE STAR CHILDREN",
             "REGIMENTAL REINFORCEMENTS",
             "REINFORCEMENTS!",
+            "CACHED ACQUISITION",
             "WRETCHED MASSES",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
@@ -2681,6 +2692,8 @@ class StratagemManager(
                     has_consolidate_spec = True
                 if not has_consolidate_spec and str(getattr(s, "name", "") or "").strip().upper() == "HEARTS HARDENED TO DUTY":
                     has_consolidate_spec = True
+                if not has_consolidate_spec and str(getattr(s, "name", "") or "").strip().upper() == "PRIORITY RECLAMATION":
+                    has_consolidate_spec = True
             if not has_charge_melee_ap_spec:
                 has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
         shooting_reaction_names = {
@@ -2762,6 +2775,7 @@ class StratagemManager(
             "SHINING RESOLVE",
             "UNENDING FIDELITY",
             "LUMINESCENT BLESSING",
+            "INCENSE EXHAUSTS",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -2915,7 +2929,8 @@ class StratagemManager(
             "MURDER-CALL",
             "NEW ORDERS",
             "ENCIRCLING THE PREY",
-            "RAPID INGRESS",
+    "RAPID INGRESS",
+    "REACTIVE SAFEGUARD",
             "REDIRECTED STRIKE",
             "SKYBORNE SANCTUARY",
             "OVERFLIGHT",
@@ -6287,6 +6302,13 @@ class StratagemManager(
                     return result
             result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield and an objective marker"
             return result
+        if name_u == "AUTO-ORACULAR RETRIEVAL":
+            if self._explorator_auto_oracular_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that disembarked from a Transport this turn"
+            return result
         if name_u == "BALEFUL HALO":
             target_units = list(context.get("target_units") or context.get("candidates") or [])
             selected_unit = context.get("target_unit") or context.get("unit")
@@ -6309,6 +6331,31 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires SKITARII unit selected as a target of an enemy Shooting attack"
             return result
+        if name_u == "CACHED ACQUISITION":
+            unit = context.get("destroyed_unit") or context.get("target_unit") or context.get("unit")
+            objective_candidates = list(context.get("objective_candidates") or [])
+            if not objective_candidates and unit is not None:
+                objective_candidates = list(
+                    self._explorator_cached_acquisition_objective_candidates(
+                        unit,
+                        last_model=context.get("last_model"),
+                    )
+                    or []
+                )
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CACHED ACQUISITION":
+                    continue
+                pending_objectives = list(reaction.get("objective_candidates") or [])
+                if pending_objectives or reaction.get("objective") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if objective_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a just-destroyed ADEPTUS MECHANICUS unit within range of an objective marker you controlled"
+            return result
         if name_u == "BENEVOLENCE OF THE OMNISSIAH":
             if self._cohort_benevolence_primary_candidates():
                 result["available"] = True
@@ -6322,6 +6369,26 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires CULT MECHANICUS unit on the battlefield that has not been selected to fight this phase"
+            return result
+        if name_u == "INCENSE EXHAUSTS":
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            primary_candidates = self._explorator_incense_primary_candidates(target_units=target_units)
+            if any(self._explorator_incense_support_candidates(candidate) for candidate in list(primary_candidates or [])):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "INCENSE EXHAUSTS":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS INFANTRY selected as a target of an enemy Shooting attack and a friendly SMOKE unit within 6\""
             return result
         if name_u == "INCANTATION OF THE IRON SOUL":
             target_unit = context.get("target_unit") or context.get("unit")
@@ -6374,6 +6441,23 @@ class StratagemManager(
                     return result
             result["reason"] = "Requires CULT MECHANICUS unit selected as a target of an enemy Shooting attack"
             return result
+        if name_u == "INFOSLAVE SKULL":
+            source_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = (
+                [source_unit]
+                if source_unit is not None
+                else list(self._explorator_infoslave_tech_priest_candidates() or [])
+            )
+            for candidate in candidate_units:
+                objective_candidates = list(context.get("objective_candidates") or [])
+                if not objective_candidates:
+                    objective_candidates = list(self._explorator_infoslave_objective_candidates(candidate) or [])
+                if objective_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires TECH-PRIEST model on the battlefield and a non-Acquisition objective marker within 24\""
+            return result
         if name_u == "EXTINCTION ORDER":
             source_unit = context.get("target_unit") or context.get("unit")
             candidate_units = (
@@ -6418,6 +6502,46 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires ADEPTUS MECHANICUS VEHICLE on the battlefield"
+            return result
+        if name_u == "PRIORITY RECLAMATION":
+            unit = context.get("target_unit") or context.get("unit")
+            if unit is not None and self._explorator_priority_reclamation_candidates(unit):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PRIORITY RECLAMATION":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires an ADEPTUS MECHANICUS unit that is about to Consolidate while you have an active Acquisition objective"
+            return result
+        if name_u == "REACTIVE SAFEGUARD":
+            charging_unit = context.get("charging_unit") or context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            primary_candidates = self._explorator_reactive_safeguard_candidates(
+                charging_unit=charging_unit,
+                target_units=target_units,
+            )
+            if any(self._explorator_reactive_safeguard_transport_candidates(candidate) for candidate in list(primary_candidates or [])):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REACTIVE SAFEGUARD":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires an ADEPTUS MECHANICUS INFANTRY charge target within an Acquisition objective and a friendly TRANSPORT within 3\""
             return result
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
             source_unit = context.get("target_unit") or context.get("unit")
@@ -8566,15 +8690,21 @@ class StratagemManager(
             "SWARM-GUIDED SALVOES": "Shooting phase: target your TYRANIDS MONSTER unit that has not been selected to shoot; its ranged weapons gain [IGNORES COVER] and it can ignore Ballistic Skill and Hit roll modifiers this phase",
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
+            "AUTO-ORACULAR RETRIEVAL": "Target: ADEPTUS MECHANICUS unit that disembarked from a TRANSPORT this turn; its ranged attacks gain +1 to wound against targets within an Acquisition objective this phase",
             "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "CHANT OF THE REMORSELESS FIST": "Target: CULT MECHANICUS unit that has not been selected to fight this phase; its melee attacks gain +1 to wound until end of phase",
             "BULWARK IMPERATIVE": "Target: SKITARII unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "CACHED ACQUISITION": "Target: just-destroyed ADEPTUS MECHANICUS unit within a controlled objective marker; selected objective remains sticky until your opponent controls it",
             "INCANTATION OF THE IRON SOUL": "Any phase, just after a mortal wound is allocated: target CULT MECHANICUS unit; its models gain Feel No Pain 4+ against mortal wounds until end of phase",
+            "INCENSE EXHAUSTS": "Target: ADEPTUS MECHANICUS INFANTRY unit selected as a target of an enemy Shooting attack and a friendly SMOKE unit within 6\"; both gain Stealth and Benefit of Cover until end of phase",
+            "INFOSLAVE SKULL": "Target: one TECH-PRIEST model and one non-Acquisition objective marker within 24\" of it; that marker also counts as an Acquisition objective until your next Command phase",
             "EXTINCTION ORDER": "Target: one TECH-PRIEST model and one objective marker within 24\" of it",
             "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "LITANY OF THE ELECTROMANCER": "Target: CULT MECHANICUS unit; roll for each enemy unit within 6\" and on 5+ deal D3 mortal wounds (+1 to the roll for ELECTRO-PRIESTS)",
             "LUMINESCENT BLESSING": "Target: CULT MECHANICUS unit selected as a target of an enemy Shooting attack; its models gain a 4+ invulnerable save until end of phase",
             "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "PRIORITY RECLAMATION": "Fight phase, just before an ADEPTUS MECHANICUS unit consolidates: it can Consolidate up to 6\" this phase, provided it ends within an Acquisition objective",
+            "REACTIVE SAFEGUARD": "Opponent Charge phase reaction after an enemy unit declares a charge: selected ADEPTUS MECHANICUS INFANTRY unit within an Acquisition objective can embark within a friendly TRANSPORT within 3\"",
             "TRIBUTE OF EMPHATIC VENERATION": "Target: one CULT MECHANICUS unit and one enemy unit within 18\" of it; enemy takes a Battle-shock test and, on a failure, its attacks are -1 to hit until your next Command phase",
             "VERSE OF VENGEANCE": "Target: CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought; destroyed models in that unit fight on death on 4+ this phase",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
@@ -12214,6 +12344,7 @@ class StratagemManager(
                             or sr.get("stratagem_consolidate_requires_engagement")
                         ):
                             sr.pop("stratagem_consolidate_distance_override", None)
+                            sr.pop("stratagem_consolidate_allowed_objective_ids", None)
                             sr.pop("stratagem_consolidate_requires_engagement", None)
                             sr.pop("stratagem_consolidate_expires_phase", None)
                             sr.pop("stratagem_consolidate_source", None)
@@ -13176,6 +13307,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_tau_kauyon_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_explorator_reactive_safeguard_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -14507,6 +14642,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_kroot_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_explorator_incense_exhausts_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -17218,6 +17360,13 @@ class StratagemManager(
                 )
             except Exception:
                 raise
+            try:
+                self._queue_explorator_priority_reclamation_reactions(
+                    unit=root,
+                    target_unit=target_unit,
+                )
+            except Exception:
+                raise
             phase_name = self._current_phase_name or "Fight phase"
             for s in list(self.available or []):
                 spec = self._get_consolidate_move_spec(s)
@@ -18631,6 +18780,13 @@ class StratagemManager(
         try:
             self._queue_hallowed_martyrs_unit_destroyed_reactions(
                 unit=unit,
+                last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_explorator_cached_acquisition_reactions(
+                destroyed_unit=unit,
                 last_model=last_model,
             )
         except Exception:

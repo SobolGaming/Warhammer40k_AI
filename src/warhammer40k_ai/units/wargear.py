@@ -20603,10 +20603,11 @@ class WargearProfile:
             attacker_unit = getattr(attacker, "parent_unit", None)
             attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
             adm_mgr = getattr(attacker_army, "adeptus_mechanicus_detachments", None) if attacker_army is not None else None
-            bonus_fn = getattr(adm_mgr, "data_psalm_remorseless_fist_wound_bonus", None) if adm_mgr is not None else None
-            if callable(bonus_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            data_psalm_bonus_fn = getattr(adm_mgr, "data_psalm_remorseless_fist_wound_bonus", None) if adm_mgr is not None else None
+            if callable(data_psalm_bonus_fn):
                 game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
-                wound_bonus, source = bonus_fn(
+                wound_bonus, source = data_psalm_bonus_fn(
                     attacker,
                     target_unit=target,
                     weapon_profile=self,
@@ -20614,6 +20615,19 @@ class WargearProfile:
                 )
                 if wound_bonus:
                     source_name = str(source or "CHANT OF THE REMORSELESS FIST").strip() or "CHANT OF THE REMORSELESS FIST"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
+            explorator_bonus_fn = getattr(adm_mgr, "explorator_auto_oracular_retrieval_wound_bonus", None) if adm_mgr is not None else None
+            if callable(explorator_bonus_fn):
+                wound_bonus, source = explorator_bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    source_name = str(source or "AUTO-ORACULAR RETRIEVAL").strip() or "AUTO-ORACULAR RETRIEVAL"
                     dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
         except Exception:

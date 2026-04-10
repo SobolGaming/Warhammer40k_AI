@@ -87,6 +87,8 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.active_acquisition_objective_id: str = ""
         self.acquisition_selected_round: int = 0
+        self.additional_acquisition_objective_ids: list[str] = []
+        self.additional_acquisition_expires_round: int = 0
         self.active_noospheric_unit_ids: list[str] = []
         self.active_noospheric_override_key: str = ""
         self.noospheric_selected_round: int = 0
@@ -1441,6 +1443,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         self.active_acquisition_objective_id = ""
         self.acquisition_selected_round = 0
 
+    def clear_additional_acquisition_objectives(self) -> None:
+        self.additional_acquisition_objective_ids = []
+        self.additional_acquisition_expires_round = 0
+
     def can_select_acquisition_objective(self, *, game=None, battle_round: Optional[int] = None) -> bool:
         if not self.is_explorator_maniple():
             return False
@@ -1622,18 +1628,97 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             "source": self._ACQUISITION_SOURCE,
         }
 
-    def _active_acquisition_objective_point(self, *, game=None, game_map=None):
+    def add_additional_acquisition_objective(
+        self,
+        objective_id: str,
+        *,
+        game=None,
+        player=None,
+        expires_round: int = 0,
+        source: str = "",
+    ):
         if not self.is_explorator_maniple():
             return None
-        objective_id = str(self.active_acquisition_objective_id or "").strip()
+        if self.army is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and owner is not player:
+            return None
+        objective_id = str(objective_id or "").strip()
         if not objective_id:
             return None
-        entry = self._objective_entry_by_id(objective_id, game=game, game_map=game_map)
+        entry = self._objective_entry_by_id(objective_id, game=game)
         if entry is None:
             return None
-        _objective_id, objective, point = entry
-        if point is None or bool(getattr(point, "removed", False)):
+        objective_key, objective, _point = entry
+        objective_key = str(objective_key or "").strip()
+        if not objective_key:
             return None
+        existing_ids = set(self.explorator_active_acquisition_objective_ids(game=game))
+        if objective_key in existing_ids:
+            return None
+        extra_ids = [
+            str(candidate_id or "").strip()
+            for candidate_id in list(self.additional_acquisition_objective_ids or [])
+            if str(candidate_id or "").strip()
+        ]
+        if objective_key not in extra_ids:
+            extra_ids.append(objective_key)
+        self.additional_acquisition_objective_ids = sorted(set(extra_ids))
+        try:
+            self.additional_acquisition_expires_round = int(expires_round or 0)
+        except (TypeError, ValueError):
+            self.additional_acquisition_expires_round = 0
+        return {
+            "objective_id": objective_key,
+            "objective_name": str(getattr(objective, "name", "") or "Objective marker"),
+            "expires_round": int(self.additional_acquisition_expires_round or 0),
+            "source": str(source or "Infoslave Skull").strip() or "Infoslave Skull",
+        }
+
+    def _active_acquisition_objective_entries(self, *, game=None, game_map=None) -> list[tuple]:
+        if not self.is_explorator_maniple():
+            return []
+        objective_ids: list[str] = []
+        primary_id = str(self.active_acquisition_objective_id or "").strip()
+        if primary_id:
+            objective_ids.append(primary_id)
+        for objective_id in list(self.additional_acquisition_objective_ids or []):
+            cleaned = str(objective_id or "").strip()
+            if cleaned:
+                objective_ids.append(cleaned)
+        if not objective_ids:
+            return []
+        entries: list[tuple] = []
+        seen: set[str] = set()
+        for objective_id in objective_ids:
+            if objective_id in seen:
+                continue
+            seen.add(objective_id)
+            entry = self._objective_entry_by_id(objective_id, game=game, game_map=game_map)
+            if entry is None:
+                continue
+            _objective_id, _objective, point = entry
+            if point is None or bool(getattr(point, "removed", False)):
+                continue
+            entries.append(entry)
+        return entries
+
+    def explorator_active_acquisition_objective_ids(self, *, game=None, game_map=None) -> list[str]:
+        return [
+            str(objective_id or "").strip()
+            for objective_id, _objective, _point in self._active_acquisition_objective_entries(
+                game=game,
+                game_map=game_map,
+            )
+            if str(objective_id or "").strip()
+        ]
+
+    def _active_acquisition_objective_point(self, *, game=None, game_map=None):
+        entries = self._active_acquisition_objective_entries(game=game, game_map=game_map)
+        if not entries:
+            return None
+        _objective_id, objective, point = entries[0]
         return objective, point
 
     def acquisition_at_any_cost_wound_reroll_ones(
@@ -1654,22 +1739,22 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False, ""
         if not self._unit_has_keyword_or_faction(attacker_root, "ADEPTUS MECHANICUS", faction_id=self.faction_id):
             return False, ""
-        active = self._active_acquisition_objective_point(game=game, game_map=game_map)
-        if not isinstance(active, tuple):
-            return False, ""
-        _objective, objective_point = active
-        attacker_within = False
-        is_within_attacker = getattr(attacker_root, "is_within_objective_range", None)
-        if callable(is_within_attacker):
-            attacker_within = bool(is_within_attacker(objective_point))
         target_root = self._attached_root(target_unit)
-        target_within = False
-        if target_root is not None:
-            is_within_target = getattr(target_root, "is_within_objective_range", None)
-            if callable(is_within_target):
-                target_within = bool(is_within_target(objective_point))
-        if attacker_within or target_within:
-            return True, f"{self._ACQUISITION_SOURCE} (Acquisition objective)"
+        for _objective_id, _objective, objective_point in self._active_acquisition_objective_entries(
+            game=game,
+            game_map=game_map,
+        ):
+            attacker_within = False
+            is_within_attacker = getattr(attacker_root, "is_within_objective_range", None)
+            if callable(is_within_attacker):
+                attacker_within = bool(is_within_attacker(objective_point))
+            target_within = False
+            if target_root is not None:
+                is_within_target = getattr(target_root, "is_within_objective_range", None)
+                if callable(is_within_target):
+                    target_within = bool(is_within_target(objective_point))
+            if attacker_within or target_within:
+                return True, f"{self._ACQUISITION_SOURCE} (Acquisition objective)"
         return False, ""
 
     @staticmethod
@@ -1728,14 +1813,16 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False
         if require_army_membership and not self._unit_in_army(root):
             return False
-        active = self._active_acquisition_objective_point(game=game, game_map=game_map)
-        if not isinstance(active, tuple):
-            return False
-        _objective, objective_point = active
         is_within = getattr(root, "is_within_objective_range", None)
         if not callable(is_within):
             return False
-        return bool(is_within(objective_point))
+        for _objective_id, _objective, objective_point in self._active_acquisition_objective_entries(
+            game=game,
+            game_map=game_map,
+        ):
+            if bool(is_within(objective_point)):
+                return True
+        return False
 
     def explorator_unit_within_acquisition_objective(self, unit, *, game=None, game_map=None) -> bool:
         return self._unit_within_active_acquisition_objective(
@@ -1880,14 +1967,16 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return
         if not bool(getattr(game, "is_authoritative", True)):
             return
-        active = self._active_acquisition_objective_point(game=game)
-        if not isinstance(active, tuple):
+        active_entries = self._active_acquisition_objective_entries(game=game)
+        if not active_entries:
             return
-        _objective, objective_point = active
         for source_root_id, _source_root, _source_member, source_sr, bearer in self._iter_explorator_enhancement_sources(
             "enhancement_explorator_magos"
         ):
-            if not self._model_within_objective_range(bearer, objective_point):
+            if not any(
+                self._model_within_objective_range(bearer, objective_point)
+                for _objective_id, _objective, objective_point in active_entries
+            ):
                 continue
             try:
                 roll_min = int(source_sr.get("enhancement_explorator_magos_roll_min", 4) or 4)
@@ -1923,6 +2012,61 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                     source_unit_id=str(source_root_id or ""),
                     source_ability=self._EXPLORATOR_MAGOS_SOURCE,
                 )
+
+    def explorator_auto_oracular_retrieval_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        if not self.is_explorator_maniple():
+            return 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, ""
+        is_ranged = getattr(weapon_profile, "is_ranged", None)
+        if callable(is_ranged):
+            if not bool(is_ranged()):
+                return 0, ""
+        else:
+            parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+            parent_is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(parent_is_ranged) and not bool(parent_is_ranged()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("explorator_auto_oracular_retrieval_active", False)):
+            return 0, ""
+        owner_id = str(sr.get("explorator_auto_oracular_retrieval_turn_owner", "") or "")
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if owner_id and current_player is not None and owner_id != str(getattr(current_player, "id", "") or ""):
+            return 0, ""
+        if game is not None:
+            try:
+                effect_turn = int(sr.get("explorator_auto_oracular_retrieval_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return 0, ""
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "SHOOTING_PHASE":
+                return 0, ""
+        if not self._unit_within_active_acquisition_objective(target_unit, game=game, game_map=game_map):
+            return 0, ""
+        source_name = str(
+            sr.get("explorator_auto_oracular_retrieval_source", "") or "AUTO-ORACULAR RETRIEVAL"
+        ).strip() or "AUTO-ORACULAR RETRIEVAL"
+        return 1, source_name
 
     def on_command_phase_end(self, *, game=None, player=None) -> None:
         if game is None or player is None:
@@ -3800,6 +3944,13 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not bool(getattr(game, "is_authoritative", True)):
             return
         battle_round = int(getattr(game, "turn", 0) or 0)
+        if self.is_explorator_maniple():
+            try:
+                expires_round = int(self.additional_acquisition_expires_round or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if expires_round and battle_round >= expires_round:
+                self.clear_additional_acquisition_objectives()
         if self.is_cohort_cybernetica():
             self._cleanup_expired_cohort_cybernetica_command_phase_effects(game=game)
         if self.is_haloscreed_battle_clade():

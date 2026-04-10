@@ -19565,6 +19565,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008565005": "Start of your Movement phase: select one CULT MECHANICUS unit and one enemy unit within 18\"; the enemy takes a Battle-shock test and, on a failure, its attacks suffer -1 to hit until your next Command phase.",
         "000008565006": "Your Shooting phase: selected CULT MECHANICUS unit rolls for each enemy unit within 6\" and deals D3 mortal wounds on 5+, adding 1 to those rolls for ELECTRO-PRIEST units.",
         "000008565007": "Opponent's Shooting phase, just after an enemy unit selects targets: selected CULT MECHANICUS unit gains a 4+ invulnerable save until end of phase.",
+        "000008569002": "Any phase reaction after a friendly ADEPTUS MECHANICUS unit is destroyed while within range of a controlled objective marker: select that objective marker; it remains under your control until your opponent controls it.",
+        "000008569003": "Fight phase, just before an ADEPTUS MECHANICUS unit consolidates: that unit can Consolidate up to 6\" this phase, but its move validation is constrained to end within one of your active Acquisition objective markers.",
+        "000008569004": "Your Command phase: select one TECH-PRIEST model and one non-Acquisition objective marker within 24\" of it; that marker also counts as an Acquisition objective until the start of your next Command phase.",
+        "000008569005": "Your Shooting phase: selected ADEPTUS MECHANICUS unit that disembarked from a TRANSPORT this turn gains +1 to wound with ranged attacks against targets within one of your active Acquisition objective markers until end of phase.",
+        "000008569006": "Opponent's Shooting phase reaction after an enemy unit selects targets: select one ADEPTUS MECHANICUS INFANTRY target and one friendly ADEPTUS MECHANICUS SMOKE unit within 6\" of it; both units gain Stealth and Benefit of Cover until end of phase.",
+        "000008569007": "Opponent's Charge phase reaction after an enemy unit declares a charge: selected ADEPTUS MECHANICUS INFANTRY target within an Acquisition objective embarks in a friendly TRANSPORT within 3\", then the original charge continues through emergency embarkation retarget logic.",
         "000008573002": "Your Command phase: selected ADEPTUS MECHANICUS VEHICLE gains +3\" Move and +1 to Advance and Charge rolls until your next Command phase.",
         "000008573003": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE selects one objective marker; until your next Command phase its ranged weapons have Ballistic Skill 3+, gain [IGNORES COVER], and can only target units within range of the selected objective marker.",
         "000008573004": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE below Starting Strength gains full Hit re-rolls until your next Command phase, and also gains full Wound re-rolls while it is Below Half-strength.",
@@ -20918,6 +20924,15 @@ def _stratagem_support(
         "000008565007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008569002",
+        "000008569003",
+        "000008569004",
+        "000008569005",
+        "000008569006",
+        "000008569007",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
     if stratagem_id in {
         "000008573002",
         "000008573003",

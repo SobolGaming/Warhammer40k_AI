@@ -364,6 +364,421 @@ class AdeptusMechanicusStratagemMixin:
             out.append(enemy)
         return sorted(out, key=self._admech_sort_key)
 
+    def _explorator_auto_oracular_primary_candidates(self) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        out: list[Any] = []
+        for unit in list(self._admech_battlefield_units() or []):
+            round_state = getattr(unit, "round_state", None)
+            if not bool(getattr(round_state, "disembarked_this_round", False)):
+                continue
+            out.append(unit)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_infoslave_tech_priest_candidates(self) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        out = [unit for unit in list(self._admech_battlefield_units() or []) if self._admech_has_any_keyword(unit, "TECH-PRIEST")]
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_infoslave_objective_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        source_root = self._admech_root(source_unit)
+        if source_root is None or source_root not in self._explorator_infoslave_tech_priest_candidates():
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        active_ids_fn = getattr(mgr, "explorator_active_acquisition_objective_ids", None) if mgr is not None else None
+        active_ids = set(active_ids_fn(game=self.game, game_map=game_map) or []) if callable(active_ids_fn) else set()
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = self._admech_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            if objective_id in active_ids:
+                continue
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            point = (float(getattr(loc, "x", 0.0) or 0.0), float(getattr(loc, "y", 0.0) or 0.0))
+            if not unit_within_range_of_point_3d(source_root, point, 24.0, use_attached_aggregate=True):
+                continue
+            out.append(objective)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_incense_primary_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root):
+                continue
+            if not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adeptus_mechanicus_unit(root):
+                continue
+            if not self._admech_has_any_keyword(root, "INFANTRY"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_incense_support_candidates(self, primary_unit: Any) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        primary_root = self._admech_root(primary_unit)
+        if primary_root is None or primary_root not in self._admech_battlefield_units():
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        distance_fn = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(distance_fn):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for candidate in list(self._admech_battlefield_units() or []):
+            uid = self._admech_sort_key(candidate)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_has_any_keyword(candidate, "SMOKE"):
+                continue
+            try:
+                distance = float(distance_fn(primary_root, candidate))
+            except (TypeError, ValueError):
+                continue
+            if distance > 6.0 + 1e-6:
+                continue
+            out.append(candidate)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_cached_acquisition_objective_candidates(self, destroyed_unit: Any, *, last_model: Any = None) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        root = self._admech_root(destroyed_unit)
+        if root is None or not self._admech_owned_by_player(root) or not self._is_adeptus_mechanicus_unit(root):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        model_within_fn = getattr(mgr, "_model_within_objective_range", None) if mgr is not None else None
+        snapshot = getattr(game, "_objective_control_snapshot", {}) if game is not None else {}
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = self._admech_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            controller = snapshot.get(loc)
+            if controller is not self.player and getattr(loc, "sticky_controller", None) is not self.player:
+                continue
+            within = False
+            is_within = getattr(root, "is_within_objective_range", None)
+            if callable(is_within):
+                within = bool(is_within(loc))
+            if not within and last_model is not None and callable(model_within_fn):
+                within = bool(model_within_fn(last_model, loc))
+            if within:
+                out.append(objective)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_priority_reclamation_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        root = self._admech_root(unit)
+        if root is None:
+            return []
+        if not self._admech_on_battlefield(root):
+            return []
+        if not self._admech_owned_by_player(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return []
+        if not self._is_adeptus_mechanicus_unit(root):
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        active_ids_fn = getattr(mgr, "explorator_active_acquisition_objective_ids", None) if mgr is not None else None
+        active_ids = list(active_ids_fn(game=self.game, game_map=getattr(self.game, "map", None)) or []) if callable(active_ids_fn) else []
+        if not active_ids:
+            return []
+        return [root]
+
+    def _explorator_reactive_safeguard_candidates(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: list[Any] | None = None,
+    ) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        attacker_root = self._admech_root(charging_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            return []
+        mgr = self._get_adeptus_mechanicus_mgr()
+        within_fn = getattr(mgr, "explorator_unit_within_acquisition_objective", None) if mgr is not None else None
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root):
+                continue
+            if not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adeptus_mechanicus_unit(root):
+                continue
+            if not self._admech_has_any_keyword(root, "INFANTRY"):
+                continue
+            if callable(within_fn) and not bool(within_fn(root, game=self.game, game_map=getattr(self.game, "map", None))):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _explorator_reactive_safeguard_transport_candidates(self, primary_unit: Any) -> list[Any]:
+        if not self._is_explorator_maniple():
+            return []
+        primary_root = self._admech_root(primary_unit)
+        if primary_root is None:
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+
+        enemies = list(game_map.get_enemy_units(primary_root) or [])
+        if any(enemy is not None and game_map.is_within_engagement_range(primary_root, enemy) for enemy in enemies):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for transport in list(self._admech_battlefield_units() or []):
+            tid = self._admech_sort_key(transport)
+            if tid and tid in seen:
+                continue
+            if tid:
+                seen.add(tid)
+            if transport is primary_root:
+                continue
+            if not self._admech_has_any_keyword(transport, "TRANSPORT"):
+                continue
+            if not bool(unit_wholly_within_range_of_unit(transport, primary_root, 3.0, use_attached_aggregate=True)):
+                continue
+            can_transport = getattr(transport, "can_transport", None)
+            if not callable(can_transport) or not bool(can_transport(primary_root)):
+                continue
+            out.append(transport)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _queue_explorator_incense_exhausts_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any] | None = None,
+    ) -> None:
+        if not self._is_explorator_maniple():
+            return
+        if attacking_unit is None:
+            return
+        stratagem = self.get_by_name("INCENSE EXHAUSTS")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        primary_candidates = self._explorator_incense_primary_candidates(target_units=target_units)
+        eligible_primary = [
+            candidate
+            for candidate in list(primary_candidates or [])
+            if self._explorator_incense_support_candidates(candidate)
+            and self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+        ]
+        if not eligible_primary:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and reaction.get("stratagem") == stratagem.name
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": eligible_primary,
+        }
+        if len(eligible_primary) == 1:
+            support_candidates = self._explorator_incense_support_candidates(eligible_primary[0])
+            payload["target_unit"] = eligible_primary[0]
+            payload["unit"] = eligible_primary[0]
+            if len(support_candidates) == 1:
+                payload["support_unit"] = support_candidates[0]
+                payload["secondary_unit"] = support_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_explorator_cached_acquisition_reactions(self, *, destroyed_unit: Any, last_model: Any = None) -> None:
+        if not self._is_explorator_maniple():
+            return
+        root = self._admech_root(destroyed_unit)
+        if root is None:
+            return
+        stratagem = self.get_by_name("CACHED ACQUISITION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        objective_candidates = self._explorator_cached_acquisition_objective_candidates(root, last_model=last_model)
+        if not objective_candidates:
+            return
+        if self._admech_effective_cp_cost(stratagem, target_unit=root) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_destroyed"
+                and reaction.get("stratagem") == stratagem.name
+                and self._admech_root(reaction.get("unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": str(self._current_phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "destroyed_unit": root,
+            "last_model": last_model,
+            "objective_candidates": objective_candidates,
+        }
+        if len(objective_candidates) == 1:
+            payload["objective"] = objective_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_explorator_priority_reclamation_reactions(self, *, unit: Any, target_unit: Any = None) -> None:
+        if not self._is_explorator_maniple():
+            return
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        stratagem = self.get_by_name("PRIORITY RECLAMATION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._explorator_priority_reclamation_candidates(root)
+        if not candidates:
+            return
+        if self._admech_effective_cp_cost(stratagem, target_unit=root) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "before_consolidate"
+                and reaction.get("stratagem") == stratagem.name
+                and self._admech_root(reaction.get("unit")) is root
+            ):
+                return
+        self._queue_reaction(
+            {
+                "event": "before_consolidate",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "last_target_unit": target_unit,
+                "candidates": candidates,
+            }
+        )
+
+    def _queue_explorator_reactive_safeguard_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: list[Any] | None = None,
+    ) -> None:
+        if not self._is_explorator_maniple():
+            return
+        attacker_root = self._admech_root(charging_unit)
+        if attacker_root is None:
+            return
+        stratagem = self.get_by_name("REACTIVE SAFEGUARD")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        primary_candidates = self._explorator_reactive_safeguard_candidates(
+            charging_unit=attacker_root,
+            target_units=target_units,
+        )
+        eligible_primary = [
+            candidate
+            for candidate in list(primary_candidates or [])
+            if self._explorator_reactive_safeguard_transport_candidates(candidate)
+            and self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0)
+        ]
+        if not eligible_primary:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "charge_declared"
+                and reaction.get("stratagem") == stratagem.name
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "charging_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": eligible_primary,
+        }
+        if len(eligible_primary) == 1:
+            transport_candidates = self._explorator_reactive_safeguard_transport_candidates(eligible_primary[0])
+            payload["target_unit"] = eligible_primary[0]
+            payload["unit"] = eligible_primary[0]
+            if len(transport_candidates) == 1:
+                payload["transport_unit"] = transport_candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_data_psalm_luminescent_blessing_reactions(
         self,
         *,
@@ -1043,6 +1458,43 @@ class AdeptusMechanicusStratagemMixin:
             source_name=source_name,
         )
 
+    def _mark_explorator_auto_oracular_retrieval(self, unit: Any, *, source_name: str) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["explorator_auto_oracular_retrieval_active"] = True
+        sr["explorator_auto_oracular_retrieval_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["explorator_auto_oracular_retrieval_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["explorator_auto_oracular_retrieval_source"] = source_name
+        root.special_rules = sr
+
+    def _mark_explorator_incense_exhausts(self, unit: Any, *, source_name: str) -> None:
+        root = self._admech_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr["opponent_shooting_phase_stealth_active"] = True
+        sr["opponent_shooting_phase_stealth_owner"] = str(getattr(active_player, "id", "") or "")
+        sr["opponent_shooting_phase_stealth_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["opponent_shooting_phase_stealth_source"] = source_name
+        sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+        self._append_defensive_effect(
+            root,
+            "defensive_cover_bonuses",
+            {
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source_name,
+            },
+        )
+
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "BALEFUL HALO":
@@ -1061,10 +1513,18 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_auto_divinatory_targeting(stratagem, **kwargs)
         if name_u == "BENEVOLENCE OF THE OMNISSIAH":
             return self._use_cohort_benevolence_of_the_omnissiah(stratagem, **kwargs)
+        if name_u == "AUTO-ORACULAR RETRIEVAL":
+            return self._use_explorator_auto_oracular_retrieval(stratagem, **kwargs)
+        if name_u == "CACHED ACQUISITION":
+            return self._use_explorator_cached_acquisition(stratagem, **kwargs)
         if name_u == "CHANT OF THE REMORSELESS FIST":
             return self._use_data_psalm_chant_of_the_remorseless_fist(stratagem, **kwargs)
         if name_u == "INCANTATION OF THE IRON SOUL":
             return self._use_data_psalm_incantation_of_the_iron_soul(stratagem, **kwargs)
+        if name_u == "INCENSE EXHAUSTS":
+            return self._use_explorator_incense_exhausts(stratagem, **kwargs)
+        if name_u == "INFOSLAVE SKULL":
+            return self._use_explorator_infoslave_skull(stratagem, **kwargs)
         if name_u == "LITANY OF THE ELECTROMANCER":
             return self._use_data_psalm_litany_of_the_electromancer(stratagem, **kwargs)
         if name_u == "LUMINESCENT BLESSING":
@@ -1075,6 +1535,10 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_machine_superiority(stratagem, **kwargs)
         if name_u == "MOTIVE IMPERATIVE":
             return self._use_cohort_motive_imperative(stratagem, **kwargs)
+        if name_u == "PRIORITY RECLAMATION":
+            return self._use_explorator_priority_reclamation(stratagem, **kwargs)
+        if name_u == "REACTIVE SAFEGUARD":
+            return self._use_explorator_reactive_safeguard(stratagem, **kwargs)
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
             return self._use_data_psalm_tribute_of_emphatic_veneration(stratagem, **kwargs)
         if name_u == "TRANSCENDENT COGITATION":
@@ -1082,6 +1546,428 @@ class AdeptusMechanicusStratagemMixin:
         if name_u == "VERSE OF VENGEANCE":
             return self._use_data_psalm_verse_of_vengeance(stratagem, **kwargs)
         return None
+
+    def _use_explorator_auto_oracular_retrieval(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: AUTO-ORACULAR RETRIEVAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AUTO-ORACULAR RETRIEVAL: not your Shooting phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: AUTO-ORACULAR RETRIEVAL: no unit selected")
+            return False
+        eligible_primary = self._explorator_auto_oracular_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: AUTO-ORACULAR RETRIEVAL: target must be an ADEPTUS MECHANICUS unit that disembarked from a transport this turn"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Shooting phase"):
+            logger.error("ERROR: AUTO-ORACULAR RETRIEVAL: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "AUTO-ORACULAR RETRIEVAL")
+        self._mark_explorator_auto_oracular_retrieval(primary, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AUTO-ORACULAR RETRIEVAL: %s gains +1 to wound on ranged attacks against targets within an Acquisition objective this phase.",
+            getattr(primary, "name", "Unit"),
+        )
+        return True
+
+    def _use_explorator_cached_acquisition(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        unit = (
+            self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+            or kwargs.get("destroyed_unit")
+        )
+        objective = self._admech_resolve_objective_from_kwargs(kwargs)
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if (unit is None or not objective_candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CACHED ACQUISITION":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
+                if not objective_candidates:
+                    objective_candidates = list(reaction.get("objective_candidates") or [])
+                break
+        if unit is None:
+            logger.error("ERROR: CACHED ACQUISITION: no destroyed unit provided")
+            return False
+        root = self._admech_root(unit)
+        if root is None or not self._admech_owned_by_player(root) or not self._is_adeptus_mechanicus_unit(root):
+            logger.error("ERROR: CACHED ACQUISITION: target must be a destroyed ADEPTUS MECHANICUS unit from your army")
+            return False
+        if not objective_candidates:
+            objective_candidates = self._explorator_cached_acquisition_objective_candidates(
+                root,
+                last_model=kwargs.get("last_model"),
+            )
+        if objective is None:
+            objective = objective_candidates[0] if objective_candidates else None
+        if objective is None:
+            logger.error("ERROR: CACHED ACQUISITION: no eligible objective marker was provided")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: CACHED ACQUISITION: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: CACHED ACQUISITION: objective marker location is unavailable")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        set_sticky = getattr(objective_location, "set_sticky_control", None)
+        if callable(set_sticky):
+            set_sticky(self.player, source="explorator_cached_acquisition")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "explorator_cached_acquisition"
+            objective_location.controlling_player = self.player
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: CACHED ACQUISITION: selected objective remains under your control until your opponent takes it.")
+        return True
+
+    def _use_explorator_incense_exhausts(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: INCENSE EXHAUSTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: INCENSE EXHAUSTS: not opponent's Shooting phase")
+            return False
+
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (attacking_unit is None or not target_units or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "INCENSE EXHAUSTS":
+                    continue
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        attacker_root = self._admech_root(attacking_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            logger.error("ERROR: INCENSE EXHAUSTS: attacking unit must be an enemy unit")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._explorator_incense_primary_candidates(target_units=target_units)
+        if not eligible_primary and candidates:
+            eligible_primary = [candidate for candidate in list(candidates or []) if candidate in self._explorator_incense_primary_candidates(target_units=candidates)]
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: INCENSE EXHAUSTS: no primary unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error("ERROR: INCENSE EXHAUSTS: primary target must be an eligible ADEPTUS MECHANICUS INFANTRY unit selected as a target")
+            return False
+
+        support = self._admech_resolve_unit_from_kwargs(kwargs, key="support_unit", fallback_key="secondary_unit")
+        eligible_support = self._explorator_incense_support_candidates(primary)
+        if support is None and len(eligible_support) == 1:
+            support = eligible_support[0]
+        if support is None:
+            logger.error("ERROR: INCENSE EXHAUSTS: no SMOKE support unit selected")
+            return False
+        if support not in eligible_support:
+            logger.error("ERROR: INCENSE EXHAUSTS: support unit must be a friendly ADEPTUS MECHANICUS SMOKE unit within 6\"")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: INCENSE EXHAUSTS: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "INCENSE EXHAUSTS")
+        affected: list[Any] = []
+        seen: set[str] = set()
+        for unit in (primary, support):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            affected.append(root)
+        for unit in affected:
+            self._mark_explorator_incense_exhausts(unit, source_name=source_name)
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: INCENSE EXHAUSTS: %s and %s gain Stealth and Benefit of Cover until end of phase.",
+            getattr(primary, "name", "Unit"),
+            getattr(support, "name", "Support Unit"),
+        )
+        return True
+
+    def _use_explorator_infoslave_skull(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: INFOSLAVE SKULL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: INFOSLAVE SKULL: not your Command phase")
+            return False
+
+        source_unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if source_unit is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                source_unit = self._admech_root(candidates[0])
+        if source_unit is None:
+            logger.error("ERROR: INFOSLAVE SKULL: no TECH-PRIEST selected")
+            return False
+        if source_unit not in self._explorator_infoslave_tech_priest_candidates():
+            logger.error("ERROR: INFOSLAVE SKULL: selected unit must be an eligible TECH-PRIEST")
+            return False
+
+        objective = self._admech_resolve_objective_from_kwargs(kwargs)
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_candidates = self._explorator_infoslave_objective_candidates(source_unit)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: INFOSLAVE SKULL: no objective marker selected")
+            return False
+        if objective not in objective_candidates:
+            logger.error("ERROR: INFOSLAVE SKULL: selected objective marker is not eligible")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name="Command phase"):
+            logger.error("ERROR: INFOSLAVE SKULL: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=source_unit):
+            return False
+
+        mgr = self._get_adeptus_mechanicus_mgr()
+        add_fn = getattr(mgr, "add_additional_acquisition_objective", None) if mgr is not None else None
+        if not callable(add_fn):
+            logger.error("ERROR: INFOSLAVE SKULL: acquisition manager unavailable")
+            return False
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "INFOSLAVE SKULL")
+        selection = add_fn(
+            str(get_entity_id(objective) or ""),
+            game=self.game,
+            player=self.player,
+            expires_round=current_turn + 1,
+            source=source_name,
+        )
+        if selection is None:
+            logger.error("ERROR: INFOSLAVE SKULL: selected objective marker could not be added as an Acquisition objective")
+            return False
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: INFOSLAVE SKULL: %s is also an Acquisition objective until your next Command phase.",
+            str(getattr(objective, "name", "") or "Objective marker"),
+        )
+        return True
+
+    def _use_explorator_priority_reclamation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PRIORITY RECLAMATION: wrong phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PRIORITY RECLAMATION":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if unit is None and len(candidates) == 1:
+            unit = self._admech_root(candidates[0])
+        if unit is None:
+            logger.error("ERROR: PRIORITY RECLAMATION: no unit selected")
+            return False
+        root = self._admech_root(unit)
+        if root not in self._explorator_priority_reclamation_candidates(root):
+            logger.error("ERROR: PRIORITY RECLAMATION: target must be an eligible ADEPTUS MECHANICUS unit before it consolidates")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: PRIORITY RECLAMATION: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_adeptus_mechanicus_mgr()
+        active_ids_fn = getattr(mgr, "explorator_active_acquisition_objective_ids", None) if mgr is not None else None
+        objective_ids = list(active_ids_fn(game=self.game, game_map=getattr(self.game, "map", None)) or []) if callable(active_ids_fn) else []
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_cons = float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0)
+        sr["stratagem_consolidate_distance_override"] = max(current_cons, 6.0)
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "PRIORITY RECLAMATION")
+        existing_ids = [str(value or "").strip() for value in list(sr.get("stratagem_consolidate_allowed_objective_ids", []) or []) if str(value or "").strip()]
+        sr["stratagem_consolidate_allowed_objective_ids"] = sorted(set(existing_ids + [str(value or "").strip() for value in objective_ids if str(value or "").strip()]))
+        root.special_rules = sr
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PRIORITY RECLAMATION: %s can Consolidate up to 6\" this phase, but must end that move within an Acquisition objective.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_explorator_reactive_safeguard(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_explorator_maniple():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: REACTIVE SAFEGUARD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: REACTIVE SAFEGUARD: not opponent's Charge phase")
+            return False
+
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (charging_unit is None or not target_units or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REACTIVE SAFEGUARD":
+                    continue
+                if charging_unit is None:
+                    charging_unit = reaction.get("charging_unit") or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        attacker_root = self._admech_root(charging_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            logger.error("ERROR: REACTIVE SAFEGUARD: charging unit must be an enemy unit")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._explorator_reactive_safeguard_candidates(
+            charging_unit=attacker_root,
+            target_units=target_units,
+        )
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: REACTIVE SAFEGUARD: no primary unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: REACTIVE SAFEGUARD: primary target must be an eligible ADEPTUS MECHANICUS INFANTRY unit within an Acquisition objective"
+            )
+            return False
+
+        transport = self._admech_resolve_unit_from_kwargs(kwargs, key="transport_unit")
+        eligible_transports = self._explorator_reactive_safeguard_transport_candidates(primary)
+        if transport is None and len(eligible_transports) == 1:
+            transport = eligible_transports[0]
+        if transport is None:
+            logger.error("ERROR: REACTIVE SAFEGUARD: no transport selected")
+            return False
+        if transport not in eligible_transports:
+            logger.error("ERROR: REACTIVE SAFEGUARD: transport must be an eligible friendly ADEPTUS MECHANICUS TRANSPORT within 3\"")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacker_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: REACTIVE SAFEGUARD: cannot be used in current state")
+            return False
+        resolve_fn = getattr(self.game, "resolve_emergency_combat_embarkation", None) if self.game is not None else None
+        if not callable(resolve_fn):
+            logger.error("ERROR: REACTIVE SAFEGUARD: embarkation resolver unavailable")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "REACTIVE SAFEGUARD")
+        target_unit_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for unit in list(target_units or [primary]):
+            root = self._admech_root(unit)
+            uid = str(get_entity_id(root) or "")
+            if not uid or uid in seen_ids:
+                continue
+            seen_ids.add(uid)
+            target_unit_ids.append(uid)
+        resolve_fn(
+            transport,
+            primary,
+            {
+                "source": source_name,
+                "range": 3.0,
+                "allow_existing_passengers": True,
+            },
+            charging_unit=attacker_root,
+            original_target_unit_ids=target_unit_ids,
+            out_of_turn=False,
+            count_as_charged=True,
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REACTIVE SAFEGUARD: %s embarks within %s before the charge is resolved.",
+            getattr(primary, "name", "Unit"),
+            getattr(transport, "name", "Transport"),
+        )
+        return True
 
     def _use_cohort_auto_divinatory_targeting(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_cohort_cybernetica():

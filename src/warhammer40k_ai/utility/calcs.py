@@ -1021,6 +1021,14 @@ def get_validation_rules(
                     base_rules['consolidate_requires_engagement'] = True
                 if isinstance(sr, dict) and sr.get("space_marines_hearts_hardened_to_duty_active"):
                     base_rules['consolidate_ignore_closest_enemy_requirement'] = True
+                if isinstance(sr, dict):
+                    allowed_objective_ids = [
+                        str(value or "").strip()
+                        for value in list(sr.get("stratagem_consolidate_allowed_objective_ids", []) or [])
+                        if str(value or "").strip()
+                    ]
+                    if allowed_objective_ids:
+                        base_rules['consolidate_allowed_objective_ids'] = list(allowed_objective_ids)
         except Exception:
             pass
         try:
@@ -3306,6 +3314,17 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         def _objective_fallback_ok() -> bool:
             objs = list(getattr(game_map, "objectives", []) or [])
+            allowed_objective_ids = {
+                str(value or "").strip()
+                for value in list(validation_rules.get("consolidate_allowed_objective_ids", []) or [])
+                if str(value or "").strip()
+            }
+            if allowed_objective_ids:
+                objs = [
+                    obj
+                    for obj in list(objs or [])
+                    if str(get_entity_id(obj) or "").strip() in allowed_objective_ids
+                ]
             if not objs:
                 return False
             best_obj = None
@@ -3313,9 +3332,10 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             for obj in objs:
                 if getattr(obj, "removed", False):
                     continue
+                site = getattr(obj, "location", None) or obj
                 try:
-                    ox = float(getattr(obj, "x", 0.0))
-                    oy = float(getattr(obj, "y", 0.0))
+                    ox = float(getattr(site, "x", 0.0))
+                    oy = float(getattr(site, "y", 0.0))
                 except Exception:
                     continue
                 dx = current_base.x - ox
@@ -3326,13 +3346,14 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     best_obj = obj
             if best_obj is None or best_dist is None:
                 return False
+            best_site = getattr(best_obj, "location", None) or best_obj
             try:
-                ox = float(getattr(best_obj, "x", 0.0))
-                oy = float(getattr(best_obj, "y", 0.0))
+                ox = float(getattr(best_site, "x", 0.0))
+                oy = float(getattr(best_site, "y", 0.0))
             except Exception:
                 return False
             try:
-                radius = float(getattr(best_obj, "control_radius", 3.0) or 0.0)
+                radius = float(getattr(best_site, "control_radius", 3.0) or 0.0)
             except Exception:
                 radius = 3.0
             dx = new_base.x - ox
@@ -3356,6 +3377,10 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             if closest_enemy_distance is not None and closest_enemy_distance > max_relevant_distance:
                 if _objective_fallback_ok():
                     return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
+                return {
+                    'valid': False,
+                    'reason': 'Consolidate must end closer to an eligible objective marker and within range of it'
+                }
 
         use_unit = bool(validation_rules.get('closest_enemy_unit', False))
 
