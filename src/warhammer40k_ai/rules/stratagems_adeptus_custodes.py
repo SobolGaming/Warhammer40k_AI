@@ -59,6 +59,11 @@ class AdeptusCustodesStratagemMixin:
         checker = getattr(mgr, "is_null_maiden_vigil", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_shield_host_detachment(self) -> bool:
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "is_shield_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _ac_phase_name_lower(value: Any) -> str:
         return str(value or "").strip().lower()
@@ -366,6 +371,127 @@ class AdeptusCustodesStratagemMixin:
             if str(reaction.get("stratagem", "") or "").strip().upper() == wanted:
                 return reaction
         return None
+
+    @staticmethod
+    def _ac_objective_sort_key(objective: Any) -> str:
+        if objective is None:
+            return ""
+        location = getattr(objective, "location", None)
+        return str(
+            getattr(objective, "id", "")
+            or get_entity_id(objective)
+            or getattr(location, "id", "")
+            or get_entity_id(location)
+            or ""
+        ).strip()
+
+    def _ac_resolve_objective(self, value: Any, *, candidates: list[Any] | None = None) -> Any:
+        if value is None:
+            return None
+        if value in list(candidates or []):
+            return value
+        if not isinstance(value, str):
+            objective_id = self._ac_objective_sort_key(value)
+            if objective_id:
+                for objective in list(candidates or []):
+                    if objective_id == self._ac_objective_sort_key(objective):
+                        return objective
+                game_map = getattr(getattr(self, "game", None), "map", None)
+                for objective in list(getattr(game_map, "objectives", []) or []):
+                    if objective_id == self._ac_objective_sort_key(objective):
+                        return objective
+                return value
+        token = str(value or "").strip()
+        if not token:
+            return value if not isinstance(value, str) else None
+        for objective in list(candidates or []):
+            if token == self._ac_objective_sort_key(objective):
+                return objective
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if token == self._ac_objective_sort_key(objective):
+                return objective
+        return None
+
+    def _ac_objectives_in_range(self, unit: Any) -> list[Any]:
+        root = self._ac_root(unit)
+        if root is None or not self._ac_unit_on_battlefield(root):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        objectives: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None) or objective
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            objective_id = self._ac_objective_sort_key(objective)
+            if not objective_id or objective_id in seen:
+                continue
+            try:
+                if not bool(getattr(root, "is_within_objective_range")(location)):
+                    continue
+            except Exception:
+                continue
+            seen.add(objective_id)
+            objectives.append(objective)
+        objectives.sort(key=self._ac_objective_sort_key)
+        return objectives
+
+    def _ac_controlled_objectives_in_range(self, unit: Any) -> list[Any]:
+        root = self._ac_root(unit)
+        if root is None:
+            return []
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return []
+        controlled: list[Any] = []
+        for objective in self._ac_objectives_in_range(root):
+            location = getattr(objective, "location", None) or objective
+            if getattr(location, "controlling_player", None) is player:
+                controlled.append(objective)
+        return controlled
+
+    def _shield_host_battlefield_unit_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_infantry: bool = False,
+        require_battleline: bool = False,
+        require_below_starting_strength: bool = False,
+        require_fell_back: bool = False,
+        attack_type: str = "",
+    ) -> list[Any]:
+        if not self._is_shield_host_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._ac_friendly_battlefield_units():
+            if not self._ac_is_custodes_unit(root) or self._ac_is_anathema_psykana_unit(root):
+                continue
+            if require_infantry and not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            if require_battleline and not self._ac_has_keyword(root, "BATTLELINE"):
+                continue
+            if require_below_starting_strength and not bool(getattr(root, "is_below_starting_strength", lambda: False)()):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            if attack_type and not self._ac_unit_has_weapon_type(root, attack_type):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
 
     def _ac_units_within_shoulder_range(self, leader_unit: Any, bodyguard_unit: Any) -> bool:
         source_models = self._ac_alive_models(leader_unit)
@@ -1201,13 +1327,626 @@ class AdeptusCustodesStratagemMixin:
             source_event="cabal_ritual_resolved",
         )
 
+    def _queue_shield_host_arcane_genetic_alchemy_reaction(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any,
+        target_model: Any,
+        phase_name: str,
+    ) -> None:
+        if not self._is_shield_host_detachment():
+            return
+        root = self._ac_root(target_unit or getattr(target_model, "parent_unit", None))
+        if root is None or not self._ac_is_custodes_unit(root) or not self._ac_owned_by_player(root):
+            return
+        if not self._ac_unit_on_battlefield(root) or self._ac_is_anathema_psykana_unit(root):
+            return
+        if target_model is not None and self._ac_model_has_keyword(target_model, "ANATHEMA PSYKANA"):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        stratagem = self.get_by_name("ARCANE GENETIC ALCHEMY")
+        phase_label = self._ac_current_phase_name(phase_name) or "Any phase"
+        if stratagem is None or not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            phase_name=phase_label,
+        ):
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        root_id = self._ac_sort_key(root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "ARCANE GENETIC ALCHEMY":
+                continue
+            if str(reaction.get("unit_id", "") or "").strip() == root_id:
+                return
+        self._queue_reaction(
+            {
+                "event": "mortal_wound_allocated",
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "unit_id": root_id,
+                "target_unit": root,
+                "attacker_unit": self._ac_root(attacker_unit),
+                "target_model": target_model,
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_shield_host_multipotentiality_reaction(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        root = self._ac_root(unit)
+        if root is None or not self._is_shield_host_detachment():
+            return
+        if not self._ac_is_custodes_unit(root) or self._ac_is_anathema_psykana_unit(root):
+            return
+        if not self._ac_unit_on_battlefield(root) or self._unit_cannot_be_target_of_stratagem(root):
+            return
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "fell_back_this_round", False)):
+            return
+        phase_name = self._ac_current_phase_name()
+        if self._ac_phase_key(phase_name) != "MOVEMENT_PHASE":
+            return
+        game = getattr(self, "game", None)
+        active_player = game.get_current_player() if game is not None and hasattr(game, "get_current_player") else None
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("MULTIPOTENTIALITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MULTIPOTENTIALITY":
+                continue
+            if reaction.get("unit") is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "fall_back",
+            },
+            use_timer=False,
+        )
+
+    def _shield_host_unwavering_sentinels_candidates(self, target_units: list[Any]) -> list[Any]:
+        candidates: list[Any] = []
+        for root in self._ac_unique_units(list(target_units or [])):
+            if not self._ac_owned_by_player(root):
+                continue
+            if not self._ac_unit_on_battlefield(root):
+                continue
+            if not self._ac_is_custodes_unit(root) or self._ac_is_anathema_psykana_unit(root):
+                continue
+            if not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            if not self._ac_controlled_objectives_in_range(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _queue_shield_host_unwavering_sentinels_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_shield_host_detachment():
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "FIGHT_PHASE":
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates = self._shield_host_unwavering_sentinels_candidates(list(target_units or []))
+        if not candidates:
+            return
+        stratagem = self.get_by_name("UNWAVERING SENTINELS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        attacker_id = self._ac_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "UNWAVERING SENTINELS":
+                continue
+            if str(reaction.get("attacking_unit_id", "") or "").strip() == attacker_id:
+                return
+        self._queue_reaction(
+            {
+                "event": "fight_targets_selected",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "attacking_unit": attacker_root,
+                "attacking_unit_id": attacker_id,
+                "candidates": candidates,
+                "target_unit": candidates[0] if len(candidates) == 1 else None,
+            },
+            use_timer=False,
+        )
+
+    @staticmethod
+    def _shield_host_archeotech_munitions_choice_key(value: Any) -> str:
+        text = str(value or "").strip().upper().replace(" ", "_")
+        if text == "LETHAL_HITS":
+            return "LETHAL_HITS"
+        if text in {"SUSTAINED_HITS_1", "SUSTAINED_HITS1"}:
+            return "SUSTAINED_HITS_1"
+        return ""
+
+    @staticmethod
+    def _shield_host_archeotech_munitions_choice_label(choice_key: str) -> str:
+        return "Lethal Hits" if choice_key == "LETHAL_HITS" else "Sustained Hits 1"
+
+    @staticmethod
+    def _shield_host_archeotech_munitions_choice_keywords(choice_key: str) -> list[str]:
+        if choice_key == "LETHAL_HITS":
+            return ["LETHAL HITS"]
+        if choice_key == "SUSTAINED_HITS_1":
+            return ["SUSTAINED HITS 1"]
+        return []
+
+    def _build_shield_host_archeotech_munitions_choice_request(
+        self,
+        *,
+        unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        unit_id = self._ac_sort_key(root)
+        if not unit_id:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        turn = self._ac_current_turn()
+        turn_owner_id = self._ac_turn_owner_id()
+        phase_label = str(phase_name or "").strip() or "Shooting phase"
+        if self._ac_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "adeptus_custodes_shield_host_archeotech_munitions_choice",
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'ARCHEOTECH MUNITIONS'}: choose a ranged weapon ability.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    "Lethal Hits",
+                    payload={"choice_key": "LETHAL_HITS", "unit_id": unit_id},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits 1",
+                    payload={"choice_key": "SUSTAINED_HITS_1", "unit_id": unit_id},
+                ),
+            ],
+            context={
+                "ability": "adeptus_custodes_shield_host_archeotech_munitions_choice",
+                "ability_name": str(stratagem_name or "").strip() or "ARCHEOTECH MUNITIONS",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "attack_type": "ranged",
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_choice_keys": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "stratagem_name": str(stratagem_name or "").strip() or "ARCHEOTECH MUNITIONS",
+                "optional": False,
+            },
+        )
+
+    def validate_shield_host_archeotech_munitions_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._ac_root(unit)
+        if root is None:
+            return False, "ARCHEOTECH MUNITIONS choice unit was not found."
+        if player is not None and player is not self.player:
+            return False, "ARCHEOTECH MUNITIONS choice must be resolved by the owning player."
+        if not self._is_shield_host_detachment():
+            return False, "ARCHEOTECH MUNITIONS requires Shield Host."
+        if not self._ac_owned_by_player(root):
+            return False, "ARCHEOTECH MUNITIONS target must belong to you."
+        if not self._ac_unit_on_battlefield(root):
+            return False, "ARCHEOTECH MUNITIONS target must be on the battlefield."
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return False, "ARCHEOTECH MUNITIONS target can no longer be selected."
+        if not self._ac_is_custodes_unit(root) or self._ac_is_anathema_psykana_unit(root):
+            return False, "ARCHEOTECH MUNITIONS target must be a non-Anathema Adeptus Custodes unit."
+        if game is not None:
+            current_phase = self._ac_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._ac_phase_key(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "ARCHEOTECH MUNITIONS choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "ARCHEOTECH MUNITIONS choice is no longer in the same battle round."
+            current_owner_id = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            if turn_owner_id and current_owner_id and current_owner_id != str(turn_owner_id):
+                return False, "ARCHEOTECH MUNITIONS choice is no longer in the same turn."
+        if self._ac_phase_name_lower(phase_name) != "shooting phase":
+            return False, "ARCHEOTECH MUNITIONS choice requires the Shooting phase."
+        if attack_type and str(attack_type or "").strip().lower() != "ranged":
+            return False, "ARCHEOTECH MUNITIONS choice payload does not match the phase."
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "shot_this_round", False)):
+            return False, "ARCHEOTECH MUNITIONS target has already been selected to shoot."
+        if not self._ac_unit_has_weapon_type(root, "ranged"):
+            return False, "ARCHEOTECH MUNITIONS target has no ranged weapons."
+        choice_key = self._shield_host_archeotech_munitions_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False, "ARCHEOTECH MUNITIONS choice must be LETHAL HITS or SUSTAINED HITS 1."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "ARCHEOTECH MUNITIONS":
+            return False, "ARCHEOTECH MUNITIONS choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_shield_host_archeotech_munitions_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> Any:
+        valid, _reason = self.validate_shield_host_archeotech_munitions_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            attack_type=attack_type,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        choice_key = self._shield_host_archeotech_munitions_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        return self._apply_shield_host_archeotech_munitions_effect(
+            root,
+            choice_key=choice_key,
+            phase_name=phase_name,
+            stratagem_name=str(stratagem_name or payload.get("stratagem_name", "") or "ARCHEOTECH MUNITIONS"),
+        )
+
+    def _apply_shield_host_archeotech_munitions_effect(
+        self,
+        unit: Any,
+        *,
+        choice_key: str,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> dict[str, Any] | None:
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        resolved_choice = self._shield_host_archeotech_munitions_choice_key(choice_key)
+        keyword_bonuses = self._shield_host_archeotech_munitions_choice_keywords(resolved_choice)
+        if not keyword_bonuses:
+            return None
+        root_id = self._ac_sort_key(root) or str(id(root))
+        phase_key = self._ac_phase_key(phase_name)
+        for model in self._ac_alive_models(root):
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = self._ac_sort_key(model) or str(id(model))
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"custodes_shield_host_archeotech_munitions:{root_id}:{model_id}:{weapon_name}:{resolved_choice}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=list(keyword_bonuses),
+                    source=str(stratagem_name or "ARCHEOTECH MUNITIONS").strip() or "ARCHEOTECH MUNITIONS",
+                    expires_phase=phase_key,
+                    attack_type="ranged",
+                )
+        special_rules = dict(getattr(root, "special_rules", {}) or {})
+        special_rules["custodes_shield_host_archeotech_munitions_active"] = True
+        special_rules["custodes_shield_host_archeotech_munitions_choice_key"] = resolved_choice
+        special_rules["custodes_shield_host_archeotech_munitions_turn"] = self._ac_current_turn()
+        special_rules["custodes_shield_host_archeotech_munitions_turn_owner"] = self._ac_turn_owner_id()
+        special_rules["custodes_shield_host_archeotech_munitions_expires_phase"] = phase_key
+        special_rules["custodes_shield_host_archeotech_munitions_source"] = (
+            str(stratagem_name or "ARCHEOTECH MUNITIONS").strip() or "ARCHEOTECH MUNITIONS"
+        )
+        root.special_rules = special_rules
+        return {
+            "unit_id": self._ac_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "choice_key": resolved_choice,
+            "choice_label": self._shield_host_archeotech_munitions_choice_label(resolved_choice),
+            "attack_type": "ranged",
+            "stratagem_name": str(stratagem_name or "ARCHEOTECH MUNITIONS").strip() or "ARCHEOTECH MUNITIONS",
+        }
+
+    def _build_shield_host_vigilance_eternal_objective_request(
+        self,
+        *,
+        unit: Any,
+        objectives: list[Any],
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        unit_id = self._ac_sort_key(root)
+        candidate_objective_ids = [
+            self._ac_objective_sort_key(objective)
+            for objective in list(objectives or [])
+            if self._ac_objective_sort_key(objective)
+        ]
+        if not unit_id or not candidate_objective_ids:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        turn = self._ac_current_turn()
+        turn_owner_id = self._ac_turn_owner_id()
+        phase_label = str(phase_name or "").strip() or "Movement phase"
+        if self._ac_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "adeptus_custodes_shield_host_vigilance_eternal_objective",
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'VIGILANCE ETERNAL'}: select one objective marker within range of {getattr(root, 'name', 'Unit')}.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    str(getattr(objective, "name", "Objective") or "Objective"),
+                    payload={
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "objective_id": self._ac_objective_sort_key(objective),
+                    },
+                )
+                for objective in list(objectives or [])
+                if self._ac_objective_sort_key(objective)
+            ],
+            context={
+                "ability": "adeptus_custodes_shield_host_vigilance_eternal_objective",
+                "ability_name": str(stratagem_name or "").strip() or "VIGILANCE ETERNAL",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "phase_name": phase_label,
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_objective_ids": list(candidate_objective_ids),
+                "stratagem_name": str(stratagem_name or "").strip() or "VIGILANCE ETERNAL",
+                "optional": False,
+            },
+        )
+
+    def validate_shield_host_vigilance_eternal_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+        candidate_objective_ids: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        root = self._ac_root(unit)
+        if root is None:
+            return False, "VIGILANCE ETERNAL source unit was not found."
+        if player is not None and player is not self.player:
+            return False, "VIGILANCE ETERNAL choice must be resolved by the owning player."
+        if not self._is_shield_host_detachment():
+            return False, "VIGILANCE ETERNAL requires Shield Host."
+        if not self._ac_owned_by_player(root):
+            return False, "VIGILANCE ETERNAL source unit must belong to you."
+        if not self._ac_unit_on_battlefield(root):
+            return False, "VIGILANCE ETERNAL source unit must be on the battlefield."
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return False, "VIGILANCE ETERNAL source unit can no longer be selected."
+        if not self._ac_is_custodes_unit(root) or self._ac_is_anathema_psykana_unit(root):
+            return False, "VIGILANCE ETERNAL source unit must be a non-Anathema Adeptus Custodes unit."
+        if not self._ac_has_keyword(root, "BATTLELINE"):
+            return False, "VIGILANCE ETERNAL requires a Battleline unit."
+        if game is not None:
+            current_phase = self._ac_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._ac_phase_key(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "VIGILANCE ETERNAL choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "VIGILANCE ETERNAL choice is no longer in the same battle round."
+            current_owner_id = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            if turn_owner_id and current_owner_id and current_owner_id != str(turn_owner_id):
+                return False, "VIGILANCE ETERNAL choice is no longer in the same turn."
+        if self._ac_phase_name_lower(phase_name) != "movement phase":
+            return False, "VIGILANCE ETERNAL choice requires the Movement phase."
+        objective_id = str(payload.get("objective_id", "") or "").strip()
+        if not objective_id:
+            return False, "VIGILANCE ETERNAL selection requires objective_id."
+        objective = self._ac_resolve_objective(objective_id)
+        if objective is None:
+            return False, "VIGILANCE ETERNAL objective was not found."
+        allowed_ids = {
+            str(value or "").strip()
+            for value in list(candidate_objective_ids or [])
+            if str(value or "").strip()
+        }
+        if allowed_ids and self._ac_objective_sort_key(objective) not in allowed_ids:
+            return False, "VIGILANCE ETERNAL objective is not in this request's candidate list."
+        if objective not in list(self._ac_controlled_objectives_in_range(root) or []):
+            return False, "VIGILANCE ETERNAL objective is no longer controlled and in range of the source unit."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "VIGILANCE ETERNAL":
+            return False, "VIGILANCE ETERNAL choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_shield_host_vigilance_eternal_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+        candidate_objective_ids: list[str] | None = None,
+    ) -> Any:
+        valid, _reason = self.validate_shield_host_vigilance_eternal_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+            candidate_objective_ids=candidate_objective_ids,
+        )
+        if not valid:
+            return None
+        root = self._ac_root(unit)
+        if root is None:
+            return None
+        objective = self._ac_resolve_objective(
+            payload.get("objective_id", ""),
+            candidates=list(self._ac_controlled_objectives_in_range(root) or []),
+        )
+        if objective is None:
+            return None
+        return self._apply_shield_host_vigilance_eternal_effect(
+            root,
+            objective=objective,
+            stratagem_name=str(stratagem_name or payload.get("stratagem_name", "") or "VIGILANCE ETERNAL"),
+        )
+
+    def _apply_shield_host_vigilance_eternal_effect(
+        self,
+        unit: Any,
+        *,
+        objective: Any,
+        stratagem_name: str,
+    ) -> dict[str, Any] | None:
+        root = self._ac_root(unit)
+        resolved_objective = self._ac_resolve_objective(objective)
+        if root is None or resolved_objective is None:
+            return None
+        location = getattr(resolved_objective, "location", None) or resolved_objective
+        set_sticky = getattr(location, "set_sticky_control", None)
+        if not callable(set_sticky):
+            return None
+        set_sticky(self.player, source="vigilance_eternal")
+        return {
+            "unit_id": self._ac_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "objective_id": self._ac_objective_sort_key(resolved_objective),
+            "objective_name": str(
+                getattr(resolved_objective, "name", "")
+                or f"objective {self._ac_objective_sort_key(resolved_objective)}"
+            ).strip()
+            or f"objective {self._ac_objective_sort_key(resolved_objective)}",
+            "stratagem_name": str(stratagem_name or "VIGILANCE ETERNAL").strip() or "VIGILANCE ETERNAL",
+        }
+
     def _use_adeptus_custodes_stratagem(self, stratagem, **kwargs):
         name_u = str(self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")).strip()
         handled = {
             "ANATHEMA BLADEMASTERY",
+            "ARCANE GENETIC ALCHEMY",
+            "ARCHEOTECH MUNITIONS",
+            "AVENGE THE FALLEN",
             "DESPERATION'S PRICE",
             "EARNING OF A NAME",
             "MANOEUVRE AND FIRE",
+            "MULTIPOTENTIALITY",
             "PEERLESS WARRIOR",
             "PSY-CHAFF VOLLEY",
             "PSYCHIC ABOMINATIONS",
@@ -1217,7 +1956,9 @@ class AdeptusCustodesStratagemMixin:
             "SUPERHUMAN RESERVES",
             "SWIFT AS THE EAGLE",
             "THE EMPEROR'S AUSPICE",
+            "UNWAVERING SENTINELS",
             "VIGIL UNENDING",
+            "VIGILANCE ETERNAL",
             "WITCH HUNTERS",
         }
         if name_u not in handled:
@@ -1238,6 +1979,15 @@ class AdeptusCustodesStratagemMixin:
         } and not self._is_lions_of_the_emperor_detachment():
             return False
         if name_u in {
+            "ARCANE GENETIC ALCHEMY",
+            "ARCHEOTECH MUNITIONS",
+            "AVENGE THE FALLEN",
+            "MULTIPOTENTIALITY",
+            "UNWAVERING SENTINELS",
+            "VIGILANCE ETERNAL",
+        } and not self._is_shield_host_detachment():
+            return False
+        if name_u in {
             "ANATHEMA BLADEMASTERY",
             "DESPERATION'S PRICE",
             "PSY-CHAFF VOLLEY",
@@ -1250,6 +2000,340 @@ class AdeptusCustodesStratagemMixin:
         phase_name = self._ac_current_phase_name(kwargs.get("phase_name"))
         pending = self._ac_pending_reaction(name_u)
         dequeue = bool(kwargs.get("dequeue"))
+
+        if name_u == "ARCANE GENETIC ALCHEMY":
+            source_unit = self._ac_root(
+                kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("unit") or (pending or {}).get("target_unit")
+            )
+            target_model = kwargs.get("target_model") or (pending or {}).get("target_model")
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: ARCANE GENETIC ALCHEMY: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if target_model is not None and self._ac_model_has_keyword(target_model, "ANATHEMA PSYKANA"):
+                logger.error("ERROR: ARCANE GENETIC ALCHEMY: target model cannot be Anathema Psykana")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            phase_key = self._ac_phase_key(phase_name)
+            for model in self._ac_alive_models(source_unit):
+                set_fnp = getattr(model, "set_temporary_fnp", None)
+                if not callable(set_fnp):
+                    continue
+                set_fnp(
+                    key=f"custodes_shield_host_arcane_genetic_alchemy_{get_entity_id(model)}",
+                    value=4,
+                    source=stratagem.name,
+                    condition="against mortal wounds",
+                    expires_phase=phase_key,
+                )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "ARCHEOTECH MUNITIONS":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._shield_host_battlefield_unit_candidates(
+                require_not_shot=True,
+                attack_type="ranged",
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: must be your Shooting phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if bool(getattr(getattr(source_unit, "round_state", None), "shot_this_round", False)):
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: target has already been selected to shoot")
+                return False
+            if not self._ac_unit_has_weapon_type(source_unit, "ranged"):
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: target has no ranged weapons")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            choice_key = self._shield_host_archeotech_munitions_choice_key(
+                kwargs.get("choice_key", "") or kwargs.get("choice", "") or kwargs.get("selected_choice", "")
+            )
+            if choice_key:
+                valid, reason = self.validate_shield_host_archeotech_munitions_choice(
+                    source_unit,
+                    {"choice_key": choice_key, "stratagem_name": stratagem.name},
+                    game=self.game,
+                    player=self.player,
+                    phase_name=phase_name,
+                    attack_type="ranged",
+                    turn=self._ac_current_turn(),
+                    turn_owner_id=self._ac_turn_owner_id(),
+                    stratagem_name=stratagem.name,
+                )
+                if not valid:
+                    logger.error("ERROR: ARCHEOTECH MUNITIONS: %s", reason)
+                    return False
+                if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                    return False
+                if self._apply_shield_host_archeotech_munitions_effect(
+                    source_unit,
+                    choice_key=choice_key,
+                    phase_name=phase_name,
+                    stratagem_name=stratagem.name,
+                ) is None:
+                    return False
+                self._ac_finalize_use(stratagem, dequeue=dequeue)
+                return True
+            choice_request = self._build_shield_host_archeotech_munitions_choice_request(
+                unit=source_unit,
+                phase_name=phase_name,
+                stratagem_name=str(getattr(stratagem, "name", "") or "ARCHEOTECH MUNITIONS"),
+            )
+            if choice_request is None:
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: failed to build choice request")
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            if not self._ac_submit_decision_request(choice_request):
+                logger.error("ERROR: ARCHEOTECH MUNITIONS: failed to queue choice request")
+                return False
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "AVENGE THE FALLEN":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._shield_host_battlefield_unit_candidates(
+                require_not_fought=True,
+                require_below_starting_strength=True,
+                attack_type="melee",
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: AVENGE THE FALLEN: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: AVENGE THE FALLEN: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: AVENGE THE FALLEN: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not bool(getattr(source_unit, "is_below_starting_strength", lambda: False)()):
+                logger.error("ERROR: AVENGE THE FALLEN: target must be below Starting Strength")
+                return False
+            if not self._ac_unit_has_weapon_type(source_unit, "melee"):
+                logger.error("ERROR: AVENGE THE FALLEN: target has no melee weapons")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            attacks_bonus = 2 if bool(getattr(source_unit, "is_below_half_strength", lambda: False)()) else 1
+            phase_key = self._ac_phase_key(phase_name)
+            root_id = self._ac_sort_key(source_unit) or str(id(source_unit))
+            for model in self._ac_alive_models(source_unit):
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                model_id = self._ac_sort_key(model) or str(id(model))
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_melee = getattr(wargear, "is_melee", None)
+                    if not callable(is_melee) or not bool(is_melee()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    set_bonus(
+                        key=f"custodes_shield_host_avenge_the_fallen:{root_id}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        attacks_bonus=int(attacks_bonus),
+                        source=stratagem.name,
+                        expires_phase=phase_key,
+                    )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "MULTIPOTENTIALITY":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._shield_host_battlefield_unit_candidates(
+                require_fell_back=True,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "movement phase":
+                logger.error("ERROR: MULTIPOTENTIALITY: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: MULTIPOTENTIALITY: must be your Movement phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: MULTIPOTENTIALITY: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: MULTIPOTENTIALITY: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not bool(getattr(getattr(source_unit, "round_state", None), "fell_back_this_round", False)):
+                logger.error("ERROR: MULTIPOTENTIALITY: target must have Fallen Back this phase")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
+            special_rules["manoeuvre_and_fire_active"] = True
+            special_rules["manoeuvre_and_fire_turn"] = self._ac_current_turn()
+            special_rules["manoeuvre_and_fire_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_shield_host_multipotentiality_active"] = True
+            special_rules["custodes_shield_host_multipotentiality_turn"] = self._ac_current_turn()
+            special_rules["custodes_shield_host_multipotentiality_turn_owner"] = self._ac_turn_owner_id()
+            special_rules["custodes_shield_host_multipotentiality_source"] = stratagem.name
+            source_unit.special_rules = special_rules
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "UNWAVERING SENTINELS":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or (pending or {}).get("attacking_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._shield_host_unwavering_sentinels_candidates(list(kwargs.get("target_units") or []))
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: UNWAVERING SENTINELS: wrong phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: UNWAVERING SENTINELS: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if not self._ac_has_keyword(source_unit, "INFANTRY"):
+                logger.error("ERROR: UNWAVERING SENTINELS: target must be an Infantry unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: UNWAVERING SENTINELS: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: UNWAVERING SENTINELS: missing enemy attacking unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            if not self._ac_controlled_objectives_in_range(source_unit):
+                logger.error("ERROR: UNWAVERING SENTINELS: target must be within range of a controlled objective marker")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            self._append_defensive_effect(
+                source_unit,
+                "defensive_hit_mods",
+                {
+                    "value": 1,
+                    "attack_type": "melee",
+                    "attacker_key": self._ac_sort_key(attacking_unit),
+                    "expires_phase": "FIGHT_PHASE",
+                    "source": str(getattr(stratagem, "name", "") or "UNWAVERING SENTINELS"),
+                },
+            )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "VIGILANCE ETERNAL":
+            source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._shield_host_battlefield_unit_candidates(
+                require_battleline=True,
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "movement phase":
+                logger.error("ERROR: VIGILANCE ETERNAL: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: VIGILANCE ETERNAL: must be your Movement phase")
+                return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit) or self._ac_is_anathema_psykana_unit(source_unit):
+                logger.error("ERROR: VIGILANCE ETERNAL: target must be a non-Anathema Adeptus Custodes unit")
+                return False
+            if not self._ac_has_keyword(source_unit, "BATTLELINE"):
+                logger.error("ERROR: VIGILANCE ETERNAL: target must be a Battleline unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: VIGILANCE ETERNAL: target is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                return False
+            objective_candidates = list(kwargs.get("objective_candidates") or []) or self._ac_controlled_objectives_in_range(source_unit)
+            objective = self._ac_resolve_objective(
+                kwargs.get("objective") or kwargs.get("objective_marker") or kwargs.get("objective_id"),
+                candidates=objective_candidates,
+            )
+            if not objective_candidates:
+                logger.error("ERROR: VIGILANCE ETERNAL: target must be within range of a controlled objective marker")
+                return False
+            if objective is None and len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            if objective is None:
+                choice_request = self._build_shield_host_vigilance_eternal_objective_request(
+                    unit=source_unit,
+                    objectives=objective_candidates,
+                    phase_name=phase_name,
+                    stratagem_name=str(getattr(stratagem, "name", "") or "VIGILANCE ETERNAL"),
+                )
+                if choice_request is None:
+                    logger.error("ERROR: VIGILANCE ETERNAL: failed to build objective request")
+                    return False
+                if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                    return False
+                if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                    return False
+                if not self._ac_submit_decision_request(choice_request):
+                    logger.error("ERROR: VIGILANCE ETERNAL: failed to queue objective request")
+                    return False
+                self._ac_finalize_use(stratagem, dequeue=dequeue)
+                return True
+            if objective not in list(objective_candidates or []):
+                logger.error("ERROR: VIGILANCE ETERNAL: selected objective is not an eligible candidate")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            if self._apply_shield_host_vigilance_eternal_effect(
+                source_unit,
+                objective=objective,
+                stratagem_name=str(getattr(stratagem, "name", "") or "VIGILANCE ETERNAL"),
+            ) is None:
+                return False
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
 
         if name_u == "ANATHEMA BLADEMASTERY":
             source_unit = self._ac_root(kwargs.get("unit") or kwargs.get("target_unit") or (pending or {}).get("target_unit"))

@@ -12829,7 +12829,7 @@ class Game(
         objectives = list(getattr(game_map, "objectives", []) or [])
         if not objectives:
             return
-        turn_boundary_sources = {"corrupt_realspace", "space_marines_vanguard_deadly_prize"}
+        turn_boundary_sources = {"corrupt_realspace", "space_marines_vanguard_deadly_prize", "vigilance_eternal"}
         has_turn_boundary_sticky = False
         for obj in objectives:
             loc = getattr(obj, "location", None)

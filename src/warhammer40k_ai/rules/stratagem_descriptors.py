@@ -288,6 +288,103 @@ _NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME = {
 }
 
 
+_SHIELD_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008394002": StratagemToolDescriptor(
+        stratagem_id="000008394002",
+        name="ARCANE GENETIC ALCHEMY",
+        timing="any_phase_after_friendly_unit_allocated_mortal_wound",
+        target="non_anathema_adeptus_custodes_unit_allocated_mortal_wound",
+        duration="until_end_of_phase",
+        effect="grant_feel_no_pain_against_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "feel_no_pain": 4,
+            "condition": "against mortal wounds",
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008394007": StratagemToolDescriptor(
+        stratagem_id="000008394007",
+        name="ARCHEOTECH MUNITIONS",
+        timing="your_shooting_phase",
+        target="non_anathema_adeptus_custodes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="choose_lethal_hits_or_sustained_hits_1_for_ranged_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "choice_keys": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008394003": StratagemToolDescriptor(
+        stratagem_id="000008394003",
+        name="AVENGE THE FALLEN",
+        timing="start_of_fight_phase",
+        target="non_anathema_adeptus_custodes_unit_below_starting_strength",
+        duration="until_end_of_phase",
+        effect="increase_melee_attacks_by_strength_loss_state",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "attacks_bonus": 1,
+            "conditional_attacks_bonus": 2,
+            "conditional_target_below_half_strength": True,
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008394005": StratagemToolDescriptor(
+        stratagem_id="000008394005",
+        name="MULTIPOTENTIALITY",
+        timing="your_movement_phase_after_fall_back",
+        target="that_non_anathema_adeptus_custodes_unit",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008394004": StratagemToolDescriptor(
+        stratagem_id="000008394004",
+        name="UNWAVERING SENTINELS",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="non_anathema_adeptus_custodes_infantry_unit_on_controlled_objective_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="melee_hit_penalty_against_attacker",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "hit_penalty": 1,
+            "required_keywords_any": ["INFANTRY"],
+            "requires_controlled_objective": True,
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008394006": StratagemToolDescriptor(
+        stratagem_id="000008394006",
+        name="VIGILANCE ETERNAL",
+        timing="your_movement_phase",
+        target="non_anathema_battleline_adeptus_custodes_unit_within_controlled_objective_range_and_one_objective_marker",
+        duration="until_opponent_controls_at_turn_boundary",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["BATTLELINE"],
+            "requires_controlled_objective": True,
+            "turn_boundary_break": True,
+            "excluded_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+}
+
+_SHIELD_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SHIELD_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13449,6 +13546,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _NULL_MAIDEN_VIGIL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SHIELD_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -13938,6 +14038,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         _AURIC_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
         or _LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME.get(key)
+        or _SHIELD_HOST_STRATAGEM_BY_NAME.get(key)
         or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)

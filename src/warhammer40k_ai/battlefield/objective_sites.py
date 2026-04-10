@@ -388,7 +388,7 @@ class ObjectiveSite:
                     continue
                 opponent_max = max(opponent_max, int(oc or 0))
             allow_break = True
-            if self.sticky_source in {"corrupt_realspace", "space_marines_vanguard_deadly_prize"}:
+            if self.sticky_source in {"corrupt_realspace", "space_marines_vanguard_deadly_prize", "vigilance_eternal"}:
                 allow_break = bool(getattr(game_state, "_corrupt_realspace_check", False))
             if opponent_max > sticky_oc and allow_break:
                 self.sticky_controller = None

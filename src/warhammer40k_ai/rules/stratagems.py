@@ -92,6 +92,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DEATH FRENZY",
     "ENDLESS SWARM",
     "ANATHEMA BLADEMASTERY",
+    "ARCANE GENETIC ALCHEMY",
+    "ARCHEOTECH MUNITIONS",
+    "AVENGE THE FALLEN",
     "DESPERATION'S PRICE",
     "EARNING OF A NAME",
     "EXPEDITIOUS EXIT",
@@ -515,6 +518,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
     "INEXORABLE ADVANCE",
     "MANOEUVRE AND FIRE",
+    "MULTIPOTENTIALITY",
     "MARTIAL PERFECTION",
     "MASTERS OF THE VOID",
     "MIRAGE OF ECHOES",
@@ -709,7 +713,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GO GET Ã¢â‚¬â„¢EM!",
     "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
+    "UNWAVERING SENTINELS",
     "VIGIL UNENDING",
+    "VIGILANCE ETERNAL",
     "ARMED TO DATEEF",
     "TOO ARROGANT TO DIE",
     "ALWAYS LOOKIN' FER A FIGHT",
@@ -2397,6 +2403,7 @@ class StratagemManager(
             "HARRYING HOUNDS",
             "DUTY UNENDING",
             "GRIND THEM UNDERFOOT",
+            "MULTIPOTENTIALITY",
             "PRECOGNITIVE STRATEGIES",
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
@@ -2518,6 +2525,7 @@ class StratagemManager(
             "PROTECTION OF THE DARK PRINCE",
             "SHIELD OF DENIAL",
             "SHIELD OF FAITH",
+            "ARCANE GENETIC ALCHEMY",
             "THIEVES OF PAIN",
             "TRUESILVER WILL",
         }:
@@ -2797,6 +2805,7 @@ class StratagemManager(
             "FIGHTING SHADOWS",
             "FATEFUL ROLE",
             "TRENCH FIGHTERS",
+            "UNWAVERING SENTINELS",
             "UNENDING FIDELITY",
         }
 
@@ -12865,6 +12874,7 @@ class StratagemManager(
         self._process_thousand_sons_warpforged_mutate_landscape_move_end(unit=unit, action=action)
         self._queue_thousand_sons_hexwarp_fall_back_reactions(unit=unit, action=action)
         self._queue_lions_manoeuvre_and_fire_reaction(unit=unit, action=action)
+        self._queue_shield_host_multipotentiality_reaction(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -15509,6 +15519,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_shield_host_unwavering_sentinels_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_traitoris_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -17727,6 +17744,15 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_shield_host_arcane_genetic_alchemy_reaction(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,

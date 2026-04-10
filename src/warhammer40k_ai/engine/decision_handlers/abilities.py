@@ -8374,6 +8374,90 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "WITCH HUNTERS choice is not valid."),)
         return ()
+    if ability == "adeptus_custodes_shield_host_archeotech_munitions_choice":
+        if is_skip_choice(request, result):
+            return ("ARCHEOTECH MUNITIONS choice cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("ARCHEOTECH MUNITIONS choice army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("ARCHEOTECH MUNITIONS choice manager is unavailable.",)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("ARCHEOTECH MUNITIONS choice unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("ARCHEOTECH MUNITIONS choice unit was not found.",)
+        validate_choice = getattr(stratagem_mgr, "validate_shield_host_archeotech_munitions_choice", None)
+        if not callable(validate_choice):
+            return ("ARCHEOTECH MUNITIONS choice validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            attack_type=str(ctx.get("attack_type", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "ARCHEOTECH MUNITIONS choice is not valid."),)
+        return ()
+    if ability == "adeptus_custodes_shield_host_vigilance_eternal_objective":
+        if is_skip_choice(request, result):
+            return ("VIGILANCE ETERNAL selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("VIGILANCE ETERNAL army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("VIGILANCE ETERNAL choice manager is unavailable.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("VIGILANCE ETERNAL source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("VIGILANCE ETERNAL source unit was not found.",)
+        validate_choice = getattr(stratagem_mgr, "validate_shield_host_vigilance_eternal_choice", None)
+        if not callable(validate_choice):
+            return ("VIGILANCE ETERNAL choice validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+            candidate_objective_ids=[
+                str(v or "").strip()
+                for v in list(ctx.get("candidate_objective_ids", []) or [])
+                if str(v or "").strip()
+            ],
+        )
+        if not bool(valid):
+            return (str(reason or "VIGILANCE ETERNAL choice is not valid."),)
+        return ()
     if ability == "penitent_host_boundless_zeal_mode":
         if is_skip_choice(request, result):
             return ("BOUNDLESS ZEAL choice cannot be skipped.",)
@@ -20963,6 +21047,110 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game,
             player,
             f"{ability_name}: {unit_name} selected {choice_label} for{attack_label} weapons.",
+        )
+        return outcome
+    if ability == "adeptus_custodes_shield_host_archeotech_munitions_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_shield_host_archeotech_munitions_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            attack_type=str(ctx.get("attack_type", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "ARCHEOTECH MUNITIONS"
+        ).strip() or "ARCHEOTECH MUNITIONS"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        choice_label = str(outcome.get("choice_label", "") or outcome.get("choice_key", "") or "choice")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} selected {choice_label} for ranged weapons.",
+        )
+        return outcome
+    if ability == "adeptus_custodes_shield_host_vigilance_eternal_objective":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_shield_host_vigilance_eternal_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+            candidate_objective_ids=[
+                str(v or "").strip()
+                for v in list(ctx.get("candidate_objective_ids", []) or [])
+                if str(v or "").strip()
+            ],
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "VIGILANCE ETERNAL"
+        ).strip() or "VIGILANCE ETERNAL"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        objective_name = str(outcome.get("objective_name", "") or outcome.get("objective_id", "") or "objective")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} makes {objective_name} sticky under your control.",
         )
         return outcome
     if ability == "penitent_host_boundless_zeal_mode":
