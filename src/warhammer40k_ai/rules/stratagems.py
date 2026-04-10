@@ -77,6 +77,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COORDINATED TRAP",
     "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
+    "DUTY UNENDING",
     "COMBAT DEBARKATION",
     "CRACK SHOTS",
     "CRASH THROUGH",
@@ -87,6 +88,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
+    "EXPEDITIOUS EXIT",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL MODIFICATIONS",
     "EXPERIMENTAL WEAPONRY",
@@ -201,6 +203,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TANGLEFOOT GRENADES",
     "POUNCE ON THE PREY",
     "PREY ON THE WEAK",
+    "PURGATION PATTERN",
     "PULSE ONSLAUGHT",
     "COUNTERTEMPORAL SHIFT",
     "CURSE OF THE CRYPTEK",
@@ -304,6 +307,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SELFLESS DEMISE",
     "SAVAGE ROAR",
     "STEADFAST DETERMINATION",
+    "SHINING VEIL",
     "SPECIMENS FOR THE SPIDER",
     "SWARM-GUIDED SALVOES",
     "TO THE FAVOURED THE SPOILS",
@@ -398,6 +402,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SURGICAL STRIKES",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
+    "TRUESILVER CHANNELLING",
     "UNBOWED CONVICTION",
     "UNTO THE BURNING SKIES",
     "UNBREAKABLE LINES",
@@ -2265,6 +2270,7 @@ class StratagemManager(
             "SEIZE THE PRIZE",
             "FEEDING FRENZY",
             "MIRESLICK",
+            "DUTY UNENDING",
         }:
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
@@ -2357,6 +2363,7 @@ class StratagemManager(
             "CUNNING HUNTER",
             "RAPID FEINT",
             "HARRYING HOUNDS",
+            "DUTY UNENDING",
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
         }:
@@ -2387,6 +2394,7 @@ class StratagemManager(
             "A DARK NETWORK",
             "MIRAGE OF ECHOES",
             "HORRIFIC INCURSION",
+            "PURGATION PATTERN",
         }:
             add("unit_set_up", self._on_unit_set_up)
 
@@ -2674,6 +2682,7 @@ class StratagemManager(
             "FIGHTING SHADOWS",
             "PSI SURGE",
             "BIO-HORROR REVELATION",
+            "SHINING VEIL",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -9237,6 +9246,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_brotherhood_strike_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_first_company_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10653,6 +10666,7 @@ class StratagemManager(
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._queue_banishers_phase_end_reactions(player=player, phase=phase)
+            self._queue_brotherhood_strike_phase_end_reactions(player=player, phase=phase)
             self._cleanup_augurium_phase_end_effects(phase=phase)
             self._cleanup_banishers_phase_end_effects(phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -12746,6 +12760,7 @@ class StratagemManager(
         self._queue_soulforged_move_start_reactions(unit=unit, action=action)
         self._queue_death_guard_move_start_reactions(unit=unit, action=action)
         self._queue_pantheon_move_started_reactions(unit=unit, action=action)
+        self._queue_brotherhood_strike_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -12829,6 +12844,7 @@ class StratagemManager(
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
         self._queue_recon_draw_them_out_reactions(unit=unit, action=action)
         self._queue_genestealer_cults_outlander_move_end_reactions(unit=unit, action=action)
+        self._queue_brotherhood_strike_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12900,6 +12916,7 @@ class StratagemManager(
 
     def _on_unit_set_up(self, unit, **kwargs):
         self._track_a_challenge_met_set_up(unit)
+        self._track_brotherhood_strike_unit_set_up(unit=unit, **kwargs)
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
             unit=unit,
             trigger="unit_set_up",
@@ -14177,6 +14194,13 @@ class StratagemManager(
             raise
         try:
             self._queue_banishers_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_brotherhood_strike_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

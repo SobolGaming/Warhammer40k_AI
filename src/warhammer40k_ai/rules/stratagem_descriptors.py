@@ -4060,6 +4060,16 @@ _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME = {
 }
 
 _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010349002": StratagemToolDescriptor(
+        stratagem_id="000010349002",
+        name="Truesilver Channelling",
+        timing="fight_phase",
+        target="grey_knights_infantry_unit_not_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_psychic_weapon_keywords",
+        cp_cost=2,
+        effect_params={"granted_weapon_keywords": ["DEVASTATING WOUNDS"]},
+    ),
     "000010349003": StratagemToolDescriptor(
         stratagem_id="000010349003",
         name="Combat Manifestation",
@@ -4069,6 +4079,46 @@ _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = 
         effect="deep_strike_min_distance_override_with_no_charge",
         cp_cost=1,
         effect_params={"min_distance": 6, "distance_type": "horizontal", "cannot_charge_this_turn": True},
+    ),
+    "000010349004": StratagemToolDescriptor(
+        stratagem_id="000010349004",
+        name="Purgation Pattern",
+        timing="your_shooting_phase",
+        target="grey_knights_unit_set_up_using_deep_strike_this_turn_not_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_weapon_keywords",
+        cp_cost=1,
+        effect_params={"granted_weapon_keywords": ["SUSTAINED HITS 1"]},
+    ),
+    "000010349005": StratagemToolDescriptor(
+        stratagem_id="000010349005",
+        name="Duty Unending",
+        timing="opponent_movement_phase_after_enemy_falls_back",
+        target="grey_knights_unit_previously_within_engagement_range_of_falling_back_enemy",
+        duration="immediate",
+        effect="enter_strategic_reserves_if_deep_strike",
+        cp_cost=1,
+        effect_params={"requires_not_within_engagement_range": True},
+    ),
+    "000010349006": StratagemToolDescriptor(
+        stratagem_id="000010349006",
+        name="Shining Veil",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="grey_knights_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="grant_stealth",
+        cp_cost=1,
+        effect_params={"granted_keywords": ["STEALTH"]},
+    ),
+    "000010349007": StratagemToolDescriptor(
+        stratagem_id="000010349007",
+        name="Expeditious Exit",
+        timing="end_of_opponent_fight_phase",
+        target="grey_knights_psyker_infantry_unit",
+        duration="immediate",
+        effect="enter_strategic_reserves_if_deep_strike",
+        cp_cost=2,
+        effect_params={"allows_within_engagement_range": True},
     ),
 }
 

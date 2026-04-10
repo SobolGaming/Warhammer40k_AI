@@ -20818,11 +20818,16 @@ def _stratagem_support(
         "FLAMES OF SANCTITY": "End of Fight phase: targeted PURIFIER SQUAD rolls against each enemy unit within 6\" and inflicts D3 mortal wounds on 4+ (adds 1 to each roll if including Castellan Crowe).",
         "HALLOWED BEACON": "Movement Reinforcements step: targeted GREY KNIGHTS INFANTRY (non-TERMINATOR) Deep Strike arrival can be set up more than 6\" horizontally away from enemies, and placement must be wholly within Hallowed Ground.",
         "COMBAT MANIFESTATION": "Movement Reinforcements step: targeted GREY KNIGHTS unit arriving from Reserves with Deep Strike can be set up more than 6\" horizontally from enemy units this phase, and that unit cannot declare a charge this turn.",
+        "DUTY UNENDING": "Opponent Movement phase after an enemy Falls Back from Engagement Range of a GREY KNIGHTS unit: selected no-longer-engaged GREY KNIGHTS unit with Deep Strike enters Strategic Reserves.",
+        "EXPEDITIOUS EXIT": "End of the opponent's Fight phase: selected GREY KNIGHTS PSYKER INFANTRY unit whose models all have Deep Strike enters Strategic Reserves, even while within Engagement Range.",
         "MIRAGE OF ECHOES": "Opponent Movement phase Reinforcements step after enemy setup: selected GREY KNIGHTS PSYKER unit within 12\" of that enemy, with Deep Strike and not in Engagement Range, enters Strategic Reserves.",
         "NECESSARY END": "Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit rolls a D6 each time one of its models is destroyed this phase and, on a result greater than the current battle round number, that model fights on death after the attacker finishes its attacks.",
+        "PURGATION PATTERN": "Your Shooting phase: selected GREY KNIGHTS unit that was set up using Deep Strike this turn and has not yet been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase.",
         "REDIRECTED STRIKE": "End of your Command phase: selected GREY KNIGHTS PSYKER unit with Deep Strike and not in Engagement Range enters Strategic Reserves.",
         "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
+        "SHINING VEIL": "Opponent Shooting phase reaction after an enemy selects targets: selected GREY KNIGHTS unit targeted by that attacker gains Stealth until end of phase.",
+        "TRUESILVER CHANNELLING": "Fight phase: selected GREY KNIGHTS INFANTRY unit that has not yet been selected to fight gains [DEVASTATING WOUNDS] on Psychic weapons until end of phase.",
         "WALL OF MIRRORS": "End of opponent Fight phase: selected T'AU EMPIRE Stealth/Ghostkeel/Commander Shadowsun unit not in Engagement Range enters Strategic Reserves.",
         "INVISIBLE HUNTER": "End of opponent Fight phase: select up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves.",
     }
@@ -21549,6 +21554,36 @@ def _stratagem_support(
         return (
             "Implemented",
             "Fight phase reaction after an enemy selects targets: selected GREY KNIGHTS INFANTRY unit rolls a D6 each time one of its models is destroyed this phase and, on a result greater than the current battle round number, that model fights on death after the attacker finishes its attacks.",
+            name_u,
+        )
+    if stratagem_id == "000010349002":
+        return (
+            "Implemented",
+            "Fight phase: selected GREY KNIGHTS INFANTRY unit that has not yet been selected to fight gains [DEVASTATING WOUNDS] on Psychic weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010349004":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected GREY KNIGHTS unit that was set up using Deep Strike this turn and has not yet been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010349005":
+        return (
+            "Implemented",
+            "Opponent Movement phase after an enemy Falls Back from Engagement Range of a GREY KNIGHTS unit: selected no-longer-engaged GREY KNIGHTS unit with Deep Strike enters Strategic Reserves.",
+            name_u,
+        )
+    if stratagem_id == "000010349006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy selects targets: selected GREY KNIGHTS unit targeted by that attacker gains Stealth until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010349007":
+        return (
+            "Implemented",
+            "End of the opponent's Fight phase: selected GREY KNIGHTS PSYKER INFANTRY unit whose models all have Deep Strike enters Strategic Reserves, even while within Engagement Range.",
             name_u,
         )
     if stratagem_id == "000010357002":

@@ -847,6 +847,287 @@ class GreyKnightsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._gk_sort_key)
 
+    def _brotherhood_strike_units(
+        self,
+        *,
+        require_psyker: bool = False,
+        require_infantry: bool = False,
+        require_deep_strike: bool = False,
+        require_on_battlefield: bool = True,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_brotherhood_strike():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        units: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if require_psyker and not self._is_gk_psyker_unit(root):
+                continue
+            if require_infantry and not self._is_gk_infantry_unit(root):
+                continue
+            if require_deep_strike and not self._gk_has_deep_strike(root):
+                continue
+            if require_on_battlefield and not self._gk_is_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            units.append(root)
+        return sorted(units, key=self._gk_sort_key)
+
+    def _track_brotherhood_strike_unit_set_up(
+        self,
+        *,
+        unit: Any,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+    ) -> None:
+        if not self._is_brotherhood_strike() or unit is None:
+            return
+        if not bool(set_up_as_reinforcements) or not bool(used_deep_strike):
+            return
+        root = self._gk_root(unit)
+        if root is None:
+            return
+        if not self._gk_owned_by_player(root, self.player):
+            return
+        if not self._is_gk_unit(root):
+            return
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["brotherhood_strike_deep_strike_setup_active"] = True
+        sr["brotherhood_strike_deep_strike_setup_turn"] = int(self._gk_current_turn())
+        sr["brotherhood_strike_deep_strike_setup_turn_owner"] = str(self._gk_current_turn_owner_id() or getattr(self.player, "id", "") or "")
+        root.special_rules = sr
+
+    def _brotherhood_strike_purgation_pattern_candidates(self) -> list[Any]:
+        if not self._is_brotherhood_strike():
+            return []
+        turn = self._gk_current_turn()
+        turn_owner_id = str(getattr(self.player, "id", "") or "")
+        candidates: list[Any] = []
+        for root in list(self._brotherhood_strike_units(require_on_battlefield=True, require_targetable=True) or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("brotherhood_strike_deep_strike_setup_active", False)):
+                continue
+            try:
+                marked_turn = int(sr.get("brotherhood_strike_deep_strike_setup_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            if marked_turn != turn:
+                continue
+            if str(sr.get("brotherhood_strike_deep_strike_setup_turn_owner", "") or "") != turn_owner_id:
+                continue
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "shot_this_phase", False)) or bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _brotherhood_strike_note_duty_unending_fall_back_start(self, *, unit: Any, action: str) -> None:
+        if not self._is_brotherhood_strike() or unit is None:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"fall back", "fallback"}:
+            return
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return
+        enemy_root = self._gk_root(unit)
+        if enemy_root is None:
+            return
+        if self._gk_owned_by_player(enemy_root, self.player):
+            return
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+            return
+        candidate_ids: list[str] = []
+        for candidate in list(get_enemy_units(enemy_root) or []):
+            root = self._gk_root(candidate)
+            if root is None:
+                continue
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if bool(is_within_engagement_range(enemy_root, root)):
+                root_id = self._gk_sort_key(root)
+                if root_id:
+                    candidate_ids.append(root_id)
+        enemy_id = self._gk_sort_key(enemy_root)
+        if not enemy_id:
+            return
+        tracking = getattr(self, "_brotherhood_strike_duty_unending_candidates_by_enemy_id", None)
+        if not isinstance(tracking, dict):
+            tracking = {}
+        tracking[enemy_id] = sorted(set(candidate_ids))
+        self._brotherhood_strike_duty_unending_candidates_by_enemy_id = tracking
+
+    def _brotherhood_strike_duty_unending_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._gk_root(enemy_unit)
+        enemy_id = self._gk_sort_key(enemy_root)
+        if not enemy_id:
+            return []
+        tracking = getattr(self, "_brotherhood_strike_duty_unending_candidates_by_enemy_id", None)
+        if not isinstance(tracking, dict):
+            return []
+        candidate_ids = list(tracking.get(enemy_id, []) or [])
+        if not candidate_ids:
+            return []
+        registry = getattr(self.game, "entity_registry", None) if self.game is not None else None
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for candidate_id in candidate_ids:
+            root = self._gk_root(registry.get(candidate_id, kind="unit")) if registry is not None else None
+            if root is None:
+                continue
+            root_id = self._gk_sort_key(root)
+            if not root_id or root_id in seen:
+                continue
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if self._gk_has_enemy_within_engagement_range(root):
+                continue
+            if not self._gk_has_deep_strike(root):
+                continue
+            seen.add(root_id)
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _brotherhood_strike_expeditious_exit_candidates(self) -> list[Any]:
+        return self._brotherhood_strike_units(
+            require_psyker=True,
+            require_infantry=True,
+            require_deep_strike=True,
+            require_on_battlefield=True,
+            require_targetable=True,
+        )
+
+    def _brotherhood_strike_shining_veil_candidates(self, *, target_units: Any) -> list[Any]:
+        if not self._is_brotherhood_strike():
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _brotherhood_strike_truesilver_channelling_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in list(
+            self._brotherhood_strike_units(
+                require_infantry=True,
+                require_on_battlefield=True,
+                require_targetable=True,
+            )
+            or []
+        ):
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._gk_sort_key)
+
+    def _gk_wargear_has_keyword(self, wargear: Any, *, keyword: str) -> bool:
+        if wargear is None:
+            return False
+        target = str(keyword or "").strip().lower()
+        if not target:
+            return False
+        get_keywords = getattr(wargear, "get_keywords", None)
+        if callable(get_keywords):
+            for value in list(get_keywords() or []):
+                if str(value or "").strip().lower() == target:
+                    return True
+        profiles = getattr(wargear, "profiles", None)
+        if not isinstance(profiles, dict):
+            return False
+        for profile in list(profiles.values()):
+            if profile is None:
+                continue
+            profile_get_keywords = getattr(profile, "get_keywords", None)
+            if not callable(profile_get_keywords):
+                continue
+            for value in list(profile_get_keywords() or []):
+                if str(value or "").strip().lower() == target:
+                    return True
+        return False
+
+    def _gk_apply_temporary_weapon_keyword_bonuses(
+        self,
+        root: Any,
+        *,
+        key_prefix: str,
+        keywords: list[str],
+        expires_phase: str,
+        attack_type: str,
+        source: str,
+        weapon_filter: Any,
+    ) -> None:
+        if root is None:
+            return
+        for member in list(self._gk_member_units(root) or [root]):
+            for model in list(self._gk_alive_models(member) or []):
+                model_id = str(get_entity_id(model) or "")
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None or not callable(weapon_filter) or not bool(weapon_filter(wargear)):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                    if not weapon_name or not callable(set_keywords):
+                        continue
+                    set_keywords(
+                        key=f"{key_prefix}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=list(keywords or []),
+                        source=str(source or "").strip() or "Weapon keyword bonus",
+                        expires_phase=str(expires_phase or "").strip().upper(),
+                        attack_type=str(attack_type or "").strip().lower() or "any",
+                    )
+
     def _warpbane_aegis_eternal_candidates(self, target_units: Any) -> list[Any]:
         candidates: list[Any] = []
         seen: set[str] = set()
@@ -1476,6 +1757,197 @@ class GreyKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_brotherhood_strike_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_brotherhood_strike():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name == "SHOOTING_PHASE" and player is self.player:
+            stratagem = self.get_by_name("PURGATION PATTERN")
+            if stratagem is not None and int(getattr(self.player, "command_points", 0) or 0) >= int(stratagem.cp_cost or 0):
+                key = str(stratagem.name or "").strip().upper()
+                if key not in self._used_stratagems_this_phase:
+                    candidates = self._brotherhood_strike_purgation_pattern_candidates()
+                    if candidates and not self._warpbane_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Shooting phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Shooting phase",
+                            "phase_name": "Shooting phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+        if phase_name == "FIGHT_PHASE":
+            stratagem = self.get_by_name("TRUESILVER CHANNELLING")
+            if stratagem is not None and int(getattr(self.player, "command_points", 0) or 0) >= int(stratagem.cp_cost or 0):
+                key = str(stratagem.name or "").strip().upper()
+                if key not in self._used_stratagems_this_phase:
+                    candidates = self._brotherhood_strike_truesilver_channelling_candidates()
+                    if candidates and not self._warpbane_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Fight phase",
+                            "phase_name": "Fight phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_brotherhood_strike_move_start_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_brotherhood_strike():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        self._brotherhood_strike_note_duty_unending_fall_back_start(unit=unit, action=action)
+
+    def _queue_brotherhood_strike_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_brotherhood_strike():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        moving_root = self._gk_root(unit)
+        moving_id = self._gk_sort_key(moving_root)
+        try:
+            if action_key not in {"fall back", "fallback"}:
+                return
+            if moving_root is None or self._gk_owned_by_player(moving_root, self.player):
+                return
+            if not self._gk_is_alive(moving_root) or not self._gk_is_on_battlefield(moving_root):
+                return
+            stratagem = self.get_by_name("DUTY UNENDING")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+                return
+            key = str(stratagem.name or "").strip().upper()
+            if key in self._used_stratagems_this_phase:
+                return
+            candidates = self._brotherhood_strike_duty_unending_candidates(enemy_unit=moving_root)
+            if not candidates:
+                return
+            if self._warpbane_reaction_already_queued(
+                event_name="unit_move_ended",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+                enemy_unit=moving_root,
+            ):
+                return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "enemy_unit": moving_root,
+                "action": action,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+        finally:
+            tracking = getattr(self, "_brotherhood_strike_duty_unending_candidates_by_enemy_id", None)
+            if isinstance(tracking, dict) and moving_id:
+                tracking.pop(moving_id, None)
+
+    def _queue_brotherhood_strike_shooting_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_brotherhood_strike():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacking_root = self._gk_root(attacking_unit)
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            return
+        if not self._gk_is_alive(attacking_root) or not self._gk_is_on_battlefield(attacking_root):
+            return
+        stratagem = self.get_by_name("SHINING VEIL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        key = str(stratagem.name or "").strip().upper()
+        if key in self._used_stratagems_this_phase:
+            return
+        candidates = self._brotherhood_strike_shining_veil_candidates(target_units=target_units)
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_root,
+            "attacking_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_brotherhood_strike_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_brotherhood_strike():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("EXPEDITIOUS EXIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        key = str(stratagem.name or "").strip().upper()
+        if key in self._used_stratagems_this_phase:
+            return
+        candidates = self._brotherhood_strike_expeditious_exit_candidates()
+        if not candidates:
+            return
+        if self._warpbane_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_augurium_phase_end_effects(self, *, phase: Any) -> None:
         if not self._is_augurium_task_force():
             return
@@ -1801,8 +2273,10 @@ class GreyKnightsStratagemMixin:
         if not self._is_brotherhood_strike():
             return
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name != "MOVEMENT_PHASE":
+        if not phase_name:
             return
+        if phase_name == "MOVEMENT_PHASE":
+            self._brotherhood_strike_duty_unending_candidates_by_enemy_id = {}
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         if army is None:
@@ -1821,18 +2295,43 @@ class GreyKnightsStratagemMixin:
             if not isinstance(sr, dict):
                 continue
             changed = False
-            for key in (
-                "combat_manifestation_deep_strike_min_distance",
-                "combat_manifestation_deep_strike_turn_owner",
-                "combat_manifestation_deep_strike_turn",
-                "combat_manifestation_deep_strike_expires_phase",
-                "combat_manifestation_source",
-            ):
+            keys: tuple[str, ...] = ()
+            if phase_name == "MOVEMENT_PHASE":
+                keys = (
+                    "combat_manifestation_deep_strike_min_distance",
+                    "combat_manifestation_deep_strike_turn_owner",
+                    "combat_manifestation_deep_strike_turn",
+                    "combat_manifestation_deep_strike_expires_phase",
+                    "combat_manifestation_source",
+                )
+            elif phase_name == "FIGHT_PHASE":
+                keys = (
+                    "brotherhood_strike_deep_strike_setup_active",
+                    "brotherhood_strike_deep_strike_setup_turn",
+                    "brotherhood_strike_deep_strike_setup_turn_owner",
+                )
+            for key in keys:
                 if key in sr:
                     sr.pop(key, None)
                     changed = True
+            if (
+                phase_name == "SHOOTING_PHASE"
+                and bool(sr.get("opponent_shooting_phase_stealth_active", False))
+                and str(sr.get("opponent_shooting_phase_stealth_source", "") or "").strip().upper() == "SHINING VEIL"
+            ):
+                for key in (
+                    "opponent_shooting_phase_stealth_active",
+                    "opponent_shooting_phase_stealth_owner",
+                    "opponent_shooting_phase_stealth_turn",
+                    "opponent_shooting_phase_stealth_source",
+                    "opponent_shooting_phase_stealth_expires_phase",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
             if changed:
                 root.special_rules = sr
+                self._gk_clear_ability_cache(root)
 
     def _use_grey_knights_warpbane_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
@@ -1848,16 +2347,26 @@ class GreyKnightsStratagemMixin:
             return self._use_banishers_circle_of_sanctuary(stratagem, **kwargs)
         if name_u == "COMBAT MANIFESTATION":
             return self._use_brotherhood_strike_combat_manifestation(stratagem, **kwargs)
+        if name_u == "DUTY UNENDING":
+            return self._use_brotherhood_strike_duty_unending(stratagem, **kwargs)
+        if name_u == "EXPEDITIOUS EXIT":
+            return self._use_brotherhood_strike_expeditious_exit(stratagem, **kwargs)
         if name_u == "HEXWROUGHT REPRISAL":
             return self._use_banishers_hexwrought_reprisal(stratagem, **kwargs)
         if name_u == "MIRAGE OF ECHOES":
             return self._use_augurium_mirage_of_echoes(stratagem, **kwargs)
         if name_u == "NECESSARY END":
             return self._use_augurium_necessary_end(stratagem, **kwargs)
+        if name_u == "PURGATION PATTERN":
+            return self._use_brotherhood_strike_purgation_pattern(stratagem, **kwargs)
         if name_u == "REDIRECTED STRIKE":
             return self._use_augurium_redirected_strike(stratagem, **kwargs)
         if name_u == "SHADOW OF ANARCH":
             return self._use_banishers_shadow_of_anarch(stratagem, **kwargs)
+        if name_u == "SHINING VEIL":
+            return self._use_brotherhood_strike_shining_veil(stratagem, **kwargs)
+        if name_u == "TRUESILVER CHANNELLING":
+            return self._use_brotherhood_strike_truesilver_channelling(stratagem, **kwargs)
         if name_u == "WARDING CHANT":
             return self._use_banishers_warding_chant(stratagem, **kwargs)
         if name_u == "SANCTIFIED KILL ZONE":
@@ -2746,6 +3255,317 @@ class GreyKnightsStratagemMixin:
             getattr(root, "name", "Unit"),
             int(mortal_wounds),
             getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_duty_unending(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DUTY UNENDING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DUTY UNENDING: not opponent's Movement phase")
+            return False
+        pending = self._gk_pending_reaction_by_name("DUTY UNENDING")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit")
+        if isinstance(pending, dict):
+            if unit is None:
+                unit = pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DUTY UNENDING: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        enemy_root = self._gk_root(enemy_unit)
+        if root is None:
+            return False
+        eligible = candidates or self._brotherhood_strike_duty_unending_candidates(enemy_unit=enemy_root)
+        if eligible and root not in eligible:
+            logger.error("ERROR: DUTY UNENDING: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: DUTY UNENDING: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DUTY UNENDING: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root):
+            logger.error("ERROR: DUTY UNENDING: target must be GREY KNIGHTS")
+            return False
+        if self._gk_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: DUTY UNENDING: target is still within Engagement Range")
+            return False
+        if enemy_root is None or self._gk_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: DUTY UNENDING: invalid enemy unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._gk_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "DUTY UNENDING")):
+            logger.error("ERROR: DUTY UNENDING: failed to place target into Strategic Reserves")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DUTY UNENDING: %s entered Strategic Reserves after %s fell back.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_expeditious_exit(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: EXPEDITIOUS EXIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: EXPEDITIOUS EXIT: not opponent's Fight phase")
+            return False
+        pending = self._gk_pending_reaction_by_name("EXPEDITIOUS EXIT")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if unit is None:
+                unit = pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: EXPEDITIOUS EXIT: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        eligible = candidates or self._brotherhood_strike_expeditious_exit_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: EXPEDITIOUS EXIT: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: EXPEDITIOUS EXIT: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: EXPEDITIOUS EXIT: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_psyker_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: EXPEDITIOUS EXIT: target must be a GREY KNIGHTS PSYKER INFANTRY unit")
+            return False
+        if not self._gk_has_deep_strike(root):
+            logger.error("ERROR: EXPEDITIOUS EXIT: every model in the target must have Deep Strike")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._gk_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "EXPEDITIOUS EXIT")):
+            logger.error("ERROR: EXPEDITIOUS EXIT: failed to place target into Strategic Reserves")
+            return False
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXPEDITIOUS EXIT: %s entered Strategic Reserves at the end of the opponent's Fight phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_purgation_pattern(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PURGATION PATTERN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PURGATION PATTERN: not your Shooting phase")
+            return False
+        pending = self._gk_pending_reaction_by_name("PURGATION PATTERN")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if unit is None:
+                unit = pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PURGATION PATTERN: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        eligible = candidates or self._brotherhood_strike_purgation_pattern_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: PURGATION PATTERN: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: PURGATION PATTERN: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PURGATION PATTERN: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root):
+            logger.error("ERROR: PURGATION PATTERN: target must be GREY KNIGHTS")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        self._gk_apply_temporary_weapon_keyword_bonuses(
+            root,
+            key_prefix="grey_knights_purgation_pattern",
+            keywords=["SUSTAINED HITS 1"],
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+            source=str(getattr(stratagem, "name", "") or "PURGATION PATTERN"),
+            weapon_filter=lambda wargear: bool(callable(getattr(wargear, "is_ranged", None)) and wargear.is_ranged()),
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PURGATION PATTERN: %s gains [SUSTAINED HITS 1] on ranged weapons until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_shining_veil(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SHINING VEIL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SHINING VEIL: not opponent's Shooting phase")
+            return False
+        pending = self._gk_pending_reaction_by_name("SHINING VEIL")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        if isinstance(pending, dict):
+            if unit is None:
+                unit = pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SHINING VEIL: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        attacking_root = self._gk_root(attacking_unit)
+        if root is None:
+            return False
+        eligible = candidates or self._brotherhood_strike_shining_veil_candidates(target_units=target_units)
+        if eligible and root not in eligible:
+            logger.error("ERROR: SHINING VEIL: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: SHINING VEIL: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SHINING VEIL: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root):
+            logger.error("ERROR: SHINING VEIL: target must be GREY KNIGHTS")
+            return False
+        if attacking_root is None or self._gk_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: SHINING VEIL: invalid attacking unit")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = dict(getattr(root, "special_rules", None) or {})
+        sr["opponent_shooting_phase_stealth_active"] = True
+        sr["opponent_shooting_phase_stealth_owner"] = str(getattr(active_player, "id", "") or "")
+        sr["opponent_shooting_phase_stealth_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["opponent_shooting_phase_stealth_source"] = str(getattr(stratagem, "name", "") or "SHINING VEIL")
+        sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+        self._gk_clear_ability_cache(root)
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHINING VEIL: %s gains Stealth until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_truesilver_channelling(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: TRUESILVER CHANNELLING: wrong phase")
+            return False
+        pending = self._gk_pending_reaction_by_name("TRUESILVER CHANNELLING")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if unit is None:
+                unit = pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TRUESILVER CHANNELLING: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+        eligible = candidates or self._brotherhood_strike_truesilver_channelling_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: TRUESILVER CHANNELLING: target unit is not currently eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: TRUESILVER CHANNELLING: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TRUESILVER CHANNELLING: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
+            logger.error("ERROR: TRUESILVER CHANNELLING: target must be GREY KNIGHTS INFANTRY")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: TRUESILVER CHANNELLING: target has already fought this phase")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+        self._gk_apply_temporary_weapon_keyword_bonuses(
+            root,
+            key_prefix="grey_knights_truesilver_channelling",
+            keywords=["DEVASTATING WOUNDS"],
+            expires_phase="FIGHT_PHASE",
+            attack_type="any",
+            source=str(getattr(stratagem, "name", "") or "TRUESILVER CHANNELLING"),
+            weapon_filter=lambda wargear: self._gk_wargear_has_keyword(wargear, keyword="psychic"),
+        )
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TRUESILVER CHANNELLING: %s gains [DEVASTATING WOUNDS] on Psychic weapons until end of phase.",
+            getattr(root, "name", "Unit"),
         )
         return True
 
