@@ -19594,6 +19594,123 @@ class GameView:
                 )
             return
 
+        if name_u in (
+            "CHANT OF THE REMORSELESS FIST",
+            "INCANTATION OF THE IRON SOUL",
+            "LITANY OF THE ELECTROMANCER",
+            "LUMINESCENT BLESSING",
+            "VERSE OF VENGEANCE",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "CHANT OF THE REMORSELESS FIST": "_data_psalm_cult_mechanicus_primary_candidates",
+                        "INCANTATION OF THE IRON SOUL": "_data_psalm_mortal_wound_reaction_candidates",
+                        "LITANY OF THE ELECTROMANCER": "_data_psalm_cult_mechanicus_primary_candidates",
+                        "LUMINESCENT BLESSING": "_data_psalm_reactive_cult_mechanicus_candidates",
+                        "VERSE OF VENGEANCE": "_data_psalm_reactive_cult_mechanicus_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            if name_u == "CHANT OF THE REMORSELESS FIST":
+                                candidates = list(getter(require_not_fought=True) or [])
+                            elif name_u == "INCANTATION OF THE IRON SOUL":
+                                target_unit = context.get("target_unit") or context.get("unit")
+                                candidates = list(getter(target_unit) or []) if target_unit is not None else []
+                            elif name_u == "LUMINESCENT BLESSING":
+                                candidates = list(getter(target_units=list(context.get("target_units") or [])) or [])
+                            elif name_u == "VERSE OF VENGEANCE":
+                                candidates = list(
+                                    getter(
+                                        target_units=list(context.get("target_units") or []),
+                                        require_not_fought=True,
+                                    )
+                                    or []
+                                )
+                            else:
+                                candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "CHANT OF THE REMORSELESS FIST": "CULT MECHANICUS unit that has not been selected to fight this phase.",
+                    "INCANTATION OF THE IRON SOUL": "CULT MECHANICUS unit that just suffered a mortal wound.",
+                    "LITANY OF THE ELECTROMANCER": "CULT MECHANICUS unit.",
+                    "LUMINESCENT BLESSING": "CULT MECHANICUS unit selected as a target of an enemy Shooting attack.",
+                    "VERSE OF VENGEANCE": "CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought.",
+                }.get(name_u, "Select an eligible CULT MECHANICUS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "TRIBUTE OF EMPHATIC VENERATION" and "enemy_unit" not in context:
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_enemy(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Tribute of Emphatic Veneration: no CULT MECHANICUS unit selected")
+                    return
+                enemy_candidates = list(manager._data_psalm_tribute_enemy_candidates(chosen_unit) or [])
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select enemy unit for Tribute of Emphatic Veneration.",
+                    title=name,
+                    subtitle="Enemy unit within 18\" of the selected CULT MECHANICUS unit.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _pick_enemy(preset_unit)
+                return
+
+            candidates = context.get("candidates") or []
+            if not candidates and hasattr(manager, "_data_psalm_cult_mechanicus_primary_candidates"):
+                try:
+                    candidates = list(manager._data_psalm_cult_mechanicus_primary_candidates() or [])
+                except Exception:
+                    candidates = []
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_pick_enemy,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Tribute of Emphatic Veneration unit.",
+                title=name,
+                subtitle="CULT MECHANICUS unit.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
         if name_u == "AUTO-DIVINATORY TARGETING" and ("objective" not in context and "objective_marker" not in context):
             if not callable(getattr(self, "_request_auto_divinatory_objective", None)):
                 return

@@ -4085,6 +4085,81 @@ _COHORT_CYBERNETICA_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COHORT_CYBERNETICA_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DATA_PSALM_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008565002": StratagemToolDescriptor(
+        stratagem_id="000008565002",
+        name="Incantation of the Iron Soul",
+        timing="any_phase_after_mortal_wound_allocated",
+        target="cult_mechanicus_unit_after_mortal_wound_allocated",
+        duration="until_end_of_phase",
+        effect="mortal_wound_feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 4, "condition": "against mortal wounds"},
+    ),
+    "000008565003": StratagemToolDescriptor(
+        stratagem_id="000008565003",
+        name="Chant of the Remorseless Fist",
+        timing="fight_phase_on_select_to_fight",
+        target="cult_mechanicus_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_wound_bonus",
+        cp_cost=1,
+        effect_params={"wound_bonus": 1, "attack_type": "melee"},
+    ),
+    "000008565004": StratagemToolDescriptor(
+        stratagem_id="000008565004",
+        name="Verse of Vengeance",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="cult_mechanicus_unit_targeted_by_attacker_and_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={"threshold": 4},
+    ),
+    "000008565005": StratagemToolDescriptor(
+        stratagem_id="000008565005",
+        name="Tribute of Emphatic Veneration",
+        timing="start_of_your_movement_phase",
+        target="cult_mechanicus_unit_and_enemy_within_18",
+        duration="until_start_of_your_next_command_phase",
+        effect="battle_shock_then_attacker_hit_penalty_on_fail",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={"battle_shock_test": True, "hit_roll_modifier_on_fail": -1},
+    ),
+    "000008565006": StratagemToolDescriptor(
+        stratagem_id="000008565006",
+        name="Litany of the Electromancer",
+        timing="your_shooting_phase",
+        target="cult_mechanicus_unit",
+        duration="immediate",
+        effect="enemy_units_within_range_mortal_wounds",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "range_in": 6.0,
+            "roll": "D6",
+            "threshold": 5,
+            "mortal_wounds": "D3",
+            "electro_priest_roll_bonus": 1,
+        },
+    ),
+    "000008565007": StratagemToolDescriptor(
+        stratagem_id="000008565007",
+        name="Luminescent Blessing",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="cult_mechanicus_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="invulnerable_save",
+        cp_cost=1,
+        effect_params={"invulnerable_save": 4},
+    ),
+}
+
+_DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DATA_PSALM_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008469004": StratagemToolDescriptor(
         stratagem_id="000008469004",
@@ -13931,6 +14006,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COHORT_CYBERNETICA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DATA_PSALM_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14350,6 +14428,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SIEGE_REGIMENT_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_STRATAGEM_BY_NAME.get(key)
+        or _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)

@@ -13501,6 +13501,44 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
         except Exception:
             pass
+        # Adeptus Mechanicus: Data-Psalm Conclave (Tribute of Emphatic Veneration).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            sr = getattr(attacker_root, "special_rules", None) if attacker_root is not None else None
+            if isinstance(sr, dict) and bool(sr.get("data_psalm_tribute_of_emphatic_veneration_active")):
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except Exception:
+                    current_turn = 0
+                try:
+                    expires_round = int(sr.get("data_psalm_tribute_of_emphatic_veneration_expires_round", 0) or 0)
+                except Exception:
+                    expires_round = 0
+                if expires_round and current_turn >= expires_round:
+                    for key in (
+                        "data_psalm_tribute_of_emphatic_veneration_active",
+                        "data_psalm_tribute_of_emphatic_veneration_owner",
+                        "data_psalm_tribute_of_emphatic_veneration_turn",
+                        "data_psalm_tribute_of_emphatic_veneration_expires_round",
+                        "data_psalm_tribute_of_emphatic_veneration_source",
+                    ):
+                        sr.pop(key, None)
+                    attacker_root.special_rules = sr
+                else:
+                    source_name = (
+                        str(sr.get("data_psalm_tribute_of_emphatic_veneration_source", "") or "TRIBUTE OF EMPHATIC VENERATION").strip()
+                        or "TRIBUTE OF EMPHATIC VENERATION"
+                    )
+                    _add_hit_mod(-1, f"-1 to hit from {source_name}")
+        except Exception:
+            pass
         # Chaos Space Marines: Huron's Marauders - Tyrannical Motivation.
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -20560,6 +20598,26 @@ class WargearProfile:
                 dice_modifier += int(wound_bonus)
                 source_name = str(source or "CURSE OF THE CRYPTEK").strip() or "CURSE OF THE CRYPTEK"
                 wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
+        # Adeptus Mechanicus: Data-Psalm Conclave (Chant of the Remorseless Fist).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            adm_mgr = getattr(attacker_army, "adeptus_mechanicus_detachments", None) if attacker_army is not None else None
+            bonus_fn = getattr(adm_mgr, "data_psalm_remorseless_fist_wound_bonus", None) if adm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if wound_bonus:
+                    source_name = str(source or "CHANT OF THE REMORSELESS FIST").strip() or "CHANT OF THE REMORSELESS FIST"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
+        except Exception:
+            pass
 
         # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")
         if getattr(aura_mods, "wound", 0):

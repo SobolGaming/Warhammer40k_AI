@@ -1294,6 +1294,100 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         )
 
     @staticmethod
+    def _clear_data_psalm_phase_effect(root, prefix: str) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            f"{prefix}_active",
+            f"{prefix}_turn_owner",
+            f"{prefix}_turn",
+            f"{prefix}_expires_phase",
+            f"{prefix}_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _data_psalm_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        default_source: str,
+        game=None,
+    ) -> tuple[object, dict | None, str]:
+        root = self._attached_root(unit)
+        if root is None:
+            return None, None, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(f"{prefix}_active", False))):
+            return root, None, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_key and expected_phase != phase_key:
+            self._clear_data_psalm_phase_effect(root, prefix)
+            return root, None, ""
+        try:
+            effect_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            self._clear_data_psalm_phase_effect(root, prefix)
+            return root, None, ""
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        current_player_id = str(getattr(current_player, "id", "") or "")
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        if owner_id and current_player_id and owner_id != current_player_id:
+            self._clear_data_psalm_phase_effect(root, prefix)
+            return root, None, ""
+        source = str(sr.get(f"{prefix}_source", "") or default_source).strip() or default_source
+        return root, sr, source
+
+    def data_psalm_remorseless_fist_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._weapon_is_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        source_root = self._data_psalm_cult_mechanicus_root(attacker_unit)
+        if source_root is None:
+            return 0, ""
+        _root, sr, source = self._data_psalm_phase_effect_state(
+            source_root,
+            prefix="data_psalm_remorseless_fist",
+            default_source="CHANT OF THE REMORSELESS FIST",
+            game=game,
+        )
+        if not isinstance(sr, dict):
+            return 0, ""
+        return 1, source
+
+    def data_psalm_verse_of_vengeance_fight_on_death_rule(self, unit, *, model=None, game=None) -> Optional[dict]:
+        source_root = self._data_psalm_cult_mechanicus_root(unit)
+        if source_root is None:
+            return None
+        _root, sr, source = self._data_psalm_phase_effect_state(
+            source_root,
+            prefix="data_psalm_verse_of_vengeance",
+            default_source="VERSE OF VENGEANCE",
+            game=game,
+        )
+        if not isinstance(sr, dict):
+            return None
+        return {"threshold": 4, "source": source}
+
+    @staticmethod
     def _objective_point_for_entry(entry):
         point = getattr(entry, "location", None)
         if point is None:

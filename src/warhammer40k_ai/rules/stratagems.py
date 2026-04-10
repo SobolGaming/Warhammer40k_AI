@@ -55,6 +55,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLAZING ADVANCE",
     "BLAZING IRE",
     "BENEVOLENCE OF THE OMNISSIAH",
+    "CHANT OF THE REMORSELESS FIST",
     "CLEANSING FLAMES",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
@@ -106,13 +107,18 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MACHINE SUPERIORITY",
     "FLAWLESS CONSTRUCTION",
     "HUNT AS ONE",
+    "INCANTATION OF THE IRON SOUL",
+    "LITANY OF THE ELECTROMANCER",
+    "LUMINESCENT BLESSING",
     "PUNISHMENT INESCAPABLE",
     "RELENTLESS PERSECUTION",
     "SHIELD OF HONOUR",
     "TALONED PINCER",
     "TALONS INTERLOCKED",
+    "TRIBUTE OF EMPHATIC VENERATION",
     "TRANSCENDENT COGITATION",
     "UNSTOPPABLE",
+    "VERSE OF VENGEANCE",
     "WRATHFUL ADVANCE",
     "EXPEDITIOUS EXIT",
     "EXPERIMENTAL AMMUNITION",
@@ -2296,6 +2302,8 @@ class StratagemManager(
         if "INSANE BRAVERY" in names:
             add("battle_shock_test_started", self._on_battle_shock_test_started)
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
+        if "TRIBUTE OF EMPHATIC VENERATION" in names:
+            add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
 
         if "CORRUPTING TAINT" in names:
             add("malefic_surge_applied", self._on_malefic_surge_applied)
@@ -2539,6 +2547,7 @@ class StratagemManager(
             "BALEFUL BLESSING",
             "FUELLED BY FAITH",
             "HEXWROUGHT REPRISAL",
+            "INCANTATION OF THE IRON SOUL",
             "LAYERED WARDS",
             "PROTECTION OF THE DARK PRINCE",
             "SHIELD OF DENIAL",
@@ -2752,6 +2761,7 @@ class StratagemManager(
             "SHINING VEIL",
             "SHINING RESOLVE",
             "UNENDING FIDELITY",
+            "LUMINESCENT BLESSING",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -2828,6 +2838,7 @@ class StratagemManager(
             "TRENCH FIGHTERS",
             "UNWAVERING SENTINELS",
             "UNENDING FIDELITY",
+            "VERSE OF VENGEANCE",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -6305,6 +6316,64 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield"
             return result
+        if name_u == "CHANT OF THE REMORSELESS FIST":
+            if self._data_psalm_cult_mechanicus_primary_candidates(require_not_fought=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires CULT MECHANICUS unit on the battlefield that has not been selected to fight this phase"
+            return result
+        if name_u == "INCANTATION OF THE IRON SOUL":
+            target_unit = context.get("target_unit") or context.get("unit")
+            candidates = (
+                [target_unit]
+                if target_unit is not None
+                else list(context.get("candidates") or [])
+            )
+            if not candidates and target_unit is not None:
+                candidates = [target_unit]
+            if not candidates:
+                candidates = list(self._data_psalm_mortal_wound_reaction_candidates(target_unit) or []) if target_unit is not None else []
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "INCANTATION OF THE IRON SOUL":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a mortal wound to be allocated to a CULT MECHANICUS unit this phase"
+            return result
+        if name_u == "LITANY OF THE ELECTROMANCER":
+            if self._data_psalm_cult_mechanicus_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires CULT MECHANICUS unit on the battlefield"
+            return result
+        if name_u == "LUMINESCENT BLESSING":
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            if self._data_psalm_reactive_cult_mechanicus_candidates(target_units=target_units):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "LUMINESCENT BLESSING":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires CULT MECHANICUS unit selected as a target of an enemy Shooting attack"
+            return result
         if name_u == "EXTINCTION ORDER":
             source_unit = context.get("target_unit") or context.get("unit")
             candidate_units = (
@@ -6350,6 +6419,23 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires ADEPTUS MECHANICUS VEHICLE on the battlefield"
             return result
+        if name_u == "TRIBUTE OF EMPHATIC VENERATION":
+            source_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = (
+                [source_unit]
+                if source_unit is not None
+                else list(self._data_psalm_cult_mechanicus_primary_candidates() or [])
+            )
+            for candidate in candidate_units:
+                enemy_candidates = list(context.get("enemy_candidates") or [])
+                if not enemy_candidates:
+                    enemy_candidates = list(self._data_psalm_tribute_enemy_candidates(candidate) or [])
+                if enemy_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires CULT MECHANICUS unit on the battlefield and an enemy unit within 18\""
+            return result
         if name_u == "PRE-CALIBRATED PURGE SOLUTION":
             if self._rad_zone_pre_calibrated_purge_solution_primary_candidates():
                 result["available"] = True
@@ -6363,6 +6449,25 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires LEGIO CYBERNETICA unit or ADEPTUS MECHANICUS VEHICLE on the battlefield"
+            return result
+        if name_u == "VERSE OF VENGEANCE":
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            if self._data_psalm_reactive_cult_mechanicus_candidates(target_units=target_units, require_not_fought=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "VERSE OF VENGEANCE":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought this phase"
             return result
         if name_u == "VOW OF RETRIBUTION":
             if self._imperial_knights_vow_of_retribution_candidates():
@@ -8462,10 +8567,16 @@ class StratagemManager(
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
             "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "CHANT OF THE REMORSELESS FIST": "Target: CULT MECHANICUS unit that has not been selected to fight this phase; its melee attacks gain +1 to wound until end of phase",
             "BULWARK IMPERATIVE": "Target: SKITARII unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "INCANTATION OF THE IRON SOUL": "Any phase, just after a mortal wound is allocated: target CULT MECHANICUS unit; its models gain Feel No Pain 4+ against mortal wounds until end of phase",
             "EXTINCTION ORDER": "Target: one TECH-PRIEST model and one objective marker within 24\" of it",
             "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "LITANY OF THE ELECTROMANCER": "Target: CULT MECHANICUS unit; roll for each enemy unit within 6\" and on 5+ deal D3 mortal wounds (+1 to the roll for ELECTRO-PRIESTS)",
+            "LUMINESCENT BLESSING": "Target: CULT MECHANICUS unit selected as a target of an enemy Shooting attack; its models gain a 4+ invulnerable save until end of phase",
             "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "TRIBUTE OF EMPHATIC VENERATION": "Target: one CULT MECHANICUS unit and one enemy unit within 18\" of it; enemy takes a Battle-shock test and, on a failure, its attacks are -1 to hit until your next Command phase",
+            "VERSE OF VENGEANCE": "Target: CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought; destroyed models in that unit fight on death on 4+ this phase",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
@@ -12786,6 +12897,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._resolve_data_psalm_battle_shock_effects(
+                unit=unit,
+                passed=passed,
+            )
+        except Exception:
+            raise
 
         # Unleash Balefire: apply aflame on failed Battle-shock.
         try:
@@ -14724,6 +14842,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_data_psalm_luminescent_blessing_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_rad_zone_bulwark_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15999,6 +16124,13 @@ class StratagemManager(
             raise
         try:
             self._queue_rad_zone_baleful_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_data_psalm_verse_of_vengeance_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -17913,6 +18045,15 @@ class StratagemManager(
             raise
         try:
             self._queue_sanctic_spearhead_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_data_psalm_mortal_wound_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,

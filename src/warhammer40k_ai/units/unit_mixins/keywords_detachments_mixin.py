@@ -2389,6 +2389,26 @@ class KeywordsDetachmentsMixin:
                         "source": source,
                     }
 
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        adm_rule_fn = (
+            getattr(adm_mgr, "data_psalm_verse_of_vengeance_fight_on_death_rule", None)
+            if adm_mgr is not None
+            else None
+        )
+        if callable(adm_rule_fn):
+            adm_rule = adm_rule_fn(self, model=model, game=game)
+            if isinstance(adm_rule, dict):
+                try:
+                    threshold = int(adm_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(adm_rule.get("source", "") or "VERSE OF VENGEANCE").strip() or "VERSE OF VENGEANCE"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                    }
+
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
             resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(

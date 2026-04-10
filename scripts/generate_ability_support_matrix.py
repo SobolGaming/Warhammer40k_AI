@@ -19559,6 +19559,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008421002": "Power of the Hive Mind: the bearer's Psychic weapons gain +1 Strength and improve AP by 1.",
         "000008421003": "Psychostatic Disruption: enemy units arriving from Reserves cannot be set up within 12\" of the bearer, and once per battle in battle round 1 or 2 you can select the bearer via CHOOSE_QUARRY when an enemy unit in Strategic Reserves declares an arrival; on a 4+ that unit cannot arrive this turn.",
         "000008421005": "The Dirgeheart of Kharis (Aura): enemy units within 9\" of the bearer suffer -1 Leadership.",
+        "000008565002": "Any phase, just after a mortal wound is allocated to a CULT MECHANICUS model: selected CULT MECHANICUS unit gains Feel No Pain 4+ against mortal wounds until end of phase.",
+        "000008565003": "Fight phase: selected CULT MECHANICUS unit that has not fought gains +1 to wound for melee attacks until end of phase.",
+        "000008565004": "Fight phase, just after an enemy unit selects targets: selected CULT MECHANICUS unit that has not fought gains melee fight-on-death on 4+ until end of phase.",
+        "000008565005": "Start of your Movement phase: select one CULT MECHANICUS unit and one enemy unit within 18\"; the enemy takes a Battle-shock test and, on a failure, its attacks suffer -1 to hit until your next Command phase.",
+        "000008565006": "Your Shooting phase: selected CULT MECHANICUS unit rolls for each enemy unit within 6\" and deals D3 mortal wounds on 5+, adding 1 to those rolls for ELECTRO-PRIEST units.",
+        "000008565007": "Opponent's Shooting phase, just after an enemy unit selects targets: selected CULT MECHANICUS unit gains a 4+ invulnerable save until end of phase.",
         "000008573002": "Your Command phase: selected ADEPTUS MECHANICUS VEHICLE gains +3\" Move and +1 to Advance and Charge rolls until your next Command phase.",
         "000008573003": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE selects one objective marker; until your next Command phase its ranged weapons have Ballistic Skill 3+, gain [IGNORES COVER], and can only target units within range of the selected objective marker.",
         "000008573004": "Your Command phase: selected LEGIO CYBERNETICA or ADEPTUS MECHANICUS VEHICLE below Starting Strength gains full Hit re-rolls until your next Command phase, and also gains full Wound re-rolls while it is Below Half-strength.",
@@ -20901,6 +20907,15 @@ def _stratagem_support(
         "000008517005",
         "000008517006",
         "000008517007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008565002",
+        "000008565003",
+        "000008565004",
+        "000008565005",
+        "000008565006",
+        "000008565007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
     if stratagem_id in {
