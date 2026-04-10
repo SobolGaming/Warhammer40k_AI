@@ -4872,9 +4872,19 @@ class StratagemManager(
             if self._gilded_champion_detachment_manager() is None:
                 result["reason"] = "Wrong detachment"
                 return result
-            if target is not None and not self._is_adeptus_custodes_unit(target):
-                result["reason"] = "Requires ADEPTUS CUSTODES unit"
+            candidates = list(context.get("candidates") or [])
+            if not candidates and target is not None:
+                try:
+                    if self._is_adeptus_custodes_unit(target) and bool(getattr(getattr(target, "round_state", None), "fell_back_this_round", False)):
+                        candidates = [target]
+                except Exception:
+                    raise
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
                 return result
+            result["reason"] = "Requires your Movement phase, just after an ADEPTUS CUSTODES unit from your army Falls Back"
+            return result
 
         # Last pass: delegate to stratagem conditions
         if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
@@ -12841,6 +12851,7 @@ class StratagemManager(
         self._queue_thousand_sons_warpforged_charge_reactions(charging_unit=unit, action=action)
         self._process_thousand_sons_warpforged_mutate_landscape_move_end(unit=unit, action=action)
         self._queue_thousand_sons_hexwarp_fall_back_reactions(unit=unit, action=action)
+        self._queue_lions_manoeuvre_and_fire_reaction(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -13372,6 +13383,11 @@ class StratagemManager(
                     raise
                 if not self._is_adeptus_custodes_unit(root):
                     continue
+                try:
+                    if root.has_any_keyword("VEHICLE"):
+                        continue
+                except Exception:
+                    raise
                 try:
                     if not getattr(root, "deployed", False):
                         continue
@@ -15345,8 +15361,7 @@ class StratagemManager(
                 return
             if _unit_cannot_be_target_of_stratagem(unit):
                 return
-            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
-            if active_player is not self.player:
+            if selecting_player is not self.player:
                 return
             phase_name = kwargs.get("phase_name") or self._current_phase_name or "Fight phase"
             phase_label = str(phase_name or "").replace("_", " ").title()
@@ -15395,8 +15410,7 @@ class StratagemManager(
                 return
             if _unit_cannot_be_target_of_stratagem(unit):
                 return
-            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
-            if active_player is not self.player:
+            if selecting_player is not self.player:
                 return
             phase_name = kwargs.get("phase_name") or self._current_phase_name or "Fight phase"
             phase_label = str(phase_name or "").replace("_", " ").title()

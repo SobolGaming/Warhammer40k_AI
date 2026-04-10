@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..utility import dice as dice_module
 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
 from ..utility.entity_ids import get_entity_id
 
@@ -46,6 +47,11 @@ class AdeptusCustodesStratagemMixin:
     def _is_auric_champions_detachment(self) -> bool:
         mgr = self._ac_detachment_mgr()
         checker = getattr(mgr, "is_auric_champions", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_lions_of_the_emperor_detachment(self) -> bool:
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "is_lions_of_the_emperor", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _ac_owned_by_player(self, unit: Any, player: Any | None = None) -> bool:
@@ -154,6 +160,34 @@ class AdeptusCustodesStratagemMixin:
                 continue
             alive.append(model)
         return alive
+
+    def _ac_grant_melee_precision_to_unit(self, unit: Any, *, key_prefix: str, source: str) -> None:
+        root = self._ac_root(unit)
+        if root is None:
+            return
+        root_id = str(get_entity_id(root) or id(root))
+        for model in self._ac_alive_models(root):
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = str(get_entity_id(model) or id(model))
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"{key_prefix}:{root_id}:{model_id}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=["PRECISION"],
+                    source=source,
+                    expires_phase="FIGHT_PHASE",
+                    attack_type="melee",
+                )
 
     def _ac_unique_units(self, units: list[Any]) -> list[Any]:
         resolved: list[Any] = []
@@ -390,19 +424,83 @@ class AdeptusCustodesStratagemMixin:
             }
         )
 
+    def _queue_lions_manoeuvre_and_fire_reaction(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        root = self._ac_root(unit)
+        if root is None or not self._is_lions_of_the_emperor_detachment():
+            return
+        if not self._ac_is_custodes_unit(root) or not self._ac_unit_on_battlefield(root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "fell_back_this_round", False)):
+            return
+        phase_name = self._ac_current_phase_name()
+        if self._ac_phase_key(phase_name) != "MOVEMENT_PHASE":
+            return
+        game = getattr(self, "game", None)
+        active_player = game.get_current_player() if game is not None and hasattr(game, "get_current_player") else None
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("MANOEUVRE AND FIRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MANOEUVRE AND FIRE":
+                continue
+            if reaction.get("unit") is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "fall_back",
+            }
+        )
+
     def _use_adeptus_custodes_stratagem(self, stratagem, **kwargs):
         name_u = str(self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")).strip()
         handled = {
+            "EARNING OF A NAME",
+            "MANOEUVRE AND FIRE",
+            "PEERLESS WARRIOR",
+            "SHOULDER THE MANTLE",
+            "SLAYER OF CHAMPIONS",
+            "SUPERHUMAN RESERVES",
+            "SWIFT AS THE EAGLE",
+            "THE EMPEROR'S AUSPICE",
+            "VIGIL UNENDING",
+        }
+        if name_u not in handled:
+            return None
+        if name_u in {
             "EARNING OF A NAME",
             "SHOULDER THE MANTLE",
             "SLAYER OF CHAMPIONS",
             "SUPERHUMAN RESERVES",
             "THE EMPEROR'S AUSPICE",
             "VIGIL UNENDING",
-        }
-        if name_u not in handled:
-            return None
-        if not self._is_auric_champions_detachment():
+        } and not self._is_auric_champions_detachment():
+            return False
+        if name_u in {
+            "MANOEUVRE AND FIRE",
+            "PEERLESS WARRIOR",
+            "SWIFT AS THE EAGLE",
+        } and not self._is_lions_of_the_emperor_detachment():
             return False
 
         phase_name = self._ac_current_phase_name(kwargs.get("phase_name"))
@@ -588,6 +686,173 @@ class AdeptusCustodesStratagemMixin:
             sr["auric_vigil_unending_source"] = stratagem.name
             target_unit.special_rules = sr
             self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "MANOEUVRE AND FIRE":
+            target_unit = self._ac_root(
+                kwargs.get("unit")
+                or kwargs.get("target_unit")
+                or (pending or {}).get("unit")
+                or (pending or {}).get("target_unit")
+            )
+            action = str(kwargs.get("action") or (pending or {}).get("action") or "").strip().lower()
+            if target_unit is None or not self._ac_is_custodes_unit(target_unit):
+                logger.error("ERROR: MANOEUVRE AND FIRE: target must be a friendly ADEPTUS CUSTODES unit")
+                return False
+            if self._ac_phase_key(phase_name) != "MOVEMENT_PHASE":
+                logger.error("ERROR: MANOEUVRE AND FIRE: wrong phase")
+                return False
+            game = getattr(self, "game", None)
+            active_player = game.get_current_player() if game is not None and hasattr(game, "get_current_player") else None
+            if active_player is not self.player:
+                logger.error("ERROR: MANOEUVRE AND FIRE: not your turn")
+                return False
+            if action and action != "fall_back":
+                logger.error("ERROR: MANOEUVRE AND FIRE: invalid trigger")
+                return False
+            if self._unit_cannot_be_target_of_stratagem(target_unit):
+                logger.error("ERROR: MANOEUVRE AND FIRE: target cannot be selected")
+                return False
+            if not bool(getattr(getattr(target_unit, "round_state", None), "fell_back_this_round", False)):
+                logger.error("ERROR: MANOEUVRE AND FIRE: target has not fallen back this phase")
+                return False
+            if not stratagem.can_use(
+                self.player,
+                self.game,
+                unit=target_unit,
+                target_unit=target_unit,
+                phase_name=phase_name,
+                action="fall_back",
+            ):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=target_unit):
+                return False
+            sr = getattr(target_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["manoeuvre_and_fire_active"] = True
+            sr["manoeuvre_and_fire_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["manoeuvre_and_fire_turn"] = self._ac_current_turn()
+            sr["manoeuvre_and_fire_source"] = stratagem.name
+            target_unit.special_rules = sr
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            logger.info(
+                "INFO: MANOEUVRE AND FIRE: %s can shoot and declare a charge after falling back this turn.",
+                getattr(target_unit, "name", "Unit"),
+            )
+            return True
+
+        if name_u == "PEERLESS WARRIOR":
+            target_unit = self._ac_root(
+                kwargs.get("unit")
+                or kwargs.get("target_unit")
+                or (pending or {}).get("unit")
+                or (pending or {}).get("target_unit")
+            )
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            selecting_player = kwargs.get("selecting_player") or (pending or {}).get("selecting_player")
+            if target_unit is None or not self._ac_is_custodes_unit(target_unit):
+                logger.error("ERROR: PEERLESS WARRIOR: target must be a friendly ADEPTUS CUSTODES unit")
+                return False
+            if self._ac_phase_key(phase_name) != "FIGHT_PHASE":
+                logger.error("ERROR: PEERLESS WARRIOR: wrong phase")
+                return False
+            if selecting_player is not None and selecting_player is not self.player:
+                logger.error("ERROR: PEERLESS WARRIOR: selected unit is not being activated by this player")
+                return False
+            if candidates and target_unit not in candidates:
+                logger.error("ERROR: PEERLESS WARRIOR: selected unit is not an eligible candidate")
+                return False
+            if self._unit_cannot_be_target_of_stratagem(target_unit):
+                logger.error("ERROR: PEERLESS WARRIOR: target cannot be selected")
+                return False
+            if bool(getattr(getattr(target_unit, "round_state", None), "fought_this_phase", False)):
+                logger.error("ERROR: PEERLESS WARRIOR: target unit has already fought this phase")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=target_unit, target_unit=target_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=target_unit):
+                return False
+            self._ac_grant_melee_precision_to_unit(
+                target_unit,
+                key_prefix="lions_peerless_warrior",
+                source=stratagem.name,
+            )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            logger.info(
+                "INFO: PEERLESS WARRIOR: %s gains [PRECISION] on melee weapons this phase.",
+                getattr(target_unit, "name", "Unit"),
+            )
+            return True
+
+        if name_u == "SWIFT AS THE EAGLE":
+            target_unit = self._ac_root(
+                kwargs.get("unit")
+                or kwargs.get("target_unit")
+                or (pending or {}).get("unit")
+                or (pending or {}).get("target_unit")
+            )
+            enemy_unit = self._ac_root(kwargs.get("enemy_unit") or kwargs.get("attacker_unit") or (pending or {}).get("enemy_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if target_unit is None or not self._ac_is_custodes_unit(target_unit):
+                logger.error("ERROR: SWIFT AS THE EAGLE: target must be a friendly ADEPTUS CUSTODES unit")
+                return False
+            if self._ac_has_keyword(target_unit, "VEHICLE"):
+                logger.error("ERROR: SWIFT AS THE EAGLE: VEHICLE units cannot be targeted")
+                return False
+            if self._ac_phase_key(phase_name) != "SHOOTING_PHASE":
+                logger.error("ERROR: SWIFT AS THE EAGLE: wrong phase")
+                return False
+            game = getattr(self, "game", None)
+            active_player = game.get_current_player() if game is not None and hasattr(game, "get_current_player") else None
+            if active_player is self.player:
+                logger.error("ERROR: SWIFT AS THE EAGLE: not opponent's Shooting phase")
+                return False
+            if candidates and target_unit not in candidates:
+                logger.error("ERROR: SWIFT AS THE EAGLE: selected unit is not an eligible candidate")
+                return False
+            if not self._ac_unit_on_battlefield(target_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(target_unit):
+                logger.error("ERROR: SWIFT AS THE EAGLE: target cannot be selected")
+                return False
+            if enemy_unit is not None and self._ac_owned_by_player(enemy_unit):
+                logger.error("ERROR: SWIFT AS THE EAGLE: attacker is not enemy")
+                return False
+            if getattr(game, "map", None) is None:
+                logger.error("ERROR: SWIFT AS THE EAGLE: no map context")
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=target_unit):
+                return False
+            move_max = int(dice_module.get_roll("D6") or 0)
+            request = (
+                game._queue_reactive_move_movement_decision(
+                    player=self.player,
+                    unit=target_unit,
+                    max_distance=int(move_max),
+                    kind="swift_as_the_eagle",
+                    movement_type="reactive",
+                    source=stratagem.name,
+                    attacker_unit=enemy_unit,
+                )
+                if game is not None
+                else None
+            )
+            event_system = getattr(game, "event_system", None)
+            if request is not None and event_system is not None:
+                event_system.publish(
+                    "swift_as_the_eagle_move",
+                    player=self.player,
+                    unit=target_unit,
+                    max_distance=int(move_max),
+                    decision_request=request,
+                )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            logger.info(
+                "INFO: SWIFT AS THE EAGLE: %s can make a Normal move of up to %s\".",
+                getattr(target_unit, "name", "Unit"),
+                int(move_max),
+            )
             return True
 
         return None

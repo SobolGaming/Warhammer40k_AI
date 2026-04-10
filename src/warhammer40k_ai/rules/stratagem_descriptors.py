@@ -123,6 +123,74 @@ _AURIC_CHAMPIONS_STRATAGEM_BY_NAME = {
 }
 
 
+_LIONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009988003": StratagemToolDescriptor(
+        stratagem_id="000009988003",
+        name="DEFIANT TO THE LAST",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_custodes_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={"roll": "D6", "threshold": 4, "character_bonus": 2, "deferred_until_attacker_finishes": True},
+    ),
+    "000009988002": StratagemToolDescriptor(
+        stratagem_id="000009988002",
+        name="GILDED CHAMPION",
+        timing="any_phase_after_friendly_character_uses_once_per_battle_ability",
+        target="adeptus_custodes_character_model_that_just_used_once_per_battle_ability",
+        duration="battle",
+        effect="grant_one_extra_use_of_same_once_per_battle_ability",
+        cp_cost=1,
+        effect_params={"same_phase_reuse_forbidden": True, "usage_limit": "once_per_model"},
+    ),
+    "000009988006": StratagemToolDescriptor(
+        stratagem_id="000009988006",
+        name="MANOEUVRE AND FIRE",
+        timing="your_movement_phase_after_fall_back",
+        target="that_adeptus_custodes_unit",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={"shoot_after_fall_back": True, "charge_after_fall_back": True},
+    ),
+    "000009988004": StratagemToolDescriptor(
+        stratagem_id="000009988004",
+        name="PEERLESS WARRIOR",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_custodes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "required_keywords_all": ["ADEPTUS CUSTODES"]},
+    ),
+    "000009988007": StratagemToolDescriptor(
+        stratagem_id="000009988007",
+        name="SWIFT AS THE EAGLE",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="non_vehicle_adeptus_custodes_unit_selected_as_attack_target",
+        duration="immediate",
+        effect="reactive_normal_move_d6",
+        cp_cost=1,
+        effect_params={"movement_type": "normal_move", "distance_roll": "D6", "target_excluded_keywords_any": ["VEHICLE"]},
+    ),
+    "000009988005": StratagemToolDescriptor(
+        stratagem_id="000009988005",
+        name="UNLEASH THE LIONS",
+        timing="your_command_phase",
+        target="allarus_or_aquilon_custodians_unit_on_battlefield",
+        duration="immediate",
+        effect="split_unit_into_single_model_units",
+        cp_cost=1,
+        effect_params={"set_starting_strength_to": 1},
+    ),
+}
+
+_LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LIONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13278,6 +13346,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _AURIC_CHAMPIONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LIONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -13765,6 +13836,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         return get_stratagem_tool_descriptor(stratagem_id=override_id)
     return (
         _AURIC_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
+        or _LIONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)

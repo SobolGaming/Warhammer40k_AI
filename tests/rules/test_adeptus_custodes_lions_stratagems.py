@@ -131,7 +131,7 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
         self.assertEqual(mocked.call_count, 1)
         self.assertFalse(getattr(unit, "_defiant_to_last_pending_models", []))
 
-    def test_manoeuvre_and_fire_allows_fall_back_shoot(self):
+    def test_manoeuvre_and_fire_requires_fall_back_trigger_and_allows_shoot_and_charge(self):
         game, p1, _p2, army1, _army2 = _build_game()
         unit = _make_unit(
             "Custodian Guard",
@@ -139,17 +139,28 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
             faction_keywords=["ADEPTUS CUSTODES"],
         )
         army1.add_unit(unit)
-        unit.deployed = True
+        _place_unit(game, unit, 5.0, 5.0)
         game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
         game.current_player_index = 0
 
         ok = p1.stratagems.use("MANOEUVRE AND FIRE", unit=unit, phase_name="Movement phase")
+        self.assertFalse(ok)
+
+        unit.round_state.fell_back_this_round = True
+        game.event_system.publish("unit_move_ended", unit=unit, action="fall_back")
+        pending = [r for r in p1.stratagems.get_pending_reactions() if r.get("stratagem") == "MANOEUVRE AND FIRE"]
+        self.assertTrue(pending)
+
+        ok = p1.stratagems.use("MANOEUVRE AND FIRE", unit=unit, phase_name="Movement phase", dequeue=True)
         self.assertTrue(ok)
         self.assertTrue(unit.has_fell_back_and_shoot())
+        self.assertTrue(unit.can_charge_after_fall_back())
 
-    def test_peerless_warrior_adds_melee_attacks(self):
-        from warhammer40k_ai.units.wargear import WargearProfile
+        game.turn += 1
+        self.assertFalse(unit.has_fell_back_and_shoot())
+        self.assertFalse(unit.can_charge_after_fall_back())
 
+    def test_peerless_warrior_grants_melee_precision_and_works_in_opponent_fight_phase(self):
         game, p1, _p2, army1, army2 = _build_game()
         unit = _make_unit(
             "Custodian Guard",
@@ -159,45 +170,40 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
         enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
         army1.add_unit(unit)
         army2.add_unit(enemy)
+        unit.models[0].wargear = [SimpleNamespace(name="Test Blade", is_melee=lambda: True)]
+        _place_unit(game, unit, 5.0, 5.0)
+        _place_unit(game, enemy, 10.0, 5.0)
 
-        game.phase = SimpleNamespace(name="FIGHT_PHASE")
-        game.current_player_index = 0
+        phase = SimpleNamespace(name="FIGHT_PHASE")
+        game.phase = phase
+        game.current_player_index = 1
+        game.event_system.publish("phase_start", player=_p2, phase=phase)
+        unit.round_state.fought_this_phase = False
+        game.event_system.publish("fight_unit_selected", unit=unit, selecting_player=p1)
+
+        pending = [r for r in p1.stratagems.get_pending_reactions() if r.get("stratagem") == "PEERLESS WARRIOR"]
+        self.assertTrue(pending)
 
         ok = p1.stratagems.use(
             "PEERLESS WARRIOR",
             unit=unit,
             phase_name="Fight phase",
             candidates=[unit],
+            selecting_player=p1,
+            dequeue=True,
         )
         self.assertTrue(ok)
 
-        melee_parent = SimpleNamespace(name="Test Blade", is_melee=lambda: True)
-        profile = WargearProfile(
-            profile_name="Melee",
-            wargear_data={
-                "range": "Melee",
-                "A": "1",
-                "BS_WS": "3+",
-                "S": "5",
-                "AP": "0",
-                "D": "1",
-                "description": "",
-            },
-            parent_wargear=melee_parent,
+        bonuses = unit.models[0].get_temporary_weapon_keyword_bonuses("Test Blade")
+        self.assertTrue(
+            any(
+                str(item.get("keyword", "") or "").strip().upper() == "PRECISION"
+                and str(item.get("attack_type", "") or "").strip().lower() == "melee"
+                for item in list(bonuses or [])
+            )
         )
-
-        captured = []
-        original_summary = profile._print_attack_summary
-        profile._print_attack_summary = lambda result: captured.append(result)
-        try:
-            profile.attack(enemy, unit.models[0], game_map=None)
-        finally:
-            profile._print_attack_summary = original_summary
-
-        self.assertTrue(captured, "Expected attack summary to capture an AttackResult")
-        attack_result = captured[0]
-        self.assertEqual(int(attack_result.attacks_rolled), 2)
-        self.assertTrue(any("Peerless Warrior" in x for x in attack_result.attacks_special_modifiers))
+        game.event_system.publish("phase_end", player=_p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        self.assertEqual(unit.models[0].get_temporary_weapon_keyword_bonuses("Test Blade"), [])
 
     def test_swift_as_the_eagle_queues_reactive_move(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
@@ -225,14 +231,15 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
         reactions = [r for r in p1.stratagems.get_pending_reactions() if r.get("stratagem") == "SWIFT AS THE EAGLE"]
         self.assertTrue(reactions)
 
-        ok = p1.stratagems.use(
-            "SWIFT AS THE EAGLE",
-            unit=unit,
-            enemy_unit=enemy,
-            phase_name="Shooting phase",
-            candidates=[unit],
-            dequeue=True,
-        )
+        with patch.object(dice_module, "get_roll", return_value=4):
+            ok = p1.stratagems.use(
+                "SWIFT AS THE EAGLE",
+                unit=unit,
+                enemy_unit=enemy,
+                phase_name="Shooting phase",
+                candidates=[unit],
+                dequeue=True,
+            )
         self.assertTrue(ok)
 
         pending = [
@@ -242,10 +249,62 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
         ]
         self.assertTrue(pending)
         ctx = dict(getattr(pending[0], "context", {}) or {})
-        self.assertEqual(ctx.get("max_distance"), 6)
+        self.assertEqual(ctx.get("max_distance"), 4)
         self.assertEqual(ctx.get("movement_type"), "reactive")
         self.assertEqual(ctx.get("reactive_move_kind"), "swift_as_the_eagle")
-        self.assertTrue(ctx.get("reactive_move_allow_engagement_range"))
+        self.assertFalse(bool(ctx.get("reactive_move_allow_engagement_range", False)))
+
+    def test_swift_as_the_eagle_excludes_vehicle_targets(self):
+        game, p1, p2, army1, army2 = _build_game()
+        vehicle = _make_unit(
+            "Caladius Grav-Tank",
+            keywords=["ADEPTUS CUSTODES", "VEHICLE"],
+            faction_keywords=["ADEPTUS CUSTODES"],
+        )
+        enemy = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        army1.add_unit(vehicle)
+        army2.add_unit(enemy)
+
+        _place_unit(game, vehicle, 5.0, 5.0)
+        _place_unit(game, enemy, 10.0, 5.0)
+
+        phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.current_player_index = 1
+        game.phase = phase
+        game.event_system.publish("phase_start", player=p2, phase=phase)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[vehicle])
+        game.event_system.publish("unit_shooting_resolved", attacker_unit=enemy, hits_by_target={vehicle: 1})
+
+        reactions = [r for r in p1.stratagems.get_pending_reactions() if r.get("stratagem") == "SWIFT AS THE EAGLE"]
+        self.assertFalse(reactions)
+        ok = p1.stratagems.use(
+            "SWIFT AS THE EAGLE",
+            unit=vehicle,
+            enemy_unit=enemy,
+            phase_name="Shooting phase",
+            candidates=[vehicle],
+        )
+        self.assertFalse(ok)
+
+    def test_lions_stratagem_descriptors_registered(self):
+        from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
+
+        expected = {
+            "000009988003": ("DEFIANT TO THE LAST", "fight_on_death_roll"),
+            "000009988002": ("GILDED CHAMPION", "grant_one_extra_use_of_same_once_per_battle_ability"),
+            "000009988006": ("MANOEUVRE AND FIRE", "eligible_to_shoot_and_charge_after_fall_back"),
+            "000009988004": ("PEERLESS WARRIOR", "grant_precision_to_melee_weapons"),
+            "000009988007": ("SWIFT AS THE EAGLE", "reactive_normal_move_d6"),
+            "000009988005": ("UNLEASH THE LIONS", "split_unit_into_single_model_units"),
+        }
+        for stratagem_id, (expected_name, expected_effect) in expected.items():
+            by_id = get_stratagem_tool_descriptor(stratagem_id=stratagem_id, name=expected_name)
+            by_name = get_stratagem_tool_descriptor(name=expected_name)
+            self.assertIsNotNone(by_id)
+            self.assertIsNotNone(by_name)
+            self.assertEqual(by_id.name, expected_name)
+            self.assertEqual(by_name.name, expected_name)
+            self.assertEqual(by_id.effect, expected_effect)
 
 
 if __name__ == "__main__":

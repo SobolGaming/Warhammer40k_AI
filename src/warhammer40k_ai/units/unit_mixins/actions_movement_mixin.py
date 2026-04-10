@@ -20426,6 +20426,19 @@ class ActionsMovementMixin:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("manoeuvre_and_fire_active"):
+                owner = str(sr.get("manoeuvre_and_fire_turn_owner", "") or "")
+                turn = int(sr.get("manoeuvre_and_fire_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         if _has_orks_temp_movement_effect_for_unit(self, "charge_after_fall_back"):
             return True
         try:
