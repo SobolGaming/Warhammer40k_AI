@@ -97,10 +97,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AVENGE THE FALLEN",
     "DESPERATION'S PRICE",
     "EARNING OF A NAME",
+    "EMPEROR'S EXECUTIONERS",
     "EMPEROR'S VENGEANCE",
+    "EMPYRIC SEVERANCE",
     "FLAWLESS CONSTRUCTION",
+    "HUNT AS ONE",
     "PUNISHMENT INESCAPABLE",
     "RELENTLESS PERSECUTION",
+    "SHIELD OF HONOUR",
+    "TALONED PINCER",
+    "TALONS INTERLOCKED",
     "UNSTOPPABLE",
     "WRATHFUL ADVANCE",
     "EXPEDITIOUS EXIT",
@@ -12889,6 +12895,7 @@ class StratagemManager(
         self._queue_lions_manoeuvre_and_fire_reaction(unit=unit, action=action)
         self._queue_shield_host_multipotentiality_reaction(unit=unit, action=action)
         self._queue_solar_spearhead_relentless_persecution_reaction(unit=unit, action=action)
+        self._queue_talons_taloned_pincer_reaction(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -14265,6 +14272,21 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_talons_empyric_severance_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_talons_shield_of_honour_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._process_genestealer_cults_bio_horror_revelation_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15556,6 +15578,14 @@ class StratagemManager(
             raise
         try:
             self._queue_solar_spearhead_flawless_construction_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Fight phase",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_talons_empyric_severance_reaction(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
                 phase_name="Fight phase",

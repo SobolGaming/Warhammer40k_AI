@@ -2981,6 +2981,118 @@ class DamageDeathMixin:
             "source": "Shambling Wall",
         }
 
+    def _adeptus_custodes_talons_shield_of_honour_redirect_target(
+        self,
+        *,
+        attacker_model: Optional['Model'] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        game_map: Optional['Map'] = None,
+    ):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or attacker_model is None or weapon_profile is None:
+            return None
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return None
+        if not bool(special_rules.get("custodes_talons_shield_of_honour_active", False)):
+            return None
+        support_unit_id = str(special_rules.get("custodes_talons_shield_of_honour_support_unit_id", "") or "").strip()
+        if not support_unit_id:
+            return None
+        if attacker_unit is None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return None
+        expected_attacker_id = str(
+            special_rules.get("custodes_talons_shield_of_honour_attacker_unit_id", "") or ""
+        ).strip()
+        if expected_attacker_id and str(get_entity_id(attacker_root) or "") != expected_attacker_id:
+            return None
+        game = None
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+        expected_phase = str(
+            special_rules.get("custodes_talons_shield_of_honour_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            if current_phase and current_phase != expected_phase:
+                return None
+        try:
+            expected_turn = int(special_rules.get("custodes_talons_shield_of_honour_turn", 0) or 0)
+        except Exception:
+            expected_turn = 0
+        if expected_turn and game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != expected_turn:
+                return None
+        expected_owner = str(special_rules.get("custodes_talons_shield_of_honour_turn_owner", "") or "").strip()
+        if expected_owner and game is not None:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if current_owner and current_owner != expected_owner:
+                return None
+        support_root = None
+        resolver = getattr(game, "_resolve_unit_by_id", None) if game is not None else None
+        if callable(resolver):
+            try:
+                support_root = resolver(support_unit_id)
+            except Exception:
+                support_root = None
+        if support_root is None:
+            for unit in list(getattr(game_map, "units", []) or []):
+                try:
+                    candidate = unit.get_attached_unit_root()
+                except Exception:
+                    candidate = unit
+                if candidate is None:
+                    continue
+                if str(get_entity_id(candidate) or "") == support_unit_id:
+                    support_root = candidate
+                    break
+        try:
+            support_root = support_root.get_attached_unit_root() if support_root is not None else None
+        except Exception:
+            pass
+        if support_root is None or support_root is root:
+            return None
+        try:
+            if not support_root.is_alive():
+                return None
+        except Exception:
+            return None
+        if not bool(getattr(support_root, "deployed", False)):
+            return None
+        if str(getattr(support_root, "reserve_status", "deployed") or "").strip().lower() != "deployed":
+            return None
+        if bool(getattr(support_root, "is_embarked", False)) or bool(getattr(support_root, "embarked_in", None)):
+            return None
+        can_target_fn = getattr(attacker_root, "_can_model_shoot_weapon_at_target", None)
+        if not callable(can_target_fn):
+            return None
+        if not bool(can_target_fn(attacker_model, weapon_profile, support_root, game_map)):
+            return None
+        return support_root
+
     def _apply_drukhari_kabalite_double_cross_redirect(
         self,
         *,

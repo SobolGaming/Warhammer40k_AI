@@ -1342,6 +1342,9 @@ class ShootingMixin:
         lock_check = getattr(root, "_adeptus_custodes_witch_hunters_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game, attack_type="ranged")):
             return False
+        lock_check = getattr(root, "_adeptus_custodes_talons_interlocked_target_locked_to", None)
+        if callable(lock_check) and not bool(lock_check(target_unit, game=game, attack_type="ranged")):
+            return False
         acceptable_losses_target = False
         try:
             allow_target = getattr(root, "_gsc_acceptable_losses_allows_target", None)

@@ -478,6 +478,104 @@ _SOLAR_SPEARHEAD_STRATAGEM_BY_NAME = {
 }
 
 
+_TALONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008922005": StratagemToolDescriptor(
+        stratagem_id="000008922005",
+        name="EMPEROR'S EXECUTIONERS",
+        timing="start_of_fight_phase",
+        target="one_or_two_adeptus_custodes_units",
+        duration="until_end_of_phase",
+        effect="grant_melee_wound_bonus_vs_targets_below_starting_strength",
+        cp_cost=2,
+        effect_params={
+            "max_targets": 2,
+            "attack_type": "melee",
+            "wound_bonus": 1,
+            "target_condition": "below_starting_strength",
+        },
+    ),
+    "000008922004": StratagemToolDescriptor(
+        stratagem_id="000008922004",
+        name="EMPYRIC SEVERANCE",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="adeptus_custodes_unit_selected_as_attack_target_and_one_friendly_anathema_psykana_unit_within_6",
+        duration="until_end_of_phase",
+        effect="grant_feel_no_pain_against_psychic_and_mortal_wounds",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "feel_no_pain": 4,
+            "condition": "against psychic attacks and mortal wounds",
+            "support_required_keywords_any": ["ANATHEMA PSYKANA"],
+        },
+    ),
+    "000008922002": StratagemToolDescriptor(
+        stratagem_id="000008922002",
+        name="HUNT AS ONE",
+        timing="your_movement_phase",
+        target="one_or_two_adeptus_custodes_units",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "max_targets": 2,
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+        },
+    ),
+    "000008922007": StratagemToolDescriptor(
+        stratagem_id="000008922007",
+        name="SHIELD OF HONOUR",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="anathema_psykana_infantry_unit_selected_as_attack_target_and_one_other_friendly_non_anathema_adeptus_custodes_infantry_unit_within_6",
+        duration="until_end_of_phase",
+        effect="redirect_ranged_attacks_to_support_unit_if_eligible",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "attack_type": "ranged",
+            "support_required_keywords_any": ["INFANTRY"],
+            "support_excluded_keywords_any": ["ANATHEMA PSYKANA"],
+            "redirect_if_support_is_eligible_target": True,
+        },
+    ),
+    "000008922006": StratagemToolDescriptor(
+        stratagem_id="000008922006",
+        name="TALONED PINCER",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="up_to_two_adeptus_custodes_units_within_9_of_enemy_unit",
+        duration="immediate",
+        effect="reactive_normal_move_6_for_each_selected_unit",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "max_targets": 2,
+            "movement_type": "normal_move",
+            "max_distance": 6,
+        },
+    ),
+    "000008922003": StratagemToolDescriptor(
+        stratagem_id="000008922003",
+        name="TALONS INTERLOCKED",
+        timing="your_shooting_phase",
+        target="one_or_two_adeptus_custodes_infantry_units_and_one_enemy_unit_eligible_for_all",
+        duration="until_end_of_phase",
+        effect="target_lock_with_ranged_strength_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "max_targets": 2,
+            "attack_type": "ranged",
+            "strength_bonus": 1,
+            "ap_bonus": 1,
+        },
+    ),
+}
+
+_TALONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TALONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.values()
+}
+
+
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010305002": StratagemToolDescriptor(
         stratagem_id="000010305002",
@@ -13645,6 +13743,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SOLAR_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _TALONS_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return _with_override(desc)
@@ -14136,6 +14237,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _NULL_MAIDEN_VIGIL_STRATAGEM_BY_NAME.get(key)
         or _SHIELD_HOST_STRATAGEM_BY_NAME.get(key)
         or _SOLAR_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
+        or _TALONS_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)

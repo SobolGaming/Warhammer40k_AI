@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ..utility import dice as dice_module
+from ..utility import aura_utils
 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
 from ..utility.entity_ids import get_entity_id
 
@@ -67,6 +68,11 @@ class AdeptusCustodesStratagemMixin:
     def _is_solar_spearhead_detachment(self) -> bool:
         mgr = self._ac_detachment_mgr()
         checker = getattr(mgr, "is_solar_spearhead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_talons_of_the_emperor_detachment(self) -> bool:
+        mgr = self._ac_detachment_mgr()
+        checker = getattr(mgr, "is_talons_of_the_emperor", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     @staticmethod
@@ -297,6 +303,17 @@ class AdeptusCustodesStratagemMixin:
             resolved.append(root)
         resolved.sort(key=lambda unit: str(get_entity_id(unit) or ""))
         return resolved
+
+    def _ac_resolve_unit_selection(self, *values: Any) -> list[Any]:
+        flattened: list[Any] = []
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple, set)):
+                flattened.extend(list(value))
+            else:
+                flattened.append(value)
+        return self._ac_unique_units(flattened)
 
     def _ac_enemy_battlefield_units(self) -> list[Any]:
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -557,6 +574,151 @@ class AdeptusCustodesStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._ac_sort_key)
 
+    def _talons_battlefield_unit_candidates(
+        self,
+        *,
+        require_infantry: bool = False,
+        require_not_shot: bool = False,
+        require_melee: bool = False,
+        require_ranged: bool = False,
+    ) -> list[Any]:
+        if not self._is_talons_of_the_emperor_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._ac_friendly_battlefield_units():
+            if not self._ac_is_custodes_unit(root):
+                continue
+            if require_infantry and not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_melee and not self._ac_unit_has_weapon_type(root, "melee"):
+                continue
+            if require_ranged and not self._ac_unit_has_weapon_type(root, "ranged"):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _talons_targeted_custodes_candidates(
+        self,
+        target_units: list[Any],
+        *,
+        require_anathema: bool | None = None,
+        require_infantry: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        for root in self._ac_unique_units(list(target_units or [])):
+            if not self._ac_owned_by_player(root):
+                continue
+            if not self._ac_unit_on_battlefield(root):
+                continue
+            if not self._ac_is_custodes_unit(root):
+                continue
+            if require_infantry and not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            is_anathema = self._ac_is_anathema_psykana_unit(root)
+            if require_anathema is True and not is_anathema:
+                continue
+            if require_anathema is False and is_anathema:
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _talons_support_candidates(
+        self,
+        source_unit: Any,
+        *,
+        range_in: float,
+        require_anathema: bool | None = None,
+        require_infantry: bool = False,
+        exclude_same: bool = False,
+    ) -> list[Any]:
+        source_root = self._ac_root(source_unit)
+        if source_root is None:
+            return []
+        candidates: list[Any] = []
+        for root in self._ac_friendly_battlefield_units():
+            if root is None or not self._ac_is_custodes_unit(root):
+                continue
+            if exclude_same and root is source_root:
+                continue
+            if require_infantry and not self._ac_has_keyword(root, "INFANTRY"):
+                continue
+            is_anathema = self._ac_is_anathema_psykana_unit(root)
+            if require_anathema is True and not is_anathema:
+                continue
+            if require_anathema is False and is_anathema:
+                continue
+            if not aura_utils.unit_within_range_of_unit(
+                source_root,
+                root,
+                float(range_in),
+                use_attached_aggregate=True,
+            ):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ac_sort_key)
+
+    def _talons_support_candidates_for_empyric(self, target_unit: Any) -> list[Any]:
+        return self._talons_support_candidates(
+            target_unit,
+            range_in=6.0,
+            require_anathema=True,
+            require_infantry=False,
+            exclude_same=False,
+        )
+
+    def _talons_support_candidates_for_shield(self, target_unit: Any) -> list[Any]:
+        return self._talons_support_candidates(
+            target_unit,
+            range_in=6.0,
+            require_anathema=False,
+            require_infantry=True,
+            exclude_same=True,
+        )
+
+    def _talons_unit_can_shoot_target(self, unit: Any, enemy_unit: Any) -> bool:
+        root = self._ac_root(unit)
+        enemy_root = self._ac_root(enemy_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or enemy_root is None or game_map is None:
+            return False
+        can_target_fn = getattr(root, "_can_model_shoot_weapon_at_target", None)
+        if not callable(can_target_fn):
+            return False
+        for model in self._ac_alive_models(root):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                profiles = getattr(wargear, "profiles", None)
+                if isinstance(profiles, dict) and profiles:
+                    profile_values = list(profiles.values())
+                else:
+                    profile_values = [wargear] if getattr(wargear, "parent_wargear", None) is not None else []
+                for profile in list(profile_values or []):
+                    if can_target_fn(model, profile, enemy_root, game_map):
+                        return True
+        return False
+
+    def _talons_enemy_target_eligible_for_all_units(self, units: list[Any], enemy_unit: Any) -> bool:
+        enemy_root = self._ac_root(enemy_unit)
+        if enemy_root is None or not self._ac_is_enemy_battlefield_unit(enemy_root):
+            return False
+        selected_units = self._ac_resolve_unit_selection(units)
+        if not selected_units:
+            return False
+        return all(self._talons_unit_can_shoot_target(unit, enemy_root) for unit in selected_units)
+
     def _queue_solar_spearhead_emperors_vengeance_reaction(
         self,
         *,
@@ -698,6 +860,188 @@ class AdeptusCustodesStratagemMixin:
             },
             use_timer=False,
         )
+
+    def _queue_talons_empyric_severance_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+    ) -> None:
+        if not self._is_talons_of_the_emperor_detachment():
+            return
+        phase_key = self._ac_phase_key(phase_name)
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates: list[Any] = []
+        support_candidates_by_unit_id: dict[str, list[str]] = {}
+        for root in self._talons_targeted_custodes_candidates(list(target_units or [])):
+            supports = self._talons_support_candidates_for_empyric(root)
+            if not supports:
+                continue
+            unit_id = self._ac_sort_key(root)
+            if not unit_id:
+                continue
+            candidates.append(root)
+            support_candidates_by_unit_id[unit_id] = [self._ac_sort_key(unit) for unit in supports if self._ac_sort_key(unit)]
+        if not candidates:
+            return
+        stratagem = self.get_by_name("EMPYRIC SEVERANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        attacker_id = self._ac_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "EMPYRIC SEVERANCE":
+                continue
+            if str(reaction.get("attacking_unit_id", "") or "").strip() == attacker_id:
+                return
+        payload = {
+            "event": "shooting_targets_selected" if phase_key == "SHOOTING_PHASE" else "fight_targets_selected",
+            "phase_name": "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "attacking_unit_id": attacker_id,
+            "candidates": sorted(candidates, key=self._ac_sort_key),
+            "support_candidates_by_unit_id": dict(support_candidates_by_unit_id),
+        }
+        if len(candidates) == 1:
+            target_root = candidates[0]
+            payload["unit"] = target_root
+            payload["target_unit"] = target_root
+            support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(target_root), []) or [])
+            if len(support_ids) == 1 and self.game is not None and hasattr(self.game, "_resolve_unit_by_id"):
+                payload["support_unit"] = self.game._resolve_unit_by_id(support_ids[0])
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_talons_shield_of_honour_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_talons_of_the_emperor_detachment():
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "SHOOTING_PHASE":
+            return
+        attacker_root = self._ac_root(attacking_unit)
+        if attacker_root is None or self._ac_owned_by_player(attacker_root):
+            return
+        candidates: list[Any] = []
+        support_candidates_by_unit_id: dict[str, list[str]] = {}
+        for root in self._talons_targeted_custodes_candidates(
+            list(target_units or []),
+            require_anathema=True,
+            require_infantry=True,
+        ):
+            supports = self._talons_support_candidates_for_shield(root)
+            if not supports:
+                continue
+            unit_id = self._ac_sort_key(root)
+            if not unit_id:
+                continue
+            candidates.append(root)
+            support_candidates_by_unit_id[unit_id] = [self._ac_sort_key(unit) for unit in supports if self._ac_sort_key(unit)]
+        if not candidates:
+            return
+        stratagem = self.get_by_name("SHIELD OF HONOUR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        attacker_id = self._ac_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "SHIELD OF HONOUR":
+                continue
+            if str(reaction.get("attacking_unit_id", "") or "").strip() == attacker_id:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "attacking_unit_id": attacker_id,
+            "candidates": sorted(candidates, key=self._ac_sort_key),
+            "support_candidates_by_unit_id": dict(support_candidates_by_unit_id),
+        }
+        if len(candidates) == 1:
+            target_root = candidates[0]
+            payload["unit"] = target_root
+            payload["target_unit"] = target_root
+            support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(target_root), []) or [])
+            if len(support_ids) == 1 and self.game is not None and hasattr(self.game, "_resolve_unit_by_id"):
+                payload["support_unit"] = self.game._resolve_unit_by_id(support_ids[0])
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_talons_taloned_pincer_reaction(self, *, unit: Any, action: str) -> None:
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+        enemy_root = self._ac_root(unit)
+        if enemy_root is None or not self._is_talons_of_the_emperor_detachment():
+            return
+        if self._ac_owned_by_player(enemy_root) or not self._ac_is_enemy_battlefield_unit(enemy_root):
+            return
+        if self._ac_phase_key(self._ac_current_phase_name()) != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        candidates: list[Any] = []
+        for root in self._talons_battlefield_unit_candidates():
+            if not aura_utils.unit_within_range_of_unit(
+                root,
+                enemy_root,
+                9.0,
+                use_attached_aggregate=True,
+            ):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        stratagem = self.get_by_name("TALONED PINCER")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in {
+            str(v or "").strip().upper() for v in list(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        }:
+            return
+        enemy_id = self._ac_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "TALONED PINCER":
+                continue
+            if str(reaction.get("enemy_unit_id", "") or "").strip() == enemy_id:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "enemy_unit_id": enemy_id,
+            "action": action_key,
+            "candidates": sorted(candidates, key=self._ac_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _ac_units_within_shoulder_range(self, leader_unit: Any, bodyguard_unit: Any) -> bool:
         source_models = self._ac_alive_models(leader_unit)
@@ -2196,6 +2540,31 @@ class AdeptusCustodesStratagemMixin:
                     ):
                         sr.pop(key, None)
                     changed = True
+                exp = str(sr.get("custodes_talons_talons_interlocked_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_talons_talons_interlocked_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_talons_talons_interlocked_active",
+                        "custodes_talons_talons_interlocked_target_id",
+                        "custodes_talons_talons_interlocked_expires_phase",
+                        "custodes_talons_talons_interlocked_turn_owner",
+                        "custodes_talons_talons_interlocked_turn",
+                        "custodes_talons_talons_interlocked_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+                exp = str(sr.get("custodes_talons_shield_of_honour_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_talons_shield_of_honour_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_talons_shield_of_honour_active",
+                        "custodes_talons_shield_of_honour_support_unit_id",
+                        "custodes_talons_shield_of_honour_attacker_unit_id",
+                        "custodes_talons_shield_of_honour_expires_phase",
+                        "custodes_talons_shield_of_honour_turn_owner",
+                        "custodes_talons_shield_of_honour_turn",
+                        "custodes_talons_shield_of_honour_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
             if phase_key == "FIGHT_PHASE":
                 exp = str(sr.get("custodes_solar_spearhead_emperors_vengeance_expires_phase", "") or "").strip().upper()
                 if sr.get("custodes_solar_spearhead_emperors_vengeance_active") and (not exp or exp == phase_key):
@@ -2220,6 +2589,18 @@ class AdeptusCustodesStratagemMixin:
                     ):
                         sr.pop(key, None)
                     changed = True
+                exp = str(sr.get("custodes_talons_emperors_executioners_expires_phase", "") or "").strip().upper()
+                if sr.get("custodes_talons_emperors_executioners_active") and (not exp or exp == phase_key):
+                    for key in (
+                        "custodes_talons_emperors_executioners_active",
+                        "custodes_talons_emperors_executioners_wound_bonus",
+                        "custodes_talons_emperors_executioners_expires_phase",
+                        "custodes_talons_emperors_executioners_turn_owner",
+                        "custodes_talons_emperors_executioners_turn",
+                        "custodes_talons_emperors_executioners_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
             if changed:
                 root.special_rules = sr
 
@@ -2232,8 +2613,11 @@ class AdeptusCustodesStratagemMixin:
             "AVENGE THE FALLEN",
             "DESPERATION'S PRICE",
             "EARNING OF A NAME",
+            "EMPEROR'S EXECUTIONERS",
             "EMPEROR'S VENGEANCE",
+            "EMPYRIC SEVERANCE",
             "FLAWLESS CONSTRUCTION",
+            "HUNT AS ONE",
             "MANOEUVRE AND FIRE",
             "MULTIPOTENTIALITY",
             "PEERLESS WARRIOR",
@@ -2242,10 +2626,13 @@ class AdeptusCustodesStratagemMixin:
             "PUNISHMENT INESCAPABLE",
             "PURGATION SWEEP",
             "RELENTLESS PERSECUTION",
+            "SHIELD OF HONOUR",
             "SHOULDER THE MANTLE",
             "SLAYER OF CHAMPIONS",
             "SUPERHUMAN RESERVES",
             "SWIFT AS THE EAGLE",
+            "TALONED PINCER",
+            "TALONS INTERLOCKED",
             "THE EMPEROR'S AUSPICE",
             "UNSTOPPABLE",
             "UNWAVERING SENTINELS",
@@ -2288,6 +2675,15 @@ class AdeptusCustodesStratagemMixin:
             "UNSTOPPABLE",
             "WRATHFUL ADVANCE",
         } and not self._is_solar_spearhead_detachment():
+            return False
+        if name_u in {
+            "EMPEROR'S EXECUTIONERS",
+            "EMPYRIC SEVERANCE",
+            "HUNT AS ONE",
+            "SHIELD OF HONOUR",
+            "TALONED PINCER",
+            "TALONS INTERLOCKED",
+        } and not self._is_talons_of_the_emperor_detachment():
             return False
         if name_u in {
             "ANATHEMA BLADEMASTERY",
@@ -3562,6 +3958,456 @@ class AdeptusCustodesStratagemMixin:
                 getattr(target_unit, "name", "Unit"),
                 int(move_max),
             )
+            return True
+
+        if name_u == "EMPEROR'S EXECUTIONERS":
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._talons_battlefield_unit_candidates(
+                require_melee=True,
+            )
+            selected_units = self._ac_resolve_unit_selection(
+                kwargs.get("units"),
+                kwargs.get("target_units"),
+                kwargs.get("selected_units"),
+                kwargs.get("unit"),
+                kwargs.get("target_unit"),
+            )
+            if not selected_units and len(candidates) == 1:
+                selected_units = [candidates[0]]
+            if self._ac_phase_name_lower(phase_name) != "fight phase":
+                logger.error("ERROR: EMPEROR'S EXECUTIONERS: wrong phase")
+                return False
+            if not selected_units or len(selected_units) > 2:
+                logger.error("ERROR: EMPEROR'S EXECUTIONERS: expected one or two target units")
+                return False
+            for root in selected_units:
+                if root is None or not self._ac_is_custodes_unit(root):
+                    logger.error("ERROR: EMPEROR'S EXECUTIONERS: targets must be friendly ADEPTUS CUSTODES units")
+                    return False
+                if candidates and root not in candidates:
+                    logger.error("ERROR: EMPEROR'S EXECUTIONERS: selected unit is not an eligible candidate")
+                    return False
+                if not self._ac_unit_on_battlefield(root):
+                    return False
+                if self._unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: EMPEROR'S EXECUTIONERS: target cannot be selected")
+                    return False
+                if not self._ac_unit_has_weapon_type(root, "melee"):
+                    logger.error("ERROR: EMPEROR'S EXECUTIONERS: target must have melee weapons")
+                    return False
+            primary = selected_units[0]
+            if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=primary):
+                return False
+            for root in selected_units:
+                sr = dict(getattr(root, "special_rules", {}) or {})
+                sr["custodes_talons_emperors_executioners_active"] = True
+                sr["custodes_talons_emperors_executioners_wound_bonus"] = 1
+                sr["custodes_talons_emperors_executioners_expires_phase"] = "FIGHT_PHASE"
+                sr["custodes_talons_emperors_executioners_turn_owner"] = self._ac_turn_owner_id()
+                sr["custodes_talons_emperors_executioners_turn"] = self._ac_current_turn()
+                sr["custodes_talons_emperors_executioners_source"] = stratagem.name
+                root.special_rules = sr
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "EMPYRIC SEVERANCE":
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or (pending or {}).get("attacking_unit"))
+            phase_key = self._ac_phase_key(phase_name)
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._talons_targeted_custodes_candidates(list(kwargs.get("target_units") or []))
+            source_unit = self._ac_root(
+                kwargs.get("unit")
+                or kwargs.get("target_unit")
+                or (pending or {}).get("unit")
+                or (pending or {}).get("target_unit")
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            support_candidates_by_unit_id = dict(kwargs.get("support_candidates_by_unit_id") or (pending or {}).get("support_candidates_by_unit_id") or {})
+            support_unit = self._ac_root(kwargs.get("support_unit") or (pending or {}).get("support_unit"))
+            if source_unit is not None and support_unit is None:
+                support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(source_unit), []) or [])
+                if len(support_ids) == 1 and self.game is not None and hasattr(self.game, "_resolve_unit_by_id"):
+                    support_unit = self._ac_root(self.game._resolve_unit_by_id(support_ids[0]))
+            if support_unit is None and source_unit is not None:
+                support_candidates = self._talons_support_candidates_for_empyric(source_unit)
+                if len(support_candidates) == 1:
+                    support_unit = support_candidates[0]
+            if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                logger.error("ERROR: EMPYRIC SEVERANCE: wrong phase")
+                return False
+            if phase_key == "SHOOTING_PHASE":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                if active_player is self.player:
+                    logger.error("ERROR: EMPYRIC SEVERANCE: must be your opponent's Shooting phase")
+                    return False
+            if source_unit is None or not self._ac_is_custodes_unit(source_unit):
+                logger.error("ERROR: EMPYRIC SEVERANCE: target must be a friendly ADEPTUS CUSTODES unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: EMPYRIC SEVERANCE: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: EMPYRIC SEVERANCE: missing enemy attacking unit")
+                return False
+            if support_unit is None or not self._ac_is_anathema_psykana_unit(support_unit):
+                logger.error("ERROR: EMPYRIC SEVERANCE: support unit must be a friendly ANATHEMA PSYKANA unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if not self._ac_unit_on_battlefield(support_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                logger.error("ERROR: EMPYRIC SEVERANCE: target cannot be selected")
+                return False
+            if self._unit_cannot_be_target_of_stratagem(support_unit):
+                logger.error("ERROR: EMPYRIC SEVERANCE: support unit cannot be selected")
+                return False
+            if not aura_utils.unit_within_range_of_unit(
+                source_unit,
+                support_unit,
+                6.0,
+                use_attached_aggregate=True,
+            ):
+                logger.error("ERROR: EMPYRIC SEVERANCE: support unit must be within 6\"")
+                return False
+            support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(source_unit), []) or [])
+            if support_ids and self._ac_sort_key(support_unit) not in support_ids:
+                logger.error("ERROR: EMPYRIC SEVERANCE: support unit is not an eligible candidate")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            self._append_defensive_effect(
+                source_unit,
+                "defensive_fnp_overrides",
+                {
+                    "value": 4,
+                    "attack_type": "any",
+                    "expires_phase": phase_key,
+                    "condition": "against psychic attacks and mortal wounds",
+                    "source": str(getattr(stratagem, "name", "") or "EMPYRIC SEVERANCE"),
+                },
+            )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "HUNT AS ONE":
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._talons_battlefield_unit_candidates()
+            selected_units = self._ac_resolve_unit_selection(
+                kwargs.get("units"),
+                kwargs.get("target_units"),
+                kwargs.get("selected_units"),
+                kwargs.get("unit"),
+                kwargs.get("target_unit"),
+            )
+            if not selected_units and len(candidates) == 1:
+                selected_units = [candidates[0]]
+            if self._ac_phase_name_lower(phase_name) != "movement phase":
+                logger.error("ERROR: HUNT AS ONE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: HUNT AS ONE: must be your Movement phase")
+                return False
+            if not selected_units or len(selected_units) > 2:
+                logger.error("ERROR: HUNT AS ONE: expected one or two target units")
+                return False
+            for root in selected_units:
+                if root is None or not self._ac_is_custodes_unit(root):
+                    logger.error("ERROR: HUNT AS ONE: targets must be friendly ADEPTUS CUSTODES units")
+                    return False
+                if candidates and root not in candidates:
+                    logger.error("ERROR: HUNT AS ONE: selected unit is not an eligible candidate")
+                    return False
+                if not self._ac_unit_on_battlefield(root):
+                    return False
+                if self._unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: HUNT AS ONE: target cannot be selected")
+                    return False
+            primary = selected_units[0]
+            if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=primary):
+                return False
+            for root in selected_units:
+                sr = dict(getattr(root, "special_rules", {}) or {})
+                sr["manoeuvre_and_fire_active"] = True
+                sr["manoeuvre_and_fire_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["manoeuvre_and_fire_turn"] = self._ac_current_turn()
+                sr["manoeuvre_and_fire_source"] = stratagem.name
+                root.special_rules = sr
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "SHIELD OF HONOUR":
+            attacking_unit = self._ac_root(kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or (pending or {}).get("attacking_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates:
+                candidates = self._talons_targeted_custodes_candidates(
+                    list(kwargs.get("target_units") or []),
+                    require_anathema=True,
+                    require_infantry=True,
+                )
+            source_unit = self._ac_root(
+                kwargs.get("unit")
+                or kwargs.get("target_unit")
+                or (pending or {}).get("unit")
+                or (pending or {}).get("target_unit")
+            )
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            support_candidates_by_unit_id = dict(kwargs.get("support_candidates_by_unit_id") or (pending or {}).get("support_candidates_by_unit_id") or {})
+            support_unit = self._ac_root(kwargs.get("support_unit") or (pending or {}).get("support_unit"))
+            if source_unit is not None and support_unit is None:
+                support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(source_unit), []) or [])
+                if len(support_ids) == 1 and self.game is not None and hasattr(self.game, "_resolve_unit_by_id"):
+                    support_unit = self._ac_root(self.game._resolve_unit_by_id(support_ids[0]))
+            if support_unit is None and source_unit is not None:
+                support_candidates = self._talons_support_candidates_for_shield(source_unit)
+                if len(support_candidates) == 1:
+                    support_unit = support_candidates[0]
+            if self._ac_phase_key(phase_name) != "SHOOTING_PHASE":
+                logger.error("ERROR: SHIELD OF HONOUR: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                logger.error("ERROR: SHIELD OF HONOUR: must be your opponent's Shooting phase")
+                return False
+            if source_unit is None or not self._ac_is_anathema_psykana_unit(source_unit) or not self._ac_has_keyword(source_unit, "INFANTRY"):
+                logger.error("ERROR: SHIELD OF HONOUR: target must be a friendly ANATHEMA PSYKANA INFANTRY unit")
+                return False
+            if candidates and source_unit not in candidates:
+                logger.error("ERROR: SHIELD OF HONOUR: target is not an eligible candidate")
+                return False
+            if attacking_unit is None or self._ac_owned_by_player(attacking_unit):
+                logger.error("ERROR: SHIELD OF HONOUR: missing enemy attacking unit")
+                return False
+            if support_unit is None or not self._ac_is_custodes_unit(support_unit):
+                logger.error("ERROR: SHIELD OF HONOUR: support unit must be a friendly ADEPTUS CUSTODES unit")
+                return False
+            if self._ac_is_anathema_psykana_unit(support_unit) or not self._ac_has_keyword(support_unit, "INFANTRY"):
+                logger.error("ERROR: SHIELD OF HONOUR: support unit must be a non-Anathema ADEPTUS CUSTODES INFANTRY unit")
+                return False
+            if support_unit is source_unit:
+                logger.error("ERROR: SHIELD OF HONOUR: support unit must be different from the target unit")
+                return False
+            if not self._ac_unit_on_battlefield(source_unit):
+                return False
+            if not self._ac_unit_on_battlefield(support_unit):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(source_unit):
+                logger.error("ERROR: SHIELD OF HONOUR: target cannot be selected")
+                return False
+            if self._unit_cannot_be_target_of_stratagem(support_unit):
+                logger.error("ERROR: SHIELD OF HONOUR: support unit cannot be selected")
+                return False
+            if not aura_utils.unit_within_range_of_unit(
+                source_unit,
+                support_unit,
+                6.0,
+                use_attached_aggregate=True,
+            ):
+                logger.error("ERROR: SHIELD OF HONOUR: support unit must be within 6\"")
+                return False
+            support_ids = list(support_candidates_by_unit_id.get(self._ac_sort_key(source_unit), []) or [])
+            if support_ids and self._ac_sort_key(support_unit) not in support_ids:
+                logger.error("ERROR: SHIELD OF HONOUR: support unit is not an eligible candidate")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=source_unit):
+                return False
+            sr = dict(getattr(source_unit, "special_rules", {}) or {})
+            sr["custodes_talons_shield_of_honour_active"] = True
+            sr["custodes_talons_shield_of_honour_support_unit_id"] = self._ac_sort_key(support_unit)
+            sr["custodes_talons_shield_of_honour_expires_phase"] = "SHOOTING_PHASE"
+            sr["custodes_talons_shield_of_honour_turn_owner"] = self._ac_turn_owner_id()
+            sr["custodes_talons_shield_of_honour_turn"] = self._ac_current_turn()
+            sr["custodes_talons_shield_of_honour_source"] = stratagem.name
+            source_unit.special_rules = sr
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "TALONED PINCER":
+            enemy_unit = self._ac_root(kwargs.get("enemy_unit") or kwargs.get("attacker_unit") or (pending or {}).get("enemy_unit"))
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or (pending or {}).get("candidates") or []))
+            if not candidates and enemy_unit is not None:
+                candidates = [
+                    root
+                    for root in self._talons_battlefield_unit_candidates()
+                    if aura_utils.unit_within_range_of_unit(root, enemy_unit, 9.0, use_attached_aggregate=True)
+                ]
+            selected_units = self._ac_resolve_unit_selection(
+                kwargs.get("units"),
+                kwargs.get("target_units"),
+                kwargs.get("selected_units"),
+                kwargs.get("unit"),
+                kwargs.get("target_unit"),
+            )
+            if not selected_units and len(candidates) == 1:
+                selected_units = [candidates[0]]
+            if self._ac_phase_name_lower(phase_name) != "movement phase":
+                logger.error("ERROR: TALONED PINCER: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                logger.error("ERROR: TALONED PINCER: must be your opponent's Movement phase")
+                return False
+            if enemy_unit is None or not self._ac_is_enemy_battlefield_unit(enemy_unit):
+                logger.error("ERROR: TALONED PINCER: missing enemy unit")
+                return False
+            if not selected_units or len(selected_units) > 2:
+                logger.error("ERROR: TALONED PINCER: expected one or two target units")
+                return False
+            for root in selected_units:
+                if root is None or not self._ac_is_custodes_unit(root):
+                    logger.error("ERROR: TALONED PINCER: targets must be friendly ADEPTUS CUSTODES units")
+                    return False
+                if candidates and root not in candidates:
+                    logger.error("ERROR: TALONED PINCER: selected unit is not an eligible candidate")
+                    return False
+                if not self._ac_unit_on_battlefield(root):
+                    return False
+                if self._unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: TALONED PINCER: target cannot be selected")
+                    return False
+                if not aura_utils.unit_within_range_of_unit(
+                    root,
+                    enemy_unit,
+                    9.0,
+                    use_attached_aggregate=True,
+                ):
+                    logger.error("ERROR: TALONED PINCER: target must be within 9\" of the enemy unit")
+                    return False
+            primary = selected_units[0]
+            if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=primary):
+                return False
+            queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+            if not callable(queue_move):
+                logger.error("ERROR: TALONED PINCER: reactive movement queue is unavailable")
+                return False
+            for root in selected_units:
+                queue_move(
+                    player=self.player,
+                    unit=root,
+                    max_distance=6,
+                    kind="taloned_pincer",
+                    movement_type="reactive",
+                    reactive_movement_type="move",
+                    source=stratagem.name,
+                    moving_unit=enemy_unit,
+                    attacker_unit=enemy_unit,
+                    range_value=9,
+                    allow_skip=True,
+                )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
+            return True
+
+        if name_u == "TALONS INTERLOCKED":
+            candidates = self._ac_unique_units(list(kwargs.get("candidates") or [])) or self._talons_battlefield_unit_candidates(
+                require_infantry=True,
+                require_not_shot=True,
+                require_ranged=True,
+            )
+            selected_units = self._ac_resolve_unit_selection(
+                kwargs.get("units"),
+                kwargs.get("target_units"),
+                kwargs.get("selected_units"),
+                kwargs.get("unit"),
+                kwargs.get("target_unit"),
+            )
+            if not selected_units and len(candidates) == 1:
+                selected_units = [candidates[0]]
+            enemy_candidates = self._ac_unique_units(list(kwargs.get("enemy_candidates") or []))
+            enemy_unit = self._ac_root(kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit") or kwargs.get("enemy"))
+            if enemy_unit is None and len(enemy_candidates) == 1:
+                enemy_unit = enemy_candidates[0]
+            if self._ac_phase_name_lower(phase_name) != "shooting phase":
+                logger.error("ERROR: TALONS INTERLOCKED: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: TALONS INTERLOCKED: must be your Shooting phase")
+                return False
+            if not selected_units or len(selected_units) > 2:
+                logger.error("ERROR: TALONS INTERLOCKED: expected one or two target units")
+                return False
+            for root in selected_units:
+                if root is None or not self._ac_is_custodes_unit(root):
+                    logger.error("ERROR: TALONS INTERLOCKED: targets must be friendly ADEPTUS CUSTODES units")
+                    return False
+                if candidates and root not in candidates:
+                    logger.error("ERROR: TALONS INTERLOCKED: selected unit is not an eligible candidate")
+                    return False
+                if not self._ac_unit_on_battlefield(root):
+                    return False
+                if self._unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: TALONS INTERLOCKED: target cannot be selected")
+                    return False
+                if not self._ac_has_keyword(root, "INFANTRY"):
+                    logger.error("ERROR: TALONS INTERLOCKED: target must be INFANTRY")
+                    return False
+                if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    logger.error("ERROR: TALONS INTERLOCKED: target has already been selected to shoot")
+                    return False
+                if not self._ac_unit_has_weapon_type(root, "ranged"):
+                    logger.error("ERROR: TALONS INTERLOCKED: target must have ranged weapons")
+                    return False
+            if enemy_unit is None or not self._ac_is_enemy_battlefield_unit(enemy_unit):
+                logger.error("ERROR: TALONS INTERLOCKED: missing enemy target unit")
+                return False
+            if enemy_candidates and enemy_unit not in enemy_candidates:
+                logger.error("ERROR: TALONS INTERLOCKED: selected enemy is not an eligible candidate")
+                return False
+            if not self._talons_enemy_target_eligible_for_all_units(selected_units, enemy_unit):
+                logger.error("ERROR: TALONS INTERLOCKED: enemy target is not an eligible target for all selected units")
+                return False
+            primary = selected_units[0]
+            if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name=phase_name):
+                return False
+            if not self._ac_spend_cp(stratagem, target_unit=primary):
+                return False
+            phase_key = self._ac_phase_key(phase_name)
+            enemy_id = self._ac_sort_key(enemy_unit)
+            for root in selected_units:
+                sr = dict(getattr(root, "special_rules", {}) or {})
+                sr["custodes_talons_talons_interlocked_active"] = True
+                sr["custodes_talons_talons_interlocked_target_id"] = enemy_id
+                sr["custodes_talons_talons_interlocked_expires_phase"] = "SHOOTING_PHASE"
+                sr["custodes_talons_talons_interlocked_turn_owner"] = self._ac_turn_owner_id()
+                sr["custodes_talons_talons_interlocked_turn"] = self._ac_current_turn()
+                sr["custodes_talons_talons_interlocked_source"] = stratagem.name
+                root.special_rules = sr
+                root_id = self._ac_sort_key(root) or str(id(root))
+                for model in self._ac_alive_models(root):
+                    set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                    if not callable(set_bonus):
+                        continue
+                    model_id = self._ac_sort_key(model) or str(id(model))
+                    for wargear in list(getattr(model, "wargear", []) or []):
+                        if wargear is None:
+                            continue
+                        is_ranged = getattr(wargear, "is_ranged", None)
+                        if not callable(is_ranged) or not bool(is_ranged()):
+                            continue
+                        weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                        if not weapon_name:
+                            continue
+                        set_bonus(
+                            key=f"custodes_talons_talons_interlocked:{root_id}:{model_id}:{weapon_name}".lower(),
+                            weapon_name=weapon_name,
+                            strength_bonus=1,
+                            ap_bonus=1,
+                            source=stratagem.name,
+                            expires_phase=phase_key,
+                        )
+            self._ac_finalize_use(stratagem, dequeue=dequeue)
             return True
 
         return None

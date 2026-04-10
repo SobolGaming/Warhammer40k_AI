@@ -7505,6 +7505,23 @@ class WargearProfile:
         except Exception:
             pass
 
+        if target is not None:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            redirect_target = None
+            redirect_fn = getattr(target, "_adeptus_custodes_talons_shield_of_honour_redirect_target", None)
+            if callable(redirect_fn):
+                try:
+                    redirect_target = redirect_fn(
+                        attacker_model=attacker,
+                        attacker_unit=attacker_unit,
+                        weapon_profile=self,
+                        game_map=game_map,
+                    )
+                except Exception:
+                    redirect_target = None
+            if redirect_target is not None:
+                target = redirect_target
+
         # Initialize attack result tracking
         # Build proper weapon name: parent weapon + profile (if not default)
         weapon_display_name = self.name
@@ -19985,6 +20002,19 @@ class WargearProfile:
             )
             if int(bonus or 0):
                 source_name = str(source or "Gift of Terran Artifice").strip() or "Gift of Terran Artifice"
+                dice_modifier += int(bonus)
+                wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
+        if mgr is not None and callable(getattr(mgr, "talons_emperors_executioners_wound_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            bonus, source = mgr.talons_emperors_executioners_wound_bonus(
+                attacker,
+                target,
+                game=game,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+            )
+            if int(bonus or 0):
+                source_name = str(source or "EMPEROR'S EXECUTIONERS").strip() or "EMPEROR'S EXECUTIONERS"
                 dice_modifier += int(bonus)
                 wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
         # Imperial Agents: ENSNARING TRAP (Callidus Assassin) melee wound bonus.

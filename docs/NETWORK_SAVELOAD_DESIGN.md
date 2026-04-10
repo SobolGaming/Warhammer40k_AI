@@ -391,6 +391,7 @@ Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="rea
 Tactical Acumen queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="tactical_acumen"`.
 Shoot Sharp and Scarper queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="post_shoot_no_charge"` using the unit's Move characteristic.
 A Foot in the Future queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="a_foot_in_the_future"` (max distance from the recorded D6 roll).
+Taloned Pincer queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="taloned_pincer"` for each selected unit.
 Rapid Feint queues `MOVE_UNIT` with `movement_type="move"` and `reactive_move_kind="genestealer_cults_rapid_feint"` for a fixed 6" Normal move.
 Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Martial Philosopher uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="martial_philosopher"` and `reactive_move_kind="martial_philosopher"`.

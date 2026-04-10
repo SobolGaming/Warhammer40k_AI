@@ -756,6 +756,82 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         ).strip() or "Gift of Terran Artifice"
         return int(bonus), source
 
+    def talons_emperors_executioners_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del attack_instance
+        if not self.is_talons_of_the_emperor():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_custodes(attacker_model):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_active(attacker_root):
+            return 0, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("custodes_talons_emperors_executioners_active")):
+            return 0, ""
+        target_root = self._root_unit(target_unit)
+        if target_root is None or not self._unit_is_below_starting_strength(target_root):
+            return 0, ""
+        is_melee = None
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee_fn = getattr(parent, "is_melee", None) if parent is not None else None
+            if callable(is_melee_fn):
+                is_melee = bool(is_melee_fn())
+        if is_melee is False:
+            return 0, ""
+        if game is not None:
+            expected_phase = str(sr.get("custodes_talons_emperors_executioners_expires_phase", "") or "").strip().upper()
+            if expected_phase:
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if current_phase and current_phase != expected_phase:
+                    return 0, ""
+            try:
+                expected_turn = int(sr.get("custodes_talons_emperors_executioners_turn", 0) or 0)
+            except (TypeError, ValueError):
+                expected_turn = 0
+            if expected_turn:
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if current_turn and current_turn != expected_turn:
+                    return 0, ""
+            expected_owner = str(sr.get("custodes_talons_emperors_executioners_turn_owner", "") or "").strip()
+            if expected_owner:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "").strip()
+                if current_owner and current_owner != expected_owner:
+                    return 0, ""
+        try:
+            bonus = int(sr.get("custodes_talons_emperors_executioners_wound_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("custodes_talons_emperors_executioners_source", "")
+            or "EMPEROR'S EXECUTIONERS"
+        ).strip() or "EMPEROR'S EXECUTIONERS"
+        return int(bonus), source
+
     def radiant_mantle_target_hit_penalty(
         self,
         target_unit,
