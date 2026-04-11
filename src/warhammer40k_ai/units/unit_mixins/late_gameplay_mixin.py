@@ -2239,6 +2239,57 @@ class LateGameplayMixin:
             return False, ""
         return True, source
 
+    def imperial_agents_hexagrammic_wards_hazardous(
+        self,
+        *,
+        is_psychic_attack: bool,
+        game=None,
+    ) -> Tuple[bool, str]:
+        if not bool(is_psychic_attack):
+            return False, ""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_hexagrammic_wards_active", False)):
+            return False, ""
+        game_obj = game
+        if game_obj is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game_obj is not None:
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("imperial_agents_hexagrammic_wards_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return False, ""
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            marked_phase = str(sr.get("imperial_agents_hexagrammic_wards_expires_phase", "") or "").strip().upper()
+            if current_phase and marked_phase and current_phase != marked_phase:
+                return False, ""
+            owner_id = str(sr.get("imperial_agents_hexagrammic_wards_turn_owner", "") or "").strip()
+            if owner_id:
+                current_player = getattr(game_obj, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+                if owner_id and current_owner_id and owner_id != current_owner_id:
+                    return False, ""
+        source = (
+            str(sr.get("imperial_agents_hexagrammic_wards_source", "") or "HEXAGRAMMIC WARDS").strip()
+            or "HEXAGRAMMIC WARDS"
+        )
+        return True, source
+
     def has_feel_no_pain(self, target_model: Optional['Model'] = None) -> List[Tuple[int, Optional[str]]]:
         """Check if the unit has Feel No Pain abilities and return all of them.
         

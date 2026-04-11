@@ -1028,6 +1028,27 @@ class AttackResolutionManager:
                     pd_hazardous = False
                 if pd_hazardous:
                     target_melee_hazardous = True
+        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+        attacker_hex_fn = (
+            getattr(attacker_root, "imperial_agents_hexagrammic_wards_hazardous", None)
+            if attacker_root is not None
+            else None
+        )
+        if is_melee and callable(attacker_hex_fn) and source_model is not None:
+            try:
+                is_psychic_attack = bool(profile._is_psychic_attack(source_model))
+            except (AttributeError, TypeError, ValueError):
+                is_psychic_attack = False
+            try:
+                attacker_hex_hazardous, _attacker_hex_source = attacker_hex_fn(
+                    is_psychic_attack=is_psychic_attack,
+                    game=game,
+                )
+            except (AttributeError, TypeError, ValueError):
+                attacker_hex_hazardous = False
+            if attacker_hex_hazardous:
+                target_melee_hazardous = True
+                hazardous_active = True
         if is_ranged and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
             target_root = target_unit.get_attached_unit_root()
             sr = getattr(target_root, "special_rules", None) if target_root is not None else None
@@ -1075,6 +1096,21 @@ class AttackResolutionManager:
                     pd_hazardous = False
                 if pd_hazardous:
                     target_ranged_hazardous = True
+        if is_ranged and callable(attacker_hex_fn) and source_model is not None:
+            try:
+                is_psychic_attack = bool(profile._is_psychic_attack(source_model))
+            except (AttributeError, TypeError, ValueError):
+                is_psychic_attack = False
+            try:
+                attacker_hex_hazardous, _attacker_hex_source = attacker_hex_fn(
+                    is_psychic_attack=is_psychic_attack,
+                    game=game,
+                )
+            except (AttributeError, TypeError, ValueError):
+                attacker_hex_hazardous = False
+            if attacker_hex_hazardous:
+                target_ranged_hazardous = True
+                hazardous_active = True
         if is_ranged:
             attacker_sr = getattr(attacker_unit, "special_rules", None)
             if isinstance(attacker_sr, dict) and attacker_sr.get("tau_experimental_ammunition_active"):

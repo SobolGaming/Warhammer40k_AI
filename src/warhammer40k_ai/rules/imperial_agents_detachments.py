@@ -482,6 +482,37 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
             return None, None
         return root, sr
 
+    def _ordo_malleus_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_ordo_malleus_daemon_hunters():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._coerce_int(getattr(game_obj, "turn", 0) if game_obj is not None else 0, default=0)
+        marked_turn = self._coerce_int(sr.get(f"{prefix}_turn", 0), default=0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        current_owner_id = self._current_player_id(game=game_obj)
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return None, None
+        return root, sr
+
+    def _ordo_malleus_phase_effect_state(self, unit, *, prefix: str, game=None):
+        root, sr = self._ordo_malleus_turn_effect_state(unit, prefix=prefix, game=game)
+        if root is None or not isinstance(sr, dict):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") if game_obj is not None else "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None, None
+        return root, sr
+
     def _at_all_costs_pending_request(self, game, *, army_id: str, battle_round: int):
         if game is None:
             return None
@@ -2008,6 +2039,140 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
                 "source": source or "Execution Order",
             }
         ]
+
+    def psybolt_ammunition_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> list[dict]:
+        del target_unit, game_map
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return []
+        if str(attack_type or "any").strip().lower() not in {"any", "ranged"}:
+            return []
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return []
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        root, sr = self._ordo_malleus_phase_effect_state(
+            source_unit,
+            prefix="imperial_agents_psybolt_ammunition",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return []
+        source = str(sr.get("imperial_agents_psybolt_ammunition_source", "") or "Psybolt Ammunition").strip()
+        source = source or "Psybolt Ammunition"
+        return [
+            {
+                "attack_type": "ranged",
+                "keyword": "LETHAL HITS",
+                "source": source,
+            },
+            {
+                "attack_type": "ranged",
+                "keyword": "PSYCHIC",
+                "source": source,
+            },
+        ]
+
+    def psybolt_ammunition_weapon_is_psychic(
+        self,
+        attacker_model,
+        *,
+        attacker_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return False
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        root, _sr = self._ordo_malleus_phase_effect_state(
+            source_unit,
+            prefix="imperial_agents_psybolt_ammunition",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def rites_of_exorcism_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> list[dict]:
+        del attack_type, weapon_profile, game_map
+        if not self.is_ordo_malleus_daemon_hunters():
+            return []
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return []
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        if source_unit is None or not self._unit_in_army(source_unit):
+            return []
+        if not self._unit_is_agents_of_the_imperium(source_unit):
+            return []
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return []
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_rites_of_exorcism_active", False)):
+            return []
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._coerce_int(getattr(game_obj, "turn", 0) if game_obj is not None else 0, default=0)
+        marked_turn = self._coerce_int(sr.get("imperial_agents_rites_of_exorcism_turn", 0), default=0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return []
+        owner_id = str(sr.get("imperial_agents_rites_of_exorcism_turn_owner", "") or "")
+        current_owner_id = self._current_player_id(game=game_obj)
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return []
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") if game_obj is not None else "")
+        marked_phase = self._phase_key(sr.get("imperial_agents_rites_of_exorcism_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return []
+        source = str(sr.get("imperial_agents_rites_of_exorcism_source", "") or "Rites of Exorcism").strip()
+        return [
+            {
+                "attack_type": "any",
+                "keyword": "DEVASTATING WOUNDS",
+                "source": source or "Rites of Exorcism",
+            }
+        ]
+
+    def steel_heart_can_shoot_after_fall_back(self, unit, *, profile=None, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._ordo_malleus_turn_effect_state(
+            unit,
+            prefix="imperial_agents_steel_heart",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def steel_heart_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._ordo_malleus_turn_effect_state(
+            unit,
+            prefix="imperial_agents_steel_heart",
+            game=game,
+        )
+        return bool(root is not None)
 
     def line_of_fire_allows_ranged_target(
         self,

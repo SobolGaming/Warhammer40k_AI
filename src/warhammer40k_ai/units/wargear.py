@@ -2218,6 +2218,33 @@ class WargearProfile:
     def _is_psychic_attack(self, attacker: Optional['Model']) -> bool:
         if self.is_psychic():
             return True
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        try:
+            army = attacker_unit.get_parent_army() if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army") else None
+        except Exception:
+            army = None
+        try:
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        except Exception:
+            ia_mgr = None
+        ia_psychic_fn = getattr(ia_mgr, "psybolt_ammunition_weapon_is_psychic", None) if ia_mgr is not None else None
+        if callable(ia_psychic_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(
+                    ia_psychic_fn(
+                        attacker,
+                        attacker_unit=attacker_unit,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                ):
+                    return True
+            except Exception:
+                pass
         return bool(
             self._thousand_sons_infernal_fusillade_weapon_matches(attacker)
             or self._thousand_sons_ensorcelled_infusion_weapon_matches(attacker)
@@ -8522,6 +8549,27 @@ class WargearProfile:
                     source_name = str(pd_source or "PSYCHIC DOMINION").strip() or "PSYCHIC DOMINION"
                     if source_name not in target_melee_hazardous_sources:
                         target_melee_hazardous_sources.append(source_name)
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_hex_fn = (
+                getattr(attacker_unit, "imperial_agents_hexagrammic_wards_hazardous", None)
+                if attacker_unit is not None
+                else None
+            )
+            if callable(attacker_hex_fn):
+                try:
+                    hex_hazardous, hex_source = attacker_hex_fn(
+                        is_psychic_attack=bool(self._is_psychic_attack(attacker)),
+                        game=getattr(getattr(getattr(attacker, "parent_unit", None), "get_parent_army", lambda: None)(), "player", None).game
+                        if getattr(attacker, "parent_unit", None) is not None
+                        else None,
+                    )
+                except Exception:
+                    hex_hazardous, hex_source = False, ""
+                if hex_hazardous:
+                    target_melee_hazardous = True
+                    source_name = str(hex_source or "HEXAGRAMMIC WARDS").strip() or "HEXAGRAMMIC WARDS"
+                    if source_name not in target_melee_hazardous_sources:
+                        target_melee_hazardous_sources.append(source_name)
         if target_melee_hazardous:
             hazardous_active = True
             hazardous_source_count += 1
@@ -8614,6 +8662,30 @@ class WargearProfile:
                     hazardous_active = True
                     hazardous_source_count += 1
                     source_name = str(pd_source or "PSYCHIC DOMINION").strip() or "PSYCHIC DOMINION"
+                    note = f"{source_name}: [HAZARDOUS] (ranged)"
+                    if note not in attack_result.attacks_special_modifiers:
+                        attack_result.attacks_special_modifiers.append(note)
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_hex_fn = (
+                getattr(attacker_unit, "imperial_agents_hexagrammic_wards_hazardous", None)
+                if attacker_unit is not None
+                else None
+            )
+            if callable(attacker_hex_fn):
+                try:
+                    hex_hazardous, hex_source = attacker_hex_fn(
+                        is_psychic_attack=bool(self._is_psychic_attack(attacker)),
+                        game=getattr(getattr(getattr(attacker, "parent_unit", None), "get_parent_army", lambda: None)(), "player", None).game
+                        if getattr(attacker, "parent_unit", None) is not None
+                        else None,
+                    )
+                except Exception:
+                    hex_hazardous, hex_source = False, ""
+                if hex_hazardous:
+                    target_ranged_hazardous = True
+                    hazardous_active = True
+                    hazardous_source_count += 1
+                    source_name = str(hex_source or "HEXAGRAMMIC WARDS").strip() or "HEXAGRAMMIC WARDS"
                     note = f"{source_name}: [HAZARDOUS] (ranged)"
                     if note not in attack_result.attacks_special_modifiers:
                         attack_result.attacks_special_modifiers.append(note)

@@ -2066,6 +2066,8 @@ class PositioningAttackBonusesMixin:
                 "violent_acquisition_attack_keyword_bonus_rules",
                 "dispense_justice_attack_keyword_bonus_rules",
                 "execution_order_attack_keyword_bonus_rules",
+                "psybolt_ammunition_attack_keyword_bonus_rules",
+                "rites_of_exorcism_attack_keyword_bonus_rules",
             ):
                 keyword_rules_fn = getattr(ia_mgr, helper_name, None) if ia_mgr is not None else None
                 if not callable(keyword_rules_fn):

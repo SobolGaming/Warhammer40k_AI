@@ -20147,6 +20147,12 @@ def _stratagem_support(
         "000009131004": "Opponent Shooting phase or the Fight phase reaction after enemy targets are selected: selected Ordo Hereticus INFANTRY target within objective range gains Feel No Pain 5+ until end of phase.",
         "000009131006": "Your Shooting phase: selected Ordo Hereticus unit that has not yet shot can target enemy units within Engagement Range of friendly units with non-Blast ranged weapons, provided the target is within 12\", until end of phase.",
         "000009131002": "Start of any non-Command phase: selected Ordo Hereticus GRENADES unit chooses one visible enemy non-MONSTER, non-VEHICLE unit within 8\"; that enemy takes a Battle-shock test and suffers -1 to hit until end of phase.",
+        "000009135002": "Start of any Command phase: selected Inquisitor, Inquisitorial Agents, Ordo Malleus, or Grey Knights Terminator Squad unit within range of a controlled objective makes that objective sticky until your opponent controls it at the start or end of any turn, and enemy DAEMON units cannot be set up within 6\" of it while it remains under your control.",
+        "000009135003": "Your Shooting phase or either player's Fight phase: selected Inquisitor, Inquisitorial Agents, Ordo Malleus, or Grey Knights Terminator Squad unit chooses one visible enemy DAEMON unit within 12\" to take a Battle-shock test; if that test fails, AGENTS OF THE IMPERIUM attacks against that DAEMON gain [DEVASTATING WOUNDS] until end of phase.",
+        "000009135004": "Your Movement phase reaction after a friendly Grey Knights Terminator Squad Falls Back: that unit can shoot and declare a charge later this turn despite Falling Back.",
+        "000009135005": "Opponent Shooting phase or the Fight phase defensive reaction after enemy targets are selected: selected Grey Knights Terminator Squad target worsens incoming Armour Penetration by 1 against that attacker until it finishes making its attacks.",
+        "000009135006": "Opponent Shooting phase or the Fight phase reaction after enemy targets are selected: selected Ordo Malleus target causes Psychic weapons equipped by models in that attacking enemy unit to gain [HAZARDOUS] until end of phase.",
+        "000009135007": "Your Shooting phase: selected Grey Knights Terminator Squad that has not yet shot gains [LETHAL HITS] and [PSYCHIC] on ranged weapons until end of phase.",
         "000008555002": "Opponent Shooting phase or the Fight phase reaction after an enemy unit finishes its attacks: selected friendly NECRONS INFANTRY unit that lost models is removed from the battlefield and must be set up again wholly within 6\" of a selected friendly MONOLITH and not within Engagement Range of enemy units.",
         "000008555003": "Opponent Shooting phase or the Fight phase defensive reaction after an enemy unit selects its targets: selected friendly NECRONS VEHICLE unit gains a 4+ invulnerable save until end of phase.",
         "000008555004": "Your Command phase: your NECRONS WARLORD triggers Reanimation Protocols for each friendly NECRONS unit currently in Reserves, rolling D3 wounds separately for each unit.",
@@ -21049,6 +21055,12 @@ def _stratagem_support(
         "000009131005",
         "000009131006",
         "000009131007",
+        "000009135002",
+        "000009135003",
+        "000009135004",
+        "000009135005",
+        "000009135006",
+        "000009135007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
 

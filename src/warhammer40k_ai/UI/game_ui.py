@@ -1538,6 +1538,39 @@ class GameView:
             )
         self._request_cached_acquisition_objective = _request_cached_acquisition_objective
 
+        def _request_ritual_of_warding_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker your Ordo Malleus unit controls.",
+                title="Ritual of Warding",
+                header="Select an objective marker.",
+                subtitle="The chosen marker remains under your control until your opponent controls it at a turn boundary.",
+                context={"ability": "ritual_of_warding"},
+                allow_skip=True,
+            )
+        self._request_ritual_of_warding_objective = _request_ritual_of_warding_objective
+
         def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -19353,7 +19386,15 @@ class GameView:
                 )
             return
 
-        if name_u in ("DISPENSE JUSTICE", "EXACT PUNISHMENT", "INVIOLATE JURISDICTION", "LINE OF FIRE") and "target_unit" not in context and "unit" not in context:
+        if name_u in (
+            "DISPENSE JUSTICE",
+            "EXACT PUNISHMENT",
+            "HEXAGRAMMIC WARDS",
+            "INVIOLATE JURISDICTION",
+            "LINE OF FIRE",
+            "PSYBOLT AMMUNITION",
+            "STEEL HEART",
+        ) and "target_unit" not in context and "unit" not in context:
             if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 return
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -19365,10 +19406,21 @@ class GameView:
                 try:
                     if name_u == "DISPENSE JUSTICE":
                         candidates = list(manager._ia_dispense_justice_candidates(phase_name=phase_name) or [])
+                    elif name_u == "HEXAGRAMMIC WARDS":
+                        candidates = list(manager._ia_hexagrammic_wards_candidates(list(context.get("target_units") or [])) or [])
                     elif name_u == "INVIOLATE JURISDICTION":
                         candidates = list(manager._ia_inviolate_jurisdiction_candidates(list(context.get("target_units") or [])) or [])
                     elif name_u == "LINE OF FIRE":
                         candidates = list(manager._ia_line_of_fire_candidates() or [])
+                    elif name_u == "PSYBOLT AMMUNITION":
+                        candidates = list(manager._ia_psybolt_ammunition_candidates() or [])
+                    elif name_u == "STEEL HEART":
+                        candidates = list(
+                            manager._ia_steel_heart_candidates(
+                                moved_unit=context.get("unit") or context.get("target_unit")
+                            )
+                            or []
+                        )
                 except Exception:
                     candidates = []
             if preset_unit is not None:
@@ -19377,8 +19429,11 @@ class GameView:
             subtitle = {
                 "DISPENSE JUSTICE": "ADEPTUS ARBITES, INQUISITORIAL AGENTS, or ORDO HERETICUS unit that has not acted this phase.",
                 "EXACT PUNISHMENT": "Eligible Ordo Hereticus unit within 6\" of the destroyed friendly AGENTS unit.",
+                "HEXAGRAMMIC WARDS": "Targeted Ordo Malleus unit selected by the enemy attacker.",
                 "INVIOLATE JURISDICTION": "Targeted Ordo Hereticus INFANTRY unit within objective range.",
                 "LINE OF FIRE": "Ordo Hereticus unit that has not been selected to shoot this phase.",
+                "PSYBOLT AMMUNITION": "Grey Knights Terminator Squad that has not yet shot this phase.",
+                "STEEL HEART": "Grey Knights Terminator Squad that just Fell Back this phase.",
             }.get(name_u, "Select an eligible Ordo Hereticus unit.")
             self._resolve_unit_selection_dialog(
                 player=player,
@@ -19394,7 +19449,7 @@ class GameView:
             )
             return
 
-        if name_u in ("EXECUTION ORDER", "STUN GRENADES") and not (
+        if name_u in ("EXECUTION ORDER", "RITES OF EXORCISM", "STUN GRENADES") and not (
             ("target_unit" in context or "unit" in context)
             and ("enemy_unit" in context or "target_enemy_unit" in context)
         ):
@@ -19410,6 +19465,8 @@ class GameView:
                 try:
                     if name_u == "EXECUTION ORDER":
                         unit_candidates = list(manager._ia_execution_order_candidates() or [])
+                    elif name_u == "RITES OF EXORCISM":
+                        unit_candidates = list(manager._ia_ordo_malleus_candidate_units() or [])
                     else:
                         unit_candidates, enemy_candidates_by_unit = manager._ia_stun_grenades_candidates()
                 except Exception:
@@ -19427,6 +19484,8 @@ class GameView:
                 try:
                     if name_u == "EXECUTION ORDER":
                         enemy_candidates = list(manager._ia_ordo_hereticus_enemy_character_candidates() or [])
+                    elif name_u == "RITES OF EXORCISM":
+                        enemy_candidates = list(manager._ia_ordo_malleus_enemy_daemon_candidates_for_unit(chosen_unit) or [])
                     else:
                         chosen_id = str(get_entity_id(chosen_unit) or "")
                         enemy_candidates = list(
@@ -19455,6 +19514,8 @@ class GameView:
                     subtitle=(
                         "Enemy CHARACTER unit on the battlefield."
                         if name_u == "EXECUTION ORDER"
+                        else "Visible enemy DAEMON unit within 12\"."
+                        if name_u == "RITES OF EXORCISM"
                         else "Visible enemy non-MONSTER, non-VEHICLE unit within 8\"."
                     ),
                     enemy_unit=None,
@@ -19476,6 +19537,8 @@ class GameView:
                 subtitle=(
                     "Ordo Hereticus INFANTRY unit."
                     if name_u == "EXECUTION ORDER"
+                    else "Inquisitor, Inquisitorial Agents, or Ordo Malleus unit."
+                    if name_u == "RITES OF EXORCISM"
                     else "Ordo Hereticus GRENADES unit that is not in Engagement Range."
                 ),
                 enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
@@ -20290,6 +20353,61 @@ class GameView:
                 objective_candidates,
                 lambda objective: self._finalize_cached_acquisition(player, name, context, objective),
             )
+            return
+
+        if name_u == "RITUAL OF WARDING" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_ritual_of_warding_objective", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+            objective_candidates_by_unit = dict(context.get("objective_candidates_by_unit") or {})
+
+            def _pick_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Ritual of Warding: no unit selected")
+                    return
+                try:
+                    chosen_id = str(get_entity_id(chosen_unit) or "")
+                    objective_candidates = list(
+                        objective_candidates_by_unit.get(chosen_id)
+                        or manager._ia_ritual_of_warding_objective_candidates(chosen_unit)
+                        or []
+                    )
+                except Exception:
+                    objective_candidates = []
+                self._request_ritual_of_warding_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_ritual_of_warding(player, name, context, chosen_unit, objective),
+                )
+
+            if unit is not None:
+                _pick_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_ia_ritual_of_warding_candidates"):
+                    try:
+                        candidates, objective_candidates_by_unit = manager._ia_ritual_of_warding_candidates()
+                    except Exception:
+                        candidates = []
+                        objective_candidates_by_unit = {}
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Ritual of Warding unit.",
+                    title="Ritual of Warding",
+                    subtitle="Choose an Ordo Malleus unit, then select one objective marker it controls.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
             return
 
         if name_u == "INCENSE EXHAUSTS":
@@ -22191,6 +22309,26 @@ class GameView:
             logger.info("Cached Acquisition: no objective selected")
             return
         ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_ritual_of_warding(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Ritual of Warding: no unit selected")
+            return
+        if objective is None:
+            logger.info("Ritual of Warding: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:

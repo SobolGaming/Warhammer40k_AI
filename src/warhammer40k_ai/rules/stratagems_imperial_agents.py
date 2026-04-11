@@ -133,6 +133,11 @@ class ImperialAgentsStratagemMixin:
         checker = getattr(mgr, "is_ordo_hereticus_purgation_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_ordo_malleus_daemon_hunters(self) -> bool:
+        mgr = self._ia_detachment_mgr()
+        checker = getattr(mgr, "is_ordo_malleus_daemon_hunters", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _ia_exact_punishment_snapshots(self) -> dict[str, dict[str, Any]]:
         snapshots = getattr(self, "_imperial_agents_exact_punishment_snapshots_cache", None)
         if isinstance(snapshots, dict):
@@ -787,6 +792,187 @@ class ImperialAgentsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ia_sort_key)
 
+    def _ia_is_grey_knights_terminator_squad_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        return "grey knights terminator squad" in self._ia_unit_name_key(root)
+
+    def _ia_is_ordo_malleus_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        if not self._ia_is_agents_unit(root):
+            return False
+        return bool(
+            self._ia_has_keyword(root, "INQUISITOR")
+            or self._ia_has_keyword(root, "INQUISITORIAL AGENTS")
+            or self._ia_has_keyword(root, "ORDO MALLEUS")
+            or self._ia_is_grey_knights_terminator_squad_unit(root)
+        )
+
+    def _ia_ordo_malleus_candidate_units(
+        self,
+        *,
+        candidate_units: Optional[list[Any]] = None,
+        require_grey_knights_terminators: bool = False,
+        require_objective_range: bool = False,
+        phase_name: str = "",
+        require_not_selected: bool = False,
+    ) -> list[Any]:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        source_units = list(candidate_units) if candidate_units is not None else list(getattr(army, "units", []) or [])
+        phase_key = str(phase_name or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(source_units or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_ordo_malleus_unit(root):
+                continue
+            if require_grey_knights_terminators and not self._ia_is_grey_knights_terminator_squad_unit(root):
+                continue
+            if require_objective_range and not self._ia_unit_within_objective_range(root):
+                continue
+            if require_not_selected and phase_key == "shooting phase" and self._ia_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_ordo_malleus_enemy_daemon_candidates_for_unit(self, unit: Any) -> list[Any]:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return []
+        root = self._ia_root(unit)
+        if root is None or not self._ia_is_on_battlefield(root):
+            return []
+        if not self._ia_is_ordo_malleus_unit(root):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game is None or game_map is None:
+            return []
+        visible = getattr(game, "_visible_enemy_candidates_for_model", None)
+        if not callable(visible):
+            return []
+        enemy_roots = list(self._ia_enemy_battlefield_units() or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for model in list(self._ia_unit_models(root) or []):
+            if model is None or bool(getattr(model, "_pending_placement", False)):
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            for enemy_root in list(
+                visible(
+                    source_unit=root,
+                    model=model,
+                    enemy_roots=enemy_roots,
+                    range_value=12.0,
+                    game_map=game_map,
+                )
+                or []
+            ):
+                eid = self._ia_sort_key(enemy_root)
+                if eid and eid in seen:
+                    continue
+                if eid:
+                    seen.add(eid)
+                if not self._ia_has_keyword(enemy_root, "DAEMON"):
+                    continue
+                out.append(enemy_root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_ritual_of_warding_objective_candidates(self, unit: Any) -> list[Any]:
+        root = self._ia_root(unit)
+        if root is None or not self._ia_is_on_battlefield(root):
+            return []
+        if not self._ia_is_ordo_malleus_unit(root):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            update_fn = getattr(location, "update_control", None)
+            if callable(update_fn):
+                update_fn(game)
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            is_within = getattr(root, "is_within_objective_range", None)
+            if not callable(is_within) or not bool(is_within(location)):
+                continue
+            objective_id = self._ia_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_ritual_of_warding_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return [], {}
+        candidates = self._ia_ordo_malleus_candidate_units(require_objective_range=True)
+        out: list[Any] = []
+        objectives_by_unit: dict[str, list[Any]] = {}
+        for root in list(candidates or []):
+            objective_candidates = self._ia_ritual_of_warding_objective_candidates(root)
+            if not objective_candidates:
+                continue
+            out.append(root)
+            unit_id = self._ia_sort_key(root)
+            if unit_id:
+                objectives_by_unit[unit_id] = objective_candidates
+        return sorted(out, key=self._ia_sort_key), objectives_by_unit
+
+    def _ia_psybolt_ammunition_candidates(self) -> list[Any]:
+        return self._ia_ordo_malleus_candidate_units(
+            require_grey_knights_terminators=True,
+            phase_name="Shooting phase",
+            require_not_selected=True,
+        )
+
+    def _ia_steel_heart_candidates(self, *, moved_unit: Any = None) -> list[Any]:
+        candidates = self._ia_ordo_malleus_candidate_units(
+            candidate_units=[moved_unit] if moved_unit is not None else None,
+            require_grey_knights_terminators=True,
+        )
+        out: list[Any] = []
+        for root in list(candidates or []):
+            round_state = getattr(root, "round_state", None)
+            if not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_hexagrammic_wards_candidates(self, target_units: list[Any]) -> list[Any]:
+        return self._ia_ordo_malleus_candidate_units(candidate_units=list(target_units or []))
+
     def _ia_dispense_justice_candidates(self, *, phase_name: str) -> list[Any]:
         return self._ia_ordo_hereticus_candidate_units(
             phase_name=phase_name,
@@ -1212,6 +1398,224 @@ class ImperialAgentsStratagemMixin:
                 payload["enemy_unit"] = only_targets[0]
                 payload["target_enemy_unit"] = only_targets[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_imperial_agents_ordo_malleus_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        stratagem = self.get_by_name("RITUAL OF WARDING")
+        if stratagem is None:
+            return
+        if self.player.command_points < self._ia_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, objectives_by_unit = self._ia_ritual_of_warding_candidates()
+        if not candidates:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or "Command phase"
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "phase_start"
+                and str(reaction.get("phase_name", "") or "").strip().lower() == "command phase"
+                and self._ia_norm_stratagem_name(reaction.get("stratagem", "")) == "RITUAL OF WARDING"
+            ):
+                return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "objective_candidates_by_unit": objectives_by_unit,
+        }
+        if len(candidates) == 1:
+            only = candidates[0]
+            only_id = self._ia_sort_key(only)
+            payload["unit"] = only
+            payload["target_unit"] = only
+            only_objectives = list(objectives_by_unit.get(only_id) or [])
+            if len(only_objectives) == 1:
+                payload["objective"] = only_objectives[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_imperial_agents_ordo_malleus_targets_selected_reaction(
+        self,
+        *,
+        event_name: str,
+        phase_name: str,
+        stratagem: Any,
+        attacking_unit: Any,
+        target_units: list[Any],
+        candidates: list[Any],
+    ) -> None:
+        if stratagem is None or attacking_unit is None or not candidates:
+            return
+        expected_name = self._ia_norm_stratagem_name(getattr(stratagem, "name", ""))
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name or ""):
+                continue
+            if self._ia_norm_stratagem_name(reaction.get("stratagem", "")) != expected_name:
+                continue
+            if self._ia_root(reaction.get("attacking_unit")) is attacking_unit:
+                return
+        payload = {
+            "event": str(event_name or ""),
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "enemy_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates or []),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_imperial_agents_ordo_malleus_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_ordo_malleus_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="shooting_targets_selected",
+            phase_name="Shooting phase",
+        )
+
+    def _queue_imperial_agents_ordo_malleus_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_ordo_malleus_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="fight_targets_selected",
+            phase_name="Fight phase",
+        )
+
+    def _queue_imperial_agents_ordo_malleus_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        event_name: str,
+        phase_name: str,
+    ) -> None:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return
+        current_phase = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if current_phase != str(phase_name or "").strip().lower():
+            return
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or not self._ia_is_alive(attacking_root):
+            return
+        if self._ia_owned_by_player(attacking_root, self.player):
+            return
+        hexagrammic = self.get_by_name("HEXAGRAMMIC WARDS")
+        if (
+            hexagrammic is None
+            or self.player.command_points < self._ia_effective_cp_cost(hexagrammic, enemy_unit=attacking_root)
+            or (hexagrammic.name or "").strip().upper() in self._used_stratagems_this_phase
+        ):
+            return
+        candidates = self._ia_hexagrammic_wards_candidates(list(target_units or []))
+        self._queue_imperial_agents_ordo_malleus_targets_selected_reaction(
+            event_name=event_name,
+            phase_name=phase_name,
+            stratagem=hexagrammic,
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+            candidates=candidates,
+        )
+
+    def _queue_imperial_agents_ordo_malleus_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key != "fall_back":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        moved_root = self._ia_root(unit)
+        if moved_root is None or not self._ia_owned_by_player(moved_root, self.player):
+            return
+        stratagem = self.get_by_name("STEEL HEART")
+        if stratagem is None:
+            return
+        if self.player.command_points < self._ia_effective_cp_cost(stratagem, target_unit=moved_root):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._ia_steel_heart_candidates(moved_unit=moved_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "unit_move_ended"
+                and self._ia_norm_stratagem_name(reaction.get("stratagem", "")) == "STEEL HEART"
+                and self._ia_root(reaction.get("unit")) is moved_root
+            ):
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": moved_root,
+            "target_unit": moved_root,
+            "candidates": candidates,
+            "action": str(action or ""),
+        }
+        self._queue_reaction(payload)
+
+    def _resolve_imperial_agents_ordo_malleus_battle_shock_effects(self, *, unit: Any, passed: bool) -> None:
+        if not self._is_ordo_malleus_daemon_hunters():
+            return
+        root = self._ia_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_rites_of_exorcism_pending")):
+            return
+        owner_id = str(sr.get("imperial_agents_rites_of_exorcism_owner", "") or "")
+        current_owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return
+        source = str(sr.get("imperial_agents_rites_of_exorcism_source", "") or "Rites of Exorcism").strip()
+        marked_turn = int(sr.get("imperial_agents_rites_of_exorcism_turn", 0) or 0)
+        for key in (
+            "imperial_agents_rites_of_exorcism_pending",
+            "imperial_agents_rites_of_exorcism_owner",
+            "imperial_agents_rites_of_exorcism_turn",
+            "imperial_agents_rites_of_exorcism_source",
+            "imperial_agents_rites_of_exorcism_source_unit_id",
+        ):
+            sr.pop(key, None)
+        if not passed:
+            active_player = getattr(getattr(self, "game", None), "get_current_player", lambda: None)()
+            phase_key = str(getattr(getattr(getattr(self, "game", None), "phase", None), "name", "") or "").strip().upper()
+            sr["imperial_agents_rites_of_exorcism_active"] = True
+            sr["imperial_agents_rites_of_exorcism_source"] = source or "Rites of Exorcism"
+            sr["imperial_agents_rites_of_exorcism_expires_phase"] = phase_key
+            sr["imperial_agents_rites_of_exorcism_turn"] = int(marked_turn)
+            sr["imperial_agents_rites_of_exorcism_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        root.special_rules = sr
 
     def _capture_imperial_agents_exact_punishment_destroyed_unit(
         self,
@@ -1870,6 +2274,42 @@ class ImperialAgentsStratagemMixin:
                         ):
                             sr.pop(key, None)
                         changed = True
+                if phase_key == "SHOOTING_PHASE" and bool(sr.get("imperial_agents_psybolt_ammunition_active")):
+                    exp = str(sr.get("imperial_agents_psybolt_ammunition_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_psybolt_ammunition_active",
+                            "imperial_agents_psybolt_ammunition_source",
+                            "imperial_agents_psybolt_ammunition_expires_phase",
+                            "imperial_agents_psybolt_ammunition_turn",
+                            "imperial_agents_psybolt_ammunition_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_hexagrammic_wards_active")):
+                    exp = str(sr.get("imperial_agents_hexagrammic_wards_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_hexagrammic_wards_active",
+                            "imperial_agents_hexagrammic_wards_source",
+                            "imperial_agents_hexagrammic_wards_expires_phase",
+                            "imperial_agents_hexagrammic_wards_turn",
+                            "imperial_agents_hexagrammic_wards_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_rites_of_exorcism_active")):
+                    exp = str(sr.get("imperial_agents_rites_of_exorcism_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_rites_of_exorcism_active",
+                            "imperial_agents_rites_of_exorcism_source",
+                            "imperial_agents_rites_of_exorcism_expires_phase",
+                            "imperial_agents_rites_of_exorcism_turn",
+                            "imperial_agents_rites_of_exorcism_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
                 if changed:
                     root.special_rules = sr
 
@@ -1892,6 +2332,25 @@ class ImperialAgentsStratagemMixin:
             return self._use_imperial_agents_line_of_fire(stratagem, **kwargs)
         if name_n == "STUN GRENADES":
             return self._use_imperial_agents_stun_grenades(stratagem, **kwargs)
+        return None
+
+    def _use_imperial_agents_ordo_malleus_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_ordo_malleus_daemon_hunters():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_n = self._ia_norm_stratagem_name(name_u)
+        if name_n == "HEXAGRAMMIC WARDS":
+            return self._use_imperial_agents_hexagrammic_wards(stratagem, **kwargs)
+        if name_n == "PSYBOLT AMMUNITION":
+            return self._use_imperial_agents_psybolt_ammunition(stratagem, **kwargs)
+        if name_n == "RITES OF EXORCISM":
+            return self._use_imperial_agents_rites_of_exorcism(stratagem, **kwargs)
+        if name_n == "RITUAL OF WARDING":
+            return self._use_imperial_agents_ritual_of_warding(stratagem, **kwargs)
+        if name_n == "STEEL HEART":
+            return self._use_imperial_agents_steel_heart(stratagem, **kwargs)
         return None
 
     def _use_imperial_agents_imperialis_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -2351,6 +2810,255 @@ class ImperialAgentsStratagemMixin:
             getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or ""
         )
         enemy_root.special_rules = enemy_sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_hexagrammic_wards(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: HEXAGRAMMIC WARDS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: HEXAGRAMMIC WARDS: not opponent's phase")
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit") or context.get("attacker_unit")
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or self._ia_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: HEXAGRAMMIC WARDS: missing or invalid attacking unit")
+            return False
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        candidates = self._ia_hexagrammic_wards_candidates(list(target_units or []))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: HEXAGRAMMIC WARDS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: HEXAGRAMMIC WARDS: target must be a selected Ordo Malleus unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        sr = getattr(attacking_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr["imperial_agents_hexagrammic_wards_active"] = True
+        sr["imperial_agents_hexagrammic_wards_source"] = str(
+            getattr(stratagem, "name", "HEXAGRAMMIC WARDS") or "HEXAGRAMMIC WARDS"
+        )
+        sr["imperial_agents_hexagrammic_wards_expires_phase"] = phase_key
+        sr["imperial_agents_hexagrammic_wards_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_hexagrammic_wards_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        attacking_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_psybolt_ammunition(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PSYBOLT AMMUNITION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: PSYBOLT AMMUNITION: not your Shooting phase")
+            return False
+        candidates = self._ia_psybolt_ammunition_candidates()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PSYBOLT AMMUNITION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: PSYBOLT AMMUNITION: target must be an eligible Grey Knights Terminator Squad that has not shot")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_psybolt_ammunition_active"] = True
+        sr["imperial_agents_psybolt_ammunition_source"] = str(
+            getattr(stratagem, "name", "PSYBOLT AMMUNITION") or "PSYBOLT AMMUNITION"
+        )
+        sr["imperial_agents_psybolt_ammunition_expires_phase"] = "SHOOTING_PHASE"
+        sr["imperial_agents_psybolt_ammunition_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_psybolt_ammunition_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_rites_of_exorcism(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: RITES OF EXORCISM: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: RITES OF EXORCISM: only your Shooting phase is eligible")
+            return False
+        candidates = self._ia_ordo_malleus_candidate_units()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RITES OF EXORCISM: missing source unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RITES OF EXORCISM: source unit is not eligible")
+            return False
+        enemy_candidates = self._ia_ordo_malleus_enemy_daemon_candidates_for_unit(target_root)
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_root = self._ia_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: RITES OF EXORCISM: missing enemy daemon")
+                return False
+        if enemy_root not in enemy_candidates:
+            logger.error("ERROR: RITES OF EXORCISM: selected enemy must be a visible DAEMON within 12\"")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+
+        enemy_sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(enemy_sr, dict):
+            enemy_sr = {}
+        enemy_sr["imperial_agents_rites_of_exorcism_pending"] = True
+        enemy_sr["imperial_agents_rites_of_exorcism_owner"] = str(getattr(self.player, "id", "") or "")
+        enemy_sr["imperial_agents_rites_of_exorcism_turn"] = int(getattr(game, "turn", 0) or 0)
+        enemy_sr["imperial_agents_rites_of_exorcism_source"] = str(
+            getattr(stratagem, "name", "RITES OF EXORCISM") or "RITES OF EXORCISM"
+        )
+        enemy_sr["imperial_agents_rites_of_exorcism_source_unit_id"] = str(get_entity_id(target_root) or "")
+        enemy_root.special_rules = enemy_sr
+        force_test = getattr(enemy_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(
+                int(getattr(game, "turn", 0) or 0),
+                source=str(getattr(stratagem, "name", "RITES OF EXORCISM") or "RITES OF EXORCISM"),
+            )
+        else:
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(getattr(game, "turn", 0) or 0))
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_ritual_of_warding(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: RITUAL OF WARDING: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates, objectives_by_unit = self._ia_ritual_of_warding_candidates()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RITUAL OF WARDING: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RITUAL OF WARDING: target must be an eligible Ordo Malleus unit within objective range")
+            return False
+        objective_candidates = list(
+            objectives_by_unit.get(self._ia_sort_key(target_root))
+            or self._ia_ritual_of_warding_objective_candidates(target_root)
+            or []
+        )
+        objective = context.get("objective") or context.get("objective_marker")
+        if objective is None:
+            if len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            else:
+                logger.error("ERROR: RITUAL OF WARDING: missing objective marker")
+                return False
+        if objective not in objective_candidates:
+            logger.error("ERROR: RITUAL OF WARDING: objective marker is not eligible")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        location = getattr(objective, "location", None)
+        if location is None:
+            logger.error("ERROR: RITUAL OF WARDING: selected objective has no location")
+            return False
+        set_sticky = getattr(location, "set_sticky_control", None)
+        if callable(set_sticky):
+            set_sticky(self.player, source="imperial_agents_ritual_of_warding")
+        else:
+            location.sticky_controller = self.player
+            location.sticky_source = "imperial_agents_ritual_of_warding"
+            location.controlling_player = self.player
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_steel_heart(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: STEEL HEART: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: STEEL HEART: not your turn")
+            return False
+        candidates = list(context.get("candidates") or self._ia_steel_heart_candidates(moved_unit=context.get("unit") or context.get("target_unit")))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: STEEL HEART: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: STEEL HEART: target must be a Grey Knights Terminator Squad that just Fell Back")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_steel_heart_active"] = True
+        sr["imperial_agents_steel_heart_source"] = str(getattr(stratagem, "name", "STEEL HEART") or "STEEL HEART")
+        sr["imperial_agents_steel_heart_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_steel_heart_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        target_root.special_rules = sr
         self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

@@ -732,9 +732,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SERVITUDE",
     "PITILESS HUNTERS",
     "ENSNARING TRAP",
+    "HEXAGRAMMIC WARDS",
     "HYPERSTIMMS",
     "ORBITAL OVERSIGHT",
+    "PSYBOLT AMMUNITION",
     "PRIME TARGET",
+    "RITES OF EXORCISM",
+    "RITUAL OF WARDING",
+    "STEEL HEART",
     "WILL-SAPPING SALVO",
     "WILLÃ¢â‚¬â€˜SAPPING SALVO",
     "REACTIVE REPOSITION",
@@ -1075,8 +1080,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
     "EVASIVE MANOEUVRES",
+    "HEXAGRAMMIC WARDS",
     "HYPERSTIMMS",
     "ORBITAL OVERSIGHT",
+    "STEEL HEART",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
@@ -2324,6 +2331,8 @@ class StratagemManager(
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
         if "TRIBUTE OF EMPHATIC VENERATION" in names:
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
+        if "RITES OF EXORCISM" in names:
+            add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
 
         if "CORRUPTING TAINT" in names:
             add("malefic_surge_applied", self._on_malefic_surge_applied)
@@ -2454,6 +2463,7 @@ class StratagemManager(
             "PRECOGNITIVE STRATEGIES",
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
+            "STEEL HEART",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2791,6 +2801,7 @@ class StratagemManager(
             "UNENDING FIDELITY",
             "LUMINESCENT BLESSING",
             "INCENSE EXHAUSTS",
+            "HEXAGRAMMIC WARDS",
         }
         fight_reaction_names = {
             "BASTION OF FAITH",
@@ -2859,6 +2870,7 @@ class StratagemManager(
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
             "EMP GRENADES",
+            "HEXAGRAMMIC WARDS",
             "DEVOTED CREW",
             "DOUBLE-CROSS",
             "FIGHTING SHADOWS",
@@ -10000,6 +10012,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_imperial_agents_ordo_malleus_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_tyranids_invasion_fleet_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
@@ -13153,6 +13169,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._resolve_imperial_agents_ordo_malleus_battle_shock_effects(
+                unit=unit,
+                passed=passed,
+            )
+        except Exception:
+            raise
 
         # Unleash Balefire: apply aflame on failed Battle-shock.
         try:
@@ -13354,6 +13377,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._queue_imperial_agents_ordo_malleus_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_spearpoint_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_shadowmark_move_end_reactions(unit=unit, action=action)
         self._process_space_marines_vanguard_deadly_prize_move_end(unit=unit, action=action)
@@ -14714,6 +14738,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_imperial_agents_ordo_malleus_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_solar_spearhead_flawless_construction_reaction(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -16007,6 +16038,13 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_agents_ordo_hereticus_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_ordo_malleus_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -19559,6 +19597,9 @@ class StratagemManager(
         imperial_agents_ordo_result = self._use_imperial_agents_ordo_hereticus_stratagem(s, **kwargs)
         if imperial_agents_ordo_result is not None:
             return imperial_agents_ordo_result
+        imperial_agents_ordo_malleus_result = self._use_imperial_agents_ordo_malleus_stratagem(s, **kwargs)
+        if imperial_agents_ordo_malleus_result is not None:
+            return imperial_agents_ordo_malleus_result
         chaos_daemons_plague_legion_result = self._use_chaos_daemons_plague_legion_stratagem(s, **kwargs)
         if chaos_daemons_plague_legion_result is not None:
             return chaos_daemons_plague_legion_result

@@ -20050,6 +20050,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, profile=profile, game=game)):
                     return True
+            steel_heart_fn = getattr(mgr, "steel_heart_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(steel_heart_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(steel_heart_fn(self, profile=profile, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -21121,6 +21126,16 @@ class ActionsMovementMixin:
             if callable(guided_retreat_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(guided_retreat_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            steel_heart_fn = getattr(mgr, "steel_heart_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(steel_heart_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(steel_heart_fn(self, game=game)):
                     return True
         except Exception:
             pass

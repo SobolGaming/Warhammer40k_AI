@@ -13411,6 +13411,74 @@ _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009135002": StratagemToolDescriptor(
+        stratagem_id="000009135002",
+        name="Ritual of Warding",
+        timing="command_phase_start",
+        target="ordo_malleus_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_objective_at_turn_boundary",
+        effect="sticky_objective_with_daemon_reserves_denial",
+        cp_cost=1,
+        effect_params={"reserves_denial_range_in": 6.0, "sticky_source": "imperial_agents_ritual_of_warding"},
+    ),
+    "000009135003": StratagemToolDescriptor(
+        stratagem_id="000009135003",
+        name="Rites of Exorcism",
+        timing="shooting_or_fight_phase",
+        target="ordo_malleus_unit_and_visible_enemy_daemon_within_12",
+        duration="until_end_of_phase",
+        effect="force_battleshock_then_agents_gain_devastating_wounds_against_target",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"attack_type": "any", "keyword": "DEVASTATING WOUNDS", "requires_visible_enemy_keyword": "DAEMON"},
+    ),
+    "000009135004": StratagemToolDescriptor(
+        stratagem_id="000009135004",
+        name="Steel Heart",
+        timing="movement_phase_after_fall_back",
+        target="grey_knights_terminator_squad_that_just_fell_back",
+        duration="this_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={"shoot_after_fall_back": True, "charge_after_fall_back": True},
+    ),
+    "000009135005": StratagemToolDescriptor(
+        stratagem_id="000009135005",
+        name="Truesilver Armour",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="grey_knights_terminator_squad_targeted_by_enemy_attacks",
+        duration="until_attacker_finishes_attacks",
+        effect="defensive_ap_worsen",
+        cp_cost=1,
+        effect_params={"ap_delta": -1, "duration_scope": "attacker"},
+    ),
+    "000009135006": StratagemToolDescriptor(
+        stratagem_id="000009135006",
+        name="Hexagrammic Wards",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="ordo_malleus_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="enemy_psychic_weapons_become_hazardous",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "requires_psychic_weapon": True},
+    ),
+    "000009135007": StratagemToolDescriptor(
+        stratagem_id="000009135007",
+        name="Psybolt Ammunition",
+        timing="shooting_phase_on_select_to_shoot",
+        target="grey_knights_terminator_squad_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_lethal_hits_and_psychic",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "keywords": ["LETHAL HITS", "PSYCHIC"]},
+    ),
+}
+
+_ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009758002": StratagemToolDescriptor(
         stratagem_id="000009758002",
@@ -14719,6 +14787,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14922,6 +14993,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)

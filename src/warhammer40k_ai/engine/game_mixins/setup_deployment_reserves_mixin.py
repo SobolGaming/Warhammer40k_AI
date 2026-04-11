@@ -1594,16 +1594,47 @@ class GameSetupDeploymentReservesMixin:
         player = parent_army.player if parent_army is not None else None
         if player is None:
             return False
-        enemy_units = self.get_enemy_units(player)
-        if not enemy_units:
-            return False
+        objectives = list(getattr(getattr(self, "map", None), "objectives", []) or [])
 
         from ...utility.aura_utils import (
             distance_between_bases_3d,
             horizontal_distance_between_bases_2d,
         )
 
-        objectives = list(getattr(getattr(self, "map", None), "objectives", []) or [])
+        if bool(self._unit_has_keyword(unit, "DAEMON")) and objectives:
+            for objective in list(objectives or []):
+                location = getattr(objective, "location", None)
+                if location is None or bool(getattr(location, "removed", False)):
+                    continue
+                update_fn = getattr(location, "update_control", None)
+                if callable(update_fn):
+                    update_fn(self)
+                if str(getattr(location, "sticky_source", "") or "").strip().lower() != "imperial_agents_ritual_of_warding":
+                    continue
+                controller = getattr(location, "controlling_player", None)
+                sticky_controller = getattr(location, "sticky_controller", None)
+                if controller is player or sticky_controller is player:
+                    continue
+                if controller is None and sticky_controller is None:
+                    continue
+                for idx, (x, y, z, facing) in enumerate(prospective):
+                    if idx >= len(getattr(unit, "models", []) or []):
+                        break
+                    base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+                    obj_x = float(getattr(location, "x", 0.0) or 0.0)
+                    obj_y = float(getattr(location, "y", 0.0) or 0.0)
+                    base_x = float(getattr(base, "x", obj_x) or obj_x)
+                    base_y = float(getattr(base, "y", obj_y) or obj_y)
+                    get_radius = getattr(base, "get_radius", None)
+                    try:
+                        base_radius = float(get_radius() or 0.0) if callable(get_radius) else 0.0
+                    except (AttributeError, TypeError, ValueError):
+                        base_radius = 0.0
+                    if (((base_x - obj_x) ** 2) + ((base_y - obj_y) ** 2)) ** 0.5 < (6.0 + base_radius):
+                        return True
+        enemy_units = self.get_enemy_units(player)
+        if not enemy_units:
+            return False
 
         def _source_model_within_controlled_objective(source_model, owner_player) -> bool:
             if source_model is None or owner_player is None:
