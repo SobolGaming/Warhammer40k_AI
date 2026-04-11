@@ -295,6 +295,107 @@ def test_combat_landers_selects_voidfarers_and_grants_deep_strike():
     assert arbites.has_deep_strike() is False
 
 
+def test_clandestine_operation_selected_unit_grants_infiltrate_to_later_attached_character():
+    game, ia_army, _enemy_army, ia_player, _enemy_player = _build_game()
+    bearer = _make_unit(
+        "Inquisitor",
+        keywords=["INFANTRY", "CHARACTER", "AGENTS OF THE IMPERIUM"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    agents = _make_unit(
+        "Inquisitorial Agents",
+        keywords=["INFANTRY", "AGENTS OF THE IMPERIUM"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    attached_character = _make_unit(
+        "Ministorum Priest",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (bearer, agents, attached_character):
+        ia_army.add_unit(unit)
+    game.rebuild_entity_registry()
+
+    _apply_enhancement(
+        bearer,
+        enhancement_id="000009138002",
+        enhancement_name="Clandestine Operation",
+        description=(
+            "AGENTS OF THE IMPERIUM model only. At the start of the Declare Battle Formations step, you can select "
+            "up to three AGENTS OF THE IMPERIUM INFANTRY units from your army (excluding GREY KNIGHTS TERMINATOR "
+            "SQUAD units) - those units gain the Infiltrators ability."
+        ),
+    )
+
+    ia_army.on_prebattle_rules_start(game=game)
+    request = _find_request(game, DECISION_SELECT_REALM_OF_CHAOS_UNITS, "imperialis_fleet_clandestine_operation_selection")
+    assert request is not None
+    result = resolve_decision_command(
+        game,
+        request,
+        _confirm_option_id(request),
+        result_payload={"unit_ids": [str(get_entity_id(agents) or "")]},
+        player_id=ia_player.id,
+    )
+    assert bool(getattr(result, "ok", False)) is True
+    assert agents.has_infiltrate() is True
+
+    _attach_leader(agents, attached_character)
+
+    assert agents.has_infiltrate() is True
+    assert attached_character.has_infiltrate() is True
+
+
+def test_combat_landers_selected_unit_grants_deep_strike_to_later_attached_character():
+    game, ia_army, _enemy_army, ia_player, _enemy_player = _build_game()
+    bearer = _make_unit(
+        "Rogue Trader",
+        keywords=["INFANTRY", "CHARACTER", "VOIDFARERS"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    voidsmen = _make_unit(
+        "Voidsmen-at-Arms",
+        keywords=["INFANTRY", "VOIDFARERS"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    attached_character = _make_unit(
+        "Navigator",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (bearer, voidsmen, attached_character):
+        ia_army.add_unit(unit)
+    game.rebuild_entity_registry()
+
+    _apply_enhancement(
+        bearer,
+        enhancement_id="000009138003",
+        enhancement_name="Combat Landers",
+        description=(
+            "VOIDFARERS model only. At the start of the Declare Battle Formations step, you can select up to three "
+            "VOIDFARERS units from your army - those units gain the Deep Strike ability."
+        ),
+    )
+
+    ia_army.on_prebattle_rules_start(game=game)
+    request = _find_request(game, DECISION_SELECT_REALM_OF_CHAOS_UNITS, "imperialis_fleet_combat_landers_selection")
+    assert request is not None
+    result = resolve_decision_command(
+        game,
+        request,
+        _confirm_option_id(request),
+        result_payload={"unit_ids": [str(get_entity_id(voidsmen) or "")]},
+        player_id=ia_player.id,
+    )
+    assert bool(getattr(result, "ok", False)) is True
+    assert voidsmen.has_deep_strike() is True
+
+    _attach_leader(voidsmen, attached_character)
+
+    assert voidsmen.has_deep_strike() is True
+    assert attached_character.has_deep_strike() is True
+
+
 def test_digital_weapons_queues_and_resolves_sequential_precision_targets():
     game, ia_army, enemy_army, ia_player, _enemy_player = _build_game()
     game.phase = type("FightPhase", (), {"name": "FIGHT_PHASE"})()

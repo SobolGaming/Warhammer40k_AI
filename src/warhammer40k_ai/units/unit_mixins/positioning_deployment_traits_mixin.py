@@ -15,7 +15,10 @@ class PositioningDeploymentTraitsMixin:
             return False
         try:
             sr_root = getattr(root, "special_rules", None)
-            if isinstance(sr_root, dict) and bool(sr_root.get("bearer_unit_deep_strike")):
+            if isinstance(sr_root, dict) and (
+                bool(sr_root.get("bearer_unit_deep_strike"))
+                or bool(sr_root.get("imperialis_fleet_combat_landers_deep_strike"))
+            ):
                 return True
         except Exception:
             pass
@@ -28,7 +31,10 @@ class PositioningDeploymentTraitsMixin:
                 if member is None:
                     continue
                 sr_member = getattr(member, "special_rules", None)
-                if isinstance(sr_member, dict) and bool(sr_member.get("bearer_unit_deep_strike")):
+                if isinstance(sr_member, dict) and (
+                    bool(sr_member.get("bearer_unit_deep_strike"))
+                    or bool(sr_member.get("imperialis_fleet_combat_landers_deep_strike"))
+                ):
                     return True
         text_grant_re = re.compile(
             r"models\s+in\s+(?:this|that|the\s+bearer'?s|this\s+model'?s)\s+unit\s+have\s+the\s+deep\s+strike\b",
