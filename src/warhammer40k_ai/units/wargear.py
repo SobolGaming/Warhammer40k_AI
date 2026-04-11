@@ -2402,6 +2402,29 @@ class WargearProfile:
             turn_key="vow_of_retribution_turn",
         ) is not None
 
+    def _questor_forgepact_vengeance_of_machine_cult_lethal_hits_active(
+        self,
+        attacker: 'Model',
+        target: 'Unit',
+    ) -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        lethal_fn = (
+            getattr(ik_mgr, "forgepact_vengeance_of_machine_cult_lethal_hits", None)
+            if ik_mgr is not None
+            else None
+        )
+        if not callable(lethal_fn):
+            return False
+        active, _source = lethal_fn(
+            attacker,
+            target_unit=target,
+            weapon_profile=self,
+            game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+        )
+        return bool(active)
+
     def _rad_zone_lethal_dosage_active(self, attacker: 'Model') -> bool:
         """Return True when LETHAL DOSAGE grants lethal hits for this attack."""
         return self._phase_effect_special_rules(
@@ -10786,6 +10809,21 @@ class WargearProfile:
                 return patient_rule
 
         ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        machine_focus_rule_fn = (
+            getattr(ik_mgr, "forgepact_machine_focus_ignore_hit_modifiers_rule", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(machine_focus_rule_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            machine_focus_rule = machine_focus_rule_fn(
+                attacker,
+                target_unit=target_unit,
+                weapon_profile=self,
+                game=game,
+            )
+            if isinstance(machine_focus_rule, dict) and machine_focus_rule:
+                return machine_focus_rule
         dauntless_rule_fn = (
             getattr(ik_mgr, "dauntless_defenders_ignore_hit_modifiers_rule", None)
             if ik_mgr is not None
@@ -10966,6 +11004,19 @@ class WargearProfile:
             if isinstance(necrons_rule, dict) and necrons_rule:
                 return necrons_rule
         ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        machine_focus_wound_rule_fn = (
+            getattr(ik_mgr, "forgepact_machine_focus_ignore_wound_modifiers_rule", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(machine_focus_wound_rule_fn):
+            machine_focus_wound_rule = machine_focus_wound_rule_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if isinstance(machine_focus_wound_rule, dict) and machine_focus_wound_rule:
+                return machine_focus_wound_rule
         tales_wound_rule_fn = (
             getattr(ik_mgr, "spearhead_tales_of_heroism_ignore_wound_modifiers_rule", None)
             if ik_mgr is not None
@@ -11763,6 +11814,8 @@ class WargearProfile:
                 bonus_lethal = True
             if attack_is_ranged and self._rad_zone_lethal_dosage_active(attacker):
                 bonus_lethal = True
+            if self._questor_forgepact_vengeance_of_machine_cult_lethal_hits_active(attacker, target):
+                bonus_lethal = True
         except Exception:
             pass
         def _set_bonus_sustained(value: int, label: str) -> None:
@@ -12154,6 +12207,8 @@ class WargearProfile:
             if attack_is_ranged and self._vow_of_retribution_lethal_hits_active(attacker):
                 bonus_lethal = True
             if attack_is_ranged and self._rad_zone_lethal_dosage_active(attacker):
+                bonus_lethal = True
+            if self._questor_forgepact_vengeance_of_machine_cult_lethal_hits_active(attacker, target):
                 bonus_lethal = True
         except Exception:
             pass

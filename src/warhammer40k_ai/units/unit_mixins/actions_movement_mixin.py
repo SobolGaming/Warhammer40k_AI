@@ -19693,6 +19693,11 @@ class ActionsMovementMixin:
             if mgr is not None and callable(getattr(mgr, "bold_gallantry_assault_applies", None)):
                 if mgr.bold_gallantry_assault_applies(self, profile):
                     return True
+            forgepact_assault_fn = getattr(mgr, "forgepact_aggression_begets_aggression_assault_applies", None) if mgr is not None else None
+            if callable(forgepact_assault_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if forgepact_assault_fn(self, profile, game=game):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()

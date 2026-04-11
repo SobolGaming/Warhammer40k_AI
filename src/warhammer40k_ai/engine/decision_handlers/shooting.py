@@ -13,6 +13,7 @@ from ..decision_kinds import (
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import find_option, get_model, get_unit, get_wargear, validate_option_choice
+from ...utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,15 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         max_declarations = 0
     if max_declarations > 0 and len(declarations) > max_declarations:
         return (f"Shooting declaration allows at most {int(max_declarations)} declaration(s).",)
+    thronegheist_fury_flow = bool(request.context.get("thronegheist_fury_flow", False))
+    allowed_pairs = {
+        (
+            str(entry.get("model_id", "") or "").strip(),
+            str(entry.get("wargear_id", "") or "").strip(),
+        )
+        for entry in list(request.context.get("thronegheist_fury_allowed_pairs", []) or [])
+        if str(entry.get("model_id", "") or "").strip() and str(entry.get("wargear_id", "") or "").strip()
+    }
     ctan_profiles = []
     force_target_id = str(request.context.get("force_target_unit_id", "") or "")
     if not force_target_id:
@@ -210,6 +220,32 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             if model is None:
                 return ("Declaration model not found.",)
             models.append(model)
+        if thronegheist_fury_flow:
+            if len(declarations) != 1:
+                return ("Thronegheist Fury allows exactly one shooting declaration.",)
+            if len(model_ids) != 1:
+                return ("Thronegheist Fury allows exactly one firing model.",)
+            chosen_model = models[0]
+            carried_wargear_ids = {
+                str(getattr(item, "id", "") or getattr(item, "wargear_id", "") or "")
+                for item in list(getattr(chosen_model, "wargear", []) or [])
+            }
+            carried_wargear_ids.update(
+                str(getattr(item, "uuid", "") or "")
+                for item in list(getattr(chosen_model, "wargear", []) or [])
+                if str(getattr(item, "uuid", "") or "")
+            )
+            carried_wargear_ids.update(
+                str(maybe_entity_id(item) or "")
+                for item in list(getattr(chosen_model, "wargear", []) or [])
+                if str(maybe_entity_id(item) or "")
+            )
+            carried_wargear_ids.discard("")
+            if wargear_id not in carried_wargear_ids:
+                return ("Thronegheist Fury requires the selected model to fire the chosen weapon.",)
+            chosen_model_id = str(model_ids[0] or "").strip()
+            if allowed_pairs and (chosen_model_id, wargear_id) not in allowed_pairs:
+                return ("Thronegheist Fury selected model and weapon cannot shoot the forced enemy target.",)
 
         if is_plasma_warhead and profile is not None:
             can_shoot_fn = getattr(profile, "can_shoot_plasma_warhead", None)
@@ -237,7 +273,6 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 return ("Shooting unit not found for Linked Fire validation.",)
 
             # Validate origin unit is not the bearer
-            from ...utility.entity_ids import maybe_entity_id
             origin_entity_id = maybe_entity_id(origin_unit)
             shooting_entity_id = maybe_entity_id(shooting_unit)
             if origin_entity_id and shooting_entity_id:
@@ -393,7 +428,30 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
             request.context.get("hypersensory_abilities_enemy_unit_id", "") or ""
         )
         unit.special_rules = sr
-    success = bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    thronegheist_fury_flow = bool(request.context.get("thronegheist_fury_flow", False))
+    prior_sixes_only = getattr(unit, "_overwatch_sixes_only", None)
+    prior_hit_threshold = getattr(unit, "_overwatch_hit_threshold", None)
+    if thronegheist_fury_flow:
+        unit._overwatch_sixes_only = True
+        unit._overwatch_hit_threshold = 6
+    try:
+        success = bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    finally:
+        if thronegheist_fury_flow:
+            if prior_sixes_only is None:
+                try:
+                    delattr(unit, "_overwatch_sixes_only")
+                except AttributeError:
+                    pass
+            else:
+                unit._overwatch_sixes_only = prior_sixes_only
+            if prior_hit_threshold is None:
+                try:
+                    delattr(unit, "_overwatch_hit_threshold")
+                except AttributeError:
+                    pass
+            else:
+                unit._overwatch_hit_threshold = prior_hit_threshold
     if not success and hypersensory_flow:
         sr = getattr(unit, "special_rules", None)
         if isinstance(sr, dict):

@@ -617,6 +617,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "AGGRESSION BEGETS AGGRESSION",
+    "BONDED IMPERATIVE",
+    "MACHINE FOCUS",
+    "OMNISSIAH'S GRACE",
+    "THRONEGHEIST FURY",
+    "VENGEANCE OF THE MACHINE CULT",
     "TITANIC BOMBARDMENT",
     "TACTICAL WITHDRAWAL",
     "CLEAR AND SECURE",
@@ -1063,6 +1069,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
+    "OMNISSIAH'S GRACE",
+    "THRONEGHEIST FURY",
+    "VENGEANCE OF THE MACHINE CULT",
     "COURAGEOUS DIVERSION",
     "CRUSHED LIKE VERMIN",
     "COORDINATED STRIKE",
@@ -2465,6 +2474,7 @@ class StratagemManager(
             "CUNNING HUNTER",
             "RAPID FEINT",
             "HARRYING HOUNDS",
+            "THRONEGHEIST FURY",
             "DUTY UNENDING",
             "GRIND THEM UNDERFOOT",
             "MULTIPOTENTIALITY",
@@ -2502,6 +2512,7 @@ class StratagemManager(
             "A DARK NETWORK",
             "MIRAGE OF ECHOES",
             "HORRIFIC INCURSION",
+            "THRONEGHEIST FURY",
             "PURGATION PATTERN",
         }:
             add("unit_set_up", self._on_unit_set_up)
@@ -2548,6 +2559,7 @@ class StratagemManager(
             "SLAYER OF CHAMPIONS",
             "AVENGE THE MASTERS!",
             "AVENGE THE STAR CHILDREN",
+            "VENGEANCE OF THE MACHINE CULT",
             "REGIMENTAL REINFORCEMENTS",
             "REINFORCEMENTS!",
             "CACHED ACQUISITION",
@@ -2596,6 +2608,7 @@ class StratagemManager(
             "SHIELD OF DENIAL",
             "SHIELD OF FAITH",
             "ARCANE GENETIC ALCHEMY",
+            "OMNISSIAH'S GRACE",
             "THIEVES OF PAIN",
             "TRUESILVER WILL",
         }:
@@ -6826,6 +6839,99 @@ class StratagemManager(
             else:
                 result["reason"] = "Requires IMPERIAL KNIGHTS target within 9\" of the enemy unit that moved"
             return result
+        if name_u == "AGGRESSION BEGETS AGGRESSION":
+            if self._questor_forgepact_aggression_begets_aggression_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an IMPERIAL KNIGHTS unit on the battlefield"
+            return result
+        if name_u == "BONDED IMPERATIVE":
+            bondsman_mgr = getattr(getattr(self.player, "army", None), "bondsman", None)
+            source_candidates = (
+                list(
+                    getattr(bondsman_mgr, "get_questor_forgepact_bonded_imperative_sources", lambda **_kwargs: [])(
+                        game_map=getattr(self.game, "map", None) if self.game is not None else None
+                    )
+                    or []
+                )
+                if bondsman_mgr is not None
+                else []
+            )
+            if source_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Command phase, an IMPERIAL KNIGHTS CHARACTER with a Bondsman ability other than Knight Preceptor, "
+                "and an eligible ADEPTUS MECHANICUS unit within 12\""
+            )
+            return result
+        if name_u == "MACHINE FOCUS":
+            if self._questor_forgepact_machine_focus_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and an IMPERIAL KNIGHTS unit on the battlefield"
+            return result
+        if name_u == "OMNISSIAH'S GRACE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "OMNISSIAH'S GRACE":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a mortal wound just allocated to one of your IMPERIAL KNIGHTS or ADEPTUS MECHANICUS units"
+            return result
+        if name_u == "THRONEGHEIST FURY":
+            enemy_unit = context.get("enemy_unit") or context.get("moving_unit") or context.get("unit")
+            action = str(context.get("action", "") or context.get("trigger", "") or "")
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_unit is not None:
+                candidates = self._questor_forgepact_thronegheist_fury_candidates(enemy_unit=enemy_unit, action=action)
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "THRONEGHEIST FURY":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your opponent's Movement phase after an enemy unit is set up or ends a Normal, Advance, or Fall Back move "
+                "within 24\" and visible to one of your Titanic IMPERIAL KNIGHTS units"
+            )
+            return result
+        if name_u == "VENGEANCE OF THE MACHINE CULT":
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            if target_unit is not None and not candidates:
+                candidates = [target_unit]
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "VENGEANCE OF THE MACHINE CULT":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one of your IMPERIAL KNIGHTS units to have just been destroyed by an enemy unit"
+            return result
         if name_u == "VETERAN SHARPSHOOTERS":
             if self._grizzled_veteran_sharpshooters_candidates():
                 result["available"] = True
@@ -9074,6 +9180,12 @@ class StratagemManager(
             "RUN THEM THROUGH!": "Target: IMPERIAL KNIGHTS unit that has not been selected to fight this phase; melee weapons gain [LANCE] this phase",
             "THUNDERSTOMP": "Target: IMPERIAL KNIGHTS model in a unit not yet selected to fight this phase; Armoured/Titanic Feet attacks set to 8/12 and AP improves by 1",
             "TACTICAL FOIL": "Target: IMPERIAL KNIGHTS unit within 9\" of enemy mover after it ends a Normal/Advance/Fall Back move; make a reactive Normal move of D6\"",
+            "AGGRESSION BEGETS AGGRESSION": "Target: one IMPERIAL KNIGHTS unit, or one IMPERIAL KNIGHTS CHARACTER and one friendly ADEPTUS MECHANICUS unit within 6\" of it; ranged weapons gain [ASSAULT] this phase",
+            "BONDED IMPERATIVE": "Target: your IMPERIAL KNIGHTS CHARACTER just before it uses a Bondsman ability; that use can include one eligible ADEPTUS MECHANICUS unit within 12\", in addition to or instead of an Armiger",
+            "MACHINE FOCUS": "Target: one IMPERIAL KNIGHTS unit in your Command phase; it ignores WS/BS, Hit, and Wound modifiers until the start of your next turn",
+            "OMNISSIAH'S GRACE": "Target: your IMPERIAL KNIGHTS or ADEPTUS MECHANICUS unit just allocated a mortal wound; it gains Feel No Pain 5+ against mortal wounds this phase",
+            "THRONEGHEIST FURY": "Target: your Titanic IMPERIAL KNIGHTS unit within 24\" of and visible to the enemy unit that just moved or was set up; one model shoots that enemy with one ranged weapon and only unmodified 6s hit",
+            "VENGEANCE OF THE MACHINE CULT": "Target: your IMPERIAL KNIGHTS unit that was just destroyed; mark the enemy unit that destroyed it until battle end so your ADEPTUS MECHANICUS attacks gain Lethal Hits against it",
             "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
@@ -13463,6 +13575,7 @@ class StratagemManager(
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_votann_persecution_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
+        self._queue_questor_forgepact_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_gladius_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)
@@ -13594,6 +13707,7 @@ class StratagemManager(
         self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
         self._queue_nightmare_hunt_unit_set_up_reactions(unit=unit, **kwargs)
         self._queue_genestealer_cults_brood_brother_auxilia_unit_set_up_reactions(unit=unit, **kwargs)
+        self._queue_questor_forgepact_set_up_reactions(unit=unit)
         self._maybe_queue_overwatch(unit, action="set_up", when="end")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
@@ -18484,6 +18598,15 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_questor_forgepact_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
             self._queue_army_of_faith_shield_of_faith_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
@@ -19074,6 +19197,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_questor_forgepact_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_tau_montka_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -19653,6 +19783,7 @@ class StratagemManager(
                 "AVENGE THE MASTERS!",
                 "REGIMENTAL REINFORCEMENTS",
                 "REINFORCEMENTS!",
+                "VENGEANCE OF THE MACHINE CULT",
                 "WRETCHED MASSES",
             ) and (
                 _unit_cannot_be_target_of_stratagem_except_embarked(tgt)

@@ -146,6 +146,271 @@ class ImperialKnightsStratagemMixin:
             return True
         return bool(getattr(root, "is_titanic", False))
 
+    def _ik_is_character_unit(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        return bool(root is not None and self._ik_has_any_keyword(root, "CHARACTER"))
+
+    def _ik_is_adeptus_mechanicus_unit(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        mgr = self._ik_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_adeptus_mechanicus", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return bool(self._ik_has_any_keyword(root, "ADEPTUS MECHANICUS"))
+
+    @staticmethod
+    def _ik_is_knight_preceptor_unit(unit: Any) -> bool:
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+        name = str(getattr(root, "name", "") or "").replace("\u2019", "'").strip().lower()
+        return name == "knight preceptor"
+
+    def _ik_unit_models(self, unit: Any) -> list[Any]:
+        root = self._ik_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        alive_models = [model for model in models if self._ik_model_is_alive(model)]
+        alive_models.sort(key=lambda model: str(maybe_entity_id(model) or ""))
+        return alive_models
+
+    def _ik_army_roots(self) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    @staticmethod
+    def _ik_display_phase_name(value: Any, *, default: str = "") -> str:
+        text = str(value or "").strip()
+        if not text:
+            return str(default or "").strip()
+        phase_key = text.upper()
+        mapping = {
+            "COMMAND_PHASE": "Command phase",
+            "MOVEMENT_PHASE": "Movement phase",
+            "SHOOTING_PHASE": "Shooting phase",
+            "CHARGE_PHASE": "Charge phase",
+            "FIGHT_PHASE": "Fight phase",
+        }
+        if phase_key in mapping:
+            return mapping[phase_key]
+        if phase_key.replace(" ", "_") in mapping:
+            return mapping[phase_key.replace(" ", "_")]
+        return text
+
+    @staticmethod
+    def _ik_phase_end_key(value: Any, *, fallback: str = "ANY_PHASE") -> str:
+        text = str(value or "").strip()
+        if not text:
+            return str(fallback or "ANY_PHASE").strip().upper()
+        phase_key = text.upper().replace(" ", "_")
+        mapping = {
+            "COMMAND_PHASE": "COMMAND_PHASE",
+            "MOVEMENT_PHASE": "MOVEMENT_PHASE",
+            "SHOOTING_PHASE": "SHOOTING_PHASE",
+            "CHARGE_PHASE": "CHARGE_PHASE",
+            "FIGHT_PHASE": "FIGHT_PHASE",
+        }
+        return mapping.get(phase_key, phase_key)
+
+    def _ik_visible_to_enemy_unit(self, enemy_unit: Any, target_unit: Any) -> bool:
+        enemy_root = self._ik_root(enemy_unit)
+        target_root = self._ik_root(target_unit)
+        if enemy_root is None or target_root is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        has_los = getattr(enemy_root, "_attacking_unit_has_any_los_to_target_unit", None)
+        if not callable(has_los) or game_map is None:
+            return False
+        return bool(has_los(target_root, game_map))
+
+    def _questor_forgepact_aggression_begets_aggression_candidates(self) -> list[Any]:
+        if not self._is_questor_forgepact():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questor_forgepact_aggression_begets_aggression_supporting_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_questor_forgepact():
+            return []
+        root = self._ik_root(unit)
+        if root is None or not self._ik_is_character_unit(root):
+            return []
+        if not self._is_imperial_knights_unit(root):
+            return []
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return []
+        out: list[Any] = []
+        for friendly in self._ik_army_roots():
+            if friendly is root:
+                continue
+            if not self._ik_is_adeptus_mechanicus_unit(friendly):
+                continue
+            if not self._ik_on_battlefield(friendly, require_targetable=True):
+                continue
+            distance = self._ik_distance_between_units(root, friendly)
+            if distance is None or float(distance) > 6.0 + 1e-6:
+                continue
+            out.append(friendly)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questor_forgepact_machine_focus_candidates(self) -> list[Any]:
+        if not self._is_questor_forgepact():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questor_forgepact_thronegheist_fury_candidates(
+        self,
+        *,
+        enemy_unit: Any,
+        action: str = "",
+    ) -> list[Any]:
+        if not self._is_questor_forgepact():
+            return []
+        if self.game is None:
+            return []
+        enemy_root = self._ik_root(enemy_unit)
+        if enemy_root is None or self._ik_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        action_key = str(action or "").strip().lower()
+        if action_key and action_key not in {"move", "advance", "fall_back", "set_up"}:
+            return []
+        reactive_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None)
+        if not callable(reactive_can_shoot):
+            return []
+
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_is_titanic_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            distance = self._ik_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 24.0 + 1e-6:
+                continue
+            if not self._ik_visible_to_enemy_unit(enemy_root, root):
+                continue
+            if not bool(reactive_can_shoot(root, enemy_root)):
+                continue
+            allowed_model_ids, allowed_wargear_ids = self._questor_forgepact_thronegheist_fury_allowed_selection(
+                root,
+                enemy_root,
+            )
+            if not allowed_model_ids or not allowed_wargear_ids:
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questor_forgepact_thronegheist_fury_allowed_selection(
+        self,
+        unit: Any,
+        enemy_unit: Any,
+    ) -> tuple[list[str], list[str]]:
+        allowed_pairs = self._questor_forgepact_thronegheist_fury_allowed_pairs(unit, enemy_unit)
+        allowed_model_ids = sorted(
+            {
+                str(pair.get("model_id", "") or "").strip()
+                for pair in list(allowed_pairs or [])
+                if str(pair.get("model_id", "") or "").strip()
+            }
+        )
+        allowed_wargear_ids = sorted(
+            {
+                str(pair.get("wargear_id", "") or "").strip()
+                for pair in list(allowed_pairs or [])
+                if str(pair.get("wargear_id", "") or "").strip()
+            }
+        )
+        return allowed_model_ids, allowed_wargear_ids
+
+    def _questor_forgepact_thronegheist_fury_allowed_pairs(
+        self,
+        unit: Any,
+        enemy_unit: Any,
+    ) -> list[dict[str, str]]:
+        root = self._ik_root(unit)
+        enemy_root = self._ik_root(enemy_unit)
+        if root is None or enemy_root is None or self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        can_target = getattr(root, "_can_model_shoot_weapon_at_target", None)
+        if not callable(can_target):
+            return []
+
+        allowed_pairs: list[dict[str, str]] = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for model in self._ik_unit_models(root):
+            model_id = str(maybe_entity_id(model) or "").strip()
+            if not model_id:
+                continue
+            for weapon in sorted(
+                list(getattr(model, "wargear", []) or []),
+                key=lambda item: str(maybe_entity_id(item) or ""),
+            ):
+                is_ranged = getattr(weapon, "is_ranged", None)
+                if callable(is_ranged):
+                    if not bool(is_ranged()):
+                        continue
+                elif str(getattr(weapon, "type", "") or "").strip().lower() != "ranged":
+                    continue
+                weapon_id = str(maybe_entity_id(weapon) or "").strip()
+                if not weapon_id:
+                    continue
+                profiles = getattr(weapon, "profiles", {}) or {}
+                for profile_name in sorted(profiles):
+                    profile = profiles.get(profile_name)
+                    if profile is None:
+                        continue
+                    if not bool(can_target(model, profile, enemy_root, game_map)):
+                        continue
+                    pair_key = (model_id, weapon_id)
+                    if pair_key not in seen_pairs:
+                        seen_pairs.add(pair_key)
+                        allowed_pairs.append({"model_id": model_id, "wargear_id": weapon_id})
+                    break
+        allowed_pairs.sort(key=lambda pair: (str(pair.get("model_id", "") or ""), str(pair.get("wargear_id", "") or "")))
+        return allowed_pairs
+
     def _imperial_knights_vow_of_retribution_candidates(self) -> list[Any]:
         if not self._is_valourstrike_lance():
             return []
@@ -636,6 +901,7 @@ class ImperialKnightsStratagemMixin:
         stratagem_name: str,
         phase_name: str,
         enemy_unit: Any = None,
+        target_unit: Any = None,
     ) -> bool:
         wanted_name = self._ik_normalize_name(stratagem_name)
         wanted_phase = str(phase_name or "").strip().lower()
@@ -648,8 +914,24 @@ class ImperialKnightsStratagemMixin:
                 continue
             if enemy_unit is not None and self._ik_root(reaction.get("enemy_unit")) is not self._ik_root(enemy_unit):
                 continue
+            reaction_target = reaction.get("target_unit") or reaction.get("unit")
+            if target_unit is not None and self._ik_root(reaction_target) is not self._ik_root(target_unit):
+                continue
             return True
         return False
+
+    def _ik_pending_context(self, stratagem_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        wanted = self._ik_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._ik_normalize_name(reaction.get("stratagem", "")) != wanted:
+                continue
+            merged.update(dict(reaction))
+            break
+        for key, value in dict(kwargs or {}).items():
+            if value is not None:
+                merged[key] = value
+        return merged
 
     def _imperial_knights_let_duty_be_your_shield_candidates(
         self,
@@ -1083,6 +1365,16 @@ class ImperialKnightsStratagemMixin:
                         "gate_warden_titanic_bombardment_source",
                     ):
                         sr.pop(key, None)
+                exp = str(sr.get("questor_forgepact_aggression_begets_aggression_expires_phase", "") or "").strip().upper()
+                if sr.get("questor_forgepact_aggression_begets_aggression_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "questor_forgepact_aggression_begets_aggression_active",
+                        "questor_forgepact_aggression_begets_aggression_expires_phase",
+                        "questor_forgepact_aggression_begets_aggression_turn_owner",
+                        "questor_forgepact_aggression_begets_aggression_turn",
+                        "questor_forgepact_aggression_begets_aggression_source",
+                    ):
+                        sr.pop(key, None)
             if phase_name == "FIGHT_PHASE":
                 exp = str(sr.get("gate_warden_drive_them_out_expires_phase", "") or "").strip().upper()
                 if sr.get("gate_warden_drive_them_out_active") is True and (not exp or exp == phase_name):
@@ -1172,6 +1464,207 @@ class ImperialKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_questor_forgepact_mortal_wound_reactions(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any = None,
+        target_model: Any = None,
+        phase_name: str = "",
+    ) -> None:
+        if not self._is_questor_forgepact():
+            return
+        root = self._ik_root(target_unit)
+        if root is None or not self._ik_owned_by_player(root, self.player):
+            return
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return
+        if not (self._is_imperial_knights_unit(root) or self._ik_is_adeptus_mechanicus_unit(root)):
+            return
+        if not phase_name:
+            phase_name = str(getattr(self, "_current_phase_name", "") or "").strip()
+        if not phase_name and self.game is not None:
+            phase_name = self._ik_display_phase_name(
+                getattr(getattr(self.game, "phase", None), "name", "") or "",
+                default="Any phase",
+            )
+        if not phase_name:
+            phase_name = "Any phase"
+        stratagem = self.get_by_name("OMNISSIAH'S GRACE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="mortal_wound_allocated",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "mortal_wound_allocated",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "attacking_unit": attacker_unit,
+                "target_model": target_model,
+                "candidates": [root],
+                "mortal_wound_allocated": True,
+            },
+            use_timer=False,
+        )
+
+    def _queue_questor_forgepact_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any = None,
+    ) -> None:
+        if not self._is_questor_forgepact() or self.game is None:
+            return
+        root = self._ik_root(destroyed_unit)
+        enemy_root = self._ik_root(destroyed_by_unit)
+        if root is None or enemy_root is None:
+            return
+        if not self._ik_owned_by_player(root, self.player):
+            return
+        if not self._is_imperial_knights_unit(root):
+            return
+        if self._ik_owned_by_player(enemy_root, self.player):
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or self._ik_display_phase_name(
+            getattr(getattr(self.game, "phase", None), "name", "") or "",
+            default="Any phase",
+        )
+        stratagem = self.get_by_name("VENGEANCE OF THE MACHINE CULT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            enemy_unit=enemy_root,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "enemy_unit": enemy_root,
+            },
+            use_timer=False,
+        )
+
+    def _queue_questor_forgepact_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_questor_forgepact() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+        enemy_root = self._ik_root(unit)
+        if enemy_root is None or self._ik_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("THRONEGHEIST FURY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            enemy_unit=enemy_root,
+        ):
+            return
+        candidates = self._questor_forgepact_thronegheist_fury_candidates(enemy_unit=enemy_root, action=action_key)
+        if not candidates:
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_questor_forgepact_set_up_reactions(self, *, unit: Any) -> None:
+        if not self._is_questor_forgepact() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        enemy_root = self._ik_root(unit)
+        if enemy_root is None or self._ik_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("THRONEGHEIST FURY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_set_up",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            enemy_unit=enemy_root,
+        ):
+            return
+        candidates = self._questor_forgepact_thronegheist_fury_candidates(enemy_unit=enemy_root, action="set_up")
+        if not candidates:
+            return
+        payload = {
+            "event": "unit_set_up",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": "set_up",
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _ik_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -1226,6 +1719,18 @@ class ImperialKnightsStratagemMixin:
             return self._use_spearhead_let_duty_be_your_shield(stratagem, **kwargs)
         if name_u == "EXEMPLAR'S WISDOM":
             return self._use_spearhead_exemplars_wisdom(stratagem, **kwargs)
+        if name_u == "AGGRESSION BEGETS AGGRESSION":
+            return self._use_questor_forgepact_aggression_begets_aggression(stratagem, **kwargs)
+        if name_u == "BONDED IMPERATIVE":
+            return self._use_questor_forgepact_bonded_imperative(stratagem, **kwargs)
+        if name_u == "MACHINE FOCUS":
+            return self._use_questor_forgepact_machine_focus(stratagem, **kwargs)
+        if name_u == "OMNISSIAH'S GRACE":
+            return self._use_questor_forgepact_omnissiahs_grace(stratagem, **kwargs)
+        if name_u == "THRONEGHEIST FURY":
+            return self._use_questor_forgepact_thronegheist_fury(stratagem, **kwargs)
+        if name_u == "VENGEANCE OF THE MACHINE CULT":
+            return self._use_questor_forgepact_vengeance_of_the_machine_cult(stratagem, **kwargs)
         return None
 
     def _use_gate_warden_drive_them_out(self, stratagem: Any, **kwargs) -> bool:
@@ -2115,5 +2620,452 @@ class ImperialKnightsStratagemMixin:
             "INFO: TACTICAL FOIL: %s can make a Normal move up to %d\".",
             getattr(root, "name", "Unit"),
             int(move_max),
+        )
+        return True
+
+    def _use_questor_forgepact_aggression_begets_aggression(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: not your Shooting phase")
+            return False
+
+        selected_units = kwargs.get("selected_units") or kwargs.get("units") or kwargs.get("target_units")
+        if selected_units is None:
+            selected_units = []
+            primary = kwargs.get("unit") or kwargs.get("target_unit")
+            support = kwargs.get("support_unit") or kwargs.get("secondary_unit")
+            if primary is not None:
+                selected_units.append(primary)
+            if support is not None:
+                selected_units.append(support)
+        selected_roots: list[Any] = []
+        seen_ids: set[str] = set()
+        for unit in list(selected_units or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen_ids:
+                continue
+            if uid:
+                seen_ids.add(uid)
+            selected_roots.append(root)
+        candidates = list(kwargs.get("candidates") or self._questor_forgepact_aggression_begets_aggression_candidates())
+        if not selected_roots and len(candidates) == 1:
+            selected_roots = [candidates[0]]
+        if not selected_roots:
+            logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: no target unit provided")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: may target at most two units")
+            return False
+
+        target_roots: list[Any] = []
+        if len(selected_roots) == 1:
+            root = selected_roots[0]
+            if not self._ik_unit_in_candidates(root, candidates):
+                logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: target is not currently eligible")
+                return False
+            target_roots = [root]
+        else:
+            ik_character_root = None
+            admech_root = None
+            for root in selected_roots:
+                if self._is_imperial_knights_unit(root) and self._ik_is_character_unit(root):
+                    ik_character_root = root
+                elif self._ik_is_adeptus_mechanicus_unit(root):
+                    admech_root = root
+            if ik_character_root is None or admech_root is None:
+                logger.error(
+                    "ERROR: AGGRESSION BEGETS AGGRESSION: two-target use requires one IMPERIAL KNIGHTS CHARACTER and one ADEPTUS MECHANICUS unit"
+                )
+                return False
+            if not self._ik_unit_in_candidates(ik_character_root, candidates):
+                logger.error("ERROR: AGGRESSION BEGETS AGGRESSION: Imperial Knights CHARACTER is not currently eligible")
+                return False
+            support_candidates = self._questor_forgepact_aggression_begets_aggression_supporting_candidates(ik_character_root)
+            if not self._ik_unit_in_candidates(admech_root, support_candidates):
+                logger.error(
+                    "ERROR: AGGRESSION BEGETS AGGRESSION: ADEPTUS MECHANICUS support unit must be within 6\" of the selected Imperial Knights CHARACTER"
+                )
+                return False
+            target_roots = [ik_character_root, admech_root]
+
+        primary_target = target_roots[0]
+        if not self._ik_spend_cp(stratagem, target_unit=primary_target):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "AGGRESSION BEGETS AGGRESSION")
+        for root in list(target_roots):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["questor_forgepact_aggression_begets_aggression_active"] = True
+            sr["questor_forgepact_aggression_begets_aggression_expires_phase"] = "SHOOTING_PHASE"
+            sr["questor_forgepact_aggression_begets_aggression_turn_owner"] = owner_id
+            sr["questor_forgepact_aggression_begets_aggression_turn"] = current_turn
+            sr["questor_forgepact_aggression_begets_aggression_source"] = source_name
+            root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AGGRESSION BEGETS AGGRESSION: %d unit(s) gain [ASSAULT] on ranged weapons this phase.",
+            len(target_roots),
+        )
+        return True
+
+    def _use_questor_forgepact_bonded_imperative(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: BONDED IMPERATIVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BONDED IMPERATIVE: not your Command phase")
+            return False
+
+        army = getattr(self.player, "army", None)
+        bondsman_mgr = getattr(army, "bondsman", None)
+        if bondsman_mgr is None:
+            logger.error("ERROR: BONDED IMPERATIVE: Bondsman manager is unavailable")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(
+            kwargs.get("candidates")
+            or getattr(bondsman_mgr, "get_questor_forgepact_bonded_imperative_sources", lambda **_k: [])(
+                game_map=getattr(self.game, "map", None) if self.game is not None else None
+            )
+        )
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BONDED IMPERATIVE: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BONDED IMPERATIVE: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: BONDED IMPERATIVE: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._ik_is_character_unit(root) or not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: BONDED IMPERATIVE: target must be an IMPERIAL KNIGHTS CHARACTER unit")
+            return False
+        if self._ik_is_knight_preceptor_unit(root):
+            logger.error("ERROR: BONDED IMPERATIVE: Knight Preceptor cannot be targeted")
+            return False
+        can_activate = getattr(bondsman_mgr, "can_activate_questor_forgepact_bonded_imperative", None)
+        if not callable(can_activate) or not bool(
+            can_activate(root, game_map=getattr(self.game, "map", None) if self.game is not None else None)
+        ):
+            logger.error("ERROR: BONDED IMPERATIVE: target is not currently eligible to extend its Bondsman ability")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        activate = getattr(bondsman_mgr, "activate_questor_forgepact_bonded_imperative", None)
+        if not callable(activate) or not bool(
+            activate(
+                root,
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "BONDED IMPERATIVE"),
+            )
+        ):
+            logger.error("ERROR: BONDED IMPERATIVE: failed to refresh the Bondsman selection")
+            return False
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BONDED IMPERATIVE: %s can target ADEPTUS MECHANICUS with its next Bondsman use.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_questor_forgepact_machine_focus(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: MACHINE FOCUS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MACHINE FOCUS: not your Command phase")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._questor_forgepact_machine_focus_candidates())
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MACHINE FOCUS: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MACHINE FOCUS: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: MACHINE FOCUS: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: MACHINE FOCUS: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._ik_detachment_mgr()
+        clear_effect = getattr(mgr, "clear_questor_forgepact_machine_focus", None) if mgr is not None else None
+        if callable(clear_effect):
+            clear_effect(root)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["questor_forgepact_machine_focus_active"] = True
+        sr["questor_forgepact_machine_focus_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["questor_forgepact_machine_focus_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["questor_forgepact_machine_focus_source"] = str(getattr(stratagem, "name", "") or "MACHINE FOCUS")
+        root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MACHINE FOCUS: %s can ignore WS/BS, Hit, and Wound modifiers until your next turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_questor_forgepact_omnissiahs_grace(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        root = self._ik_root(merged.get("unit") or merged.get("target_unit"))
+        candidates = list(merged.get("candidates") or [])
+        if root is None and len(candidates) == 1:
+            root = self._ik_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: OMNISSIAH'S GRACE: no target unit provided")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: OMNISSIAH'S GRACE: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: OMNISSIAH'S GRACE: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: OMNISSIAH'S GRACE: target must be on the battlefield and targetable")
+            return False
+        if not (self._is_imperial_knights_unit(root) or self._ik_is_adeptus_mechanicus_unit(root)):
+            logger.error("ERROR: OMNISSIAH'S GRACE: target must be an IMPERIAL KNIGHTS or ADEPTUS MECHANICUS unit")
+            return False
+
+        triggered = bool(merged.get("mortal_wound_allocated", False))
+        trigger_name = str(merged.get("trigger", "") or "").strip().lower()
+        if not triggered and trigger_name not in {"mortal_wound_allocated", "mortal_wound"}:
+            logger.error("ERROR: OMNISSIAH'S GRACE: missing mortal-wound trigger context")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "Any phase")
+        phase_key = self._ik_phase_end_key(phase_name, fallback="ANY_PHASE")
+        key_seed = self._ik_normalize_name(getattr(stratagem, "name", "") or "").lower().replace(" ", "_")
+        for index, model in enumerate(self._ik_unit_models(root)):
+            key = f"{key_seed}:{maybe_entity_id(model) or index}"
+            set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+            if callable(set_temporary_fnp):
+                set_temporary_fnp(
+                    key=key,
+                    value=5,
+                    source=str(getattr(stratagem, "name", "") or "OMNISSIAH'S GRACE"),
+                    condition="against mortal wounds",
+                    expires_phase=phase_key,
+                )
+                continue
+            effects = getattr(model, "_temporary_effects", None)
+            if not isinstance(effects, dict):
+                effects = {}
+                model._temporary_effects = effects
+            effects[key] = {
+                "expires_phase": str(phase_key or "").strip().upper(),
+                "temporary_fnp_value": 5,
+                "temporary_fnp_source": str(getattr(stratagem, "name", "") or "OMNISSIAH'S GRACE"),
+                "temporary_fnp_condition": "against mortal wounds",
+            }
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: OMNISSIAH'S GRACE: %s gains Feel No Pain 5+ against mortal wounds this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_questor_forgepact_thronegheist_fury(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        root = self._ik_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._ik_root(merged.get("enemy_unit") or merged.get("moving_unit"))
+        candidates = list(merged.get("candidates") or [])
+        if root is None and len(candidates) == 1:
+            root = self._ik_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: THRONEGHEIST FURY: no target unit provided")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: THRONEGHEIST FURY: missing enemy trigger unit")
+            return False
+
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: THRONEGHEIST FURY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: THRONEGHEIST FURY: not opponent's Movement phase")
+            return False
+        action_key = str(merged.get("action") or merged.get("trigger") or "").strip().lower()
+        if action_key and action_key not in {"move", "advance", "fall_back", "set_up"}:
+            logger.error("ERROR: THRONEGHEIST FURY: invalid trigger action")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: THRONEGHEIST FURY: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: THRONEGHEIST FURY: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._ik_is_titanic_unit(root) or not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: THRONEGHEIST FURY: target must be a Titanic IMPERIAL KNIGHTS unit")
+            return False
+        if self._ik_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: THRONEGHEIST FURY: trigger unit must be enemy")
+            return False
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return False
+        distance = self._ik_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 24.0 + 1e-6:
+            logger.error("ERROR: THRONEGHEIST FURY: target must be within 24\" of the enemy unit")
+            return False
+        if not self._ik_visible_to_enemy_unit(enemy_root, root):
+            logger.error("ERROR: THRONEGHEIST FURY: target must be visible to the enemy unit")
+            return False
+
+        allowed_pairs = self._questor_forgepact_thronegheist_fury_allowed_pairs(root, enemy_root)
+        if not allowed_pairs:
+            logger.error("ERROR: THRONEGHEIST FURY: no eligible model and ranged weapon can shoot that enemy unit")
+            return False
+        queue_shoot = getattr(self.game, "_queue_setup_reactive_shooting_decision", None) if self.game is not None else None
+        if not callable(queue_shoot):
+            logger.error("ERROR: THRONEGHEIST FURY: reactive shooting queue is unavailable")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        allowed_model_ids = sorted(
+            {
+                str(pair.get("model_id", "") or "").strip()
+                for pair in list(allowed_pairs or [])
+                if str(pair.get("model_id", "") or "").strip()
+            }
+        )
+        allowed_wargear_ids = sorted(
+            {
+                str(pair.get("wargear_id", "") or "").strip()
+                for pair in list(allowed_pairs or [])
+                if str(pair.get("wargear_id", "") or "").strip()
+            }
+        )
+        request = queue_shoot(
+            player=self.player,
+            unit=root,
+            target_unit=enemy_root,
+            source=str(getattr(stratagem, "name", "") or "THRONEGHEIST FURY"),
+            allowed_model_ids=allowed_model_ids,
+            allowed_wargear_ids=allowed_wargear_ids,
+            max_declarations=1,
+        )
+        if request is None:
+            logger.error("ERROR: THRONEGHEIST FURY: failed to queue reactive shooting")
+            return False
+        if hasattr(request, "context"):
+            if not isinstance(getattr(request, "context", None), dict):
+                request.context = {}
+            request.context["thronegheist_fury_flow"] = True
+            request.context["thronegheist_fury_trigger_action"] = action_key
+            request.context["thronegheist_fury_enemy_unit_id"] = self._ik_sort_key(enemy_root)
+            request.context["thronegheist_fury_allowed_pairs"] = [dict(pair) for pair in list(allowed_pairs or [])]
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THRONEGHEIST FURY: %s can make a reactive shot with one ranged weapon against %s.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_questor_forgepact_vengeance_of_the_machine_cult(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        root = self._ik_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._ik_root(merged.get("enemy_unit"))
+        if root is None:
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: no destroyed IMPERIAL KNIGHTS unit provided")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: destroying enemy unit is missing")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: target unit is not yours")
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if self._ik_is_alive(root):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: target unit was not destroyed")
+            return False
+        if self._ik_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: destroying unit must be enemy")
+            return False
+
+        mgr = self._ik_detachment_mgr()
+        mark_enemy = getattr(mgr, "set_questor_forgepact_vengeance_mark", None) if mgr is not None else None
+        if not callable(mark_enemy):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: detachment manager is unavailable")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            mark_enemy(
+                enemy_root,
+                player_id=str(getattr(self.player, "id", "") or ""),
+                source=str(getattr(stratagem, "name", "") or "VENGEANCE OF THE MACHINE CULT"),
+            )
+        ):
+            logger.error("ERROR: VENGEANCE OF THE MACHINE CULT: failed to mark the destroying enemy unit")
+            return False
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VENGEANCE OF THE MACHINE CULT: %s is Marked until the end of the battle.",
+            getattr(enemy_root, "name", "Enemy unit"),
         )
         return True

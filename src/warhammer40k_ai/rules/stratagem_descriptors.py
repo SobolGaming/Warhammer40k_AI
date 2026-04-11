@@ -13314,6 +13314,104 @@ _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_QUESTOR_FORGEPACT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009762002": StratagemToolDescriptor(
+        stratagem_id="000009762002",
+        name="Omnissiah's Grace",
+        timing="any_phase_after_mortal_wound_allocated",
+        target="imperial_knights_or_adeptus_mechanicus_unit_allocated_mortal_wound",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_vs_mortals",
+        cp_cost=1,
+        effect_params={
+            "feel_no_pain_value": 5,
+            "condition": "against mortal wounds",
+        },
+    ),
+    "000009762003": StratagemToolDescriptor(
+        stratagem_id="000009762003",
+        name="Vengeance of the Machine Cult",
+        timing="any_phase_on_friendly_imperial_knights_unit_destroyed",
+        target="just_destroyed_imperial_knights_unit_and_enemy_destroyer",
+        duration="until_end_of_battle",
+        effect="mark_destroying_enemy_for_adeptus_mechanicus_lethal_hits",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "attacker_keyword": "ADEPTUS MECHANICUS",
+            "grant_keywords": ["LETHAL HITS"],
+        },
+    ),
+    "000009762004": StratagemToolDescriptor(
+        stratagem_id="000009762004",
+        name="Bonded Imperative",
+        timing="command_phase_before_bondsman_use",
+        target="imperial_knights_character_bondsman_source_except_knight_preceptor_with_adeptus_mechanicus_within_12",
+        duration="until_start_of_your_next_command_phase",
+        effect="bondsman_can_target_adeptus_mechanicus_in_addition_or_instead",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "additional_target_keyword": "ADEPTUS MECHANICUS",
+            "allow_instead_of_armiger": True,
+            "exclude_unit_names": ["Knight Preceptor"],
+        },
+    ),
+    "000009762005": StratagemToolDescriptor(
+        stratagem_id="000009762005",
+        name="Machine Focus",
+        timing="command_phase",
+        target="imperial_knights_unit",
+        duration="until_start_of_your_next_turn",
+        effect="ignore_ws_bs_hit_and_wound_modifiers",
+        cp_cost=1,
+        effect_params={
+            "ignore_weapon_skill_modifiers": True,
+            "ignore_ballistic_skill_modifiers": True,
+            "ignore_hit_modifiers": True,
+            "ignore_wound_modifiers": True,
+        },
+    ),
+    "000009762006": StratagemToolDescriptor(
+        stratagem_id="000009762006",
+        name="Aggression Begets Aggression",
+        timing="your_shooting_phase",
+        target="imperial_knights_unit_or_imperial_knights_character_and_friendly_adeptus_mechanicus_within_6",
+        duration="until_end_of_phase",
+        effect="ranged_weapons_gain_assault",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["ASSAULT"],
+            "support_unit_keyword": "ADEPTUS MECHANICUS",
+        },
+    ),
+    "000009762007": StratagemToolDescriptor(
+        stratagem_id="000009762007",
+        name="Thronegheist Fury",
+        timing="opponent_movement_phase_after_enemy_set_up_or_move_end",
+        target="imperial_knights_titanic_unit_within_24_visible_to_triggering_enemy",
+        duration="immediate",
+        effect="reactive_single_model_single_weapon_shooting_at_trigger_enemy",
+        cp_cost=1,
+        range_in=24.0,
+        effect_params={
+            "trigger_actions": ["move", "advance", "fall_back", "set_up"],
+            "target_restriction": "triggering_enemy_unit_only",
+            "max_declarations": 1,
+            "max_models": 1,
+            "max_weapons": 1,
+            "hit_threshold": 6,
+            "visibility_required": True,
+        },
+    ),
+}
+
+_QUESTOR_FORGEPACT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _QUESTOR_FORGEPACT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009139002": StratagemToolDescriptor(
         stratagem_id="000009139002",
@@ -14938,6 +15036,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _QUESTOR_FORGEPACT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15152,6 +15253,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GATE_WARDEN_LANCE_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
+        or _QUESTOR_FORGEPACT_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME.get(key)

@@ -66,6 +66,11 @@ class BondsmanManager:
         check = getattr(detachment_mgr, "is_spearhead_at_arms", None)
         return bool(callable(check) and check())
 
+    def _is_questor_forgepact(self) -> bool:
+        detachment_mgr = self._detachment_manager()
+        check = getattr(detachment_mgr, "is_questor_forgepact", None)
+        return bool(callable(check) and check())
+
     def _army_is_honoured(self) -> bool:
         if self.army is None:
             return False
@@ -111,6 +116,12 @@ class BondsmanManager:
         ability_key = self._bondsman_primary_ability_key(source_unit)
         if ability_key:
             self._used_bondsman_ability_keys.add(str(ability_key))
+
+    def _bondsman_ability_used_for_unit(self, source_unit) -> bool:
+        ability_key = self._bondsman_primary_ability_key(source_unit)
+        if not ability_key:
+            return False
+        return str(ability_key) in self._used_bondsman_ability_keys
 
     @staticmethod
     def _selected_target_ids_from_payload(payload: dict | None) -> list[str]:
@@ -170,6 +181,46 @@ class BondsmanManager:
         except Exception:
             return False
 
+    def _unit_is_imperial_knights_character(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        detachment_mgr = self._detachment_manager()
+        is_ik = getattr(detachment_mgr, "_unit_is_imperial_knights", None) if detachment_mgr is not None else None
+        if not callable(is_ik) or not bool(is_ik(root)):
+            return False
+        try:
+            return bool(root.has_any_keyword("CHARACTER"))
+        except Exception:
+            return False
+
+    def _unit_is_adeptus_mechanicus(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        detachment_mgr = self._detachment_manager()
+        check = getattr(detachment_mgr, "_unit_is_adeptus_mechanicus", None) if detachment_mgr is not None else None
+        return bool(callable(check) and check(root))
+
+    @staticmethod
+    def _unit_is_knight_preceptor(unit) -> bool:
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+        name = str(getattr(root, "name", "") or "").replace("\u2019", "'").strip().lower()
+        return name == "knight preceptor"
+
+    def _unit_is_active_for_rules(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        detachment_mgr = self._detachment_manager()
+        check = getattr(detachment_mgr, "_battlefield_root_active", None) if detachment_mgr is not None else None
+        if callable(check):
+            return bool(check(root))
+        return self._unit_is_valid_source(root) or self._unit_is_armiger(root)
+
     def _unit_is_valid_source(self, unit) -> bool:
         if unit is None or not self._unit_has_bondsman_ability(unit):
             return False
@@ -198,6 +249,252 @@ class BondsmanManager:
 
     def get_bondsman_ability_names(self, unit) -> list[str]:
         return self._bondsman_ability_names(unit)
+
+    def _clear_questor_forgepact_bonded_imperative(self, source_unit) -> None:
+        root = self._root_unit(source_unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "questor_forgepact_bonded_imperative_pending",
+            "questor_forgepact_bonded_imperative_source",
+            "questor_forgepact_bonded_imperative_turn",
+            "questor_forgepact_bonded_imperative_turn_owner",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _questor_forgepact_bonded_imperative_pending(self, source_unit) -> bool:
+        if not self._is_questor_forgepact():
+            return False
+        root = self._root_unit(source_unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("questor_forgepact_bonded_imperative_pending"))
+
+    def _questor_forgepact_bonded_imperative_admech_candidates(self, source_unit, *, game_map=None) -> list:
+        if self.army is None or not self._is_questor_forgepact():
+            return []
+        source_root = self._root_unit(source_unit)
+        if source_root is None or not self._unit_is_imperial_knights_character(source_root):
+            return []
+        detachment_mgr = self._detachment_manager()
+        within_distance = getattr(detachment_mgr, "_unit_within_distance", None) if detachment_mgr is not None else None
+        candidates = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._root_unit(unit)
+            if root is None or root is source_root:
+                continue
+            if not self._unit_is_adeptus_mechanicus(root):
+                continue
+            if not self._unit_is_active_for_rules(root):
+                continue
+            in_range = False
+            if callable(within_distance):
+                in_range = bool(
+                    within_distance(
+                        source_root,
+                        root,
+                        max_distance=12.0,
+                        game_map=game_map,
+                    )
+                )
+            elif game_map is not None:
+                try:
+                    in_range = float(game_map.get_distance_between_units(source_root, root)) <= 12.0 + 1e-6
+                except (AttributeError, TypeError, ValueError):
+                    in_range = False
+            if not in_range:
+                continue
+            candidates.append(root)
+        deduped = []
+        seen_ids: set[str] = set()
+        for unit in list(candidates):
+            unit_id = maybe_entity_id(unit)
+            key = str(unit_id or "")
+            if key and key in seen_ids:
+                continue
+            if key:
+                seen_ids.add(key)
+            deduped.append(unit)
+        deduped.sort(key=self._unit_sort_key)
+        return deduped
+
+    def get_questor_forgepact_bonded_imperative_sources(self, *, game_map=None) -> list:
+        if not self._is_questor_forgepact():
+            return []
+        sources = []
+        for unit in self.get_bondsman_sources():
+            root = self._root_unit(unit)
+            if root is None or not self._unit_is_imperial_knights_character(root):
+                continue
+            if self._unit_is_knight_preceptor(root):
+                continue
+            if self._bondsman_ability_used_for_unit(root):
+                continue
+            if self._questor_forgepact_bonded_imperative_admech_candidates(root, game_map=game_map):
+                sources.append(root)
+        sources.sort(key=self._unit_sort_key)
+        return sources
+
+    def can_activate_questor_forgepact_bonded_imperative(self, source_unit, *, game_map=None) -> bool:
+        if source_unit is None or not self._is_questor_forgepact():
+            return False
+        source_root = self._root_unit(source_unit)
+        if source_root is None:
+            return False
+        if not self._unit_is_valid_source(source_root):
+            return False
+        if not self._unit_is_imperial_knights_character(source_root):
+            return False
+        if self._unit_is_knight_preceptor(source_root):
+            return False
+        if self._bondsman_ability_used_for_unit(source_root):
+            return False
+        if self._questor_forgepact_bonded_imperative_pending(source_root):
+            return False
+        return bool(self._questor_forgepact_bonded_imperative_admech_candidates(source_root, game_map=game_map))
+
+    def _pending_bondsman_request(self, game, source_unit):
+        source_id = str(maybe_entity_id(self._root_unit(source_unit)) or "")
+        if game is None or not source_id:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        list_fn = getattr(queue, "list", None) if queue is not None else None
+        if not callable(list_fn):
+            return None
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        except Exception:
+            return None
+        for req in list(list_fn() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "bondsman":
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != source_id:
+                continue
+            return req
+        return None
+
+    def queue_bondsman_selection_request(
+        self,
+        source_unit,
+        *,
+        game=None,
+        player=None,
+        game_map=None,
+        refresh: bool = False,
+    ):
+        if game is None or source_unit is None:
+            return None
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return None
+        source_root = self._root_unit(source_unit)
+        if source_root is None or not self._unit_is_valid_source(source_root):
+            return None
+        source_id = maybe_entity_id(source_root)
+        if not source_id:
+            return None
+        existing = self._pending_bondsman_request(game, source_root)
+        if existing is not None and not bool(refresh):
+            return existing
+        queue = getattr(game, "decision_queue", None)
+        if existing is not None and bool(refresh) and queue is not None and hasattr(queue, "pop"):
+            queue.pop(getattr(existing, "decision_id", None))
+
+        targets = self.get_eligible_armigers(source_root, game_map=game_map)
+        target_cap = int(self._bondsman_target_cap(source_root))
+        bonded_imperative_active = self._questor_forgepact_bonded_imperative_pending(source_root)
+        admech_targets = (
+            self._questor_forgepact_bonded_imperative_admech_candidates(source_root, game_map=game_map)
+            if bonded_imperative_active
+            else []
+        )
+        options = self._bondsman_target_option_payloads(
+            targets,
+            max_targets=target_cap,
+            admech_targets=admech_targets,
+        )
+        if not options:
+            return None
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+        for label, payload in options:
+            req_options.append(DecisionOption.create(label, payload=payload))
+        ability_key = self._bondsman_primary_ability_key(source_root)
+        candidate_ids = [
+            str(maybe_entity_id(target) or "")
+            for target in list(targets or [])
+            if str(maybe_entity_id(target) or "")
+        ]
+        candidate_admech_ids = [
+            str(maybe_entity_id(target) or "")
+            for target in list(admech_targets or [])
+            if str(maybe_entity_id(target) or "")
+        ]
+        prompt = f"Select up to {int(target_cap)} Bondsman target(s)." if int(target_cap) > 1 else "Select Bondsman target."
+        if candidate_admech_ids:
+            prompt = "Select Bondsman target(s) for this use."
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "source_unit_id": str(source_id),
+                "ability": "bondsman",
+                "ability_name": "Bondsman",
+                "bondsman_ability_key": str(ability_key),
+                "max_targets": int(target_cap),
+                "candidate_unit_ids": list(candidate_ids),
+                "candidate_armiger_unit_ids": list(candidate_ids),
+                "candidate_admech_unit_ids": list(candidate_admech_ids),
+                "bonded_imperative_active": bool(candidate_admech_ids),
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+        return req
+
+    def activate_questor_forgepact_bonded_imperative(
+        self,
+        source_unit,
+        *,
+        game=None,
+        player=None,
+        source: str = "BONDED IMPERATIVE",
+    ) -> bool:
+        source_root = self._root_unit(source_unit)
+        if source_root is None or not self.can_activate_questor_forgepact_bonded_imperative(
+            source_root,
+            game_map=getattr(game, "map", None) if game is not None else None,
+        ):
+            return False
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["questor_forgepact_bonded_imperative_pending"] = True
+        sr["questor_forgepact_bonded_imperative_source"] = str(source or "BONDED IMPERATIVE").strip() or "BONDED IMPERATIVE"
+        sr["questor_forgepact_bonded_imperative_turn"] = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        sr["questor_forgepact_bonded_imperative_turn_owner"] = str(getattr(player, "id", "") or "")
+        source_root.special_rules = sr
+        if game is not None:
+            self.queue_bondsman_selection_request(
+                source_root,
+                game=game,
+                player=player,
+                game_map=getattr(game, "map", None),
+                refresh=True,
+            )
+        return True
 
     def _bondsman_effects_for_unit(self, unit) -> dict:
         effects: dict[str, int | bool] = {}
@@ -248,6 +545,7 @@ class BondsmanManager:
             ):
                 if hasattr(unit, attr_name):
                     delattr(unit, attr_name)
+            self._clear_questor_forgepact_bonded_imperative(unit)
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict) or not sr:
                 continue
@@ -317,33 +615,66 @@ class BondsmanManager:
         deduped.sort(key=self._unit_sort_key)
         return deduped
 
-    def _bondsman_target_option_payloads(self, targets, *, max_targets: int) -> list[tuple[str, dict]]:
-        entries: list[tuple[str, str, object]] = []
-        for target in list(targets or []):
+    def _bondsman_target_option_payloads(
+        self,
+        armiger_targets,
+        *,
+        max_targets: int,
+        admech_targets=None,
+    ) -> list[tuple[str, dict]]:
+        armiger_entries: list[tuple[str, str, object]] = []
+        for target in list(armiger_targets or []):
             target_root = self._root_unit(target)
             target_id = maybe_entity_id(target_root)
             if not target_id:
                 continue
             label = str(getattr(target_root, "name", "Unit") or "Unit")
-            entries.append((str(target_id), label, target_root))
-        entries.sort(key=lambda item: self._unit_sort_key(item[2]))
-        if not entries:
-            return []
+            armiger_entries.append((str(target_id), label, target_root))
+        armiger_entries.sort(key=lambda item: self._unit_sort_key(item[2]))
+        admech_entries: list[tuple[str, str, object]] = []
+        for target in list(admech_targets or []):
+            target_root = self._root_unit(target)
+            target_id = maybe_entity_id(target_root)
+            if not target_id:
+                continue
+            label = str(getattr(target_root, "name", "Unit") or "Unit")
+            admech_entries.append((str(target_id), label, target_root))
+        admech_entries.sort(key=lambda item: self._unit_sort_key(item[2]))
         option_payloads: list[tuple[str, dict]] = []
-        select_cap = max(1, min(int(max_targets or 1), len(entries)))
-        for size in range(1, int(select_cap) + 1):
-            for combo in combinations(entries, size):
-                selected_ids = [str(item[0]) for item in combo]
-                selected_names = [str(item[1]) for item in combo]
+        if armiger_entries:
+            select_cap = max(1, min(int(max_targets or 1), len(armiger_entries)))
+            for size in range(1, int(select_cap) + 1):
+                for combo in combinations(armiger_entries, size):
+                    selected_ids = [str(item[0]) for item in combo]
+                    selected_names = [str(item[1]) for item in combo]
+                    payload = {
+                        "target_unit_id": str(selected_ids[0]),
+                        "selected_unit_ids": list(selected_ids),
+                    }
+                    label = selected_names[0] if len(selected_names) == 1 else ", ".join(selected_names)
+                    option_payloads.append((label, payload))
+                    for admech_id, admech_label, _admech_root in list(admech_entries):
+                        combo_ids = list(selected_ids) + [str(admech_id)]
+                        combo_names = list(selected_names) + [str(admech_label)]
+                        combo_payload = {
+                            "target_unit_id": str(combo_ids[0]),
+                            "selected_unit_ids": list(combo_ids),
+                        }
+                        combo_label = ", ".join(combo_names)
+                        option_payloads.append((combo_label, combo_payload))
+            for admech_id, admech_label, _admech_root in list(admech_entries):
                 payload = {
-                    "target_unit_id": str(selected_ids[0]),
-                    "selected_unit_ids": list(selected_ids),
+                    "target_unit_id": str(admech_id),
+                    "selected_unit_ids": [str(admech_id)],
                 }
-                if len(selected_names) == 1:
-                    label = selected_names[0]
-                else:
-                    label = ", ".join(selected_names)
-                option_payloads.append((label, payload))
+                option_payloads.append((str(admech_label), payload))
+        elif admech_entries:
+            for admech_id, admech_label, _admech_root in list(admech_entries):
+                payload = {
+                    "target_unit_id": str(admech_id),
+                    "selected_unit_ids": [str(admech_id)],
+                }
+                option_payloads.append((str(admech_label), payload))
         return option_payloads
 
     def validate_bondsman_choice(self, source_unit, selected_unit_ids: list[str], *, game_map=None) -> tuple[bool, str, list]:
@@ -360,10 +691,6 @@ class BondsmanManager:
         if not selected_ids:
             return True, "", []
         target_cap = int(self._bondsman_target_cap(source_root))
-        if len(selected_ids) > max(1, target_cap):
-            if target_cap >= 3:
-                return False, "Bondsman selection cannot exceed three friendly Armiger units.", []
-            return False, "That Bondsman ability can only target one Armiger after it has already been used this turn.", []
         eligible_units = self.get_eligible_armigers(source_root, game_map=game_map)
         eligible_by_id = {
             str(unit_id): unit
@@ -371,12 +698,41 @@ class BondsmanManager:
             for unit_id in [maybe_entity_id(unit)]
             if unit_id
         }
+        bonded_imperative_active = self._questor_forgepact_bonded_imperative_pending(source_root)
+        eligible_admech = (
+            self._questor_forgepact_bonded_imperative_admech_candidates(source_root, game_map=game_map)
+            if bonded_imperative_active
+            else []
+        )
+        eligible_admech_by_id = {
+            str(unit_id): unit
+            for unit in list(eligible_admech or [])
+            for unit_id in [maybe_entity_id(unit)]
+            if unit_id
+        }
+        armiger_count = 0
+        admech_count = 0
         resolved_targets = []
         for unit_id in list(selected_ids):
             target = eligible_by_id.get(str(unit_id))
+            if target is not None:
+                armiger_count += 1
+                resolved_targets.append(target)
+                continue
+            target = eligible_admech_by_id.get(str(unit_id))
             if target is None:
-                return False, "Bondsman selection contains an ineligible Armiger target.", []
+                return False, "Bondsman selection contains an ineligible target.", []
+            admech_count += 1
             resolved_targets.append(target)
+        max_total = int(target_cap + (1 if bonded_imperative_active else 0))
+        if armiger_count > max(1, target_cap):
+            if target_cap >= 3:
+                return False, "Bondsman selection cannot exceed three friendly Armiger units.", []
+            return False, "That Bondsman ability can only target one Armiger after it has already been used this turn.", []
+        if admech_count > (1 if bonded_imperative_active else 0):
+            return False, "Bonded Imperative can only add one friendly Adeptus Mechanicus unit.", []
+        if len(resolved_targets) > max(1, max_total):
+            return False, "Bonded Imperative selection exceeds the allowed number of targets.", []
         return True, "", resolved_targets
 
     def validate_bondsman_payload(self, source_unit, payload: dict | None, *, game_map=None) -> tuple[bool, str, list]:
@@ -396,6 +752,7 @@ class BondsmanManager:
         if not applied_targets:
             return False, "Bondsman effects could not be applied.", []
         self._mark_bondsman_ability_used(source_unit)
+        self._clear_questor_forgepact_bonded_imperative(source_unit)
         return True, "", list(applied_targets)
 
     def apply_bondsman_effects(self, source_unit, target_unit) -> bool:
@@ -477,60 +834,33 @@ class BondsmanManager:
             game_map = None
         try:
             from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
-            from ..engine.decisions import DecisionOption, DecisionRequest
         except Exception:
             return
         for source in self.get_bondsman_sources():
             source_root = self._root_unit(source)
             targets = self.get_eligible_armigers(source_root, game_map=game_map)
-            if not targets:
+            has_bonded_imperative_window = bool(
+                self._questor_forgepact_bonded_imperative_admech_candidates(source_root, game_map=game_map)
+            )
+            if not targets and not has_bonded_imperative_window:
                 continue
             target_cap = int(self._bondsman_target_cap(source_root))
-            if len(targets) == 1:
+            if len(targets) == 1 and not has_bonded_imperative_window:
                 if self.apply_bondsman_effects(source_root, targets[0]):
                     self._mark_bondsman_ability_used(source_root)
                 continue
             source_id = maybe_entity_id(source_root)
             if not source_id:
                 continue
-            queue = getattr(game, "decision_queue", None)
-            if queue is not None and hasattr(queue, "list"):
-                for req in list(queue.list() or []):
-                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
-                        continue
-                    ctx = getattr(req, "context", {}) or {}
-                    if str(ctx.get("ability", "")) == "bondsman" and str(ctx.get("source_unit_id", "")) == str(source_id):
-                        break
-                else:
-                    options = self._bondsman_target_option_payloads(targets, max_targets=target_cap)
-                    if not options:
-                        continue
-                    req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
-                    for label, payload in options:
-                        req_options.append(DecisionOption.create(label, payload=payload))
-                    ability_key = self._bondsman_primary_ability_key(source_root)
-                    candidate_ids = [
-                        str(maybe_entity_id(target) or "")
-                        for target in list(targets or [])
-                        if str(maybe_entity_id(target) or "")
-                    ]
-                    req = DecisionRequest.create(
-                        DECISION_CHOOSE_QUARRY,
-                        f"Select up to {int(target_cap)} Bondsman target(s)." if int(target_cap) > 1 else "Select Bondsman target.",
-                        player_id=getattr(player, "id", None),
-                        options=req_options,
-                        context={
-                            "source_unit_id": str(source_id),
-                            "ability": "bondsman",
-                            "ability_name": "Bondsman",
-                            "bondsman_ability_key": str(ability_key),
-                            "max_targets": int(target_cap),
-                            "candidate_unit_ids": list(candidate_ids),
-                            "optional": True,
-                        },
-                    )
-                    if hasattr(game, "request_decision"):
-                        game.request_decision(req)
+            existing = self._pending_bondsman_request(game, source_root)
+            if existing is not None:
+                continue
+            self.queue_bondsman_selection_request(
+                source_root,
+                game=game,
+                player=player,
+                game_map=game_map,
+            )
 
     def on_fight_phase_start(self, *, game=None) -> None:
         if self.army is None:

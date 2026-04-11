@@ -1032,6 +1032,183 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         candidates.sort(key=lambda unit_obj: self._entity_id(unit_obj) or f"obj:{id(unit_obj)}")
         return candidates
 
+    @staticmethod
+    def _questor_forgepact_machine_focus_keys() -> tuple[str, ...]:
+        return (
+            "questor_forgepact_machine_focus_active",
+            "questor_forgepact_machine_focus_turn_owner",
+            "questor_forgepact_machine_focus_turn",
+            "questor_forgepact_machine_focus_source",
+        )
+
+    def clear_questor_forgepact_machine_focus(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._questor_forgepact_machine_focus_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _forgepact_temporary_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_questor_forgepact():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        active_key = f"{str(prefix)}_active"
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        if resolved_game is not None:
+            try:
+                current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get(f"{str(prefix)}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if current_turn and effect_turn and current_turn != effect_turn:
+                return None, None
+        owner_id = str(sr.get(f"{str(prefix)}_turn_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return None, None
+        return root, sr
+
+    def forgepact_aggression_begets_aggression_assault_applies(
+        self,
+        unit,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> bool:
+        if weapon_profile is not None and not self._weapon_is_ranged(weapon_profile):
+            return False
+        _root, sr = self._forgepact_temporary_effect_state(
+            unit,
+            prefix="questor_forgepact_aggression_begets_aggression",
+            game=game,
+        )
+        return bool(sr is not None)
+
+    def forgepact_machine_focus_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> Optional[dict]:
+        del target_unit
+        del weapon_profile
+        if attacker_model is None:
+            return None
+        attacker_root, sr = self._forgepact_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="questor_forgepact_machine_focus",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return None
+        source = str(sr.get("questor_forgepact_machine_focus_source", "") or "MACHINE FOCUS").strip()
+        return {
+            "name": source or "MACHINE FOCUS",
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_any",
+        }
+
+    def forgepact_machine_focus_ignore_wound_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> Optional[dict]:
+        del weapon_profile
+        if attacker_model is None:
+            return None
+        attacker_root, sr = self._forgepact_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="questor_forgepact_machine_focus",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return None
+        source = str(sr.get("questor_forgepact_machine_focus_source", "") or "MACHINE FOCUS").strip()
+        return {
+            "name": source or "MACHINE FOCUS",
+            "attack_type": "any",
+            "allow_wound": True,
+            "default_choice": "ignore_any",
+        }
+
+    def set_questor_forgepact_vengeance_mark(
+        self,
+        enemy_unit,
+        *,
+        player_id: str = "",
+        source: str = "VENGEANCE OF THE MACHINE CULT",
+    ) -> bool:
+        if not self.is_questor_forgepact():
+            return False
+        root = self._attached_root(enemy_unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["questor_forgepact_vengeance_marked"] = True
+        sr["questor_forgepact_vengeance_player_id"] = str(player_id or "").strip()
+        sr["questor_forgepact_vengeance_source"] = (
+            str(source or "VENGEANCE OF THE MACHINE CULT").strip() or "VENGEANCE OF THE MACHINE CULT"
+        )
+        root.special_rules = sr
+        return True
+
+    def forgepact_vengeance_of_machine_cult_lethal_hits(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        del weapon_profile
+        del attack_instance
+        del game
+        if not self.is_questor_forgepact():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, ""
+        if not self._unit_is_adeptus_mechanicus(attacker_root):
+            return False, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False, ""
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("questor_forgepact_vengeance_marked")):
+            return False, ""
+        marked_player_id = str(sr.get("questor_forgepact_vengeance_player_id", "") or "").strip()
+        current_player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if marked_player_id and current_player_id and marked_player_id != current_player_id:
+            return False, ""
+        source = str(
+            sr.get("questor_forgepact_vengeance_source", "") or "VENGEANCE OF THE MACHINE CULT"
+        ).strip()
+        return True, source or "VENGEANCE OF THE MACHINE CULT"
+
     def _unit_has_questoris_companions_expended_enhancement(self, unit) -> bool:
         if unit is None:
             return False
@@ -1444,6 +1621,9 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         self.apply_spearhead_at_arms_battleline_keywords()
+        if self.is_questor_forgepact():
+            for root in self._iter_army_roots():
+                self.clear_questor_forgepact_machine_focus(root)
         self._apply_forgepact_sacristan_pledges(game=game, player=player)
         self._process_heroes_of_legend_start_of_turn(game=game, player=player)
 
