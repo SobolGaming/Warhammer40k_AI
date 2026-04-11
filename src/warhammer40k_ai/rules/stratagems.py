@@ -539,6 +539,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HUNTERÃ¢â‚¬â„¢S INSTINCTS",
     "HUNTERS' TRAIL",
     "LAYERED WARDS",
+    "LANCEBREAKER",
     "LET DUTY BE YOUR SHIELD",
     "LIGHTNING-FAST REACTIONS",
     "LITANIES OF PURGATION",
@@ -616,6 +617,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "TITANIC BOMBARDMENT",
     "TACTICAL WITHDRAWAL",
     "CLEAR AND SECURE",
     "HASTY EXTRACTION",
@@ -638,6 +640,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNLEASH THE LIONS",
     "UNTRAMMELLED FEROCITY",
     "UNBRIDLED CARNAGE",
+    "DRIVE THEM OUT!",
+    "FORTRESS OF INTIMIDATION",
+    "MARSHAL THE DEFENCE",
+    "STEADFAST SUPERIORITY",
     "VETERAN SHARPSHOOTERS",
     "VOX-RELAY",
     "VOW OF RETRIBUTION",
@@ -2477,6 +2483,7 @@ class StratagemManager(
             "CALCULATED FEINT",
             "DREAD CRUSADERS",
             "GRAV-INHIBITOR FIELD",
+            "FORTRESS OF INTIMIDATION",
             "HASTY EXTRACTION",
             "PHOTON GRENADES",
             "REACTIVE SAFEGUARD",
@@ -2878,6 +2885,7 @@ class StratagemManager(
             "FIGHTING SHADOWS",
             "FATEFUL ROLE",
             "FLAWLESS CONSTRUCTION",
+            "LANCEBREAKER",
             "TRENCH FIGHTERS",
             "UNWAVERING SENTINELS",
             "UNENDING FIDELITY",
@@ -6704,6 +6712,75 @@ class StratagemManager(
                     return result
             result["reason"] = "Requires CULT MECHANICUS unit selected as a target of an enemy Fight attack that has not fought this phase"
             return result
+        if name_u == "DRIVE THEM OUT!":
+            phase_name = str(context.get("phase_name") or self._current_phase_name or "").replace("_", " ").strip().lower()
+            candidates = self._imperial_knights_gate_warden_drive_them_out_candidates(phase_name=phase_name)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and an IMPERIAL KNIGHTS unit that has not already acted"
+            return result
+        if name_u == "FORTRESS OF INTIMIDATION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "FORTRESS OF INTIMIDATION":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the start of your opponent's Charge phase and a Titanic IMPERIAL KNIGHTS unit on your defensive line"
+            return result
+        if name_u == "LANCEBREAKER":
+            target_units = list(context.get("target_units") or [])
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates and attacking_unit is not None:
+                candidates = self._imperial_knights_gate_warden_lancebreaker_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "LANCEBREAKER":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an enemy Fight target-selection trigger and an IMPERIAL KNIGHTS unit on your defensive line"
+            return result
+        if name_u == "MARSHAL THE DEFENCE":
+            if self._imperial_knights_gate_warden_marshal_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and one or two IMPERIAL KNIGHTS units that have not been selected to move"
+            return result
+        if name_u == "STEADFAST SUPERIORITY":
+            if self._imperial_knights_gate_warden_steadfast_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an IMPERIAL KNIGHTS unit on your defensive line, in Engagement Range, that has not fought"
+            return result
+        if name_u == "TITANIC BOMBARDMENT":
+            if self._imperial_knights_gate_warden_titanic_bombardment_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a Titanic IMPERIAL KNIGHTS unit on your defensive line that remained stationary and has not shot"
+            return result
         if name_u == "VOW OF RETRIBUTION":
             if self._imperial_knights_vow_of_retribution_candidates():
                 result["available"] = True
@@ -8986,6 +9063,12 @@ class StratagemManager(
             "TRENCH FIGHTERS": "Target: your ASTRA MILITARUM INFANTRY unit selected as a target of enemy fight attacks; destroyed models can fight on death on 4+, adding 2 if the model is REGIMENT",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOX-RELAY": "Target: your embarked ASTRA MILITARUM INFANTRY OFFICER in your Command phase; that Officer can issue Orders while embarked and can target eligible friendly non-TITANIC Transports regardless of distance this phase",
+            "DRIVE THEM OUT!": "Target: IMPERIAL KNIGHTS unit that has not already shot or fought this phase; attacks against enemy units on your defensive line score critical hits on 5+ this phase",
+            "FORTRESS OF INTIMIDATION": "Target: Titanic IMPERIAL KNIGHTS unit on your defensive line at the start of your opponent's Charge phase; enemies charging it take a Battle-shock test at -1",
+            "LANCEBREAKER": "Target: IMPERIAL KNIGHTS unit on your defensive line selected as a target of enemy fight attacks; stronger attacks suffer -1 to wound it this phase",
+            "MARSHAL THE DEFENCE": "Target: up to two IMPERIAL KNIGHTS units that have not been selected to move this phase; each gains +3\" Move this phase",
+            "STEADFAST SUPERIORITY": "Target: IMPERIAL KNIGHTS unit on your defensive line, in Engagement Range, and not yet selected to fight; melee attacks re-roll Hit rolls this phase",
+            "TITANIC BOMBARDMENT": "Target: Titanic IMPERIAL KNIGHTS unit on your defensive line that remained stationary and has not shot; ranged weapons gain [SUSTAINED HITS 2] this phase",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
             "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
             "RUN THEM THROUGH!": "Target: IMPERIAL KNIGHTS unit that has not been selected to fight this phase; melee weapons gain [LANCE] this phase",
@@ -9985,6 +10068,10 @@ class StratagemManager(
             raise
         try:
             self._queue_siege_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_knights_gate_warden_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -13469,6 +13556,10 @@ class StratagemManager(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
+        self._process_imperial_knights_gate_warden_charge_declared(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
         self._queue_mechanised_hasty_extraction_charge_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
@@ -16052,6 +16143,13 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_agents_ordo_malleus_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_knights_gate_warden_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

@@ -15287,6 +15287,16 @@ class WargearProfile:
                 reroll_hit_values.add(1)
                 source_name = str(source or "Purgation's Hand").strip() or "Purgation's Hand"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        steadfast_fn = getattr(ik_mgr, "gate_warden_steadfast_superiority_reroll_hit", None) if ik_mgr is not None else None
+        if callable(steadfast_fn):
+            reroll_full, source = steadfast_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "STEADFAST SUPERIORITY").strip() or "STEADFAST SUPERIORITY"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         mentors_pride_fn = getattr(ik_mgr, "spearhead_mentors_pride_reroll_hit_ones", None) if ik_mgr is not None else None
         if callable(mentors_pride_fn):
             reroll_hit_ones, source = mentors_pride_fn(
@@ -17571,6 +17581,24 @@ class WargearProfile:
                 crit_threshold = min(int(crit_threshold), int(threshold))
                 source_name = str(source or "Pitiless Cannonade").strip() or "Pitiless Cannonade"
                 crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        ik_threshold_fn = getattr(
+            getattr(attacker_army, "imperial_knights_detachments", None) if attacker_army is not None else None,
+            "gate_warden_drive_them_out_crit_hit_threshold",
+            None,
+        )
+        if callable(ik_threshold_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            threshold, source = ik_threshold_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=game,
+                game_map=getattr(game, "map", None) if game is not None else None,
+            )
+            if int(threshold or 0):
+                crit_threshold = min(int(crit_threshold), int(threshold))
+                source_name = str(source or "DRIVE THEM OUT!").strip() or "DRIVE THEM OUT!"
+                crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         try:
             if is_ranged:
                 unit = getattr(attacker, "parent_unit", None)
@@ -18015,6 +18043,21 @@ class WargearProfile:
                 gate_warden_sustained_value = int(dauntless_result[0] or 0)
                 if len(dauntless_result) >= 2:
                     gate_warden_sustained_label = str(dauntless_result[1] or "").strip()
+        titanic_bombardment_fn = (
+            getattr(ik_mgr, "gate_warden_titanic_bombardment_sustained_hits_value", None) if ik_mgr is not None else None
+        )
+        if callable(titanic_bombardment_fn):
+            titanic_result = titanic_bombardment_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if isinstance(titanic_result, tuple) and len(titanic_result) >= 1:
+                titanic_value = int(titanic_result[0] or 0)
+                if titanic_value > int(gate_warden_sustained_value or 0):
+                    gate_warden_sustained_value = titanic_value
+                    if len(titanic_result) >= 2:
+                        gate_warden_sustained_label = str(titanic_result[1] or "").strip()
         gate_warden_sustained = bool(gate_warden_sustained_value)
         pennant_sustained_value = 0
         pennant_sustained_label = ""

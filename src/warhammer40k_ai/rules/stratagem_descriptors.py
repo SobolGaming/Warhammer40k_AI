@@ -13140,6 +13140,73 @@ _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GATE_WARDEN_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010498002": StratagemToolDescriptor(
+        stratagem_id="000010498002",
+        name="Drive Them Out!",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="imperial_knights_unit_not_yet_selected_this_phase",
+        duration="until_end_of_phase",
+        effect="conditional_crit_hit_threshold",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "target_condition": "enemy_on_defensive_line", "crit_hit_threshold": 5},
+    ),
+    "000010498003": StratagemToolDescriptor(
+        stratagem_id="000010498003",
+        name="Lancebreaker",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="imperial_knights_unit_on_defensive_line_selected_as_target",
+        duration="until_end_of_phase",
+        effect="worsen_incoming_wound_roll_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "wound_penalty": 1, "requires_strength_gt_toughness": True},
+    ),
+    "000010498004": StratagemToolDescriptor(
+        stratagem_id="000010498004",
+        name="Steadfast Superiority",
+        timing="fight_phase_on_select_to_fight",
+        target="imperial_knights_unit_on_defensive_line_in_engagement_range_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="reroll_hits",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "reroll": "all"},
+    ),
+    "000010498005": StratagemToolDescriptor(
+        stratagem_id="000010498005",
+        name="Marshal the Defence",
+        timing="movement_phase_before_select_to_move",
+        target="up_to_two_imperial_knights_units_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="movement_bonus",
+        cp_cost=1,
+        effect_params={"move_bonus": 3, "max_targets": 2},
+    ),
+    "000010498006": StratagemToolDescriptor(
+        stratagem_id="000010498006",
+        name="Titanic Bombardment",
+        timing="shooting_phase_on_select_to_shoot",
+        target="imperial_knights_titanic_unit_on_defensive_line_that_remained_stationary_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_sustained_hits",
+        cp_cost=1,
+        effect_params={"sustained_hits_value": 2},
+    ),
+    "000010498007": StratagemToolDescriptor(
+        stratagem_id="000010498007",
+        name="Fortress of Intimidation",
+        timing="start_of_opponent_charge_phase",
+        target="imperial_knights_titanic_unit_on_defensive_line",
+        duration="until_end_of_phase",
+        effect="charge_target_battle_shock",
+        cp_cost=1,
+        effect_params={"battle_shock_test_modifier": -1},
+    ),
+}
+
+_GATE_WARDEN_LANCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GATE_WARDEN_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010494002": StratagemToolDescriptor(
         stratagem_id="000010494002",
@@ -14862,6 +14929,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GATE_WARDEN_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15079,6 +15149,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MERCENARY_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _PERSECUTION_PROSPECT_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
+        or _GATE_WARDEN_LANCE_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)

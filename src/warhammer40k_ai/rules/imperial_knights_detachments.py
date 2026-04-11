@@ -617,6 +617,14 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return False
         if not self._unit_is_imperial_knights(root):
             return False
+        return self.is_unit_crossing_dauntless_defensive_line(root, game=game, game_map=game_map)
+
+    def is_unit_crossing_dauntless_defensive_line(self, unit, *, game=None, game_map=None) -> bool:
+        if not self.is_gate_warden_lance():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
         line_points = self._line_points_for_dauntless(game=game, game_map=game_map)
         if line_points is None:
             return False
@@ -1612,6 +1620,127 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return False, ""
         source_name = str(sr.get("enhancement_augury_halo_source", "") or "Augury Halo").strip()
         return True, source_name or "Augury Halo"
+
+    def _gate_warden_temporary_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_gate_warden_lance():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{str(prefix)}_active")):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        current_phase = (
+            str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            if resolved_game is not None
+            else ""
+        )
+        expires_phase = str(sr.get(f"{str(prefix)}_expires_phase", "") or "").strip().upper()
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return None, None
+        try:
+            effect_turn = int(sr.get(f"{str(prefix)}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{str(prefix)}_turn_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return None, None
+        return root, sr
+
+    def gate_warden_drive_them_out_crit_hit_threshold(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        del weapon_profile
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_root, sr = self._gate_warden_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="gate_warden_drive_them_out",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return 0, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model) and getattr(attacker_model, "parent_unit", None) is not attacker_root:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            if self._attached_root(attacker_unit) is not attacker_root:
+                return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None or self._unit_in_army(target_root):
+            return 0, ""
+        if not self.is_unit_crossing_dauntless_defensive_line(target_root, game=game, game_map=game_map):
+            return 0, ""
+        try:
+            threshold = int(sr.get("gate_warden_drive_them_out_crit_hit_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        if threshold <= 0:
+            return 0, ""
+        source = str(sr.get("gate_warden_drive_them_out_source", "") or "DRIVE THEM OUT!").strip()
+        return int(threshold), source or "DRIVE THEM OUT!"
+
+    def gate_warden_steadfast_superiority_reroll_hit(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None:
+            return False, ""
+        if weapon_profile is not None and self._weapon_is_ranged(weapon_profile):
+            return False, ""
+        attacker_root, sr = self._gate_warden_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="gate_warden_steadfast_superiority",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return False, ""
+        source = str(sr.get("gate_warden_steadfast_superiority_source", "") or "STEADFAST SUPERIORITY").strip()
+        return True, source or "STEADFAST SUPERIORITY"
+
+    def gate_warden_titanic_bombardment_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        attacker_root, sr = self._gate_warden_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="gate_warden_titanic_bombardment",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return 0, ""
+        if not self._unit_has_keyword(attacker_root, "TITANIC") and not bool(getattr(attacker_root, "is_titanic", False)):
+            return 0, ""
+        try:
+            sustained_hits = int(sr.get("gate_warden_titanic_bombardment_sustained_hits", 2) or 2)
+        except (TypeError, ValueError):
+            sustained_hits = 2
+        if sustained_hits <= 0:
+            return 0, ""
+        source = str(sr.get("gate_warden_titanic_bombardment_source", "") or "TITANIC BOMBARDMENT").strip()
+        return int(sustained_hits), source or "TITANIC BOMBARDMENT"
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self.is_gate_warden_lance():
