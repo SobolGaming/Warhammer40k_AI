@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..units.unit import get_roll
 from ..utility.entity_ids import get_entity_id
 from .decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET
 from .decisions import DecisionOption, DecisionRequest
@@ -121,6 +122,66 @@ def resolve_save_target_model(manager, game: object, seq: AttackSequence, wound_
             target_model = None
 
     if target_model is not None:
+        try:
+            if not bool(wound_instance.get("_imperial_agents_selfless_bodyguard_resolved")):
+                target_army = target.get_parent_army() if hasattr(target, "get_parent_army") else None
+                ia_mgr = getattr(target_army, "imperial_agents_detachments", None) if target_army is not None else None
+                redirect_fn = getattr(ia_mgr, "selfless_bodyguard_redirect_models", None) if ia_mgr is not None else None
+                if callable(redirect_fn):
+                    redirect_models, redirect_source = redirect_fn(target, target_model, game=game)
+                    if redirect_models:
+                        wound_instance["_imperial_agents_selfless_bodyguard_resolved"] = True
+                        roll = int(get_roll("D6") or 0)
+                        wound_instance["_imperial_agents_selfless_bodyguard_roll"] = int(roll)
+                        if roll >= 2:
+                            if len(redirect_models) == 1:
+                                target_model = redirect_models[0]
+                                wound_instance["_allocated_model_id"] = get_entity_id(target_model)
+                            else:
+                                if not bool(getattr(game, "is_authoritative", True)):
+                                    return None, True
+                                ordered = manager._sorted_models(redirect_models)
+                                options = []
+                                allowed_ids = []
+                                for model in ordered:
+                                    model_id = get_entity_id(model)
+                                    allowed_ids.append(model_id)
+                                    options.append(
+                                        DecisionOption.create(
+                                            getattr(model, "name", "Model"),
+                                            payload={"model_id": model_id},
+                                        )
+                                    )
+                                if not options:
+                                    return None, True
+                                player_id = getattr(getattr(target_army, "player", None), "id", None)
+                                source_name = str(redirect_source or "Selfless Bodyguard").strip() or "Selfless Bodyguard"
+                                request = DecisionRequest.create(
+                                    DECISION_ALLOCATE_DAMAGE,
+                                    f"{source_name}: allocate attack to a bodyguard model.",
+                                    player_id=player_id,
+                                    options=options,
+                                    context={
+                                        "sequence_id": int(seq.sequence_id),
+                                        "save_index": int(seq.save_index),
+                                        "selection_kind": "selfless_bodyguard_redirect",
+                                        "unit_id": seq.target_unit_id,
+                                        "target_unit_id": seq.target_unit_id,
+                                        "attacker_model_id": wound_instance.get("attacker_model_id"),
+                                        "wargear_id": seq.wargear_id,
+                                        "profile_name": seq.profile_name,
+                                        "allowed_model_ids": list(allowed_ids),
+                                        "reason": source_name,
+                                        "damage_source": "attack",
+                                        "weapon_name": manager._weapon_display_name(profile),
+                                        "attacker_name": str(getattr(attacker, "name", "") or ""),
+                                    },
+                                )
+                                seq.step = "damage_allocation_choice"
+                                game.request_decision(request)
+                                return None, True
+        except (AttributeError, TypeError, ValueError, KeyError, IndexError):
+            pass
         return target_model, False
 
     try:

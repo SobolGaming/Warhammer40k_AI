@@ -20136,6 +20136,11 @@ def _stratagem_support(
         "000009870004": "Start of your opponent's Reinforcements step: the selected ASTRA MILITARUM INFANTRY unit projects a 12\" Reinforcements denial bubble until end of phase.",
         "000009870006": "Start of your opponent's Charge phase: the selected ASTRA MILITARUM GRENADES unit causes enemy units that select it as a charge target to suffer -2 to Charge rolls this phase, non-cumulative with other negative charge modifiers.",
         "000009870007": "End of your opponent's turn: the selected ASTRA MILITARUM MOUNTED or WALKER unit wholly within 10\" of a battlefield edge and not in Engagement Range enters Strategic Reserves.",
+        "000009139002": "Your Shooting phase or the Fight phase: selected AGENTS OF THE IMPERIUM unit gains [SUSTAINED HITS 1], [LANCE], and [IGNORES COVER] on attacks that target enemy units within objective range until end of phase.",
+        "000009139004": "Your Shooting phase: selected VOIDFARERS unit improves Strength and AP by 1 for ranged attacks that target units within 12\" until end of phase.",
+        "000009139005": "Your Movement phase: selected AGENTS OF THE IMPERIUM unit can shoot later in the turn after Advancing or Falling Back.",
+        "000009139006": "Opponent Shooting phase reaction after an enemy unit selects targets: selected AGENTS OF THE IMPERIUM CHARACTER unit, excluding OFFICIO ASSASSINORUM, gains a 4+ invulnerable save and a post-attack reactive Normal move up to 6\" with Fly-style vertical traversal until end of phase.",
+        "000009139007": "Opponent Shooting phase or the Fight phase reaction after an enemy unit selects targets: selected AGENTS OF THE IMPERIUM Attached unit can redirect each allocated [PRECISION] attack against one of its CHARACTER models onto a chosen bodyguard model on a 2+ until end of phase.",
         "000008555002": "Opponent Shooting phase or the Fight phase reaction after an enemy unit finishes its attacks: selected friendly NECRONS INFANTRY unit that lost models is removed from the battlefield and must be set up again wholly within 6\" of a selected friendly MONOLITH and not within Engagement Range of enemy units.",
         "000008555003": "Opponent Shooting phase or the Fight phase defensive reaction after an enemy unit selects its targets: selected friendly NECRONS VEHICLE unit gains a 4+ invulnerable save until end of phase.",
         "000008555004": "Your Command phase: your NECRONS WARLORD triggers Reanimation Protocols for each friendly NECRONS unit currently in Reserves, rolling D3 wounds separately for each unit.",
@@ -21024,6 +21029,14 @@ def _stratagem_support(
         "000009030005",
         "000009030006",
         "000009030007",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000009139002",
+        "000009139004",
+        "000009139005",
+        "000009139006",
+        "000009139007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
 

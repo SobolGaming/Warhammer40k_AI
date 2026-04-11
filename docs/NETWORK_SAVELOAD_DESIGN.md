@@ -676,6 +676,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
 - reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
 - reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)
+- selfless_bodyguard_redirect_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind="selfless_bodyguard_redirect"`, `allowed_model_ids[]`, `save_index`, `sequence_id`)
 - choice_samples_dialog: ALLOCATE_DAMAGE {model_id | gain_cp | skip} (context `selection_kind="choice_samples"`, `unit_id`, `cp_gain`, `allowed_model_ids`)
 
 Note: CAREEN! resolutions queue MOVE_UNIT with context `reactive_move_kind="careen"` and `movement_type="careen"`.

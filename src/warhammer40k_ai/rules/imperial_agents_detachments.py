@@ -102,6 +102,33 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
                 return int(text)
         return int(default)
 
+    @staticmethod
+    def _phase_key(value) -> str:
+        return str(value or "").strip().upper()
+
+    def _current_game(self):
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        return getattr(player, "game", None) if player is not None else None
+
+    @staticmethod
+    def _player_id(player) -> str:
+        return str(getattr(player, "id", "") or "")
+
+    def _current_player_id(self, *, game=None) -> str:
+        game_obj = game if game is not None else self._current_game()
+        if game_obj is None:
+            return ""
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        return self._player_id(current_player)
+
+    @staticmethod
+    def _weapon_profile_is_ranged(profile) -> bool:
+        if profile is None:
+            return False
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        return bool(is_ranged()) if callable(is_ranged) else False
+
     def is_imperialis_fleet(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -370,6 +397,37 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
             if str(entry[0]) == objective_key:
                 return entry
         return None
+
+    def _imperialis_fleet_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_imperialis_fleet():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._coerce_int(getattr(game_obj, "turn", 0) if game_obj is not None else 0, default=0)
+        marked_turn = self._coerce_int(sr.get(f"{prefix}_turn", 0), default=0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        current_owner_id = self._current_player_id(game=game_obj)
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return None, None
+        return root, sr
+
+    def _imperialis_fleet_phase_effect_state(self, unit, *, prefix: str, game=None):
+        root, sr = self._imperialis_fleet_turn_effect_state(unit, prefix=prefix, game=game)
+        if root is None or not isinstance(sr, dict):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") if game_obj is not None else "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None, None
+        return root, sr
 
     def _at_all_costs_pending_request(self, game, *, army_id: str, battle_round: int):
         if game is None:
@@ -1706,6 +1764,162 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 5, f"{self._AT_ALL_COSTS_NAME} (Acquire)"
 
+    def emperors_will_can_shoot_after_advance(self, unit, *, profile=None, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._imperialis_fleet_turn_effect_state(
+            unit,
+            prefix="imperial_agents_emperors_will",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def emperors_will_can_shoot_after_fall_back(self, unit, *, profile=None, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._imperialis_fleet_turn_effect_state(
+            unit,
+            prefix="imperial_agents_emperors_will",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def close_quarters_barrage_strength_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del attack_instance
+        if attacker_model is None or target_unit is None or not self._weapon_profile_is_ranged(weapon_profile):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._imperialis_fleet_phase_effect_state(
+            attacker_unit,
+            prefix="imperial_agents_close_quarters_barrage",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict) or not self._model_in_army(attacker_model):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not model_within_range_of_unit(attacker_model, target_root, 12.0):
+            return 0, ""
+        source = str(sr.get("imperial_agents_close_quarters_barrage_source", "") or "Close-Quarters Barrage").strip()
+        return 1, source or "Close-Quarters Barrage"
+
+    def close_quarters_barrage_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del attack_instance
+        if attacker_model is None or target_unit is None or not self._weapon_profile_is_ranged(weapon_profile):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._imperialis_fleet_phase_effect_state(
+            attacker_unit,
+            prefix="imperial_agents_close_quarters_barrage",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict) or not self._model_in_army(attacker_model):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not model_within_range_of_unit(attacker_model, target_root, 12.0):
+            return 0, ""
+        source = str(sr.get("imperial_agents_close_quarters_barrage_source", "") or "Close-Quarters Barrage").strip()
+        return 1, source or "Close-Quarters Barrage"
+
+    def violent_acquisition_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> list[dict]:
+        del game_map
+        if attacker_model is None or target_unit is None:
+            return []
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        root, sr = self._imperialis_fleet_phase_effect_state(
+            source_unit,
+            prefix="imperial_agents_violent_acquisition",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict) or not self._model_in_army(attacker_model):
+            return []
+        source = str(sr.get("imperial_agents_violent_acquisition_source", "") or "Violent Acquisition").strip()
+        source = source or "Violent Acquisition"
+        return [
+            {
+                "attack_type": "any",
+                "keyword": "SUSTAINED HITS 1",
+                "source": source,
+                "requires_objective": True,
+            },
+            {
+                "attack_type": "any",
+                "keyword": "LANCE",
+                "source": source,
+                "requires_objective": True,
+            },
+            {
+                "attack_type": "any",
+                "keyword": "IGNORES COVER",
+                "source": source,
+                "requires_objective": True,
+            },
+        ]
+
+    def selfless_bodyguard_redirect_models(self, unit, character_model, *, game=None) -> tuple[list, str]:
+        root, sr = self._imperialis_fleet_phase_effect_state(
+            unit,
+            prefix="imperial_agents_selfless_bodyguard",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict) or character_model is None:
+            return [], ""
+        character_parent = self._unit_root(getattr(character_model, "parent_unit", None))
+        if character_parent is not root:
+            return [], ""
+        is_character = bool(getattr(character_model, "is_character", False))
+        if not is_character:
+            has_keyword = getattr(character_model, "has_keyword", None)
+            is_character = bool(has_keyword("CHARACTER")) if callable(has_keyword) else False
+        if not is_character:
+            return [], ""
+        get_bodyguards = getattr(root, "_get_bodyguard_support_models", None)
+        bodyguards = list(get_bodyguards() or []) if callable(get_bodyguards) else list(getattr(root, "models", []) or [])
+        eligible: list = []
+        for model in list(bodyguards or []):
+            if model is None or model is character_model or bool(getattr(model, "_pending_placement", False)):
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            eligible.append(model)
+        eligible.sort(key=lambda model: self._entity_id(model))
+        if not eligible:
+            return [], ""
+        source = str(sr.get("imperial_agents_selfless_bodyguard_source", "") or "Selfless Bodyguard").strip()
+        return eligible, source or "Selfless Bodyguard"
+
     def root_out_heresy_ranged_ignores_cover(self, model, *, attacker_unit=None, weapon_profile=None) -> tuple[bool, str]:
         del weapon_profile
         if not self.is_ordo_hereticus_purgation_force():
@@ -1935,6 +2149,28 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._unit_has_keyword(unit, "OFFICIO ASSASSINORUM"):
             return False
         return True
+
+    def _unit_has_attached_character(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+        if attached_leaders:
+            return True
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if model is None or bool(getattr(model, "_pending_placement", False)):
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            if bool(getattr(model, "is_character", False)):
+                return True
+            has_keyword = getattr(model, "has_keyword", None)
+            if callable(has_keyword) and bool(has_keyword("CHARACTER")):
+                return True
+        return False
 
     @staticmethod
     def _model_ability_name_keys(model) -> set[str]:

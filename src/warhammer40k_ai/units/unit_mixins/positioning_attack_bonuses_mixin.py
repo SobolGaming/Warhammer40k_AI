@@ -2058,6 +2058,32 @@ class PositioningAttackBonusesMixin:
                     rules.append(dict(keyword_rule))
         except Exception:
             pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            keyword_rules_fn = (
+                getattr(ia_mgr, "violent_acquisition_attack_keyword_bonus_rules", None)
+                if ia_mgr is not None
+                else None
+            )
+            if callable(keyword_rules_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                rules.extend(
+                    list(
+                        keyword_rules_fn(
+                            model,
+                            target,
+                            attacker_unit=root,
+                            attack_type=attack_type or "any",
+                            weapon_profile=weapon_profile,
+                            game=game,
+                            game_map=game_map,
+                        )
+                        or []
+                    )
+                )
+        except Exception:
+            pass
         if model is not None and target is not None:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
             gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None

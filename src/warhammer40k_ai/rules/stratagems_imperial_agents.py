@@ -179,6 +179,84 @@ class ImperialAgentsStratagemMixin:
             return list(get_attached_models() or [])
         return list(getattr(unit, "models", []) or [])
 
+    def _ia_is_attached_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        return bool(getattr(root, "attached_leaders", []) or [])
+
+    def _ia_unit_has_character_model(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        if self._ia_has_keyword(root, "CHARACTER"):
+            return True
+        if bool(getattr(root, "attached_leaders", []) or []):
+            return True
+        for model in list(self._ia_unit_models(root) or []):
+            if model is None or bool(getattr(model, "_pending_placement", False)):
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            if bool(getattr(model, "is_character", False)):
+                return True
+            has_keyword = getattr(model, "has_keyword", None)
+            if callable(has_keyword) and bool(has_keyword("CHARACTER")):
+                return True
+        return False
+
+    def _ia_is_officio_assassinorum_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        return self._ia_has_keyword(root, "OFFICIO ASSASSINORUM")
+
+    def _ia_unit_within_engagement_range(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        for enemy in list(game_map.get_enemy_units(root) or []):
+            enemy_root = self._ia_root(enemy)
+            if enemy_root is None or not self._ia_is_alive(enemy_root):
+                continue
+            if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    def _ia_effect_is_current(self, sr: dict[str, Any], *, prefix: str, phase_key: str = "") -> bool:
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active")):
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return True
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        try:
+            current_owner = str(getattr(game.get_current_player(), "id", "") or "")
+        except (AttributeError, TypeError, ValueError):
+            current_owner = ""
+        marked_owner = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        if marked_owner and current_owner and marked_owner != current_owner:
+            return False
+        try:
+            marked_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return False
+        if phase_key:
+            expected_phase = str(sr.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            if expected_phase and expected_phase != str(phase_key or "").strip().upper():
+                return False
+        return True
+
     def _ia_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -475,6 +553,244 @@ class ImperialAgentsStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._ia_sort_key)
+
+    def _ia_imperialis_fleet_candidate_units(
+        self,
+        *,
+        candidate_units: Optional[list[Any]] = None,
+        require_voidfarers: bool = False,
+        require_character: bool = False,
+        require_attached: bool = False,
+        exclude_officio_assassinorum: bool = False,
+    ) -> list[Any]:
+        if not self._is_imperialis_fleet():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        source_units = list(candidate_units) if candidate_units is not None else list(getattr(army, "units", []) or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(source_units or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_agents_unit(root):
+                continue
+            if require_voidfarers and not self._ia_has_keyword(root, "VOIDFARERS"):
+                continue
+            if require_character and not self._ia_unit_has_character_model(root):
+                continue
+            if require_attached and not self._ia_is_attached_unit(root):
+                continue
+            if exclude_officio_assassinorum and self._ia_is_officio_assassinorum_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _queue_imperial_agents_imperialis_fleet_targets_selected_reaction(
+        self,
+        *,
+        event_name: str,
+        phase_name: str,
+        stratagem: Any,
+        attacking_unit: Any,
+        target_units: list[Any],
+        candidates: list[Any],
+    ) -> None:
+        if stratagem is None or attacking_unit is None or not candidates:
+            return
+        expected_name = self._ia_norm_stratagem_name(getattr(stratagem, "name", ""))
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name or ""):
+                continue
+            if self._ia_norm_stratagem_name(reaction.get("stratagem", "")) != expected_name:
+                continue
+            if self._ia_root(reaction.get("attacking_unit")) is attacking_unit:
+                return
+        payload = {
+            "event": str(event_name or ""),
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "enemy_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates or []),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_imperial_agents_imperialis_fleet_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_imperialis_fleet_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="shooting_targets_selected",
+            phase_name="Shooting phase",
+        )
+
+    def _queue_imperial_agents_imperialis_fleet_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_imperialis_fleet_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="fight_targets_selected",
+            phase_name="Fight phase",
+        )
+
+    def _queue_imperial_agents_imperialis_fleet_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        event_name: str,
+        phase_name: str,
+    ) -> None:
+        if not self._is_imperialis_fleet():
+            return
+        current_phase = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if current_phase != str(phase_name or "").strip().lower():
+            return
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or not self._ia_is_alive(attacking_root):
+            return
+        if self._ia_owned_by_player(attacking_root, self.player):
+            return
+
+        selfless = self.get_by_name("SELFLESS BODYGUARD")
+        if (
+            selfless is not None
+            and self.player.command_points >= self._ia_effective_cp_cost(selfless, enemy_unit=attacking_root)
+            and (selfless.name or "").strip().upper() not in self._used_stratagems_this_phase
+        ):
+            candidates = self._ia_imperialis_fleet_candidate_units(
+                candidate_units=list(target_units or []),
+                require_attached=True,
+            )
+            self._queue_imperial_agents_imperialis_fleet_targets_selected_reaction(
+                event_name=event_name,
+                phase_name=phase_name,
+                stratagem=selfless,
+                attacking_unit=attacking_root,
+                target_units=list(target_units or []),
+                candidates=candidates,
+            )
+
+        if str(phase_name or "").strip().lower() != "shooting phase":
+            return
+        displacer = self.get_by_name("DISPLACER FIELD")
+        if (
+            displacer is None
+            or self.player.command_points < self._ia_effective_cp_cost(displacer, enemy_unit=attacking_root)
+            or (displacer.name or "").strip().upper() in self._used_stratagems_this_phase
+        ):
+            return
+        displacer_candidates = self._ia_imperialis_fleet_candidate_units(
+            candidate_units=list(target_units or []),
+            require_character=True,
+            exclude_officio_assassinorum=True,
+        )
+        self._queue_imperial_agents_imperialis_fleet_targets_selected_reaction(
+            event_name=event_name,
+            phase_name=phase_name,
+            stratagem=displacer,
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+            candidates=displacer_candidates,
+        )
+
+    def _queue_imperial_agents_imperialis_fleet_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+    ) -> None:
+        del hits_by_target
+        if not self._is_imperialis_fleet():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacking_root = self._ia_root(attacker_unit)
+        if attacking_root is None or not self._ia_is_alive(attacking_root):
+            return
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        attacker_id = self._ia_sort_key(attacking_root)
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not self._ia_effect_is_current(
+                sr,
+                prefix="imperial_agents_displacer_field",
+                phase_key="SHOOTING_PHASE",
+            ):
+                continue
+            if str(sr.get("imperial_agents_displacer_field_attacker_unit_id", "") or "") != attacker_id:
+                continue
+            if bool(sr.get("imperial_agents_displacer_field_move_triggered")):
+                continue
+            sr["imperial_agents_displacer_field_move_triggered"] = True
+            root.special_rules = sr
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if self._ia_unit_within_engagement_range(root):
+                continue
+            source = str(sr.get("imperial_agents_displacer_field_source", "") or "Displacer Field").strip()
+            queue_move(
+                player=self.player,
+                unit=root,
+                max_distance=6,
+                kind="imperial_agents_displacer_field",
+                movement_type="reactive",
+                reactive_movement_type="move",
+                source=source or "Displacer Field",
+                moving_unit=attacking_root,
+                attacker_unit=attacking_root,
+                allow_engagement_range=False,
+                allow_skip=True,
+            )
 
     def _queue_imperial_agents_veiled_blade_targets_selected_reaction(
         self,
@@ -830,6 +1146,86 @@ class ImperialAgentsStratagemMixin:
                         ):
                             sr.pop(key, None)
                         changed = True
+                if phase_key == "SHOOTING_PHASE" and bool(sr.get("imperial_agents_close_quarters_barrage_active")):
+                    exp = str(sr.get("imperial_agents_close_quarters_barrage_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_close_quarters_barrage_active",
+                            "imperial_agents_close_quarters_barrage_source",
+                            "imperial_agents_close_quarters_barrage_expires_phase",
+                            "imperial_agents_close_quarters_barrage_turn",
+                            "imperial_agents_close_quarters_barrage_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_violent_acquisition_active")):
+                    exp = str(sr.get("imperial_agents_violent_acquisition_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_violent_acquisition_active",
+                            "imperial_agents_violent_acquisition_source",
+                            "imperial_agents_violent_acquisition_expires_phase",
+                            "imperial_agents_violent_acquisition_turn",
+                            "imperial_agents_violent_acquisition_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_selfless_bodyguard_active")):
+                    exp = str(sr.get("imperial_agents_selfless_bodyguard_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_selfless_bodyguard_active",
+                            "imperial_agents_selfless_bodyguard_source",
+                            "imperial_agents_selfless_bodyguard_expires_phase",
+                            "imperial_agents_selfless_bodyguard_turn",
+                            "imperial_agents_selfless_bodyguard_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key == "SHOOTING_PHASE" and bool(sr.get("imperial_agents_displacer_field_active")):
+                    exp = str(sr.get("imperial_agents_displacer_field_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        current_move_types = list(sr.get("bearer_unit_phase_move_types") or [])
+                        added_move_types = set(sr.get("imperial_agents_displacer_field_added_phase_move_types") or [])
+                        if added_move_types:
+                            kept_move_types = [move_type for move_type in current_move_types if move_type not in added_move_types]
+                            if kept_move_types:
+                                sr["bearer_unit_phase_move_types"] = sorted(set(kept_move_types))
+                            else:
+                                sr.pop("bearer_unit_phase_move_types", None)
+                        effects = list(sr.get("ignore_vertical_distance_effects") or [])
+                        kept_effects = [
+                            effect
+                            for effect in list(effects or [])
+                            if not (
+                                isinstance(effect, dict)
+                                and str(effect.get("tag", "") or "").strip().lower() == "imperial_agents_displacer_field"
+                            )
+                        ]
+                        if kept_effects:
+                            sr["ignore_vertical_distance_effects"] = kept_effects
+                        else:
+                            sr.pop("ignore_vertical_distance_effects", None)
+                        for model in self._ia_unit_models(root):
+                            setter = getattr(model, "set_temporary_invulnerable_save", None)
+                            if callable(setter):
+                                setter(key="imperial_agents_displacer_field", value=0)
+                            else:
+                                effects = getattr(model, "_temporary_effects", None)
+                                if isinstance(effects, dict):
+                                    effects.pop("imperial_agents_displacer_field", None)
+                        for key in (
+                            "imperial_agents_displacer_field_active",
+                            "imperial_agents_displacer_field_source",
+                            "imperial_agents_displacer_field_expires_phase",
+                            "imperial_agents_displacer_field_turn",
+                            "imperial_agents_displacer_field_turn_owner",
+                            "imperial_agents_displacer_field_attacker_unit_id",
+                            "imperial_agents_displacer_field_move_triggered",
+                            "imperial_agents_displacer_field_added_phase_move_types",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
                 if changed:
                     root.special_rules = sr
 
@@ -839,8 +1235,19 @@ class ImperialAgentsStratagemMixin:
         if not self._is_imperialis_fleet():
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_n = self._ia_norm_stratagem_name(name_u)
         if name_u == "MASTERS OF THE VOID":
             return self._use_imperial_agents_masters_of_the_void(stratagem, **kwargs)
+        if name_n in {"CLOSE-QUARTERS BARRAGE", "CLOSE QUARTERS BARRAGE"}:
+            return self._use_imperial_agents_close_quarters_barrage(stratagem, **kwargs)
+        if name_n == "VIOLENT ACQUISITION":
+            return self._use_imperial_agents_violent_acquisition(stratagem, **kwargs)
+        if name_n in {"EMPEROR'S WILL", "EMPERORS WILL"}:
+            return self._use_imperial_agents_emperors_will(stratagem, **kwargs)
+        if name_n == "DISPLACER FIELD":
+            return self._use_imperial_agents_displacer_field(stratagem, **kwargs)
+        if name_n == "SELFLESS BODYGUARD":
+            return self._use_imperial_agents_selfless_bodyguard(stratagem, **kwargs)
         return None
 
     def _use_imperial_agents_veiled_blade_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -900,7 +1307,7 @@ class ImperialAgentsStratagemMixin:
         if army is None:
             return False
         turn_now = int(getattr(game, "turn", 0) or 0)
-        owner_id = str(getattr(self.player, "id", "") or "")
+        owner_id = str(getattr(active_player, "id", "") or "")
         source = str(getattr(stratagem, "name", "MASTERS OF THE VOID") or "MASTERS OF THE VOID")
         seen: set[str] = set()
         for unit in list(getattr(army, "units", []) or []):
@@ -923,6 +1330,279 @@ class ImperialAgentsStratagemMixin:
             sr["imperial_agents_masters_of_the_void_enemy_dz_override_expires_phase"] = "MOVEMENT_PHASE"
             sr["imperial_agents_masters_of_the_void_enemy_dz_override_source"] = source
             root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_close_quarters_barrage(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CLOSE-QUARTERS BARRAGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CLOSE-QUARTERS BARRAGE: not your turn")
+            return False
+        candidates = self._ia_imperialis_fleet_candidate_units(require_voidfarers=True)
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: CLOSE-QUARTERS BARRAGE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: CLOSE-QUARTERS BARRAGE: target must be an eligible VOIDFARERS unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(active_player, "id", "") or "")
+        source = str(getattr(stratagem, "name", "") or "Close-Quarters Barrage").strip() or "Close-Quarters Barrage"
+        sr["imperial_agents_close_quarters_barrage_active"] = True
+        sr["imperial_agents_close_quarters_barrage_source"] = source
+        sr["imperial_agents_close_quarters_barrage_expires_phase"] = "SHOOTING_PHASE"
+        sr["imperial_agents_close_quarters_barrage_turn"] = int(turn_now)
+        sr["imperial_agents_close_quarters_barrage_turn_owner"] = owner_id
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_violent_acquisition(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: VIOLENT ACQUISITION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: VIOLENT ACQUISITION: not your turn")
+            return False
+        candidates = self._ia_imperialis_fleet_candidate_units()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: VIOLENT ACQUISITION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: VIOLENT ACQUISITION: target must be an eligible AGENTS OF THE IMPERIUM unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(active_player, "id", "") or "")
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source = str(getattr(stratagem, "name", "") or "Violent Acquisition").strip() or "Violent Acquisition"
+        sr["imperial_agents_violent_acquisition_active"] = True
+        sr["imperial_agents_violent_acquisition_source"] = source
+        sr["imperial_agents_violent_acquisition_expires_phase"] = phase_key
+        sr["imperial_agents_violent_acquisition_turn"] = int(turn_now)
+        sr["imperial_agents_violent_acquisition_turn_owner"] = owner_id
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_emperors_will(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: EMPEROR'S WILL: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: EMPEROR'S WILL: not your turn")
+            return False
+        candidates = self._ia_imperialis_fleet_candidate_units()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: EMPEROR'S WILL: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: EMPEROR'S WILL: target must be an eligible AGENTS OF THE IMPERIUM unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(active_player, "id", "") or "")
+        source = str(getattr(stratagem, "name", "") or "Emperor's Will").strip() or "Emperor's Will"
+        sr["imperial_agents_emperors_will_active"] = True
+        sr["imperial_agents_emperors_will_source"] = source
+        sr["imperial_agents_emperors_will_turn"] = int(turn_now)
+        sr["imperial_agents_emperors_will_turn_owner"] = owner_id
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_displacer_field(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DISPLACER FIELD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: DISPLACER FIELD: not opponent's Shooting phase")
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit") or context.get("attacker_unit")
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or self._ia_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: DISPLACER FIELD: missing or invalid attacking unit")
+            return False
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        candidates = self._ia_imperialis_fleet_candidate_units(
+            candidate_units=list(target_units or []),
+            require_character=True,
+            exclude_officio_assassinorum=True,
+        )
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: DISPLACER FIELD: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: DISPLACER FIELD: target must be an eligible selected AGENTS OF THE IMPERIUM CHARACTER unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "Displacer Field").strip() or "Displacer Field"
+        for model in list(self._ia_unit_models(target_root) or []):
+            setter = getattr(model, "set_temporary_invulnerable_save", None)
+            if callable(setter):
+                setter(
+                    key="imperial_agents_displacer_field",
+                    value=4,
+                    source=source,
+                    expires_phase="SHOOTING_PHASE",
+                )
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_move_types = set(sr.get("bearer_unit_phase_move_types") or [])
+        added_move_types: list[str] = []
+        if "move" not in current_move_types:
+            current_move_types.add("move")
+            added_move_types.append("move")
+        if current_move_types:
+            sr["bearer_unit_phase_move_types"] = sorted(current_move_types)
+        if added_move_types:
+            sr["imperial_agents_displacer_field_added_phase_move_types"] = list(added_move_types)
+        else:
+            sr.pop("imperial_agents_displacer_field_added_phase_move_types", None)
+        current_effects = list(sr.get("ignore_vertical_distance_effects") or [])
+        kept_effects = [
+            effect
+            for effect in list(current_effects or [])
+            if not (
+                isinstance(effect, dict)
+                and str(effect.get("tag", "") or "").strip().lower() == "imperial_agents_displacer_field"
+            )
+        ]
+        kept_effects.append(
+            {
+                "move_types": ["move"],
+                "source": source,
+                "tag": "imperial_agents_displacer_field",
+            }
+        )
+        sr["ignore_vertical_distance_effects"] = kept_effects
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(active_player, "id", "") or "")
+        sr["imperial_agents_displacer_field_active"] = True
+        sr["imperial_agents_displacer_field_source"] = source
+        sr["imperial_agents_displacer_field_expires_phase"] = "SHOOTING_PHASE"
+        sr["imperial_agents_displacer_field_turn"] = int(turn_now)
+        sr["imperial_agents_displacer_field_turn_owner"] = owner_id
+        sr["imperial_agents_displacer_field_attacker_unit_id"] = self._ia_sort_key(attacking_root)
+        sr["imperial_agents_displacer_field_move_triggered"] = False
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_selfless_bodyguard(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SELFLESS BODYGUARD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: SELFLESS BODYGUARD: not opponent's Shooting phase")
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit") or context.get("attacker_unit")
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or self._ia_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: SELFLESS BODYGUARD: missing or invalid attacking unit")
+            return False
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        candidates = self._ia_imperialis_fleet_candidate_units(
+            candidate_units=list(target_units or []),
+            require_attached=True,
+        )
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: SELFLESS BODYGUARD: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: SELFLESS BODYGUARD: target must be an eligible selected AGENTS OF THE IMPERIUM Attached unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(active_player, "id", "") or "")
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source = str(getattr(stratagem, "name", "") or "Selfless Bodyguard").strip() or "Selfless Bodyguard"
+        sr["imperial_agents_selfless_bodyguard_active"] = True
+        sr["imperial_agents_selfless_bodyguard_source"] = source
+        sr["imperial_agents_selfless_bodyguard_expires_phase"] = phase_key
+        sr["imperial_agents_selfless_bodyguard_turn"] = int(turn_now)
+        sr["imperial_agents_selfless_bodyguard_turn_owner"] = owner_id
+        target_root.special_rules = sr
         self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

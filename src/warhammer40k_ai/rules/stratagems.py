@@ -2677,6 +2677,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_death_guard)
         if names & {"DESPERATION'S PRICE", "PSY-CHAFF VOLLEY"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_adeptus_custodes_null_maiden)
+        if "DISPLACER FIELD" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_agents)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -14467,6 +14469,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_imperial_agents(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_imperial_agents_imperialis_fleet_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -14733,6 +14744,13 @@ class StratagemManager(
             raise
         try:
             self._queue_hammer_ablative_plating_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_imperialis_fleet_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16026,6 +16044,13 @@ class StratagemManager(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
                 phase_name="Fight phase",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_imperialis_fleet_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise

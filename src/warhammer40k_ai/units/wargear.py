@@ -3602,6 +3602,25 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "close_quarters_barrage_ap_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    ap_bonus, _source = bonus_fn(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        attack_instance=None,
+                        game=game,
+                    )
+                    if int(ap_bonus or 0) > 0:
+                        ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
@@ -18764,6 +18783,27 @@ class WargearProfile:
                     if s_bonus:
                         strength = strength + int(s_bonus)
                         source_name = str(source or "Fervent Purgation").strip() or "Fervent Purgation"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "close_quarters_barrage_strength_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        attack_instance=attack_instance,
+                        game=game,
+                    )
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Close-Quarters Barrage").strip() or "Close-Quarters Barrage"
                         wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass

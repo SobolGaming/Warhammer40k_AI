@@ -13248,6 +13248,19 @@ _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME = {
 }
 
 _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009139002": StratagemToolDescriptor(
+        stratagem_id="000009139002",
+        name="Violent Acquisition",
+        timing="shooting_or_fight_phase",
+        target="agents_unit",
+        duration="until_end_of_phase",
+        effect="objective_range_attack_keywords",
+        cp_cost=1,
+        effect_params={
+            "requires_objective_range": True,
+            "attack_keywords": ["SUSTAINED HITS 1", "LANCE", "IGNORES COVER"],
+        },
+    ),
     "000009139003": StratagemToolDescriptor(
         stratagem_id="000009139003",
         name="Masters of the Void",
@@ -13260,6 +13273,63 @@ _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "applies_to_keyword": "AGENTS OF THE IMPERIUM",
             "applies_to_arrival_type": "strategic_reserves",
             "allow_enemy_deployment_zone": True,
+        },
+    ),
+    "000009139004": StratagemToolDescriptor(
+        stratagem_id="000009139004",
+        name="Close-Quarters Barrage",
+        timing="shooting_phase",
+        target="voidfarers_unit",
+        duration="until_end_of_phase",
+        effect="ranged_strength_and_ap_within_12",
+        cp_cost=1,
+        effect_params={
+            "range_in": 12.0,
+            "strength_bonus": 1,
+            "ap_bonus": 1,
+        },
+    ),
+    "000009139005": StratagemToolDescriptor(
+        stratagem_id="000009139005",
+        name="Emperor's Will",
+        timing="movement_phase",
+        target="agents_unit",
+        duration="this_turn",
+        effect="shoot_after_advance_and_fall_back",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "shoot_after_fall_back": True,
+        },
+    ),
+    "000009139006": StratagemToolDescriptor(
+        stratagem_id="000009139006",
+        name="Displacer Field",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="agents_character_unit_targeted_excluding_officio_assassinorum",
+        duration="until_end_of_phase",
+        effect="invulnerable_save_and_reactive_move",
+        cp_cost=1,
+        effect_params={
+            "invulnerable_save": 4,
+            "reactive_move_distance_in": 6.0,
+            "reactive_move_kind": "imperial_agents_displacer_field",
+            "exclude_keywords_any": ["OFFICIO ASSASSINORUM"],
+            "reactive_move_as_if_fly": True,
+        },
+    ),
+    "000009139007": StratagemToolDescriptor(
+        stratagem_id="000009139007",
+        name="Selfless Bodyguard",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="agents_attached_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="precision_bodyguard_redirect",
+        cp_cost=1,
+        effect_params={
+            "requires_bodyguard_models": True,
+            "redirect_roll": "D6",
+            "redirect_on": 2,
         },
     ),
 }
