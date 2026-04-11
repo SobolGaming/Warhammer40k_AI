@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DOCTRINA, DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -254,6 +254,69 @@ def test_questor_forgepact_divine_inspiration_rerolls_hit_and_wound_ones_within_
     assert any("Divine Inspiration" in str(reason) for reason in list(hit_result.get("reroll_value_reasons", []) or []))
     assert 1 in list(wound_result.get("reroll_values", []) or [])
     assert any("Divine Inspiration" in str(reason) for reason in list(wound_result.get("reroll_value_reasons", []) or []))
+
+
+def test_questor_forgepact_admech_units_do_not_queue_doctrina_selection():
+    game, ik_army, _enemy_army, _ik_player, _enemy_player = _build_game()
+    skitarii = _make_unit(
+        "Skitarii Rangers",
+        faction_name="Adeptus Mechanicus",
+        keywords=["ADEPTUS MECHANICUS", "INFANTRY"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+        wounds=10,
+    )
+    skitarii.possible_abilities.append("Doctrina Imperatives")
+    ik_army.add_unit(skitarii)
+
+    assert getattr(ik_army, "doctrina_imperatives", None) is None
+
+    ik_army.on_battle_round_start(1)
+
+    doctrina_requests = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if getattr(req, "decision_type", "") == DECISION_CHOOSE_DOCTRINA
+    ]
+    assert doctrina_requests == []
+
+
+def test_questor_forgepact_admech_units_do_not_gain_doctrina_modifiers():
+    game, ik_army, enemy_army, _ik_player, _enemy_player = _build_game()
+    skitarii = _make_unit(
+        "Skitarii Rangers",
+        faction_name="Adeptus Mechanicus",
+        keywords=["ADEPTUS MECHANICUS", "INFANTRY"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+        wounds=10,
+    )
+    skitarii.possible_abilities.append("Doctrina Imperatives")
+    skitarii.round_state.remained_stationary_this_round = True
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Space Marines",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds=10,
+    )
+    ik_army.add_unit(skitarii)
+    enemy_army.add_unit(enemy)
+    game.map.units = [skitarii, enemy]
+    skitarii.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+
+    profile = _make_ranged_profile(strength="5")
+    profile.skill = 4
+    hit_result = profile._hit_target_with_tracking(
+        enemy,
+        skitarii.models[0],
+        {"distance_to_target": 10.0},
+        roll_value=4,
+        allow_rerolls=True,
+        log_roll=False,
+    )
+
+    assert hit_result.get("base_skill") == 4
+    assert not any("Imperative" in str(mod) for mod in list(hit_result.get("modifiers", []) or []))
 
 
 def test_questor_forgepact_knight_of_the_opus_machina_rerolls_hit_ones_when_near_admech():

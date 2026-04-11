@@ -3287,7 +3287,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Cogbound Alliance": (
             "Supported",
-            "Questor Forgepact: Command phase Sacristan Pledge heals one lost wound for each IMPERIAL KNIGHTS unit (D3 while within 3\" of a friendly TECH-PRIEST), ADEPTUS MECHANICUS units gain Divine Inspiration re-roll Hit rolls of 1 for ranged attacks with re-roll Wound rolls of 1 while within 6\" of friendly IMPERIAL KNIGHTS units, and Forge World ally list/points cap/warlord restrictions are validated.",
+            "Questor Forgepact: Command phase Sacristan Pledge heals one lost wound for each IMPERIAL KNIGHTS unit (D3 while within 3\" of a friendly TECH-PRIEST), ADEPTUS MECHANICUS units gain Divine Inspiration re-roll Hit rolls of 1 for ranged attacks with re-roll Wound rolls of 1 while within 6\" of friendly IMPERIAL KNIGHTS units, Forge World ally list/points cap/warlord restrictions are validated, and the official FAQ suppression of Doctrina Imperatives for allied ADEPTUS MECHANICUS units is enforced.",
         ),
         "Heroes of Legend": (
             "Supported",
@@ -5602,6 +5602,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When Canis Rex is destroyed, Sir Hekhtur is spawned and must Emergency Disembark as if from a destroyed Transport; Sir Hekhtur can only be targeted by Core Stratagems; Canis Rex unit-destroyed handling is deferred until Sir Hekhtur is destroyed.",
         ),
+        ("QI", "Doctrina Imperatives"): (
+            "Supported",
+            "Questor Forgepact FAQ suppression enforced: allied ADEPTUS MECHANICUS units may list this datasheet ability, but Imperial Knights armies do not get Doctrina selection or Doctrina effects for them.",
+        ),
         ("DG", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITAN units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
@@ -7538,6 +7542,11 @@ def _classify_ability(
     faction_id: str = "",
     datasheet_id: str = "",
 ) -> Tuple[str, str]:
+    if str(faction_id or "").strip().upper() == "QI" and _norm(name) == _norm("Doctrina Imperatives"):
+        return (
+            "Supported",
+            "Questor Forgepact FAQ suppression enforced: allied ADEPTUS MECHANICUS units may list this datasheet ability, but Imperial Knights armies do not get Doctrina selection or Doctrina effects for them.",
+        )
     status, notes = _classify_ability_base(
         name,
         description,
