@@ -20705,6 +20705,7 @@ def _stratagem_support(
         "DRAGONFIRE ROUNDS": "Your Shooting phase: selected Kill Team unit that has not yet shot gains [ASSAULT] and [IGNORES COVER] on ranged weapons until end of phase.",
         "HELLFIRE ROUNDS": "Your Shooting phase: selected Kill Team unit that has not yet shot gains [ANTI-INFANTRY 2+] and [ANTI-MONSTER 5+] on ranged weapons until end of phase, excluding weapon profiles that already have [DEVASTATING WOUNDS].",
         "KRAKEN ROUNDS": "Your Shooting phase: selected Kill Team unit that has not yet shot improves the AP of its ranged weapons by 1 and adds 6\" to their range until end of phase.",
+        "RAPID TACTICAL RELOCATION": "End of opponent Fight phase: selected INQUISITOR or DEATHWATCH INFANTRY unit enters Strategic Reserves and gains temporary Deep Strike so it must return in your next Movement phase more than 9\" horizontally from enemy models.",
         "SAVAGE ECHOES": "Opponent Charge phase reaction after an enemy Charge move ends: selected ADEPTUS ASTARTES unit that was just charged chooses +1 Strength or +1 Attacks for melee weapons until end of turn, or becomes Battle-shocked to gain both.",
         "PROFANE SYMBIOSIS": "End of any phase: CHAOS KNIGHTS unit (not Empowered) makes a Malefic Surge; same unit once per battle round.",
         "CORRUPTING TAINT": "Command phase after Malefic Surge: CHAOS KNIGHTS CHARACTER selects controlled objective in range to become sticky until opponent has greater control.",

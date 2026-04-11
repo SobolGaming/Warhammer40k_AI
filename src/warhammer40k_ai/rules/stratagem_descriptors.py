@@ -13479,6 +13479,93 @@ _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ORDO_XENOS_ALIEN_HUNTERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009127002": StratagemToolDescriptor(
+        stratagem_id="000009127002",
+        name="Armour of Contempt",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="deathwatch_unit_targeted_by_enemy_attacks",
+        duration="until_attacker_finishes_attacks",
+        effect="defensive_ap_worsen",
+        cp_cost=1,
+        effect_params={"ap_delta": -1, "duration_scope": "attacker"},
+    ),
+    "000009127003": StratagemToolDescriptor(
+        stratagem_id="000009127003",
+        name="Adaptive Tactics",
+        timing="your_command_phase",
+        target="up_to_two_deathwatch_units_or_one_other_adeptus_astartes_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="unit_specific_mission_tactic_override",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "requires_deathwatch_for_multi_select": True,
+            "choices": ["FUROR_TACTICS", "MALLEUS_TACTICS", "PURGATUS_TACTICS"],
+        },
+    ),
+    "000009127004": StratagemToolDescriptor(
+        stratagem_id="000009127004",
+        name="Hellfire Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="deathwatch_infantry_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_anti_infantry_2_and_anti_monster_5_except_devastating_wounds",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["ANTI-INFANTRY 2+", "ANTI-MONSTER 5+"],
+            "exclude_weapon_keywords_any": ["DEVASTATING WOUNDS"],
+        },
+    ),
+    "000009127005": StratagemToolDescriptor(
+        stratagem_id="000009127005",
+        name="Dragonfire Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="deathwatch_infantry_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_assault_and_ignores_cover",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["ASSAULT", "IGNORES COVER"],
+        },
+    ),
+    "000009127006": StratagemToolDescriptor(
+        stratagem_id="000009127006",
+        name="Kraken Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="deathwatch_infantry_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_ap_and_range_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "ap_bonus": 1,
+            "range_bonus_in": 6.0,
+        },
+    ),
+    "000009127007": StratagemToolDescriptor(
+        stratagem_id="000009127007",
+        name="Rapid Tactical Relocation",
+        timing="end_of_opponent_fight_phase",
+        target="inquisitor_or_deathwatch_infantry_unit",
+        duration="until_next_reinforcements_step",
+        effect="enter_strategic_reserves_with_temp_deep_strike",
+        cp_cost=1,
+        effect_params={
+            "max_units": 1,
+            "grant_deep_strike": True,
+            "must_arrive_next_movement_phase": True,
+            "allowed_target_profiles": ["INQUISITOR", "DEATHWATCH_INFANTRY"],
+        },
+    ),
+}
+
+_ORDO_XENOS_ALIEN_HUNTERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORDO_XENOS_ALIEN_HUNTERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009758002": StratagemToolDescriptor(
         stratagem_id="000009758002",
@@ -14790,6 +14877,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ORDO_XENOS_ALIEN_HUNTERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14994,6 +15084,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME.get(key)
+        or _ORDO_XENOS_ALIEN_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)

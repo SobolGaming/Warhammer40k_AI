@@ -138,6 +138,11 @@ class ImperialAgentsStratagemMixin:
         checker = getattr(mgr, "is_ordo_malleus_daemon_hunters", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_ordo_xenos_alien_hunters(self) -> bool:
+        mgr = self._ia_detachment_mgr()
+        checker = getattr(mgr, "is_ordo_xenos_alien_hunters", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _ia_exact_punishment_snapshots(self) -> dict[str, dict[str, Any]]:
         snapshots = getattr(self, "_imperial_agents_exact_punishment_snapshots_cache", None)
         if isinstance(snapshots, dict):
@@ -343,6 +348,27 @@ class ImperialAgentsStratagemMixin:
             merged.update(context)
             return merged
         return context
+
+    def _ia_next_owner_movement_phase_turn(self, owner: Any) -> int:
+        game = getattr(self, "game", None)
+        if game is None or owner is None:
+            return int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        players = list(getattr(game, "players", []) or [])
+        starting_index = getattr(game, "battle_round_starting_player_index", None)
+        if starting_index is None and players:
+            starting_index = 0
+        try:
+            owner_index = int(players.index(owner))
+        except ValueError:
+            owner_index = None
+        try:
+            starting_index = int(starting_index) if starting_index is not None else None
+        except (TypeError, ValueError):
+            starting_index = None
+        if owner_index is not None and starting_index is not None and owner_index == starting_index:
+            return int(current_turn + 1)
+        return int(current_turn)
 
     def _ia_blind_grenades_candidates(self, target_units: list[Any]) -> list[Any]:
         game = getattr(self, "game", None)
@@ -956,6 +982,42 @@ class ImperialAgentsStratagemMixin:
             phase_name="Shooting phase",
             require_not_selected=True,
         )
+
+    def _ia_ordo_xenos_rapid_tactical_relocation_candidates(
+        self,
+        *,
+        candidate_units: Optional[list[Any]] = None,
+    ) -> list[Any]:
+        if not self._is_ordo_xenos_alien_hunters():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        source_units = list(candidate_units) if candidate_units is not None else list(getattr(army, "units", []) or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(source_units or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if self._ia_has_keyword(root, "INQUISITOR"):
+                out.append(root)
+                continue
+            if self._ia_has_keyword(root, "DEATHWATCH") and self._ia_has_keyword(root, "INFANTRY"):
+                out.append(root)
+        return sorted(out, key=self._ia_sort_key)
 
     def _ia_steel_heart_candidates(self, *, moved_unit: Any = None) -> list[Any]:
         candidates = self._ia_ordo_malleus_candidate_units(
@@ -1583,6 +1645,45 @@ class ImperialAgentsStratagemMixin:
             "action": str(action or ""),
         }
         self._queue_reaction(payload)
+
+    def _queue_imperial_agents_ordo_xenos_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_ordo_xenos_alien_hunters():
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        if player is self.player:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("RAPID TACTICAL RELOCATION")
+        if stratagem is None:
+            return
+        if self.player.command_points < self._ia_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._ia_ordo_xenos_rapid_tactical_relocation_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "phase_end"
+                and str(reaction.get("phase_name", "") or "").strip().lower() == "fight phase"
+                and self._ia_norm_stratagem_name(reaction.get("stratagem", "")) == "RAPID TACTICAL RELOCATION"
+            ):
+                return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _resolve_imperial_agents_ordo_malleus_battle_shock_effects(self, *, unit: Any, passed: bool) -> None:
         if not self._is_ordo_malleus_daemon_hunters():
@@ -2353,6 +2454,16 @@ class ImperialAgentsStratagemMixin:
             return self._use_imperial_agents_steel_heart(stratagem, **kwargs)
         return None
 
+    def _use_imperial_agents_ordo_xenos_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_ordo_xenos_alien_hunters():
+            return None
+        name_n = self._ia_norm_stratagem_name(getattr(stratagem, "name", ""))
+        if name_n == "RAPID TACTICAL RELOCATION":
+            return self._use_imperial_agents_rapid_tactical_relocation(stratagem, **kwargs)
+        return None
+
     def _use_imperial_agents_imperialis_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -3060,6 +3171,79 @@ class ImperialAgentsStratagemMixin:
         sr["imperial_agents_steel_heart_turn_owner"] = str(getattr(active_player, "id", "") or "")
         target_root.special_rules = sr
         self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_rapid_tactical_relocation(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RAPID TACTICAL RELOCATION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: RAPID TACTICAL RELOCATION: not opponent's Fight phase")
+            return False
+
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._ia_ordo_xenos_rapid_tactical_relocation_candidates()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RAPID TACTICAL RELOCATION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RAPID TACTICAL RELOCATION: target must be an eligible Inquisitor or Deathwatch Infantry unit")
+            return False
+        enter_reserves = getattr(target_root, "enter_strategic_reserves_midgame", None)
+        if not callable(enter_reserves):
+            logger.error("ERROR: RAPID TACTICAL RELOCATION: target cannot enter Strategic Reserves")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not bool(
+            enter_reserves(
+                game=game,
+                game_map=getattr(game, "map", None),
+                reason=str(getattr(stratagem, "name", "RAPID TACTICAL RELOCATION") or "RAPID TACTICAL RELOCATION"),
+            )
+        ):
+            logger.error("ERROR: RAPID TACTICAL RELOCATION: failed to place target into Strategic Reserves")
+            return False
+
+        arrival_turn = self._ia_next_owner_movement_phase_turn(self.player)
+        source_name = str(getattr(stratagem, "name", "") or "RAPID TACTICAL RELOCATION")
+        owner_id = str(getattr(self.player, "id", "") or "")
+        get_members = getattr(target_root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [target_root]
+        if not members:
+            members = [target_root]
+        if target_root not in members:
+            members.append(target_root)
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["midgame_temp_deep_strike"] = True
+            sr["midgame_temp_deep_strike_turn_owner"] = owner_id
+            sr["midgame_temp_deep_strike_must_arrive_turn"] = int(arrival_turn)
+            sr["midgame_temp_deep_strike_source"] = source_name
+            member.special_rules = sr
+            invalidate = getattr(member, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RAPID TACTICAL RELOCATION: %s enters Strategic Reserves and returns next Movement phase via Deep Strike.",
+            getattr(target_root, "name", "Unit"),
+        )
         return True
 
     def _use_imperial_agents_violent_acquisition(self, stratagem: Any, **kwargs) -> bool:

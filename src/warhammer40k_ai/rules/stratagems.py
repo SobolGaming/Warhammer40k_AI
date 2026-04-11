@@ -739,6 +739,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRIME TARGET",
     "RITES OF EXORCISM",
     "RITUAL OF WARDING",
+    "RAPID TACTICAL RELOCATION",
     "STEEL HEART",
     "WILL-SAPPING SALVO",
     "WILLÃ¢â‚¬â€˜SAPPING SALVO",
@@ -1083,6 +1084,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HEXAGRAMMIC WARDS",
     "HYPERSTIMMS",
     "ORBITAL OVERSIGHT",
+    "RAPID TACTICAL RELOCATION",
     "STEEL HEART",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
@@ -2951,6 +2953,7 @@ class StratagemManager(
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "ENSNARING TRAP",
+            "RAPID TACTICAL RELOCATION",
             "FLAMES OF SANCTITY",
             "GORY DEDICATION",
             "MURDER-CALL",
@@ -11316,6 +11319,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_imperial_agents_ordo_xenos_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_emperors_children_mercurial_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -19600,6 +19607,9 @@ class StratagemManager(
         imperial_agents_ordo_malleus_result = self._use_imperial_agents_ordo_malleus_stratagem(s, **kwargs)
         if imperial_agents_ordo_malleus_result is not None:
             return imperial_agents_ordo_malleus_result
+        imperial_agents_ordo_xenos_result = self._use_imperial_agents_ordo_xenos_stratagem(s, **kwargs)
+        if imperial_agents_ordo_xenos_result is not None:
+            return imperial_agents_ordo_xenos_result
         chaos_daemons_plague_legion_result = self._use_chaos_daemons_plague_legion_stratagem(s, **kwargs)
         if chaos_daemons_plague_legion_result is not None:
             return chaos_daemons_plague_legion_result

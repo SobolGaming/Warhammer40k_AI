@@ -19393,6 +19393,7 @@ class GameView:
             "INVIOLATE JURISDICTION",
             "LINE OF FIRE",
             "PSYBOLT AMMUNITION",
+            "RAPID TACTICAL RELOCATION",
             "STEEL HEART",
         ) and "target_unit" not in context and "unit" not in context:
             if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
@@ -19414,6 +19415,8 @@ class GameView:
                         candidates = list(manager._ia_line_of_fire_candidates() or [])
                     elif name_u == "PSYBOLT AMMUNITION":
                         candidates = list(manager._ia_psybolt_ammunition_candidates() or [])
+                    elif name_u == "RAPID TACTICAL RELOCATION":
+                        candidates = list(manager._ia_ordo_xenos_rapid_tactical_relocation_candidates() or [])
                     elif name_u == "STEEL HEART":
                         candidates = list(
                             manager._ia_steel_heart_candidates(
@@ -19433,6 +19436,7 @@ class GameView:
                 "INVIOLATE JURISDICTION": "Targeted Ordo Hereticus INFANTRY unit within objective range.",
                 "LINE OF FIRE": "Ordo Hereticus unit that has not been selected to shoot this phase.",
                 "PSYBOLT AMMUNITION": "Grey Knights Terminator Squad that has not yet shot this phase.",
+                "RAPID TACTICAL RELOCATION": "Ordo Xenos Inquisitor or Deathwatch INFANTRY unit to remove and return next Movement phase.",
                 "STEEL HEART": "Grey Knights Terminator Squad that just Fell Back this phase.",
             }.get(name_u, "Select an eligible Ordo Hereticus unit.")
             self._resolve_unit_selection_dialog(
