@@ -111,7 +111,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt --output data/headless_self_play_decision_records.json
 
 # Optional: also persist per-game replay sessions for UI playback
-python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt --output data/headless_self_play_decision_records.json --replay-dir data/headless_self_play_replays
+python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test_2.txt --player2-army army_lists/aeldari_test_2.txt --output data/headless_self_play_decision_records.json --replay-dir data/headless_self_play_replays
 
 # Step through one recorded game in the replay viewer
 python scripts/replay_viewer.py --session-id selfplay:000000 --replay-dir data/headless_self_play_replays
