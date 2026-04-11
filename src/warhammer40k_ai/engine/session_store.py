@@ -20,6 +20,32 @@ MANIFEST_FILENAME = "manifest.json"
 SNAPSHOT_FILENAME = "snapshot.json"
 REPLAY_FILENAME = REPLAY_DB_FILENAME
 AUTOSAVE_GROUP = "session_autosave"
+_WINDOWS_RESERVED_PATH_SEGMENTS = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+    }
+)
 
 
 def _utc_now() -> str:
@@ -30,8 +56,33 @@ def _resolve_base_dir(base_dir: str | Path | None) -> Path:
     return Path(base_dir) if base_dir is not None else DEFAULT_BASE_DIR
 
 
+def _session_dir_name(session_id: str) -> str:
+    session_text = str(session_id or "")
+    if not session_text:
+        raise ValueError("Session id is required.")
+    encoded_parts: list[str] = []
+    for byte in session_text.encode("utf-8"):
+        is_alnum = 48 <= byte <= 57 or 65 <= byte <= 90 or 97 <= byte <= 122
+        if is_alnum or byte in (45, 95):
+            encoded_parts.append(chr(byte))
+            continue
+        encoded_parts.append(f"~{byte:02X}")
+    encoded = "".join(encoded_parts)
+    if encoded.upper() in _WINDOWS_RESERVED_PATH_SEGMENTS:
+        return f"~{encoded}"
+    return encoded
+
+
 def _session_dir(session_id: str, base_dir: Path) -> Path:
-    return base_dir / str(session_id)
+    return base_dir / _session_dir_name(session_id)
+
+
+def resolve_session_path(
+    session_id: str,
+    *,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return _session_dir(session_id, _resolve_base_dir(base_dir))
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -193,6 +244,14 @@ def load_session_snapshot(
 
 def _session_replay_path(session_id: str, base_dir: Path) -> Path:
     return _session_dir(session_id, base_dir) / REPLAY_FILENAME
+
+
+def resolve_session_replay_path(
+    session_id: str,
+    *,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return _session_replay_path(session_id, _resolve_base_dir(base_dir))
 
 
 def enable_session_replay_recording(

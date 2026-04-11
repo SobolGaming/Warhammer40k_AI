@@ -14,7 +14,7 @@ from warhammer40k_ai.UI.game_ui import GameView
 from warhammer40k_ai.UI.human_interface import HumanUIInterface
 from warhammer40k_ai.UI.window import create_pygame_screen
 from warhammer40k_ai.engine.replay_store import ReplayStoreReader
-from warhammer40k_ai.engine.session_store import load_session_replay_reader
+from warhammer40k_ai.engine.session_store import load_session_replay_reader, resolve_session_replay_path
 from warhammer40k_ai.utility.event_bus import clear_recent_logs, get_recent_actions, get_recent_dice
 
 OVERLAY_BG = (16, 18, 24, 216)
@@ -57,8 +57,9 @@ def _load_reader(args: argparse.Namespace) -> tuple[ReplayStoreReader, str]:
     session_id = str(args.session_id or "").strip()
     if not session_id:
         raise ValueError("Either --replay-path or --session-id is required.")
-    reader = load_session_replay_reader(session_id, base_dir=args.replay_dir)
-    resolved = Path(args.replay_dir).expanduser().resolve() / session_id / "replay.sqlite3"
+    replay_base_dir = Path(args.replay_dir).expanduser().resolve()
+    reader = load_session_replay_reader(session_id, base_dir=replay_base_dir)
+    resolved = resolve_session_replay_path(session_id, base_dir=replay_base_dir)
     return reader, str(resolved)
 
 

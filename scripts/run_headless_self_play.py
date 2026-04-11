@@ -254,7 +254,8 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help=(
             "Optional base directory for per-game replay sessions. "
-            "Each game writes <replay-dir>/<game_id>/{manifest.json,snapshot.json,replay.sqlite3}. "
+            "Each game writes a filesystem-safe session directory under <replay-dir> containing "
+            "{manifest.json,snapshot.json,replay.sqlite3}; the manifest preserves the original game id. "
             "Because game ids are stable, reuse a fresh directory or remove conflicting session subdirectories first."
         ),
     )

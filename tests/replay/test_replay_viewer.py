@@ -144,6 +144,20 @@ def test_overlay_lines_use_prebattle_label_when_setup_is_incomplete() -> None:
     assert ("phase: COMMAND_PHASE | turn 1", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_load_reader_resolves_filesystem_safe_session_path(monkeypatch, tmp_path) -> None:
+    replay_viewer = _load_replay_viewer_module()
+    fake_reader = object()
+
+    monkeypatch.setattr(replay_viewer, "load_session_replay_reader", lambda _session_id, base_dir=None: fake_reader)
+
+    reader, resolved = replay_viewer._load_reader(
+        SimpleNamespace(replay_path="", session_id="selfplay:000000", replay_dir=str(tmp_path))
+    )
+
+    assert reader is fake_reader
+    assert resolved == str(tmp_path.resolve() / "selfplay~3A000000" / "replay.sqlite3")
+
+
 def test_overlay_lines_expand_deployment_move_into_per_model_positions() -> None:
     replay_viewer = _load_replay_viewer_module()
     fake_reader = SimpleNamespace(

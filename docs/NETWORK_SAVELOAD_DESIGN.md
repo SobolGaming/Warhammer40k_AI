@@ -752,7 +752,10 @@ Resync snapshots clear their embedded events list (events are sent separately in
 ## Session Storage (PR7)
 
 Snapshots and event logs are stored under:
-- `./games/data/<session_id>/`
+- `./games/data/<session_dir>/`
+
+`<session_dir>` is a deterministic filesystem-safe encoding of `session_id`.
+The manifest retains the original `session_id`, and APIs continue to load/delete sessions by that original id.
 
 Files:
 - `manifest.json`: UX metadata (player stubs with id/control/agent_type, factions/detachments, battle round/phase, scores).

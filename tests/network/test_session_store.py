@@ -8,6 +8,7 @@ from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.replay_store import disable_decision_replay_recording
 from warhammer40k_ai.engine.session_store import (
     MANIFEST_FILENAME,
     REPLAY_FILENAME,
@@ -19,6 +20,8 @@ from warhammer40k_ai.engine.session_store import (
     list_sessions,
     load_session_replay_reader,
     load_session_snapshot,
+    resolve_session_path,
+    resolve_session_replay_path,
     save_session_snapshot,
 )
 from warhammer40k_ai.roster.army import Army
@@ -40,9 +43,10 @@ def _build_game() -> Game:
 def test_session_store_roundtrip(tmp_path):
     game = _build_game()
     session_id = create_session(game, base_dir=tmp_path, label="Test Session")
+    session_path = resolve_session_path(session_id, base_dir=tmp_path)
 
-    manifest_path = tmp_path / session_id / MANIFEST_FILENAME
-    snapshot_path = tmp_path / session_id / SNAPSHOT_FILENAME
+    manifest_path = session_path / MANIFEST_FILENAME
+    snapshot_path = session_path / SNAPSHOT_FILENAME
     assert manifest_path.exists()
     assert not snapshot_path.exists()
 
@@ -68,7 +72,7 @@ def test_session_store_roundtrip(tmp_path):
     assert sessions[0]["session_id"] == session_id
 
     delete_session(session_id, base_dir=tmp_path)
-    assert not (tmp_path / session_id).exists()
+    assert not session_path.exists()
     assert list_sessions(base_dir=tmp_path) == []
 
 
@@ -82,7 +86,7 @@ def test_phase_end_autosave_flushes_events(tmp_path):
 
     game.event_system.publish("phase_end", player=game.get_current_player(), phase=game.phase)
 
-    snapshot_path = tmp_path / session_id / SNAPSHOT_FILENAME
+    snapshot_path = resolve_session_path(session_id, base_dir=tmp_path) / SNAPSHOT_FILENAME
     assert snapshot_path.exists()
     assert game.event_log.events == []
 
@@ -90,6 +94,7 @@ def test_phase_end_autosave_flushes_events(tmp_path):
 def test_session_replay_recording_persists_decision_timeline(tmp_path):
     game = _build_game()
     session_id = create_session(game, base_dir=tmp_path, label="Replay Session")
+    session_path = resolve_session_path(session_id, base_dir=tmp_path)
     replay_path = enable_session_replay_recording(
         game,
         base_dir=tmp_path,
@@ -97,7 +102,7 @@ def test_session_replay_recording_persists_decision_timeline(tmp_path):
         label="Replay Session",
         keyframe_interval=1,
     )
-    assert replay_path == tmp_path / session_id / REPLAY_FILENAME
+    assert replay_path == session_path / REPLAY_FILENAME
     assert replay_path.exists()
 
     player = game.players[0]
@@ -126,3 +131,40 @@ def test_session_replay_recording_persists_decision_timeline(tmp_path):
     steps = reader.list_steps(limit=10)
     assert len(steps) == 1
     assert steps[0].decision_type == DECISION_CONFIRM_YES_NO
+
+
+def test_session_store_encodes_filesystem_unsafe_session_ids(tmp_path):
+    game = _build_game()
+    session_id = "selfplay:000000"
+    session_path = resolve_session_path(session_id, base_dir=tmp_path)
+    replay_path = resolve_session_replay_path(session_id, base_dir=tmp_path)
+
+    assert session_path == tmp_path / "selfplay~3A000000"
+    assert replay_path == session_path / REPLAY_FILENAME
+
+    created_session_id = create_session(game, base_dir=tmp_path, session_id=session_id, label="Encoded Session")
+    snapshot_path = save_session_snapshot(game, base_dir=tmp_path, session_id=session_id, label="Encoded Session")
+    recorded_replay_path = enable_session_replay_recording(
+        game,
+        base_dir=tmp_path,
+        session_id=session_id,
+        label="Encoded Session",
+        keyframe_interval=1,
+    )
+
+    assert created_session_id == session_id
+    assert session_path.exists()
+    assert snapshot_path == session_path / SNAPSHOT_FILENAME
+    assert recorded_replay_path == replay_path
+
+    manifest = json.loads((session_path / MANIFEST_FILENAME).read_text())
+    assert manifest["session_id"] == session_id
+
+    loaded = load_session_snapshot(session_id, base_dir=tmp_path)
+    assert isinstance(loaded, Game)
+    reader = load_session_replay_reader(session_id, base_dir=tmp_path)
+    assert reader.decision_count() == 0
+
+    disable_decision_replay_recording(game)
+    delete_session(session_id, base_dir=tmp_path)
+    assert not session_path.exists()

@@ -55,13 +55,15 @@ python scripts/run_headless_self_play.py \
   --replay-dir data/headless_self_play_replays
 ```
 
-When `--replay-dir` is enabled, each game writes a session directory:
-- `data/headless_self_play_replays/<game_id>/manifest.json`
-- `data/headless_self_play_replays/<game_id>/snapshot.json`
-- `data/headless_self_play_replays/<game_id>/replay.sqlite3`
+When `--replay-dir` is enabled, each game writes a filesystem-safe session directory under the replay root.
+The manifest keeps the original `game_id`, and the folder name uses a deterministic path-safe encoding when needed
+(for example `selfplay:000000` becomes `selfplay~3A000000` on disk):
+- `data/headless_self_play_replays/<session_dir>/manifest.json`
+- `data/headless_self_play_replays/<session_dir>/snapshot.json`
+- `data/headless_self_play_replays/<session_dir>/replay.sqlite3`
 
 Use `--replay-keyframe-interval <N>` to control sparse replay keyframe density.
-Use a fresh replay base directory for each generation run, or delete conflicting `<game_id>/` session directories first.
+Use a fresh replay base directory for each generation run, or delete conflicting encoded session directories first.
 
 What `--max-phase-steps 80` means:
 - It is a safety cap on battle-phase transitions per game after setup.
@@ -126,7 +128,7 @@ Or open the SQLite artifact directly:
 
 ```bash
 python scripts/replay_viewer.py \
-  --replay-path data/headless_self_play_replays/selfplay:000000/replay.sqlite3
+  --replay-path data/headless_self_play_replays/selfplay~3A000000/replay.sqlite3
 ```
 
 Viewer controls:
