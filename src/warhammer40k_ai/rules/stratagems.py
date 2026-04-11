@@ -619,9 +619,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TACTICAL FOIL",
     "AGGRESSION BEGETS AGGRESSION",
     "BONDED IMPERATIVE",
+    "DRIVEN BY THE PAST",
+    "HERO'S TREAD",
     "MACHINE FOCUS",
     "OMNISSIAH'S GRACE",
     "THRONEGHEIST FURY",
+    "UNSTOPPABLE WARRIOR",
     "VENGEANCE OF THE MACHINE CULT",
     "TITANIC BOMBARDMENT",
     "TACTICAL WITHDRAWAL",
@@ -1069,8 +1072,11 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
+    "HERO'S TREAD",
+    "MOMENT OF GLORY",
     "OMNISSIAH'S GRACE",
     "THRONEGHEIST FURY",
+    "UNSTOPPABLE WARRIOR",
     "VENGEANCE OF THE MACHINE CULT",
     "COURAGEOUS DIVERSION",
     "CRUSHED LIKE VERMIN",
@@ -1910,6 +1916,11 @@ def parse_consolidate_move_stratagem(name: str, description: str) -> Optional[Di
             tail,
         ):
             requires_engagement = True
+        elif re.fullmatch(
+            r"provided your unit can end that move within engagement range of one or more enemy units",
+            tail,
+        ):
+            requires_engagement = True
         else:
             return None
 
@@ -2475,6 +2486,7 @@ class StratagemManager(
             "RAPID FEINT",
             "HARRYING HOUNDS",
             "THRONEGHEIST FURY",
+            "UNSTOPPABLE WARRIOR",
             "DUTY UNENDING",
             "GRIND THEM UNDERFOOT",
             "MULTIPOTENTIALITY",
@@ -3006,6 +3018,7 @@ class StratagemManager(
             "RESISTANCE TUNNELS",
             "COGITATED NEED",
             "SECURE POSITIONS",
+            "HERO'S TREAD",
             "WALL OF MIRRORS",
             "INVISIBLE HUNTER",
             "INSTINCTIVE HUNTERS",
@@ -6932,6 +6945,111 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires one of your IMPERIAL KNIGHTS units to have just been destroyed by an enemy unit"
             return result
+        if name_u == "DRIVEN BY THE PAST":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "charge phase":
+                result["reason"] = "Requires your Charge phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Charge phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._questoris_companions_driven_by_the_past_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase and a Titanic IMPERIAL KNIGHTS unit from your army that Advanced this turn"
+            return result
+        if name_u == "HERO'S TREAD":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "command phase":
+                result["reason"] = "Requires the end of your Command phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable at the end of your Command phase"
+                return result
+            if not self._mob_rule_is_end_of_command_phase_context(context):
+                result["reason"] = "Requires the end of your Command phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            if target_unit is not None and not candidates:
+                objective_candidates = list(self._questoris_companions_heros_tread_objective_candidates(target_unit) or [])
+                if objective_candidates:
+                    candidates = [target_unit]
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "HERO'S TREAD":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the end of your Command phase and a Titanic IMPERIAL KNIGHTS model within range of an objective marker you control"
+            )
+            return result
+        if name_u == "UNSTOPPABLE WARRIOR":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "movement phase":
+                result["reason"] = "Requires your Movement phase just after one of your Titanic IMPERIAL KNIGHTS units Falls Back"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Movement phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            action_key = str(context.get("action", "") or "").strip().lower().replace(" ", "_")
+            if action_key == "fallback":
+                action_key = "fall_back"
+            if target_unit is not None and action_key == "fall_back" and not candidates:
+                candidates = [target_unit]
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "UNSTOPPABLE WARRIOR":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after one of your Titanic IMPERIAL KNIGHTS units Falls Back"
+            return result
+        if name_u == "MOMENT OF GLORY":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires the Fight phase just before one of your Titanic IMPERIAL KNIGHTS units Consolidates"
+                return result
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            if target_unit is not None and str(context.get("event", "") or "").strip().lower() == "before_consolidate" and not candidates:
+                candidates = [target_unit]
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "MOMENT OF GLORY":
+                        continue
+                    candidates = list(reaction.get("candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase just before one of your Titanic IMPERIAL KNIGHTS units Consolidates"
+            return result
         if name_u == "VETERAN SHARPSHOOTERS":
             if self._grizzled_veteran_sharpshooters_candidates():
                 result["available"] = True
@@ -9186,6 +9304,10 @@ class StratagemManager(
             "OMNISSIAH'S GRACE": "Target: your IMPERIAL KNIGHTS or ADEPTUS MECHANICUS unit just allocated a mortal wound; it gains Feel No Pain 5+ against mortal wounds this phase",
             "THRONEGHEIST FURY": "Target: your Titanic IMPERIAL KNIGHTS unit within 24\" of and visible to the enemy unit that just moved or was set up; one model shoots that enemy with one ranged weapon and only unmodified 6s hit",
             "VENGEANCE OF THE MACHINE CULT": "Target: your IMPERIAL KNIGHTS unit that was just destroyed; mark the enemy unit that destroyed it until battle end so your ADEPTUS MECHANICUS attacks gain Lethal Hits against it",
+            "DRIVEN BY THE PAST": "Target: your Titanic IMPERIAL KNIGHTS unit that Advanced this turn; it can declare a charge this turn despite Advancing",
+            "HERO'S TREAD": "Target: your Titanic IMPERIAL KNIGHTS model within range of a controlled objective at the end of your Command phase; that objective remains under your control with Level of Control 5 until broken",
+            "MOMENT OF GLORY": "Target: your Titanic IMPERIAL KNIGHTS unit just before it Consolidates; it can Consolidate up to 6\" this phase if it can end in Engagement Range",
+            "UNSTOPPABLE WARRIOR": "Target: your Titanic IMPERIAL KNIGHTS unit that just Fell Back; it can shoot and declare a charge this turn despite Falling Back",
             "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
@@ -11634,6 +11756,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_questoris_companions_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_imperial_knights_spearhead_phase_end_effects(phase=phase)
         except Exception:
             raise
@@ -13576,6 +13702,7 @@ class StratagemManager(
         self._queue_votann_persecution_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_questor_forgepact_move_end_reactions(unit=unit, action=action)
+        self._queue_questoris_companions_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_gladius_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)

@@ -1265,6 +1265,69 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return
         self.clear_questoris_companions_expended_enhancements()
 
+    def _questoris_companions_temporary_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_questoris_companions():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        if not self._unit_on_battlefield(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        active_key = f"{str(prefix)}_active"
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        if resolved_game is not None:
+            try:
+                current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get(f"{str(prefix)}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if current_turn and effect_turn and current_turn != effect_turn:
+                return None, None
+            effect_owner = str(sr.get(f"{str(prefix)}_turn_owner", "") or "").strip()
+            current_player = getattr(resolved_game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return None, None
+        return root, sr
+
+    def questoris_companions_driven_by_the_past_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        _root, sr = self._questoris_companions_temporary_effect_state(
+            unit,
+            prefix="questoris_companions_driven_by_the_past",
+            game=game,
+        )
+        return bool(sr is not None)
+
+    def questoris_companions_unstoppable_warrior_can_shoot_after_fall_back(
+        self,
+        unit,
+        *,
+        profile=None,
+        game=None,
+    ) -> bool:
+        if profile is not None and not self._weapon_is_ranged(profile):
+            return False
+        _root, sr = self._questoris_companions_temporary_effect_state(
+            unit,
+            prefix="questoris_companions_unstoppable_warrior",
+            game=game,
+        )
+        return bool(sr is not None)
+
+    def questoris_companions_unstoppable_warrior_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        _root, sr = self._questoris_companions_temporary_effect_state(
+            unit,
+            prefix="questoris_companions_unstoppable_warrior",
+            game=game,
+        )
+        return bool(sr is not None)
+
     def questoris_companions_herald_of_triumph_targets(self, source_unit, *, game=None, game_map=None) -> list:
         if not self.is_questoris_companions():
             return []

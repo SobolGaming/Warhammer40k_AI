@@ -411,6 +411,101 @@ class ImperialKnightsStratagemMixin:
         allowed_pairs.sort(key=lambda pair: (str(pair.get("model_id", "") or ""), str(pair.get("wargear_id", "") or "")))
         return allowed_pairs
 
+    def _questoris_companions_driven_by_the_past_candidates(self) -> list[Any]:
+        if not self._is_questoris_companions():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_is_titanic_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questoris_companions_unstoppable_warrior_candidates(self) -> list[Any]:
+        if not self._is_questoris_companions():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_is_titanic_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _questoris_companions_objective_pool(self) -> list[Any]:
+        if self.game is None:
+            return []
+        pool: list[Any] = []
+        game_map = getattr(self.game, "map", None)
+        if game_map is not None:
+            pool.extend(list(getattr(game_map, "objectives", []) or []))
+        pool.extend(list(getattr(self.game, "objectives", []) or []))
+        seen: set[str] = set()
+        out: list[Any] = []
+        for objective in pool:
+            objective_id = str(maybe_entity_id(objective) or getattr(objective, "id", "") or "").strip()
+            if not objective_id:
+                objective_id = f"obj:{id(objective)}"
+            if objective_id in seen:
+                continue
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(maybe_entity_id(objective) or getattr(objective, "id", "") or f"obj:{id(objective)}"))
+        return out
+
+    def _questoris_companions_heros_tread_objective_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_questoris_companions() or self.game is None:
+            return []
+        root = self._ik_root(unit)
+        if root is None:
+            return []
+        if not self._is_imperial_knights_unit(root) or not self._ik_is_titanic_unit(root):
+            return []
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return []
+        candidates: list[Any] = []
+        for objective in self._questoris_companions_objective_pool():
+            location = getattr(objective, "location", None)
+            if location is None:
+                continue
+            if getattr(location, "controlling_player", None) is not self.player:
+                continue
+            within_objective = getattr(root, "is_within_objective_range", None)
+            if not callable(within_objective) or not bool(within_objective(location)):
+                continue
+            candidates.append(objective)
+        return candidates
+
+    def _questoris_companions_heros_tread_candidates(self) -> list[Any]:
+        if not self._is_questoris_companions():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_is_titanic_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._questoris_companions_heros_tread_objective_candidates(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
     def _imperial_knights_vow_of_retribution_candidates(self) -> list[Any]:
         if not self._is_valourstrike_lance():
             return []
@@ -1665,6 +1760,102 @@ class ImperialKnightsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_questoris_companions_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_questoris_companions() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key == "fallback":
+            action_key = "fall_back"
+        if action_key != "fall_back":
+            return
+        root = self._ik_root(unit)
+        if root is None or not self._ik_owned_by_player(root, self.player):
+            return
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_imperial_knights_unit(root) or not self._ik_is_titanic_unit(root):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        if not self._ik_unit_in_candidates(root, self._questoris_companions_unstoppable_warrior_candidates()):
+            return
+        stratagem = self.get_by_name("UNSTOPPABLE WARRIOR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+                "action": "fall_back",
+            },
+            use_timer=False,
+        )
+
+    def _queue_questoris_companions_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_questoris_companions() or self.game is None:
+            return
+        if player is not self.player:
+            return
+        phase_key = self._ik_phase_name_key(getattr(phase, "name", phase))
+        if phase_key != "command phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("HERO'S TREAD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Command phase",
+        ):
+            return
+        candidates = self._questoris_companions_heros_tread_candidates()
+        if not candidates:
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": phase,
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            objective_candidates = self._questoris_companions_heros_tread_objective_candidates(candidates[0])
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            payload["objective_candidates"] = objective_candidates
+            if len(objective_candidates) == 1:
+                payload["objective"] = objective_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _ik_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -1719,6 +1910,12 @@ class ImperialKnightsStratagemMixin:
             return self._use_spearhead_let_duty_be_your_shield(stratagem, **kwargs)
         if name_u == "EXEMPLAR'S WISDOM":
             return self._use_spearhead_exemplars_wisdom(stratagem, **kwargs)
+        if name_u == "DRIVEN BY THE PAST":
+            return self._use_questoris_companions_driven_by_the_past(stratagem, **kwargs)
+        if name_u == "HERO'S TREAD":
+            return self._use_questoris_companions_heros_tread(stratagem, **kwargs)
+        if name_u == "UNSTOPPABLE WARRIOR":
+            return self._use_questoris_companions_unstoppable_warrior(stratagem, **kwargs)
         if name_u == "AGGRESSION BEGETS AGGRESSION":
             return self._use_questor_forgepact_aggression_begets_aggression(stratagem, **kwargs)
         if name_u == "BONDED IMPERATIVE":
@@ -3067,5 +3264,189 @@ class ImperialKnightsStratagemMixin:
         logger.info(
             "INFO: VENGEANCE OF THE MACHINE CULT: %s is Marked until the end of the battle.",
             getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_questoris_companions_driven_by_the_past(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questoris_companions():
+            return False
+        phase_key = self._ik_phase_name_key(kwargs.get("phase_name") or self._current_phase_name)
+        if phase_key != "charge phase":
+            logger.error("ERROR: DRIVEN BY THE PAST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DRIVEN BY THE PAST: not your Charge phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DRIVEN BY THE PAST: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: DRIVEN BY THE PAST: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root) or not self._ik_is_titanic_unit(root):
+            logger.error("ERROR: DRIVEN BY THE PAST: target must be a Titanic IMPERIAL KNIGHTS unit")
+            return False
+        eligible = candidates or self._questoris_companions_driven_by_the_past_candidates()
+        if eligible and not self._ik_unit_in_candidates(root, eligible):
+            logger.error("ERROR: DRIVEN BY THE PAST: target unit is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["questoris_companions_driven_by_the_past_active"] = True
+        sr["questoris_companions_driven_by_the_past_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["questoris_companions_driven_by_the_past_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["questoris_companions_driven_by_the_past_source"] = str(
+            getattr(stratagem, "name", "") or "DRIVEN BY THE PAST"
+        )
+        root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DRIVEN BY THE PAST: %s can declare a charge this turn despite Advancing.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_questoris_companions_heros_tread(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questoris_companions():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        unit = merged.get("unit") or merged.get("target_unit")
+        candidates = list(merged.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HERO'S TREAD: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "command phase":
+            logger.error("ERROR: HERO'S TREAD: wrong phase")
+            return False
+        end_of_phase_check = getattr(self, "_mob_rule_is_end_of_command_phase_context", None)
+        if callable(end_of_phase_check) and not bool(end_of_phase_check(merged)):
+            logger.error("ERROR: HERO'S TREAD: requires the end of your Command phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: HERO'S TREAD: not your Command phase")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: HERO'S TREAD: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root) or not self._ik_is_titanic_unit(root):
+            logger.error("ERROR: HERO'S TREAD: target must be a Titanic IMPERIAL KNIGHTS unit")
+            return False
+        eligible = candidates or self._questoris_companions_heros_tread_candidates()
+        if eligible and not self._ik_unit_in_candidates(root, eligible):
+            logger.error("ERROR: HERO'S TREAD: target unit is not within range of a controlled objective")
+            return False
+        objective = merged.get("objective") or merged.get("objective_marker")
+        objective_candidates = list(merged.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_candidates = self._questoris_companions_heros_tread_objective_candidates(root)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: HERO'S TREAD: no objective marker available")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: HERO'S TREAD: objective not in candidates")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            logger.error("ERROR: HERO'S TREAD: selected objective has no location")
+            return False
+        if hasattr(loc, "set_sticky_control"):
+            loc.set_sticky_control(
+                self.player,
+                source="heros_tread",
+                minimum_control=5,
+            )
+        else:
+            loc.sticky_controller = self.player
+            loc.sticky_source = "heros_tread"
+            loc.sticky_minimum_control = 5
+            loc.controlling_player = self.player
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HERO'S TREAD: selected objective remains under your control with Level of Control 5 until broken.",
+        )
+        return True
+
+    def _use_questoris_companions_unstoppable_warrior(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_questoris_companions():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        unit = merged.get("unit") or merged.get("target_unit")
+        candidates = list(merged.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "movement phase":
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: not your Movement phase")
+            return False
+        action_key = str(merged.get("action", "") or "").strip().lower().replace(" ", "_")
+        if action_key == "fallback":
+            action_key = "fall_back"
+        if action_key != "fall_back":
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: trigger action must be Fall Back")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root) or not self._ik_is_titanic_unit(root):
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: target must be a Titanic IMPERIAL KNIGHTS unit")
+            return False
+        eligible = candidates or self._questoris_companions_unstoppable_warrior_candidates()
+        if eligible and not self._ik_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNSTOPPABLE WARRIOR: target unit is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["questoris_companions_unstoppable_warrior_active"] = True
+        sr["questoris_companions_unstoppable_warrior_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["questoris_companions_unstoppable_warrior_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["questoris_companions_unstoppable_warrior_source"] = str(
+            getattr(stratagem, "name", "") or "UNSTOPPABLE WARRIOR"
+        )
+        root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNSTOPPABLE WARRIOR: %s can shoot and declare a charge this turn despite Falling Back.",
+            getattr(root, "name", "Unit"),
         )
         return True

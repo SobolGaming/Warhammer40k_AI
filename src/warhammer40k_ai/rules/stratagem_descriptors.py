@@ -13412,6 +13412,53 @@ _QUESTOR_FORGEPACT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _QUESTOR_FORGEPACT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_QUESTORIS_COMPANIONS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010503004": StratagemToolDescriptor(
+        stratagem_id="000010503004",
+        name="Moment of Glory",
+        timing="fight_phase_before_consolidate",
+        target="imperial_knights_titanic_unit_before_consolidate",
+        duration="until_end_of_phase",
+        effect="extend_consolidate_move",
+        cp_cost=1,
+        effect_params={"extra_distance": 3, "requires_end_engagement": True},
+    ),
+    "000010503005": StratagemToolDescriptor(
+        stratagem_id="000010503005",
+        name="Hero's Tread",
+        timing="end_of_your_command_phase",
+        target="imperial_knights_titanic_model_on_controlled_objective",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective_with_minimum_control",
+        cp_cost=1,
+        effect_params={"minimum_control": 5},
+    ),
+    "000010503006": StratagemToolDescriptor(
+        stratagem_id="000010503006",
+        name="Unstoppable Warrior",
+        timing="your_movement_phase_after_fall_back",
+        target="imperial_knights_titanic_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=2,
+        effect_params={"shoot_after_fall_back": True, "charge_after_fall_back": True},
+    ),
+    "000010503007": StratagemToolDescriptor(
+        stratagem_id="000010503007",
+        name="Driven by the Past",
+        timing="your_charge_phase",
+        target="imperial_knights_titanic_unit_that_advanced",
+        duration="until_end_of_turn",
+        effect="charge_after_advance",
+        cp_cost=1,
+        effect_params={"charge_after_advance": True},
+    ),
+}
+
+_QUESTORIS_COMPANIONS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _QUESTORIS_COMPANIONS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009139002": StratagemToolDescriptor(
         stratagem_id="000009139002",
@@ -15039,6 +15086,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _QUESTOR_FORGEPACT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _QUESTORIS_COMPANIONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15254,6 +15304,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _QUESTOR_FORGEPACT_STRATAGEM_BY_NAME.get(key)
+        or _QUESTORIS_COMPANIONS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ORDO_MALLEUS_DAEMON_HUNTERS_STRATAGEM_BY_NAME.get(key)
