@@ -13338,6 +13338,79 @@ _IMPERIALIS_FLEET_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009131002": StratagemToolDescriptor(
+        stratagem_id="000009131002",
+        name="Stun Grenades",
+        timing="non_command_phase_start",
+        target="ordo_hereticus_grenades_unit_and_visible_enemy_non_monster_non_vehicle_within_8",
+        duration="until_end_of_phase",
+        effect="battle_shock_and_hit_penalty",
+        cp_cost=1,
+        range_in=8.0,
+        effect_params={
+            "battle_shock": True,
+            "hit_roll_modifier": -1,
+            "exclude_target_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000009131003": StratagemToolDescriptor(
+        stratagem_id="000009131003",
+        name="Dispense Justice",
+        timing="shooting_or_fight_phase_on_select",
+        target="ordo_hereticus_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="grant_lethal_hits",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "keyword": "LETHAL HITS"},
+    ),
+    "000009131004": StratagemToolDescriptor(
+        stratagem_id="000009131004",
+        name="Inviolate Jurisdiction",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="ordo_hereticus_infantry_unit_targeted_within_objective_range",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 5, "requires_objective_range": True},
+    ),
+    "000009131005": StratagemToolDescriptor(
+        stratagem_id="000009131005",
+        name="Execution Order",
+        timing="command_phase",
+        target="ordo_hereticus_infantry_unit_and_one_enemy_character_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="targeted_precision",
+        cp_cost=2,
+        effect_params={"attack_type": "any", "keyword": "PRECISION", "requires_enemy_character": True},
+    ),
+    "000009131006": StratagemToolDescriptor(
+        stratagem_id="000009131006",
+        name="Line of Fire",
+        timing="shooting_phase",
+        target="ordo_hereticus_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="allow_ranged_targeting_into_friendly_engagement",
+        cp_cost=1,
+        effect_params={"range_in": 12.0, "exclude_weapon_keywords_any": ["BLAST"]},
+    ),
+    "000009131007": StratagemToolDescriptor(
+        stratagem_id="000009131007",
+        name="Exact Punishment",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved",
+        target="ordo_hereticus_unit_within_6_of_destroyed_friendly_agents_unit",
+        duration="immediate",
+        effect="reactive_shooting_forced_target",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"force_target_only": True, "destroyed_target_excluded": True},
+    ),
+}
+
+_ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009758002": StratagemToolDescriptor(
         stratagem_id="000009758002",
@@ -14643,6 +14716,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -14845,6 +14921,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
+        or _ORDO_HERETICUS_PURGATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)

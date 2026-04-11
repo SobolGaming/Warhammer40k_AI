@@ -1441,6 +1441,24 @@ class ShootingMixin:
                 engaged_with_other = True
             if not engaged_with_other:
                 target_locked = False
+        if target_locked and not fortification_only:
+            try:
+                army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                line_of_fire_fn = getattr(ia_mgr, "line_of_fire_allows_ranged_target", None) if ia_mgr is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if callable(line_of_fire_fn) and bool(
+                    line_of_fire_fn(
+                        self,
+                        target_unit,
+                        weapon_profile=weapon_profile,
+                        game=game,
+                        game_map=game_map,
+                    )
+                ):
+                    target_locked = False
+            except Exception:
+                pass
         if target_locked and acceptable_losses_target:
             target_locked = False
         if target_locked and not fortification_only:

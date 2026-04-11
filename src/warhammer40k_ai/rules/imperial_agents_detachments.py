@@ -429,6 +429,59 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
             return None, None
         return root, sr
 
+    def _ordo_hereticus_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_ordo_hereticus_purgation_force():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._coerce_int(getattr(game_obj, "turn", 0) if game_obj is not None else 0, default=0)
+        marked_turn = self._coerce_int(sr.get(f"{prefix}_turn", 0), default=0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        current_owner_id = self._current_player_id(game=game_obj)
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return None, None
+        return root, sr
+
+    def _ordo_hereticus_phase_effect_state(self, unit, *, prefix: str, game=None):
+        root, sr = self._ordo_hereticus_turn_effect_state(unit, prefix=prefix, game=game)
+        if root is None or not isinstance(sr, dict):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") if game_obj is not None else "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None, None
+        return root, sr
+
+    def _ordo_hereticus_execution_order_state(self, unit, *, game=None):
+        if not self.is_ordo_hereticus_purgation_force():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_execution_order_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._coerce_int(getattr(game_obj, "turn", 0) if game_obj is not None else 0, default=0)
+        marked_turn = self._coerce_int(sr.get("imperial_agents_execution_order_turn", 0), default=0)
+        owner_id = str(sr.get("imperial_agents_execution_order_turn_owner", "") or "")
+        current_owner_id = self._current_player_id(game=game_obj)
+        if marked_turn and current_turn and current_turn < marked_turn:
+            return None, None
+        if marked_turn and current_turn and current_turn > marked_turn + 1:
+            return None, None
+        if owner_id and current_owner_id and marked_turn and current_turn and current_turn > marked_turn and current_owner_id == owner_id:
+            return None, None
+        return root, sr
+
     def _at_all_costs_pending_request(self, game, *, army_id: str, battle_round: int):
         if game is None:
             return None
@@ -1886,6 +1939,146 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
                 "requires_objective": True,
             },
         ]
+
+    def dispense_justice_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> list[dict]:
+        del target_unit, attack_type, weapon_profile, game_map
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return []
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        root, sr = self._ordo_hereticus_phase_effect_state(
+            source_unit,
+            prefix="imperial_agents_dispense_justice",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return []
+        source = str(sr.get("imperial_agents_dispense_justice_source", "") or "Dispense Justice").strip()
+        return [
+            {
+                "attack_type": "any",
+                "keyword": "LETHAL HITS",
+                "source": source or "Dispense Justice",
+            }
+        ]
+
+    def execution_order_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> list[dict]:
+        del attack_type, weapon_profile, game_map
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return []
+        source_unit = self._unit_root(
+            attacker_unit if attacker_unit is not None else getattr(attacker_model, "parent_unit", None)
+        )
+        root, sr = self._ordo_hereticus_execution_order_state(source_unit, game=game)
+        if root is None or not isinstance(sr, dict):
+            return []
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return []
+        expected_target_id = str(sr.get("imperial_agents_execution_order_enemy_unit_id", "") or "")
+        current_target_id = self._entity_id(target_root)
+        if not expected_target_id or not current_target_id or expected_target_id != current_target_id:
+            return []
+        source = str(sr.get("imperial_agents_execution_order_source", "") or "Execution Order").strip()
+        return [
+            {
+                "attack_type": "any",
+                "keyword": "PRECISION",
+                "source": source or "Execution Order",
+            }
+        ]
+
+    def line_of_fire_allows_ranged_target(
+        self,
+        attacker_unit,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if target_unit is None or not self._weapon_profile_is_ranged(weapon_profile):
+            return False
+        is_blast = getattr(weapon_profile, "is_blast", None)
+        if callable(is_blast) and bool(is_blast()):
+            return False
+        source_unit = self._unit_root(attacker_unit)
+        root, sr = self._ordo_hereticus_phase_effect_state(
+            source_unit,
+            prefix="imperial_agents_line_of_fire",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is not None and not self._unit_is_enemy_of_player(target_root, owner):
+            return False
+        model_candidates = []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            model_candidates = list(get_models() or [])
+        else:
+            model_candidates = list(getattr(root, "models", []) or [])
+        in_range = False
+        for model in list(model_candidates or []):
+            if model is None or bool(getattr(model, "_pending_placement", False)):
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            if model_within_range_of_unit(model, target_root, 12.0):
+                in_range = True
+                break
+        if not in_range:
+            return False
+        resolved_game_map = game_map
+        if resolved_game_map is None:
+            game_obj = game if game is not None else self._current_game()
+            resolved_game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if resolved_game_map is None:
+            return False
+        friendly_units = list(getattr(resolved_game_map, "get_friendly_units", lambda _unit: [])(root) or [])
+        if root not in friendly_units:
+            friendly_units.append(root)
+        owner_id = self._player_id(owner)
+        for friendly in list(friendly_units or []):
+            friendly_root = self._unit_root(friendly)
+            if friendly_root is None or not self._unit_on_battlefield(friendly_root):
+                continue
+            get_parent_army = getattr(friendly_root, "get_parent_army", None)
+            if not callable(get_parent_army):
+                continue
+            friendly_army = get_parent_army()
+            friendly_player_id = self._player_id(getattr(friendly_army, "player", None))
+            if owner_id and friendly_player_id and friendly_player_id != owner_id:
+                continue
+            if bool(resolved_game_map.is_within_engagement_range(friendly_root, target_root)):
+                return True
+        return False
 
     def selfless_bodyguard_redirect_models(self, unit, character_model, *, game=None) -> tuple[list, str]:
         root, sr = self._imperialis_fleet_phase_effect_state(

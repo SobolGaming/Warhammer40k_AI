@@ -2061,13 +2061,15 @@ class PositioningAttackBonusesMixin:
         try:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
             ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
-            keyword_rules_fn = (
-                getattr(ia_mgr, "violent_acquisition_attack_keyword_bonus_rules", None)
-                if ia_mgr is not None
-                else None
-            )
-            if callable(keyword_rules_fn):
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            for helper_name in (
+                "violent_acquisition_attack_keyword_bonus_rules",
+                "dispense_justice_attack_keyword_bonus_rules",
+                "execution_order_attack_keyword_bonus_rules",
+            ):
+                keyword_rules_fn = getattr(ia_mgr, helper_name, None) if ia_mgr is not None else None
+                if not callable(keyword_rules_fn):
+                    continue
                 rules.extend(
                     list(
                         keyword_rules_fn(

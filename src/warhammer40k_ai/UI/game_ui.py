@@ -19353,6 +19353,137 @@ class GameView:
                 )
             return
 
+        if name_u in ("DISPENSE JUSTICE", "EXACT PUNISHMENT", "INVIOLATE JURISDICTION", "LINE OF FIRE") and "target_unit" not in context and "unit" not in context:
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+            candidates = context.get("candidates") or ([preset_unit] if preset_unit is not None else [])
+            phase_name = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "")
+            if not candidates:
+                try:
+                    if name_u == "DISPENSE JUSTICE":
+                        candidates = list(manager._ia_dispense_justice_candidates(phase_name=phase_name) or [])
+                    elif name_u == "INVIOLATE JURISDICTION":
+                        candidates = list(manager._ia_inviolate_jurisdiction_candidates(list(context.get("target_units") or [])) or [])
+                    elif name_u == "LINE OF FIRE":
+                        candidates = list(manager._ia_line_of_fire_candidates() or [])
+                except Exception:
+                    candidates = []
+            if preset_unit is not None:
+                self._finalize_generic_stratagem(player, name, context, preset_unit)
+                return
+            subtitle = {
+                "DISPENSE JUSTICE": "ADEPTUS ARBITES, INQUISITORIAL AGENTS, or ORDO HERETICUS unit that has not acted this phase.",
+                "EXACT PUNISHMENT": "Eligible Ordo Hereticus unit within 6\" of the destroyed friendly AGENTS unit.",
+                "INVIOLATE JURISDICTION": "Targeted Ordo Hereticus INFANTRY unit within objective range.",
+                "LINE OF FIRE": "Ordo Hereticus unit that has not been selected to shoot this phase.",
+            }.get(name_u, "Select an eligible Ordo Hereticus unit.")
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select {name} unit.",
+                title=name,
+                subtitle=subtitle,
+                enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u in ("EXECUTION ORDER", "STUN GRENADES") and not (
+            ("target_unit" in context or "unit" in context)
+            and ("enemy_unit" in context or "target_enemy_unit" in context)
+        ):
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+            preset_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+            unit_candidates = context.get("candidates") or ([preset_unit] if preset_unit is not None else [])
+            enemy_candidates_by_unit = dict(context.get("enemy_candidates_by_unit") or {})
+            if not unit_candidates:
+                try:
+                    if name_u == "EXECUTION ORDER":
+                        unit_candidates = list(manager._ia_execution_order_candidates() or [])
+                    else:
+                        unit_candidates, enemy_candidates_by_unit = manager._ia_stun_grenades_candidates()
+                except Exception:
+                    unit_candidates = []
+                    enemy_candidates_by_unit = {}
+
+            def _pick_enemy(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("%s: no source unit selected", name)
+                    return
+                if preset_enemy is not None:
+                    self._finalize_unit_and_enemy_stratagem(player, name, context, chosen_unit, preset_enemy)
+                    return
+                enemy_candidates = []
+                try:
+                    if name_u == "EXECUTION ORDER":
+                        enemy_candidates = list(manager._ia_ordo_hereticus_enemy_character_candidates() or [])
+                    else:
+                        chosen_id = str(get_entity_id(chosen_unit) or "")
+                        enemy_candidates = list(
+                            enemy_candidates_by_unit.get(chosen_id)
+                            or manager._ia_ordo_hereticus_stun_grenades_enemy_candidates_for_unit(chosen_unit)
+                            or []
+                        )
+                except Exception:
+                    enemy_candidates = []
+                if not enemy_candidates:
+                    logger.info("%s: no eligible enemy target", name)
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select enemy unit for {name}.",
+                    title=name,
+                    subtitle=(
+                        "Enemy CHARACTER unit on the battlefield."
+                        if name_u == "EXECUTION ORDER"
+                        else "Visible enemy non-MONSTER, non-VEHICLE unit within 8\"."
+                    ),
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _pick_enemy(preset_unit)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=unit_candidates,
+                on_chosen=_pick_enemy,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select {name} unit.",
+                title=name,
+                subtitle=(
+                    "Ordo Hereticus INFANTRY unit."
+                    if name_u == "EXECUTION ORDER"
+                    else "Ordo Hereticus GRENADES unit that is not in Engagement Range."
+                ),
+                enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
         if name_u == "PSY-CHAFF VOLLEY" and "enemy_unit" not in context and "target_enemy_unit" not in context:
             if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 return

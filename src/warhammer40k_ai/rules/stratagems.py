@@ -2533,6 +2533,7 @@ class StratagemManager(
             "REINFORCEMENTS!",
             "CACHED ACQUISITION",
             "WRETCHED MASSES",
+            "EXACT PUNISHMENT",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
         if "JOIN THE HUNT" in names:
@@ -2677,7 +2678,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_death_guard)
         if names & {"DESPERATION'S PRICE", "PSY-CHAFF VOLLEY"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_adeptus_custodes_null_maiden)
-        if "DISPLACER FIELD" in names:
+        if names & {"DISPLACER FIELD", "EXACT PUNISHMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_agents)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
@@ -9995,6 +9996,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_imperial_agents_ordo_hereticus_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_tyranids_invasion_fleet_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
@@ -14475,6 +14480,9 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )
+            self._queue_imperial_agents_ordo_hereticus_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+            )
         except Exception:
             raise
 
@@ -14695,6 +14703,13 @@ class StratagemManager(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
                 phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_ordo_hereticus_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise
@@ -15985,6 +16000,13 @@ class StratagemManager(
             raise
         try:
             self._queue_cryptek_conclave_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_ordo_hereticus_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -18888,6 +18910,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._capture_imperial_agents_exact_punishment_destroyed_unit(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_world_eaters_cult_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -19527,6 +19556,9 @@ class StratagemManager(
         imperial_agents_fleet_result = self._use_imperial_agents_imperialis_fleet_stratagem(s, **kwargs)
         if imperial_agents_fleet_result is not None:
             return imperial_agents_fleet_result
+        imperial_agents_ordo_result = self._use_imperial_agents_ordo_hereticus_stratagem(s, **kwargs)
+        if imperial_agents_ordo_result is not None:
+            return imperial_agents_ordo_result
         chaos_daemons_plague_legion_result = self._use_chaos_daemons_plague_legion_stratagem(s, **kwargs)
         if chaos_daemons_plague_legion_result is not None:
             return chaos_daemons_plague_legion_result

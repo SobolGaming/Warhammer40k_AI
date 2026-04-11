@@ -20141,6 +20141,12 @@ def _stratagem_support(
         "000009139005": "Your Movement phase: selected AGENTS OF THE IMPERIUM unit can shoot later in the turn after Advancing or Falling Back.",
         "000009139006": "Opponent Shooting phase reaction after an enemy unit selects targets: selected AGENTS OF THE IMPERIUM CHARACTER unit, excluding OFFICIO ASSASSINORUM, gains a 4+ invulnerable save and a post-attack reactive Normal move up to 6\" with Fly-style vertical traversal until end of phase.",
         "000009139007": "Opponent Shooting phase or the Fight phase reaction after an enemy unit selects targets: selected AGENTS OF THE IMPERIUM Attached unit can redirect each allocated [PRECISION] attack against one of its CHARACTER models onto a chosen bodyguard model on a 2+ until end of phase.",
+        "000009131003": "Your Shooting phase or the Fight phase: selected ADEPTUS ARBITES, INQUISITORIAL AGENTS, or ORDO HERETICUS unit that has not acted gains [LETHAL HITS] on its attacks until end of phase.",
+        "000009131007": "Opponent Shooting phase reaction after an enemy unit destroys a friendly AGENTS OF THE IMPERIUM unit: selected nearby Ordo Hereticus unit within 6\" can make an out-of-phase shooting attack, and its declared shots are forced to target only that attacking enemy unit.",
+        "000009131005": "Your Command phase: selected ADEPTUS ARBITES, INQUISITORIAL AGENTS, or ORDO HERETICUS INFANTRY unit selects one enemy CHARACTER unit; until the start of your next Command phase, its attacks gain [PRECISION] only against that enemy unit.",
+        "000009131004": "Opponent Shooting phase or the Fight phase reaction after enemy targets are selected: selected Ordo Hereticus INFANTRY target within objective range gains Feel No Pain 5+ until end of phase.",
+        "000009131006": "Your Shooting phase: selected Ordo Hereticus unit that has not yet shot can target enemy units within Engagement Range of friendly units with non-Blast ranged weapons, provided the target is within 12\", until end of phase.",
+        "000009131002": "Start of any non-Command phase: selected Ordo Hereticus GRENADES unit chooses one visible enemy non-MONSTER, non-VEHICLE unit within 8\"; that enemy takes a Battle-shock test and suffers -1 to hit until end of phase.",
         "000008555002": "Opponent Shooting phase or the Fight phase reaction after an enemy unit finishes its attacks: selected friendly NECRONS INFANTRY unit that lost models is removed from the battlefield and must be set up again wholly within 6\" of a selected friendly MONOLITH and not within Engagement Range of enemy units.",
         "000008555003": "Opponent Shooting phase or the Fight phase defensive reaction after an enemy unit selects its targets: selected friendly NECRONS VEHICLE unit gains a 4+ invulnerable save until end of phase.",
         "000008555004": "Your Command phase: your NECRONS WARLORD triggers Reanimation Protocols for each friendly NECRONS unit currently in Reserves, rolling D3 wounds separately for each unit.",
@@ -21037,6 +21043,12 @@ def _stratagem_support(
         "000009139005",
         "000009139006",
         "000009139007",
+        "000009131002",
+        "000009131003",
+        "000009131004",
+        "000009131005",
+        "000009131006",
+        "000009131007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
 

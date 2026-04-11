@@ -6574,6 +6574,45 @@ class ActionsMovementMixin:
                 mods["hit"] += int(prey_hit_bonus)
                 hit_reasons.append(reason)
 
+        target_root = root
+        if isinstance(getattr(target_root, "special_rules", None), dict) and bool(
+            target_root.special_rules.get("imperial_agents_stun_grenades_active")
+        ):
+            stun_applies = True
+            stun_source = str(
+                target_root.special_rules.get("imperial_agents_stun_grenades_source", "") or "STUN GRENADES"
+            ).strip() or "STUN GRENADES"
+            try:
+                stun_modifier = int(target_root.special_rules.get("imperial_agents_stun_grenades_hit_roll_modifier", -1) or -1)
+            except Exception:
+                stun_modifier = -1
+            army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None:
+                exp = str(target_root.special_rules.get("imperial_agents_stun_grenades_expires_phase", "") or "").strip().upper()
+                cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                cur_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                try:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    cur_turn = 0
+                try:
+                    marked_turn = int(target_root.special_rules.get("imperial_agents_stun_grenades_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    marked_turn = 0
+                marked_owner = str(target_root.special_rules.get("imperial_agents_stun_grenades_turn_owner", "") or "")
+                if exp and cur_phase and exp != cur_phase:
+                    stun_applies = False
+                if stun_applies and marked_turn and cur_turn and marked_turn != cur_turn:
+                    stun_applies = False
+                if stun_applies and marked_owner and cur_owner and marked_owner != cur_owner:
+                    stun_applies = False
+            if stun_applies and stun_modifier:
+                reason = f"{int(stun_modifier):+d} to hit from {stun_source} (stunned)"
+                if reason not in hit_reasons:
+                    mods["hit"] += int(stun_modifier)
+                    hit_reasons.append(reason)
+
         choice = ""
         try:
             choice_fn = getattr(self, "_path_of_warrior_choice", None)
