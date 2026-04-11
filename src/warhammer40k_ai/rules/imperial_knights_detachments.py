@@ -1296,6 +1296,84 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                 return None, None
         return root, sr
 
+    def _spearhead_temporary_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_spearhead_at_arms():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        if not self._unit_on_battlefield(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{str(prefix)}_active")):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        current_phase = (
+            str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            if resolved_game is not None
+            else ""
+        )
+        expires_phase = str(sr.get(f"{str(prefix)}_expires_phase", "") or "").strip().upper()
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return None, None
+        try:
+            effect_turn = int(sr.get(f"{str(prefix)}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{str(prefix)}_turn_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return None, None
+        return root, sr
+
+    def spearhead_mantle_of_the_mentor_can_shoot_after_fall_back(self, unit, *, profile=None, game=None) -> bool:
+        if profile is not None and not self._weapon_is_ranged(profile):
+            return False
+        _root, sr = self._spearhead_temporary_effect_state(
+            unit,
+            prefix="spearhead_mantle_of_the_mentor",
+            game=game,
+        )
+        return bool(sr is not None)
+
+    def spearhead_virtue_of_courage_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        del game_map
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root, sr = self._spearhead_temporary_effect_state(
+            attacker_unit,
+            prefix="spearhead_virtue_of_courage",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return 0, ""
+        if not self._unit_is_armiger(attacker_root):
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None or self._unit_in_army(target_root):
+            return 0, ""
+        target_id = self._entity_id(target_root)
+        if not target_id:
+            return 0, ""
+        if str(sr.get("spearhead_virtue_of_courage_target_id", "") or "").strip() != target_id:
+            return 0, ""
+        source_name = str(sr.get("spearhead_virtue_of_courage_source", "") or "VIRTUE OF COURAGE").strip()
+        return 1, source_name or "VIRTUE OF COURAGE"
+
     def questoris_companions_driven_by_the_past_can_charge_after_advance(self, unit, *, game=None) -> bool:
         _root, sr = self._questoris_companions_temporary_effect_state(
             unit,

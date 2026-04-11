@@ -20065,6 +20065,11 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            mantle_fn = getattr(mgr, "spearhead_mantle_of_the_mentor_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(mantle_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(mantle_fn(self, profile=profile, game=game)):
+                    return True
             apply_fn = (
                 getattr(mgr, "questoris_companions_unstoppable_warrior_can_shoot_after_fall_back", None)
                 if mgr is not None

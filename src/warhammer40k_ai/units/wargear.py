@@ -13972,6 +13972,20 @@ class WargearProfile:
                     _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "spearhead_virtue_of_courage_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                hit_bonus, hit_source = bonus_fn(attacker, target, game=game, game_map=game_map)
+                if int(hit_bonus or 0):
+                    source_name = str(hit_source or "VIRTUE OF COURAGE").strip() or "VIRTUE OF COURAGE"
+                    _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
+        except Exception:
+            pass
 
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:

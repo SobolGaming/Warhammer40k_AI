@@ -858,6 +858,25 @@ class ImperialKnightsStratagemMixin:
         except (TypeError, ValueError):
             return True
 
+    def _ik_model_weapon_profiles(self, model: Any, *, attack_type: str) -> list[Any]:
+        attack_type_key = str(attack_type or "").strip().lower()
+        if attack_type_key not in {"melee", "ranged"}:
+            return []
+        profiles: list[Any] = []
+        for wargear in list(getattr(model, "wargear", []) or []):
+            is_melee = bool(callable(getattr(wargear, "is_melee", None)) and wargear.is_melee())
+            is_ranged = bool(callable(getattr(wargear, "is_ranged", None)) and wargear.is_ranged())
+            if attack_type_key == "melee" and not is_melee:
+                continue
+            if attack_type_key == "ranged" and not is_ranged:
+                continue
+            wargear_profiles = getattr(wargear, "profiles", {}) or {}
+            for profile_name in sorted(wargear_profiles):
+                profile = wargear_profiles.get(profile_name)
+                if profile is not None:
+                    profiles.append(profile)
+        return profiles
+
     @classmethod
     def _ik_model_has_feet_melee_weapon(cls, model: Any) -> bool:
         for weapon in list(getattr(model, "wargear", []) or []):
@@ -1138,6 +1157,126 @@ class ImperialKnightsStratagemMixin:
                 out.append(root)
         return sorted(out, key=self._ik_sort_key)
 
+    def _imperial_knights_spearhead_armiger_targets(
+        self,
+        source_unit: Any,
+        *,
+        phase_name: str = "",
+        reserve_only: bool = False,
+    ) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._ik_owned_by_player(source_root, self.player):
+            return []
+        if not self._ik_on_battlefield(source_root, require_targetable=True):
+            return []
+        if not self._is_imperial_knights_unit(source_root):
+            return []
+        phase_key = self._ik_phase_name_key(phase_name)
+
+        def _eligible_armiger(root: Any) -> bool:
+            if root is None:
+                return False
+            if not self._ik_owned_by_player(root, self.player):
+                return False
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                return False
+            if not self._ik_is_armiger_unit(root):
+                return False
+            if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                return False
+            if phase_key == "fight phase" and self._ik_selected_to_fight_this_phase(root):
+                return False
+            if reserve_only:
+                if self._ik_unit_in_engagement_range(root):
+                    return False
+                if not bool(self._unit_wholly_within_battlefield_edge_distance(root, 9.0)):
+                    return False
+            return True
+
+        if self._ik_is_armiger_unit(source_root):
+            return [source_root] if _eligible_armiger(source_root) else []
+        if not self._ik_is_titanic_unit(source_root):
+            return []
+        if phase_key == "shooting phase" and bool(getattr(getattr(source_root, "round_state", None), "shot_this_round", False)):
+            return []
+        if phase_key == "fight phase" and self._ik_selected_to_fight_this_phase(source_root):
+            return []
+        bonded = self._imperial_knights_exemplars_wisdom_friendly_candidates(source_unit=source_root)
+        return [root for root in list(bonded or []) if _eligible_armiger(root)]
+
+    def _imperial_knights_spearhead_shooting_source_candidates(self) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._imperial_knights_spearhead_armiger_targets(root, phase_name="Shooting phase"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_spearhead_fight_source_candidates(self) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._imperial_knights_spearhead_armiger_targets(root, phase_name="Fight phase"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_spearhead_squires_source_candidates(self) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        out: list[Any] = []
+        for root in self._ik_army_roots():
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._imperial_knights_spearhead_armiger_targets(root, reserve_only=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_spearhead_enemy_candidates(self) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        pool = list(getattr(game_map, "units", []) or []) if game_map is not None else []
+        if not pool:
+            for current_player in list(getattr(self.game, "players", []) or []) if self.game is not None else []:
+                army = getattr(current_player, "army", None)
+                pool.extend(list(getattr(army, "units", []) or []))
+        for unit in pool:
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
     def _queue_imperial_knights_spearhead_shooting_target_reactions(
         self,
         *,
@@ -1256,6 +1395,53 @@ class ImperialKnightsStratagemMixin:
             payload["enemy_unit"] = enemy_candidates[0]
             payload["target_unit"] = enemy_candidates[0]
         self._queue_reaction(payload)
+
+    def _queue_imperial_knights_spearhead_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_spearhead_at_arms() or self.game is None:
+            return
+        if player is self.player:
+            return
+        phase_key = self._ik_phase_name_key(getattr(phase, "name", phase))
+        if phase_key != "fight phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("SQUIRES OFTHE HUNT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        source_candidates = self._imperial_knights_spearhead_squires_source_candidates()
+        if not source_candidates:
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": phase,
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": source_candidates,
+            "source_candidates": source_candidates,
+        }
+        if len(source_candidates) == 1:
+            friendly_candidates = self._imperial_knights_spearhead_armiger_targets(source_candidates[0], reserve_only=True)
+            payload["source_unit"] = source_candidates[0]
+            payload["unit"] = source_candidates[0]
+            payload["target_unit"] = source_candidates[0]
+            payload["friendly_candidates"] = friendly_candidates
+            if len(friendly_candidates) == 1:
+                payload["selected_units"] = [friendly_candidates[0]]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_imperial_knights_gate_warden_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_gate_warden_lance() or player is self.player:
@@ -1438,6 +1624,26 @@ class ImperialKnightsStratagemMixin:
                         "imperial_knights_exemplars_wisdom_source",
                     ):
                         sr.pop(key, None)
+                exp = str(sr.get("spearhead_mantle_of_the_mentor_expires_phase", "") or "").strip().upper()
+                if sr.get("spearhead_mantle_of_the_mentor_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "spearhead_mantle_of_the_mentor_active",
+                        "spearhead_mantle_of_the_mentor_expires_phase",
+                        "spearhead_mantle_of_the_mentor_turn_owner",
+                        "spearhead_mantle_of_the_mentor_turn",
+                        "spearhead_mantle_of_the_mentor_source",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("spearhead_thin_their_ranks_expires_phase", "") or "").strip().upper()
+                if sr.get("spearhead_thin_their_ranks_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "spearhead_thin_their_ranks_active",
+                        "spearhead_thin_their_ranks_expires_phase",
+                        "spearhead_thin_their_ranks_turn_owner",
+                        "spearhead_thin_their_ranks_turn",
+                        "spearhead_thin_their_ranks_source",
+                    ):
+                        sr.pop(key, None)
                 exp = str(sr.get("gate_warden_drive_them_out_expires_phase", "") or "").strip().upper()
                 if sr.get("gate_warden_drive_them_out_active") is True and (not exp or exp == phase_name):
                     for key in (
@@ -1490,6 +1696,19 @@ class ImperialKnightsStratagemMixin:
                         "gate_warden_steadfast_superiority_turn_owner",
                         "gate_warden_steadfast_superiority_turn",
                         "gate_warden_steadfast_superiority_source",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("spearhead_virtue_of_courage_expires_phase", "") or "").strip().upper()
+                if sr.get("spearhead_virtue_of_courage_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "spearhead_virtue_of_courage_active",
+                        "spearhead_virtue_of_courage_hit_bonus",
+                        "spearhead_virtue_of_courage_target_id",
+                        "spearhead_virtue_of_courage_source_unit_id",
+                        "spearhead_virtue_of_courage_expires_phase",
+                        "spearhead_virtue_of_courage_turn_owner",
+                        "spearhead_virtue_of_courage_turn",
+                        "spearhead_virtue_of_courage_source",
                     ):
                         sr.pop(key, None)
             if phase_name == "CHARGE_PHASE":
@@ -1910,6 +2129,14 @@ class ImperialKnightsStratagemMixin:
             return self._use_spearhead_let_duty_be_your_shield(stratagem, **kwargs)
         if name_u == "EXEMPLAR'S WISDOM":
             return self._use_spearhead_exemplars_wisdom(stratagem, **kwargs)
+        if name_u == "MANTLE OF THE MENTOR":
+            return self._use_spearhead_mantle_of_the_mentor(stratagem, **kwargs)
+        if name_u == "SQUIRES OFTHE HUNT":
+            return self._use_spearhead_squires_ofthe_hunt(stratagem, **kwargs)
+        if name_u == "THIN THEIR RANKS":
+            return self._use_spearhead_thin_their_ranks(stratagem, **kwargs)
+        if name_u == "VIRTUE OF COURAGE":
+            return self._use_spearhead_virtue_of_courage(stratagem, **kwargs)
         if name_u == "DRIVEN BY THE PAST":
             return self._use_questoris_companions_driven_by_the_past(stratagem, **kwargs)
         if name_u == "HERO'S TREAD":
@@ -2466,6 +2693,341 @@ class ImperialKnightsStratagemMixin:
             "INFO: EXEMPLAR'S WISDOM: %d Armiger unit(s) improve AP by 1 against %s this phase.",
             len(selected_roots),
             getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_spearhead_mantle_of_the_mentor(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        source_unit = merged.get("source_unit") or merged.get("unit") or merged.get("target_unit")
+        source_candidates = list(merged.get("source_candidates") or merged.get("candidates") or [])
+        if source_unit is None and len(source_candidates) == 1:
+            source_unit = source_candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: MANTLE OF THE MENTOR: no source unit provided")
+            return False
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "shooting phase":
+            logger.error("ERROR: MANTLE OF THE MENTOR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MANTLE OF THE MENTOR: not your Shooting phase")
+            return False
+        if source_candidates and not self._ik_unit_in_candidates(source_root, source_candidates):
+            logger.error("ERROR: MANTLE OF THE MENTOR: source unit is not currently eligible")
+            return False
+        selected_units = merged.get("selected_units") or merged.get("units") or merged.get("friendly_units")
+        eligible = list(merged.get("friendly_candidates") or self._imperial_knights_spearhead_armiger_targets(source_root, phase_name="Shooting phase"))
+        selected_raw = (
+            list(selected_units)
+            if isinstance(selected_units, (list, tuple, set))
+            else ([selected_units] if selected_units is not None else [])
+        )
+        selected_roots: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(selected_raw or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            selected_roots.append(root)
+        if not selected_roots and len(eligible) == 1:
+            selected_roots = [eligible[0]]
+        if not selected_roots:
+            logger.error("ERROR: MANTLE OF THE MENTOR: no Armiger units selected")
+            return False
+        for root in list(selected_roots):
+            if not self._ik_unit_in_candidates(root, eligible):
+                logger.error("ERROR: MANTLE OF THE MENTOR: one or more selected Armiger units are not eligible")
+                return False
+        if not self._ik_spend_cp(stratagem, target_unit=source_root):
+            return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        for root in list(selected_roots):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["spearhead_mantle_of_the_mentor_active"] = True
+            sr["spearhead_mantle_of_the_mentor_expires_phase"] = "SHOOTING_PHASE"
+            sr["spearhead_mantle_of_the_mentor_turn_owner"] = owner_id
+            sr["spearhead_mantle_of_the_mentor_turn"] = turn
+            sr["spearhead_mantle_of_the_mentor_source"] = str(getattr(stratagem, "name", "") or "MANTLE OF THE MENTOR")
+            root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MANTLE OF THE MENTOR: %d Armiger unit(s) can shoot this phase despite Falling Back.",
+            len(selected_roots),
+        )
+        return True
+
+    def _use_spearhead_thin_their_ranks(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        source_unit = merged.get("source_unit") or merged.get("unit") or merged.get("target_unit")
+        source_candidates = list(merged.get("source_candidates") or merged.get("candidates") or [])
+        if source_unit is None and len(source_candidates) == 1:
+            source_unit = source_candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: THIN THEIR RANKS: no source unit provided")
+            return False
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "shooting phase":
+            logger.error("ERROR: THIN THEIR RANKS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THIN THEIR RANKS: not your Shooting phase")
+            return False
+        if source_candidates and not self._ik_unit_in_candidates(source_root, source_candidates):
+            logger.error("ERROR: THIN THEIR RANKS: source unit is not currently eligible")
+            return False
+        selected_units = merged.get("selected_units") or merged.get("units") or merged.get("friendly_units")
+        eligible = list(merged.get("friendly_candidates") or self._imperial_knights_spearhead_armiger_targets(source_root, phase_name="Shooting phase"))
+        selected_raw = (
+            list(selected_units)
+            if isinstance(selected_units, (list, tuple, set))
+            else ([selected_units] if selected_units is not None else [])
+        )
+        selected_roots: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(selected_raw or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            selected_roots.append(root)
+        if not selected_roots and len(eligible) == 1:
+            selected_roots = [eligible[0]]
+        if not selected_roots:
+            logger.error("ERROR: THIN THEIR RANKS: no Armiger units selected")
+            return False
+        for root in list(selected_roots):
+            if not self._ik_unit_in_candidates(root, eligible):
+                logger.error("ERROR: THIN THEIR RANKS: one or more selected Armiger units are not eligible")
+                return False
+        if not self._ik_spend_cp(stratagem, target_unit=source_root):
+            return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        for root in list(selected_roots):
+            for model in self._ik_unit_models(root):
+                model_id = str(maybe_entity_id(model) or "")
+                for profile in self._ik_model_weapon_profiles(model, attack_type="ranged"):
+                    lookup_name = getattr(profile, "_temporary_weapon_lookup_name", None)
+                    weapon_name = lookup_name() if callable(lookup_name) else str(getattr(profile, "name", "") or "")
+                    if not weapon_name:
+                        continue
+                    setter = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                    if callable(setter):
+                        setter(
+                            key=f"spearhead_thin_their_ranks:{self._ik_sort_key(root)}:{model_id}:{weapon_name}",
+                            weapon_name=weapon_name,
+                            keywords=["RAPID FIRE 1"],
+                            source=str(getattr(stratagem, "name", "") or "THIN THEIR RANKS"),
+                            expires_phase="SHOOTING_PHASE",
+                            attack_type="ranged",
+                        )
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["spearhead_thin_their_ranks_active"] = True
+            sr["spearhead_thin_their_ranks_expires_phase"] = "SHOOTING_PHASE"
+            sr["spearhead_thin_their_ranks_turn_owner"] = owner_id
+            sr["spearhead_thin_their_ranks_turn"] = turn
+            sr["spearhead_thin_their_ranks_source"] = str(getattr(stratagem, "name", "") or "THIN THEIR RANKS")
+            root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THIN THEIR RANKS: %d Armiger unit(s) gain [RAPID FIRE 1] on ranged weapons this phase.",
+            len(selected_roots),
+        )
+        return True
+
+    def _use_spearhead_virtue_of_courage(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        source_unit = merged.get("source_unit") or merged.get("unit") or merged.get("target_unit")
+        source_candidates = list(merged.get("source_candidates") or merged.get("candidates") or [])
+        if source_unit is None and len(source_candidates) == 1:
+            source_unit = source_candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: VIRTUE OF COURAGE: no source unit provided")
+            return False
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "fight phase":
+            logger.error("ERROR: VIRTUE OF COURAGE: wrong phase")
+            return False
+        if source_candidates and not self._ik_unit_in_candidates(source_root, source_candidates):
+            logger.error("ERROR: VIRTUE OF COURAGE: source unit is not currently eligible")
+            return False
+        selected_units = merged.get("selected_units") or merged.get("units") or merged.get("friendly_units")
+        eligible = list(merged.get("friendly_candidates") or self._imperial_knights_spearhead_armiger_targets(source_root, phase_name="Fight phase"))
+        selected_raw = (
+            list(selected_units)
+            if isinstance(selected_units, (list, tuple, set))
+            else ([selected_units] if selected_units is not None else [])
+        )
+        selected_roots: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(selected_raw or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            selected_roots.append(root)
+        if not selected_roots and len(eligible) == 1:
+            selected_roots = [eligible[0]]
+        if not selected_roots:
+            logger.error("ERROR: VIRTUE OF COURAGE: no Armiger units selected")
+            return False
+        for root in list(selected_roots):
+            if not self._ik_unit_in_candidates(root, eligible):
+                logger.error("ERROR: VIRTUE OF COURAGE: one or more selected Armiger units are not eligible")
+                return False
+        enemy_root = self._ik_root(merged.get("enemy_unit") or merged.get("target_enemy_unit") or merged.get("selected_enemy_unit"))
+        enemy_candidates = list(merged.get("enemy_candidates") or self._imperial_knights_spearhead_enemy_candidates())
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = self._ik_root(enemy_candidates[0])
+        if enemy_root is None:
+            logger.error("ERROR: VIRTUE OF COURAGE: no enemy unit selected")
+            return False
+        if enemy_candidates and not self._ik_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: VIRTUE OF COURAGE: enemy unit is not currently eligible")
+            return False
+        if not self._ik_on_battlefield(enemy_root, require_targetable=True):
+            return False
+        if self._ik_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: VIRTUE OF COURAGE: enemy unit is invalid")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=source_root):
+            return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        enemy_id = self._ik_sort_key(enemy_root)
+        source_id = self._ik_sort_key(source_root)
+        for root in list(selected_roots):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["spearhead_virtue_of_courage_active"] = True
+            sr["spearhead_virtue_of_courage_hit_bonus"] = 1
+            sr["spearhead_virtue_of_courage_target_id"] = enemy_id
+            sr["spearhead_virtue_of_courage_source_unit_id"] = source_id
+            sr["spearhead_virtue_of_courage_expires_phase"] = "FIGHT_PHASE"
+            sr["spearhead_virtue_of_courage_turn_owner"] = owner_id
+            sr["spearhead_virtue_of_courage_turn"] = turn
+            sr["spearhead_virtue_of_courage_source"] = str(getattr(stratagem, "name", "") or "VIRTUE OF COURAGE")
+            root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VIRTUE OF COURAGE: %d Armiger unit(s) gain +1 to hit against %s this phase.",
+            len(selected_roots),
+            getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_spearhead_squires_ofthe_hunt(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        source_unit = merged.get("source_unit") or merged.get("unit") or merged.get("target_unit")
+        source_candidates = list(merged.get("source_candidates") or merged.get("candidates") or [])
+        if source_unit is None and len(source_candidates) == 1:
+            source_unit = source_candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: SQUIRES OFTHE HUNT: no source unit provided")
+            return False
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "fight phase":
+            logger.error("ERROR: SQUIRES OFTHE HUNT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SQUIRES OFTHE HUNT: not your opponent's Fight phase")
+            return False
+        if str(merged.get("event", "") or "").strip().lower() != "phase_end":
+            logger.error("ERROR: SQUIRES OFTHE HUNT: requires the end of your opponent's Fight phase")
+            return False
+        if source_candidates and not self._ik_unit_in_candidates(source_root, source_candidates):
+            logger.error("ERROR: SQUIRES OFTHE HUNT: source unit is not currently eligible")
+            return False
+        selected_units = merged.get("selected_units") or merged.get("units") or merged.get("friendly_units")
+        eligible = list(merged.get("friendly_candidates") or self._imperial_knights_spearhead_armiger_targets(source_root, reserve_only=True))
+        selected_raw = (
+            list(selected_units)
+            if isinstance(selected_units, (list, tuple, set))
+            else ([selected_units] if selected_units is not None else [])
+        )
+        selected_roots: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(selected_raw or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            selected_roots.append(root)
+        if not selected_roots and len(eligible) == 1:
+            selected_roots = [eligible[0]]
+        if not selected_roots:
+            logger.error("ERROR: SQUIRES OFTHE HUNT: no Armiger units selected")
+            return False
+        for root in list(selected_roots):
+            if not self._ik_unit_in_candidates(root, eligible):
+                logger.error("ERROR: SQUIRES OFTHE HUNT: one or more selected Armiger units are not eligible")
+                return False
+        if not self._ik_spend_cp(stratagem, target_unit=source_root):
+            return False
+        moved_units = 0
+        for root in list(selected_roots):
+            enter_reserves = getattr(root, "enter_strategic_reserves_midgame", None)
+            if callable(enter_reserves) and bool(
+                enter_reserves(
+                    game=self.game,
+                    game_map=getattr(self.game, "map", None) if self.game is not None else None,
+                    reason=str(getattr(stratagem, "name", "") or "SQUIRES OFTHE HUNT"),
+                )
+            ):
+                moved_units += 1
+        if moved_units <= 0:
+            logger.error("ERROR: SQUIRES OFTHE HUNT: no selected Armiger units entered Strategic Reserves")
+            return False
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SQUIRES OFTHE HUNT: %d Armiger unit(s) entered Strategic Reserves.",
+            moved_units,
         )
         return True
 

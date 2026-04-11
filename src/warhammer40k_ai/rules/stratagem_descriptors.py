@@ -13283,6 +13283,21 @@ _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
 }
 
 _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010507002": StratagemToolDescriptor(
+        stratagem_id="000010507002",
+        name="Virtue of Courage",
+        timing="fight_phase_start",
+        target="armiger_model_or_titanic_model_and_one_or_more_bondsman_armigers_then_one_enemy_unit",
+        duration="until_end_of_phase",
+        effect="selected_bondsman_armigers_gain_hit_bonus_against_selected_enemy",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "hit_bonus": 1,
+            "requires_bondsman": True,
+            "requires_enemy_selection": True,
+        },
+    ),
     "000010507006": StratagemToolDescriptor(
         stratagem_id="000010507006",
         name="Let Duty Be Your Shield",
@@ -13306,6 +13321,47 @@ _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "ap_bonus": 1,
             "requires_bondsman": True,
             "requires_hit_enemy_selection": True,
+        },
+    ),
+    "000010507004": StratagemToolDescriptor(
+        stratagem_id="000010507004",
+        name="Mantle of the Mentor",
+        timing="shooting_phase_start",
+        target="armiger_model_or_titanic_model_and_one_or_more_bondsman_armigers",
+        duration="until_end_of_phase",
+        effect="eligible_to_shoot_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "requires_bondsman": True,
+        },
+    ),
+    "000010507007": StratagemToolDescriptor(
+        stratagem_id="000010507007",
+        name="Squires Ofthe Hunt",
+        timing="opponent_fight_phase_end",
+        target="armiger_model_or_titanic_model_and_one_or_more_bondsman_armigers_within_9_of_battlefield_edge",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "requires_bondsman": True,
+            "battlefield_edge_distance": 9,
+            "requires_not_in_engagement_range": True,
+        },
+    ),
+    "000010507005": StratagemToolDescriptor(
+        stratagem_id="000010507005",
+        name="Thin Their Ranks",
+        timing="shooting_phase_start",
+        target="armiger_model_or_titanic_model_and_one_or_more_bondsman_armigers",
+        duration="until_end_of_phase",
+        effect="grant_ranged_keywords",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["RAPID FIRE 1"],
+            "requires_bondsman": True,
         },
     ),
 }

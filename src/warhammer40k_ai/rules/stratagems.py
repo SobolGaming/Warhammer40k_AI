@@ -142,6 +142,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL WEAPONRY",
     "EXEMPLAR'S WISDOM",
     "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
+    "MANTLE OF THE MENTOR",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
     "APPOINTED HOUR",
@@ -623,9 +624,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HERO'S TREAD",
     "MACHINE FOCUS",
     "OMNISSIAH'S GRACE",
+    "SQUIRES OFTHE HUNT",
+    "THIN THEIR RANKS",
     "THRONEGHEIST FURY",
     "UNSTOPPABLE WARRIOR",
     "VENGEANCE OF THE MACHINE CULT",
+    "VIRTUE OF COURAGE",
     "TITANIC BOMBARDMENT",
     "TACTICAL WITHDRAWAL",
     "CLEAR AND SECURE",
@@ -1075,6 +1079,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HERO'S TREAD",
     "MOMENT OF GLORY",
     "OMNISSIAH'S GRACE",
+    "SQUIRES OFTHE HUNT",
     "THRONEGHEIST FURY",
     "UNSTOPPABLE WARRIOR",
     "VENGEANCE OF THE MACHINE CULT",
@@ -3019,6 +3024,7 @@ class StratagemManager(
             "COGITATED NEED",
             "SECURE POSITIONS",
             "HERO'S TREAD",
+            "SQUIRES OFTHE HUNT",
             "WALL OF MIRRORS",
             "INVISIBLE HUNTER",
             "INSTINCTIVE HUNTERS",
@@ -6852,6 +6858,65 @@ class StratagemManager(
             else:
                 result["reason"] = "Requires IMPERIAL KNIGHTS target within 9\" of the enemy unit that moved"
             return result
+        if name_u == "MANTLE OF THE MENTOR":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires the start of your Shooting phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or context.get("source_candidates") or [])
+            if not candidates:
+                candidates = list(self._imperial_knights_spearhead_shooting_source_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the start of your Shooting phase and an eligible Armiger or Titanic IMPERIAL KNIGHTS source "
+                "with one or more Armigers to affect"
+            )
+            return result
+        if name_u == "THIN THEIR RANKS":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires the start of your Shooting phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or context.get("source_candidates") or [])
+            if not candidates:
+                candidates = list(self._imperial_knights_spearhead_shooting_source_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the start of your Shooting phase and an eligible Armiger or Titanic IMPERIAL KNIGHTS source "
+                "with one or more Armigers to affect"
+            )
+            return result
+        if name_u == "VIRTUE OF COURAGE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires the start of the Fight phase"
+                return result
+            candidates = list(context.get("candidates") or context.get("source_candidates") or [])
+            if not candidates:
+                candidates = list(self._imperial_knights_spearhead_fight_source_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the start of the Fight phase and an eligible Armiger or Titanic IMPERIAL KNIGHTS source "
+                "with one or more Armigers to affect"
+            )
+            return result
         if name_u == "AGGRESSION BEGETS AGGRESSION":
             if self._questor_forgepact_aggression_begets_aggression_candidates():
                 result["available"] = True
@@ -7026,6 +7091,33 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Movement phase just after one of your Titanic IMPERIAL KNIGHTS units Falls Back"
+            return result
+        if name_u == "SQUIRES OFTHE HUNT":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires the end of your opponent's Fight phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable at the end of your opponent's Fight phase"
+                return result
+            candidates = list(context.get("candidates") or context.get("source_candidates") or [])
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "SQUIRES OFTHE HUNT":
+                        continue
+                    candidates = list(reaction.get("candidates") or reaction.get("source_candidates") or [])
+                    if reaction.get("target_unit") is not None:
+                        candidates.append(reaction.get("target_unit"))
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the end of your opponent's Fight phase and an eligible Armiger or Titanic IMPERIAL KNIGHTS "
+                "source with one or more bonded Armigers within 9\" of a battlefield edge and not in Engagement Range"
+            )
             return result
         if name_u == "MOMENT OF GLORY":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
@@ -9298,6 +9390,10 @@ class StratagemManager(
             "RUN THEM THROUGH!": "Target: IMPERIAL KNIGHTS unit that has not been selected to fight this phase; melee weapons gain [LANCE] this phase",
             "THUNDERSTOMP": "Target: IMPERIAL KNIGHTS model in a unit not yet selected to fight this phase; Armoured/Titanic Feet attacks set to 8/12 and AP improves by 1",
             "TACTICAL FOIL": "Target: IMPERIAL KNIGHTS unit within 9\" of enemy mover after it ends a Normal/Advance/Fall Back move; make a reactive Normal move of D6\"",
+            "MANTLE OF THE MENTOR": "Target: one of your ARMIGER models, or one of your Titanic IMPERIAL KNIGHTS models and one or more friendly bonded ARMIGER units; selected Armigers can shoot this turn after Falling Back",
+            "SQUIRES OFTHE HUNT": "Target: one of your ARMIGER models, or one of your Titanic IMPERIAL KNIGHTS models and one or more friendly bonded ARMIGER units within 9\" of a battlefield edge and not in Engagement Range; selected Armigers enter Strategic Reserves",
+            "THIN THEIR RANKS": "Target: one of your ARMIGER models, or one of your Titanic IMPERIAL KNIGHTS models and one or more friendly bonded ARMIGER units; selected Armigers' ranged weapons gain [RAPID FIRE 1] this phase",
+            "VIRTUE OF COURAGE": "Target: one of your ARMIGER models, or one of your Titanic IMPERIAL KNIGHTS models and one or more friendly bonded ARMIGER units; then select one enemy unit for +1 to hit until end of phase",
             "AGGRESSION BEGETS AGGRESSION": "Target: one IMPERIAL KNIGHTS unit, or one IMPERIAL KNIGHTS CHARACTER and one friendly ADEPTUS MECHANICUS unit within 6\" of it; ranged weapons gain [ASSAULT] this phase",
             "BONDED IMPERATIVE": "Target: your IMPERIAL KNIGHTS CHARACTER just before it uses a Bondsman ability; that use can include one eligible ADEPTUS MECHANICUS unit within 12\", in addition to or instead of an Armiger",
             "MACHINE FOCUS": "Target: one IMPERIAL KNIGHTS unit in your Command phase; it ignores WS/BS, Hit, and Wound modifiers until the start of your next turn",
@@ -11757,6 +11853,10 @@ class StratagemManager(
             raise
         try:
             self._queue_questoris_companions_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_knights_spearhead_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
