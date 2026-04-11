@@ -4,6 +4,7 @@
 
 - App version lives in `src/warhammer40k_ai/version.py` as `APP_VERSION`.
 - `setup.py` reads `APP_VERSION` so packaging and runtime share the same value.
+- `0.2.0` is the milestone release that marks completed in-scope 10th Edition faction support before the active 11th-edition-first port-prep work.
 
 ## When to bump
 
