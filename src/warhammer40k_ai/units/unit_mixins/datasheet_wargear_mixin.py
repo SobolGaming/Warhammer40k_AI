@@ -1207,6 +1207,26 @@ class DatasheetWargearMixin:
             s = re.sub(r"\s+", " ", s).strip()
             return s
 
+        def _parse_count_token(token: str) -> int | None:
+            raw = (token or "").strip().lower()
+            if not raw:
+                return None
+            if raw.isdigit():
+                return int(raw)
+            words = {
+                "one": 1,
+                "two": 2,
+                "three": 3,
+                "four": 4,
+                "five": 5,
+                "six": 6,
+                "seven": 7,
+                "eight": 8,
+                "nine": 9,
+                "ten": 10,
+            }
+            return words.get(raw)
+
         # Parse and store constraint-only lines (they are not selectable options, but affect validity).
         # These are the "Additional / Not implemented" lines like pistol pairing and max ranged weapon limits.
         self._wargear_constraints = getattr(self, "_wargear_constraints", {}) or {}
@@ -1246,10 +1266,19 @@ class DatasheetWargearMixin:
                 continue
             # Max counts: "cannot be equipped with more than 1 X"
             # Hive Tyrant line has multiple clauses; parse all occurrences.
-            maxes = list(re.finditer(r"cannot be equipped with more than (\d+) ([\w\s\-']+)", t))
+            maxes = list(
+                re.finditer(
+                    r"more than "
+                    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten) "
+                    r"([\w\s\-']+?)(?=(?:\s+or\s+more\s+than|\s+and\s+more\s+than|$))",
+                    t,
+                )
+            )
             if maxes:
                 for mm in maxes:
-                    n = int(mm.group(1))
+                    n = _parse_count_token(mm.group(1))
+                    if n is None:
+                        continue
                     nm = _norm(mm.group(2))
                     if nm:
                         self._wargear_constraints["max_counts"][nm] = min(self._wargear_constraints["max_counts"].get(nm, n), n)
@@ -1477,9 +1506,9 @@ class DatasheetWargearMixin:
                 pass
             return False
 
-        def _validate_constraints(model) -> bool:
+        def _validate_constraints_for_wargear(wargear) -> bool:
             c = getattr(self, "_wargear_constraints", {}) or {}
-            wargear = list(getattr(model, "wargear", []) or [])
+            wargear = list(wargear or [])
 
             # Max counts for named items
             max_counts = c.get("max_counts", {}) or {}
@@ -1536,6 +1565,9 @@ class DatasheetWargearMixin:
                     return False
 
             return True
+
+        def _validate_constraints(model) -> bool:
+            return _validate_constraints_for_wargear(getattr(model, "wargear", []) or [])
 
         def _mark_model_took_any_option(model) -> None:
             try:
@@ -1609,6 +1641,8 @@ class DatasheetWargearMixin:
 
         # Apply to models
         for model in eligible_models:
+            original_wargear = list(getattr(model, "wargear", []) or [])
+            option_invalid = False
             # Global option mutex / forbidden weapons
             c = getattr(self, "_wargear_constraints", {}) or {}
             if c.get("model_option_mutex") and getattr(model, "_took_any_wargear_option", False):
@@ -1714,18 +1748,20 @@ class DatasheetWargearMixin:
                 for _ in range(to_add):
                     model.wargear.append(wg)
                     if not _validate_constraints(model):
-                        # rollback the last add and stop
-                        try:
-                            model.wargear.pop()
-                        except Exception:
-                            pass
+                        model.wargear = list(original_wargear)
+                        option_invalid = True
                         break
+                if option_invalid:
+                    break
                 # Lock selected items if required
                 _lock_selected_items(model, {_norm(getattr(wg, "name", ""))} if wg else set())
                 if remaining_slots is not None:
                     remaining_slots -= to_add
                     if remaining_slots <= 0:
                         break
+
+            if option_invalid:
+                continue
 
             # Apply any post-locks to the model after successfully taking this option
             _apply_post_locks(model)

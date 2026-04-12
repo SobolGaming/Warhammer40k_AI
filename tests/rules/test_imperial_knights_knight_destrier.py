@@ -14,7 +14,7 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
-    def __init__(self, name: str, *, abilities=None):
+    def __init__(self, name: str, *, abilities=None, wargear=None, options=None, loadout: str | None = None):
         self.name = name
         self.faction_data = {"name": "Imperial Knights"}
         self.keywords = ["VEHICLE", "WALKER"]
@@ -34,10 +34,10 @@ class _MockDatasheet:
                 "inv_sv_descr": "none",
             }
         ]
-        self.datasheets_wargear = []
-        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_wargear = list(wargear or [])
+        self.datasheets_options = list(options or [{"description": "none"}])
         self.datasheets_abilities = list(abilities or [])
-        self.loadout = "This model is equipped with: nothing"
+        self.loadout = loadout or "This model is equipped with: nothing"
         self.transport = ""
 
 
@@ -67,6 +67,110 @@ def _thundercharge_ability():
 
 def _make_unit(name: str = "Knight Destrier", *, abilities=None) -> Unit:
     return Unit(_MockDatasheet(name, abilities=abilities))
+
+
+def _make_mock_wargear_entry(name: str, *, wargear_type: str, range_value: str, attacks: str, bs_ws: str, strength: str, ap: str, damage: str, description: str = "") -> dict:
+    return {
+        "name": name,
+        "type": wargear_type,
+        "range": range_value,
+        "A": attacks,
+        "BS_WS": bs_ws,
+        "S": strength,
+        "AP": ap,
+        "D": damage,
+        "description": description,
+    }
+
+
+def _make_destrier_wargear_unit() -> Unit:
+    return Unit(
+        _MockDatasheet(
+            "Knight Destrier",
+            wargear=[
+                _make_mock_wargear_entry(
+                    "Chastiser gatling cannon",
+                    wargear_type="Ranged",
+                    range_value="24",
+                    attacks="12",
+                    bs_ws="3+",
+                    strength="6",
+                    ap="-1",
+                    damage="2",
+                    description="assault",
+                ),
+                _make_mock_wargear_entry(
+                    "Frag bombard",
+                    wargear_type="Ranged",
+                    range_value="24",
+                    attacks="D6+3",
+                    bs_ws="3+",
+                    strength="5",
+                    ap="0",
+                    damage="1",
+                    description="assault, blast, rapid fire d6+3",
+                ),
+                _make_mock_wargear_entry(
+                    "Questoris heavy stubber",
+                    wargear_type="Ranged",
+                    range_value="36",
+                    attacks="3",
+                    bs_ws="3+",
+                    strength="4",
+                    ap="0",
+                    damage="1",
+                    description="assault, rapid fire 3",
+                ),
+                _make_mock_wargear_entry(
+                    "Bellatus reaper chainsword",
+                    wargear_type="Melee",
+                    range_value="Melee",
+                    attacks="5",
+                    bs_ws="3+",
+                    strength="12",
+                    ap="-3",
+                    damage="D3+3",
+                ),
+                _make_mock_wargear_entry(
+                    "Thundershock spear",
+                    wargear_type="Melee",
+                    range_value="Melee",
+                    attacks="4",
+                    bs_ws="3+",
+                    strength="12",
+                    ap="-3",
+                    damage="D3+3",
+                    description="lance",
+                ),
+            ],
+            options=[
+                {
+                    "description": (
+                        "This model’s chastiser gatling cannon can be replaced with one of the following:"
+                        '<br><ul style="list-style-type:circle"><li>1 bellatus reaper chainsword*</li>'
+                        "<li>1 thundershock spear*</li></ul>"
+                    )
+                },
+                {
+                    "description": (
+                        "This model’s frag bombard can be replaced with one of the following:"
+                        '<br><ul style="list-style-type:circle"><li>1 bellatus reaper chainsword*</li>'
+                        "<li>1 thundershock spear*</li></ul>"
+                    )
+                },
+                {
+                    "description": (
+                        "* A model cannot be equipped with more than one bellatus reaper chainsword or more than one "
+                        "thundershock spear."
+                    )
+                },
+            ],
+            loadout=(
+                "This model is equipped with: chastiser gatling cannon; frag bombard; "
+                "questoris heavy stubber."
+            ),
+        )
+    )
 
 
 def _setup_game(unit: Unit) -> tuple[Game, Player]:
@@ -233,3 +337,38 @@ def test_thundercharge_requires_both_named_weapons() -> None:
 
     assert bonus == 0
     assert reasons == []
+
+
+def test_destrier_wargear_footnote_blocks_duplicate_melee_replacement_without_losing_original_weapon() -> None:
+    unit = _make_destrier_wargear_unit()
+    model = unit.models[0]
+
+    assert unit._wargear_constraints["max_counts"]["bellatus reaper chainsword"] == 1
+    assert unit._wargear_constraints["max_counts"]["thundershock spear"] == 1
+
+    first_option, second_option = unit.wargear_options
+    unit.apply_wargear_option(first_option)
+    unit.apply_wargear_option(second_option)
+
+    equipped_names = [str(getattr(wg, "name", "") or "").lower() for wg in list(model.wargear or [])]
+
+    assert equipped_names.count("bellatus reaper chainsword") == 1
+    assert "frag bombard" in equipped_names
+    assert "chastiser gatling cannon" not in equipped_names
+
+
+def test_destrier_wargear_footnote_allows_one_bellatus_and_one_thundershock() -> None:
+    unit = _make_destrier_wargear_unit()
+    model = unit.models[0]
+
+    first_option, second_option = unit.wargear_options
+    unit.apply_wargear_option(first_option)
+    second_option.wargear_to = [list(second_option.wargear_to[1])]
+    unit.apply_wargear_option(second_option)
+
+    equipped_names = [str(getattr(wg, "name", "") or "").lower() for wg in list(model.wargear or [])]
+
+    assert equipped_names.count("bellatus reaper chainsword") == 1
+    assert equipped_names.count("thundershock spear") == 1
+    assert "frag bombard" not in equipped_names
+    assert "chastiser gatling cannon" not in equipped_names

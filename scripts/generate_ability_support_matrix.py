@@ -1956,7 +1956,7 @@ def _support_for_option_desc(desc: str) -> Tuple[str, str]:
         result = ("Supported", "Constraint-only line: enforced (mutual exclusion).")
         OPTION_SUPPORT_CACHE[desc] = result
         return result
-    if re.search(r"cannot be equipped with more than \d+ [\w\s\-']+", dl):
+    if re.search(r"cannot be equipped with more than (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) [\w\s\-']+", dl):
         result = ("Supported", "Constraint-only line: enforced (max weapon counts).")
         OPTION_SUPPORT_CACHE[desc] = result
         return result

@@ -29,3 +29,15 @@ def test_imperial_knights_destrier_support_matrix_cases(name: str, description: 
 
     assert status == "Supported"
     assert note_fragment in notes.lower()
+
+
+def test_imperial_knights_destrier_duplicate_melee_wargear_footnote_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    status, notes = gsm._support_for_option_desc(
+        "* A model cannot be equipped with more than one bellatus reaper chainsword or more than one "
+        "thundershock spear."
+    )
+
+    assert status == "Supported"
+    assert "max weapon counts" in notes.lower()
