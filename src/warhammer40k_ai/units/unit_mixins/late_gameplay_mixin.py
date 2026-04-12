@@ -2980,7 +2980,7 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
-            # Seeker of Lost Relics: source model gains FNP while in range of the selected objective.
+            # Seeker of the Unfound: source model gains FNP while in range of the selected objective.
             if target_model is not None:
                 sr = getattr(self, "special_rules", None)
                 active_fn = getattr(self, "seeker_of_lost_relics_effects_active", None)

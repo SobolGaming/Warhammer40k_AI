@@ -1,9 +1,43 @@
-import unittest
-from types import SimpleNamespace
+from __future__ import annotations
+
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DARK_PACT
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+
+_DARK_PACTS_ABILITY = {
+    "name": "Dark Pacts",
+    "description": (
+        "If your Army Faction is HERETIC ASTARTES, each time a unit with this ability is selected to shoot or "
+        "fight, it can make a Dark Pact. If it does, it must first take a Leadership test before any effects of "
+        "that Dark Pact are resolved; if that test is failed, that unit suffers D3 mortal wounds. Then, select "
+        "one of the following abilities for that unit's weapons to gain until the end of the phase: [LETHAL HITS]; "
+        "[SUSTAINED HITS 1]."
+    ),
+    "type": "Faction",
+    "parameter": "",
+}
+_DAEMONFORGE_ABILITY = {
+    "name": "Daemonforge",
+    "description": (
+        "Each time this unit makes a Dark Pact, until the end of the phase, each time this model makes an attack, "
+        "re-roll a Wound roll of 1. In addition, once per battle, when this unit makes a Dark Pact, before making "
+        "the resulting Leadership test, you can declare it will overcharge its daemonforge. If it does: If the "
+        "resulting Leadership test is failed, this model suffers 3 mortal wounds instead of D3 mortal wounds. "
+        "Until the end of the phase, each time this model makes an attack, you can re-roll the Wound roll."
+    ),
+    "type": "Datasheet",
+    "parameter": "",
+}
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
+    def __init__(self, name: str, *, abilities=None, keywords=None, faction_keywords=None):
+        self.id = f"ds_{name.lower().replace(' ', '_')}"
         self.name = name
         self.faction_data = {"name": "Chaos Space Marines"}
         self.keywords = list(keywords or [])
@@ -12,137 +46,181 @@ class _MockDatasheet:
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
         self.datasheets_models = [
             {
-                "M": "8",
-                "T": "10",
+                "M": "12",
+                "T": "11",
                 "Sv": "3",
-                "W": "14",
+                "W": "18",
                 "Ld": "6",
-                "OC": "3",
+                "OC": "5",
                 "base_size": "120mm x 92mm",
-                "inv_sv": "7",
-                "inv_sv_descr": "none",
+                "inv_sv": "5",
+                "inv_sv_descr": "",
             }
         ]
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
         self.datasheets_abilities = list(abilities or [])
-        self.loadout = "This model is equipped with: nothing"
+        self.loadout = "This model is equipped with: nothing."
         self.transport = ""
+        self.attached_to = []
+        self.attached_to_names = []
 
 
-def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
-    from warhammer40k_ai.units.unit import Unit
-
-    ds = _MockDatasheet(
-        name,
-        abilities=abilities,
-        keywords=keywords,
-        faction_keywords=faction_keywords,
+def _make_unit(name: str, *, abilities=None, keywords=None, faction_keywords=None) -> Unit:
+    unit = Unit(
+        _MockDatasheet(
+            name,
+            abilities=abilities,
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+        )
     )
-    return Unit(ds)
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    return unit
 
 
-def _make_players(active_units, opponent_units, *, turn=1):
-    from warhammer40k_ai.roster.army import Army
-    from warhammer40k_ai.roster.player import Player, PlayerControl
-
-    army1 = Army.with_detachment("Active", "Test")
-    army2 = Army.with_detachment("Opponent", "Test")
-    army1.units = list(active_units if isinstance(active_units, (list, tuple)) else [active_units])
-    army2.units = list(opponent_units if isinstance(opponent_units, (list, tuple)) else [opponent_units])
-
-    for unit in army1.units:
-        unit.set_parent_army(army1)
-        unit.deployed = True
-        unit.reserve_status = "deployed"
-    for unit in army2.units:
-        unit.set_parent_army(army2)
-        unit.deployed = True
-        unit.reserve_status = "deployed"
-
-    p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
-    p2 = Player("P2", control=PlayerControl.LOCAL, army=army2)
-    game = SimpleNamespace(turn=turn, current_player_index=0, players=[p1, p2])
-    game.get_current_player = lambda: p1
-    p1.set_game(game)
-    p2.set_game(game)
-    return p1, p2, game
+def _build_game():
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    csm_army = Army.with_detachment("Chaos Space Marines", "Other")
+    csm_army.faction_id = "CSM"
+    enemy_army = Army.with_detachment("Enemy", "Other")
+    enemy_army.faction_id = "ENEMY"
+    csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
+    enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
+    game.add_player(csm_player)
+    game.add_player(enemy_player)
+    game.current_player_index = 0
+    game.turn = 1
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    return game, csm_player, csm_army, enemy_player, enemy_army
 
 
-class TestCsmDaemonforge(unittest.TestCase):
-    def _daemonforge_ability(self):
-        return {
-            "name": "Daemonforge",
-            "description": (
-                "Once per Fight phase, one unit from your army with this ability can be targeted "
-                "with the Counter-offensive Stratagem for 0CP, even if you have already targeted "
-                "a different unit with that Stratagem this phase."
-            ),
-            "type": "Datasheet",
-            "parameter": "",
-        }
-
-    def _counter_offensive(self):
-        from warhammer40k_ai.rules.stratagems import Stratagem
-
-        return Stratagem(
-            id="counter-offensive",
-            name="Counter-offensive",
-            type="Core",
-            description="",
-            cp_cost=2,
-            turn="Either",
-            phase="Fight phase",
-            detachment="",
-            faction_id="",
-        )
-
-    def test_daemonforge_allows_one_extra_counter_offensive_for_zero_cp(self):
-        class _FightManager:
-            def __init__(self):
-                self.fought_units = set()
-                self._current_player = None
-                self._opponent_player = None
-                self._forced_next_unit = None
-                self._forced_next_player = None
-
-            def _canonical_unit_for_fight(self, unit):
-                return unit
-
-            def force_next_unit(self, unit, player):
-                self._forced_next_unit = unit
-                self._forced_next_player = player
-                return True
-
-        defiler = _make_unit(
-            "Defiler",
-            abilities=[self._daemonforge_ability()],
-            keywords=["VEHICLE"],
-            faction_keywords=["HERETIC ASTARTES"],
-        )
-        enemy = _make_unit("Enemy", keywords=["INFANTRY"])
-        player, opponent, game = _make_players(defiler, enemy, turn=2)
-        player.command_points = 0
-        player.stratagems._used_stratagems_this_phase.add("COUNTER-OFFENSIVE")
-        player.stratagems._current_phase_name = "Fight phase"
-        game.map = SimpleNamespace()
-        game.fight_phase_manager = _FightManager()
-        defiler.is_eligible_to_fight = lambda _map: True
-
-        strat = self._counter_offensive()
-        player.stratagems.available = [strat]
-
-        player.set_next_optional_decision("DAEMONFORGE_COUNTER_OFFENSIVE", True)
-        self.assertTrue(player.stratagems.can_use("Counter-offensive", target_unit=defiler, phase_name="Fight phase"))
-
-        used = player.stratagems.use("Counter-offensive", target_unit=defiler, phase_name="Fight phase")
-        self.assertTrue(used)
-        self.assertEqual(int(player.command_points), 0)
-        self.assertTrue(player.stratagems._daemonforge_used_this_phase())
-
-        player.set_next_optional_decision("DAEMONFORGE_COUNTER_OFFENSIVE", True)
-        self.assertFalse(player.stratagems.use("Counter-offensive", target_unit=defiler, phase_name="Fight phase"))
+def _daemonforge_unit() -> Unit:
+    return _make_unit(
+        "Defiler",
+        abilities=[_DARK_PACTS_ABILITY, _DAEMONFORGE_ABILITY],
+        keywords=["VEHICLE", "DAEMON", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+    )
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _find_dark_pact_request(game: Game, unit: Unit):
+    unit_id = str(get_entity_id(unit) or "")
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_DARK_PACT:
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("unit_id", "") or "") == unit_id:
+            return request
+    return None
+
+
+def _find_dark_pact_option(request, *, choice: str, daemonforge_overcharge: bool):
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("choice", "") or "").strip().upper() != str(choice).strip().upper():
+            continue
+        if bool(payload.get("daemonforge_overcharge", False)) != bool(daemonforge_overcharge):
+            continue
+        return option
+    return None
+
+
+def test_daemonforge_dark_pact_request_includes_combined_overcharge_options():
+    game, _csm_player, csm_army, _enemy_player, _enemy_army = _build_game()
+    defiler = _daemonforge_unit()
+    csm_army.add_unit(defiler)
+    game.map.units = [defiler]
+    game.rebuild_entity_registry()
+
+    defiler.maybe_trigger_dark_pacts(game, phase_name="FIGHT_PHASE", trigger="fight")
+
+    request = _find_dark_pact_request(game, defiler)
+    assert request is not None
+
+    assert _find_dark_pact_option(request, choice="LETHAL HITS", daemonforge_overcharge=False) is not None
+    assert _find_dark_pact_option(request, choice="LETHAL HITS", daemonforge_overcharge=True) is not None
+    assert _find_dark_pact_option(request, choice="SUSTAINED HITS 1", daemonforge_overcharge=False) is not None
+    assert _find_dark_pact_option(request, choice="SUSTAINED HITS 1", daemonforge_overcharge=True) is not None
+
+
+def test_daemonforge_dark_pact_grants_wound_reroll_ones_for_the_phase():
+    game, csm_player, csm_army, _enemy_player, _enemy_army = _build_game()
+    defiler = _daemonforge_unit()
+    defiler.pass_leadership_check = lambda *args, **kwargs: True
+    csm_army.add_unit(defiler)
+    game.map.units = [defiler]
+    game.rebuild_entity_registry()
+
+    defiler.maybe_trigger_dark_pacts(game, phase_name="FIGHT_PHASE", trigger="fight")
+    request = _find_dark_pact_request(game, defiler)
+    assert request is not None
+
+    option = _find_dark_pact_option(request, choice="LETHAL HITS", daemonforge_overcharge=False)
+    assert option is not None
+
+    result = resolve_decision_command(game, request, option.option_id, player_id=csm_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+
+    special_rules = dict(getattr(defiler, "special_rules", {}) or {})
+    assert bool(special_rules.get("daemonforge_active", False)) is True
+    assert bool(special_rules.get("daemonforge_overcharge_active", False)) is False
+    assert defiler.has_used_unit_once_per_battle("daemonforge_overcharge") is False
+
+    mods = defiler.get_unit_wound_reroll_modifiers("melee")
+    assert mods.get("reroll_wound_values", ()) == (1,)
+    assert bool(mods.get("reroll_wound_full", False)) is False
+    assert any("Daemonforge" in str(reason or "") for reason in list(mods.get("reroll_wound_reasons", ()) or ()))
+
+
+def test_daemonforge_overcharge_grants_full_wound_rerolls_and_marks_once_per_battle():
+    game, csm_player, csm_army, _enemy_player, _enemy_army = _build_game()
+    defiler = _daemonforge_unit()
+    defiler.pass_leadership_check = lambda *args, **kwargs: True
+    csm_army.add_unit(defiler)
+    game.map.units = [defiler]
+    game.rebuild_entity_registry()
+
+    defiler.maybe_trigger_dark_pacts(game, phase_name="FIGHT_PHASE", trigger="fight")
+    request = _find_dark_pact_request(game, defiler)
+    assert request is not None
+
+    option = _find_dark_pact_option(request, choice="SUSTAINED HITS 1", daemonforge_overcharge=True)
+    assert option is not None
+
+    result = resolve_decision_command(game, request, option.option_id, player_id=csm_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+
+    special_rules = dict(getattr(defiler, "special_rules", {}) or {})
+    assert bool(special_rules.get("daemonforge_active", False)) is True
+    assert bool(special_rules.get("daemonforge_overcharge_active", False)) is True
+    assert defiler.has_used_unit_once_per_battle("daemonforge_overcharge") is True
+
+    mods = defiler.get_unit_wound_reroll_modifiers("melee")
+    assert mods.get("reroll_wound_values", ()) == (1,)
+    assert bool(mods.get("reroll_wound_full", False)) is True
+    assert any("Daemonforge" in str(reason or "") for reason in list(mods.get("reroll_wound_full_reasons", ()) or ()))
+
+
+def test_daemonforge_overcharge_failed_dark_pact_inflicts_three_mortal_wounds():
+    game, _csm_player, csm_army, _enemy_player, _enemy_army = _build_game()
+    defiler = _daemonforge_unit()
+    mortal_wounds = []
+
+    defiler.pass_leadership_check = lambda *args, **kwargs: False
+    defiler._apply_mortal_wounds_to_unit = lambda _unit, amount, game_map=None: mortal_wounds.append(int(amount))
+    csm_army.add_unit(defiler)
+    game.map.units = [defiler]
+    game.rebuild_entity_registry()
+
+    applied = defiler.apply_dark_pacts_choice(
+        game,
+        choice="LETHAL HITS",
+        phase_name="FIGHT_PHASE",
+        trigger="fight",
+        daemonforge_overcharge=True,
+    )
+    assert applied is True
+    assert mortal_wounds == [3]
+    assert defiler.has_used_unit_once_per_battle("daemonforge_overcharge") is True

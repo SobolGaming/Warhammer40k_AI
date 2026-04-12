@@ -97,7 +97,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_RITUALS` — Choose rituals.
 - `CHOOSE_CHIVALRIC_OATH` — Choose Chivalric Oath.
 - `CHOOSE_DAEMONIC_ALLEGIANCE` — Choose Daemonic Allegiance.
-- `CHOOSE_DARK_PACT` — Choose Dark Pact (Cabal of Chaos options include `empyric_wellspring_choice`).
+- `CHOOSE_DARK_PACT` — Choose Dark Pact (option payloads may include `empyric_wellspring_choice`, `invoke_contract`, and `daemonforge_overcharge`).
 - `CHOOSE_DOCTRINA` — Choose Doctrina Imperative.
 - `CHOOSE_COMBAT_DOCTRINE` — Choose Combat Doctrine.
 - `CHOOSE_MISSION_TACTIC` — Choose Mission Tactic (Black Spear Task Force).

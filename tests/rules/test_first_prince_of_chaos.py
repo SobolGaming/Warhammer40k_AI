@@ -5,10 +5,10 @@ from warhammer40k_ai.units.unit import Unit
 
 
 class TestFirstPrinceOfChaos(unittest.TestCase):
-    def _make_unit(self, army, keywords):
+    def _make_unit(self, army, name="Test Unit", *, keywords):
         unit = Unit.__new__(Unit)
         unit.parent_army = army
-        unit.name = "Test Unit"
+        unit.name = name
         unit.keywords = list(keywords)
         unit.faction_keywords = []
         unit.possible_abilities = []
@@ -17,30 +17,77 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         unit.can_be_attached_to = []
         unit.attached_to = None
         unit.attached_leaders = []
+        unit.special_rules = {}
         unit._ability_cache = {}
         return unit
 
-    def test_khorne_shadow_legion_advances_and_charges(self):
+    def test_shadow_legion_khorne_no_longer_advances_and_shoots_or_charges(self):
         from warhammer40k_ai.roster.army import Army
 
         army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
-        unit = self._make_unit(army, ["KHORNE"])
+        unit = self._make_unit(army, keywords=["KHORNE"])
 
-        self.assertTrue(unit.has_advance_and_shoot())
-        self.assertTrue(unit.has_advance_and_charge())
+        self.assertFalse(unit.has_advance_and_shoot())
+        self.assertFalse(unit.has_advance_and_charge())
 
-    def test_shadow_legion_deep_strike_requires_undivided(self):
+    def test_shadow_legion_deep_strike_still_requires_heretic_astartes_and_undivided(self):
         from warhammer40k_ai.roster.army import Army
 
         army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
 
-        non_undivided = self._make_unit(army, ["HERETIC ASTARTES", "KHORNE"])
+        non_undivided = self._make_unit(army, keywords=["HERETIC ASTARTES", "KHORNE"])
         self.assertFalse(non_undivided.has_deep_strike())
 
-        undivided = self._make_unit(army, ["HERETIC ASTARTES", "UNIDIVIDED"])
+        undivided = self._make_unit(army, keywords=["HERETIC ASTARTES", "UNIDIVIDED"])
         self.assertTrue(undivided.has_deep_strike())
+
+    def test_belakor_auto_passes_shadow_legion_dark_pacts(self):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
+        army.faction_id = "CD"
+        player = Player("P1", PlayerControl.LOCAL, army=army)
+        enemy = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Enemy", "Other"))
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy])
+        game.phase = SimpleNamespace(name="FIGHT_PHASE")
+
+        belakor = self._make_unit(army, name="Be'lakor", keywords=["UNIDIVIDED", "MONSTER"])
+        called = {"count": 0}
+
+        def _pass_check(*args, **kwargs):
+            called["count"] += 1
+            return False
+
+        belakor.pass_leadership_check = _pass_check
+        army.units.append(belakor)
+
+        applied = belakor.apply_dark_pacts_choice(
+            game,
+            choice="LETHAL HITS",
+            phase_name="FIGHT_PHASE",
+            trigger="fight",
+        )
+        self.assertTrue(applied)
+        self.assertEqual(called["count"], 0)
+        self.assertTrue(bool(belakor.special_rules.get("dark_pacts_test_passed", False)))
+
+    def test_removed_first_prince_sub_rules_no_longer_apply(self):
+        from warhammer40k_ai.roster.army import Army
+
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
+        army.faction_id = "CD"
+
+        tzeentch = self._make_unit(army, keywords=["TZEENTCH"])
+        nurgle = self._make_unit(army, keywords=["NURGLE"])
+        slaanesh = self._make_unit(army, keywords=["SLAANESH"])
+
+        self.assertFalse(tzeentch.has_first_prince_tzeentch_defense())
+        self.assertFalse(nurgle.has_first_prince_nurgle_defense())
+        self.assertFalse(slaanesh.has_first_prince_slaanesh_no_overwatch())
 
 
 if __name__ == "__main__":

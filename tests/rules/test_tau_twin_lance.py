@@ -19,7 +19,8 @@ _EXEMPLARS_OF_MONTKA_DESCRIPTION = (
     "that attack has the [SUSTAINED HITS 1] and [IGNORES COVER] abilities."
 )
 _RETRO_THRUSTERS_DESCRIPTION = (
-    "At the end of the Fight phase, this unit can either make a Normal move of up to 6\" or a Fall Back move."
+    "At the end of the Fight phase, if this unit was eligible to fight this phase, this unit can either make a "
+    "Normal move of up to 6\" or a Fall Back move."
 )
 
 
@@ -178,6 +179,7 @@ def test_retro_thrusters_not_engaged_offers_normal_move_and_queues_move_decision
     tau_player.army.add_unit(unit)
     unit.deployed = True
     unit.reserve_status = "deployed"
+    unit.round_state.eligible_to_fight_this_phase = True
     unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
     game.map.units = [unit]
 
@@ -233,6 +235,7 @@ def test_retro_thrusters_engaged_offers_fall_back_mode():
     enemy_player.army.add_unit(enemy)
     unit.deployed = True
     unit.reserve_status = "deployed"
+    unit.round_state.eligible_to_fight_this_phase = True
     enemy.deployed = True
     enemy.reserve_status = "deployed"
     unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
@@ -254,6 +257,43 @@ def test_retro_thrusters_engaged_offers_fall_back_mode():
     }
     assert "fall_back_move" in modes
     assert "normal_move" not in modes
+
+
+def test_retro_thrusters_requires_unit_to_have_been_eligible_to_fight():
+    game, tau_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    unit = _make_unit(
+        "The Twin Lance",
+        abilities=[
+            {
+                "name": "Retro-thrusters",
+                "description": _RETRO_THRUSTERS_DESCRIPTION,
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ],
+        keywords=["BATTLESUIT"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    tau_player.army.add_unit(unit)
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    unit.round_state.eligible_to_fight_this_phase = False
+    unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    game.map.units = [unit]
+
+    game._on_phase_end_raid_and_run(player=tau_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    request = next(
+        (
+            req
+            for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CONFIRM_YES_NO
+            and str((req.context or {}).get("reactive_move_kind", "")) == "retro_thrusters"
+        ),
+        None,
+    )
+    assert request is None
 
 
 def test_mv15_gun_drone_grants_twin_pulse_blaster_to_each_bearer_model():

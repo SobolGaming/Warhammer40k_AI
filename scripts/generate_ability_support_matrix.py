@@ -656,14 +656,6 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         ),
         "First Prince of Chaos": (
             r"units from your army have the relevant abilities presented below",
-            r"shadow legion khorne units only",
-            r"this unit is eligible to shoot and declare a charge in a turn in which it advanced",
-            r"shadow legion tzeentch units only",
-            r"each time an attack targets this unit subtract 1 from the hit roll",
-            r"shadow legion nurgle units only",
-            r"each time an attack targets this unit if the strength characteristic of that attack is greater than this units toughness characteristic subtract 1 from the wound roll",
-            r"shadow legion slaanesh units only",
-            r"enemy units cannot use the fire overwatch stratagem to shoot at this unit",
             r"shadow legion undivided units only",
             r"this unit has the dark pacts army rule and can use it as described in codex.*",
             r"if this unit is be lakor it automatically passes the leadership test required for dark pacts",
@@ -1050,8 +1042,8 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an attack targets a boyz unit from your army that contains 10 or more models models in that unit have a \d+ invulnerable save against that attack",
         ),
         "Here Be Loot": (
-            r"at the start of the battle round select one objective marker",
-            r"until the start of the next battle round that objective marker is your loot objective",
+            r"at the start of your command phase select one objective marker",
+            r"until the start of your next command phase that objective marker is your loot objective",
             r"each time a model in an orks infantry orks mounted or orks walker unit from your army makes an attack that attack has the sustained hits \d+ ability if either or both of the following are true",
             r"that model(?: s|s) unit is within range of your loot objective",
             r"that attack targets a unit within range of your loot objective",
@@ -1551,7 +1543,7 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"vanguard invader units with this ability are eligible to charge in a turn in which they advanced",
         ),
         "Leader-beasts": (
-            r"tyranid warriors see below and winged tyranid prime units from your army have a 5 invulnerable save",
+            r"tyranid warriors see below tyranid prime with lash whip and winged tyranid prime units from your army have a 5 invulnerable save",
             r"(?:keywords )?tyranid warriors with ranged bio weapons and tyranid warriors with melee bio weapons units from your army gain the tyranid warriors and battleline keywords and while such a unit is not battle shocked tyranid warriors models in that unit have an objective control characteristic of 3",
         ),
         "Surprise Assault": (
@@ -2918,7 +2910,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Leader-beasts": (
             "Supported",
-            "Warrior Bioform Onslaught: Tyranid Warriors with Ranged/Melee Bio-weapons gain TYRANID WARRIORS and BATTLELINE; TYRANID WARRIORS models in those units have Objective Control 3 (Battle-shock core rule still sets OC to 0); TYRANID WARRIORS and WINGED TYRANID PRIME units gain a 5+ invulnerable save.",
+            "Warrior Bioform Onslaught: Tyranid Warriors with Ranged/Melee Bio-weapons gain TYRANID WARRIORS and BATTLELINE; TYRANID WARRIORS models in those units have Objective Control 3 (Battle-shock core rule still sets OC to 0); TYRANID WARRIORS, WINGED TYRANID PRIME, and TYRANID PRIME WITH LASH WHIP units gain a 5+ invulnerable save.",
         ),
         "Surprise Assault": (
             "Supported",
@@ -2954,7 +2946,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Here Be Loot": (
             "Supported",
-            "Freebooter Krew: at the start of each battle round select one objective marker as your Loot objective via CHOOSE_QUARRY; ORKS INFANTRY/MOUNTED/WALKER model attacks gain Sustained Hits 1 while the attacker's unit is within range of that objective and/or while targeting a unit within range of that objective.",
+            "Freebooter Krew: at the start of your Command phase select one objective marker as your Loot objective via CHOOSE_QUARRY until the start of your next Command phase; ORKS INFANTRY/MOUNTED/WALKER model attacks gain Sustained Hits 1 while the attacker's unit is within range of that objective and/or while targeting a unit within range of that objective.",
         ),
         "Try Dat Button!": (
             "Supported",
@@ -3258,7 +3250,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "First Prince of Chaos": (
             "Supported",
-            "Shadow Legion: MURDERER'S COWL advance-and-shoot/charge, PENUMBRAL PUPPETRY -1 to hit, GLOAM ROT -1 to wound when Strength exceeds Toughness, SHADOW'S CARESS no Overwatch targeting, and DISCIPLES OF BE'LAKOR Dark Pacts with Be'lakor auto-pass plus SHADOW LEGION HERETIC ASTARTES Deep Strike are implemented.",
+            "Shadow Legion: DISCIPLES OF BE'LAKOR Dark Pacts for SHADOW LEGION UNDIVIDED units, Be'lakor auto-pass for those Dark Pacts, and SHADOW LEGION HERETIC ASTARTES Deep Strike are implemented.",
         ),
         "Fates in Flux": (
             "Supported",
@@ -4788,7 +4780,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("CSM", "Daemonforge"): (
             "Supported",
-            "Once per Fight phase, one unit with this ability can use Counter-offensive for 0CP even if already used this phase.",
+            "Each Dark Pact grants re-roll Wound rolls of 1 until end of phase; the CHOOSE_DARK_PACT payload includes optional `daemonforge_overcharge`, which grants full Wound re-rolls for that phase and makes a failed Dark Pacts test inflict 3 mortal wounds instead of D3, once per battle.",
         ),
         ("CSM", "Chirurgeon"): (
             "Supported",
@@ -4818,7 +4810,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Tzeentch"): ("Supported", "Daemonic Allegiance option: infernal cannon Attacks +3."),
         ("CSM", "Scuttling Walker"): (
             "Supported",
-            "Normal/Advance movement can pass over friendly MONSTER/VEHICLE models and terrain up to 4\" high.",
+            "Normal/Advance/Fall Back movement can pass through models excluding TITANIC models and terrain features, can move within Engagement Range during that move, cannot end there, and automatically passes Desperate Escape tests.",
         ),
         ("CSM", "Bringers of Change"): (
             "Supported",
@@ -5805,7 +5797,7 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Model-level ranged AP improvement vs enemy INFANTRY targets.",
         ),
-        ("SM", "Inspiring Leader", "000002199"): (
+        ("SM", "Inspiring Leader", "000004183"): (
             "Supported",
             "Leading: the attached unit is eligible to shoot and declare a charge after it Advances or Falls Back.",
         ),
@@ -5856,7 +5848,7 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         ),
         "000010711": (
             "Supported",
-            "Freebooter Krew: Here Be Loot objective selection and Sustained Hits 1 objective-range attack gating implemented.",
+            "Freebooter Krew: Here Be Loot Command phase objective selection, next-own-Command expiry, and Sustained Hits 1 objective-range attack gating implemented.",
         ),
         "000008875": (
             "Supported",
@@ -6220,7 +6212,7 @@ def _tau_named_datasheet_support(name: str, description: str, *, faction_id: str
             )
     if name_norm == "retro thrusters":
         move_match = re.fullmatch(
-            r"at the end of the fight phase this unit can either make a normal move of up to (?P<move>d6|\d+) or a fall back move",
+            r"at the end of the fight phase(?: if this unit was eligible to fight this phase)? this unit can either make a normal move of up to (?P<move>d6|\d+) or a fall back move",
             norm,
         )
         if move_match:
@@ -6228,7 +6220,7 @@ def _tau_named_datasheet_support(name: str, description: str, *, faction_id: str
             move_note = f"up to {move_text}\"" if move_text else ""
             return (
                 "Supported",
-                f"End of Fight phase: this unit can make a Normal move {move_note} or make a Fall Back move.".strip(),
+                f"End of Fight phase: if this unit was eligible to fight this phase, it can make a Normal move {move_note} or make a Fall Back move.".strip(),
             )
     if name_norm == "mv15 gun drone":
         weapon_match = re.fullmatch(
@@ -6319,7 +6311,7 @@ def _space_marines_named_datasheet_support(name: str, description: str, *, facti
                 "Supported",
                 "Start of Shooting phase: select one visible enemy unit within 24\"; friendly ADEPTUS ASTARTES ranged attacks with Torrent or Melta weapons against that target can re-roll the Wound roll until phase end.",
             )
-    if name_norm == "seeker of lost relics":
+    if name_norm in {"seeker of lost relics", "seeker of the unfound"}:
         if (
             "the first time this model is set up on the battlefield" in norm
             and "select one objective marker on the battlefield" in norm

@@ -3436,40 +3436,6 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                     reasons.append(f"{ctx['ability_name']}: Fire Overwatch for 0CP (destroy 1 Bodyguard model).")
                     return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
-        if name_u in ("COUNTER-OFFENSIVE", "COUNTER OFFENSIVE") and target_unit is not None:
-            get_rule = getattr(target_unit, "get_daemonforge_counter_offensive_rule", None)
-            rule = get_rule() if callable(get_rule) else None
-            can_daemonforge = False
-            mgr = getattr(self, "stratagems", None)
-            daemonforge_available = getattr(mgr, "_counter_offensive_daemonforge_available", None)
-            if callable(daemonforge_available):
-                can_daemonforge = bool(
-                    daemonforge_available(
-                        target_unit=target_unit,
-                        candidates=None,
-                    )
-                )
-            elif rule:
-                can_daemonforge = bool(
-                    getattr(target_unit, "can_use_daemonforge_counter_offensive", lambda _g=None: False)(self.game)
-                )
-            if rule and can_daemonforge:
-                ability_name = str(rule.get("source", "") or "Daemonforge").strip() or "Daemonforge"
-                ctx = {
-                    "ability_name": ability_name,
-                    "stratagem": getattr(stratagem, "name", None) or "",
-                    "target_unit": getattr(target_unit, "name", None) or "",
-                    "base_cp_cost": base,
-                }
-                if self._should_preview_optional_ability(
-                    "DAEMONFORGE_COUNTER_OFFENSIVE",
-                    ctx,
-                    assume=assume_optional_discounts,
-                ):
-                    discount = base
-                    reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
-                    return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
-
         martial_tuition = self._preview_martial_tuition_counter_offensive_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -5269,14 +5235,9 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                         "traitor_enforcer_overwatch_source": ability_name,
                     }
         if name_u in ("COUNTER-OFFENSIVE", "COUNTER OFFENSIVE") and target_unit is not None:
-            get_rule = getattr(target_unit, "get_daemonforge_counter_offensive_rule", None)
-            rule = get_rule() if callable(get_rule) else None
             mgr = getattr(self, "stratagems", None)
             used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
             counter_used = "COUNTER-OFFENSIVE" in used_this_phase if isinstance(used_this_phase, set) else False
-            can_daemonforge = bool(
-                getattr(target_unit, "can_use_daemonforge_counter_offensive", lambda _g=None: False)(self.game)
-            )
             can_intraneural = self._target_unit_can_use_intraneural_biotech_stratagem_discount(
                 target_unit,
                 stratagem_name="COUNTER-OFFENSIVE",
@@ -5285,51 +5246,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 target_unit,
                 stratagem_name="COUNTER-OFFENSIVE",
             )
-            if counter_used and not can_daemonforge and not can_intraneural:
+            if counter_used and not can_intraneural:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
-            if can_daemonforge and rule:
-                ability_name = str(rule.get("source", "") or "Daemonforge").strip() or "Daemonforge"
-                ctx = {
-                    "ability_name": ability_name,
-                    "stratagem": getattr(stratagem, "name", None) or "",
-                    "target_unit": getattr(target_unit, "name", None) or "",
-                    "base_cp_cost": base,
-                }
-                use_daemonforge = self._should_use_optional_ability("DAEMONFORGE_COUNTER_OFFENSIVE", ctx)
-                if counter_used and not use_daemonforge:
-                    return {"denied": True, "reason": "Counter-offensive already used this phase"}
-                if use_daemonforge:
-                    applied_discount = base
-                    cost = max(0, base - applied_discount)
-                    increase = 0
-                    increase_reasons: list[str] = []
-                    opponent = self._get_opponent_player()
-                    if opponent is not None:
-                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
-                            target_unit=target_unit,
-                            stratagem=stratagem,
-                            current_cost=cost,
-                        )
-                        increase = int(inc_info.get("increase", 0) or 0)
-                        increase_reasons = list(inc_info.get("reasons", []) or [])
-                        if increase:
-                            cost = max(0, cost + increase)
-                    self._pending_stratagem_cp_increase = {
-                        "increase": int(increase or 0),
-                        "reasons": increase_reasons,
-                        "stratagem_name": getattr(stratagem, "name", None) or "",
-                    }
-                    return {
-                        "base": base,
-                        "discount": applied_discount,
-                        "available_discount": applied_discount,
-                        "cost": cost,
-                        "increase": increase,
-                        "increase_reasons": increase_reasons,
-                        "reasons": [f"{ability_name}: Counter-offensive for 0CP (used)"],
-                        "daemonforge_counter_offensive_use": True,
-                        "daemonforge_counter_offensive_source": ability_name,
-                    }
             if can_master_of_prescience and not counter_used:
                 ability_name = "Master of Prescience (Psychic)"
                 try:

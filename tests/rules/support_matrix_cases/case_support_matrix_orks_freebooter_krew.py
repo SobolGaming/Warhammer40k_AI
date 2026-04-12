@@ -28,5 +28,6 @@ def test_freebooter_krew_here_be_loot_detachment_ability_is_supported():
 
     assert status == "Supported"
     notes_l = str(notes or "").lower()
+    assert "command phase" in notes_l
     assert "objective" in notes_l
     assert "sustained hits 1" in notes_l

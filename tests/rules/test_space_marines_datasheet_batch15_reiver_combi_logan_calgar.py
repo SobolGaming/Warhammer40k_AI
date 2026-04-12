@@ -308,7 +308,7 @@ def test_logan_grimnar_high_king_of_fenris_allows_selected_reserve_unit_to_arriv
 def test_marneus_calgar_master_tactician_requires_warlord():
     _game, sm_army, _enemy_army, _sm_player, _enemy_player = _build_game(sm_control=PlayerControl.LOCAL)
 
-    marneus = _actual_unit("Marneus Calgar", datasheet_id="000002199")
+    marneus = _actual_unit("Marneus Calgar in Armour of Antilochus", datasheet_id="000004183")
     sm_army.add_unit(marneus)
 
     marneus.is_warlord = False
@@ -323,7 +323,7 @@ def test_marneus_calgar_master_tactician_requires_warlord():
 def test_marneus_calgar_inspiring_leader_grants_advance_and_fall_back_shoot_and_charge():
     _game, sm_army, _enemy_army, _sm_player, _enemy_player = _build_game(sm_control=PlayerControl.LOCAL)
 
-    marneus = _actual_unit("Marneus Calgar", datasheet_id="000002199")
+    marneus = _actual_unit("Marneus Calgar in Armour of Antilochus", datasheet_id="000004183")
     bodyguard = _mock_unit(
         "Victrix Bodyguard",
         keywords=["INFANTRY"],

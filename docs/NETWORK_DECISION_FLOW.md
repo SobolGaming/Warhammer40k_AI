@@ -210,7 +210,7 @@ simply **presents valid choices** and validates all selections.
 4. **Server then queues**:
    - target selection (and split‑fire decisions if needed)
    - weapon/profile selection
-   - any required on-selection ability decisions (for example `CHOOSE_DARK_PACT`; in Cabal of Chaos, Dark Pact options include the `empyric_wellspring_choice` payload)
+   - any required on-selection ability decisions (for example `CHOOSE_DARK_PACT`; Dark Pact options may include `empyric_wellspring_choice`, `invoke_contract`, and `daemonforge_overcharge`)
 5. **Client resolves target/weapon choices.**
 6. **Defender reaction window (if applicable)**:
    - If the defender has any reactive abilities/stratagems available on being targeted

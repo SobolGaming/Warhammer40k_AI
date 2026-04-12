@@ -656,6 +656,9 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
     def _leader_beasts_unit_is_winged_tyranid_prime_datasheet(self, unit) -> bool:
         return self._leader_beasts_unit_name_norm(unit) == "winged tyranid prime"
 
+    def _leader_beasts_unit_is_tyranid_prime_with_lash_whip_datasheet(self, unit) -> bool:
+        return self._leader_beasts_unit_name_norm(unit) == "tyranid prime with lash whip"
+
     @staticmethod
     def _add_keyword_once(entity, keyword: str) -> None:
         if entity is None:
@@ -803,9 +806,13 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return 5, "Leader-beasts"
         if self._leader_beasts_unit_is_winged_tyranid_prime_datasheet(root):
             return 5, "Leader-beasts"
+        if self._leader_beasts_unit_is_tyranid_prime_with_lash_whip_datasheet(root):
+            return 5, "Leader-beasts"
         if self._attached_unit_has_keyword(root, "TYRANID WARRIORS"):
             return 5, "Leader-beasts"
         if self._attached_unit_has_keyword(root, "WINGED TYRANID PRIME"):
+            return 5, "Leader-beasts"
+        if self._attached_unit_has_keyword(root, "TYRANID PRIME WITH LASH WHIP"):
             return 5, "Leader-beasts"
         return 0, ""
 

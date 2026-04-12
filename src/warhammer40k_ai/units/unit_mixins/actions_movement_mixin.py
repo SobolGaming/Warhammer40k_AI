@@ -8745,6 +8745,30 @@ class ActionsMovementMixin:
             reroll_wound_values.add(1)
             reroll_wound_reasons.append("Path of the Warrior: re-roll Wound rolls of 1")
 
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("daemonforge_active", False)):
+                applies = True
+                exp_phase = str(sr.get("daemonforge_expires_phase", "") or "").strip().upper()
+                if exp_phase:
+                    try:
+                        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if phase_name and phase_name != exp_phase:
+                        applies = False
+                if applies:
+                    source = str(sr.get("daemonforge_source", "") or "Daemonforge").strip() or "Daemonforge"
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+                    if bool(sr.get("daemonforge_overcharge_active", False)):
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
+
         choice = ""
         try:
             choice_fn = getattr(self, "_dance_of_death_choice", None)
@@ -14736,13 +14760,13 @@ class ActionsMovementMixin:
         return False
 
     def has_first_prince_tzeentch_defense(self) -> bool:
-        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("TZEENTCH")
+        return False
 
     def has_first_prince_nurgle_defense(self) -> bool:
-        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("NURGLE")
+        return False
 
     def has_first_prince_slaanesh_no_overwatch(self) -> bool:
-        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("SLAANESH")
+        return False
 
     def _is_belakor(self) -> bool:
         name = str(getattr(self, "name", "") or "").lower().replace("\u2019", "'")
@@ -15158,6 +15182,77 @@ class ActionsMovementMixin:
     def _auto_pass_dark_pacts_test(self) -> bool:
         return self._first_prince_of_chaos_active() and self._is_belakor()
 
+    def _daemonforge_dark_pacts_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        cache_key = "daemonforge_dark_pacts_rule"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return cache[cache_key]
+
+        rule = None
+        seen: set[tuple[str, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = str(desc or name or "")
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), member._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = member._normalize_rules_text(member._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "dark pact" not in norm or "overcharge its daemonforge" not in norm:
+                    continue
+                source = str(name or "Daemonforge").strip() or "Daemonforge"
+                rule = {
+                    "source": source,
+                    "once_per_battle_key": "daemonforge_overcharge",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = rule
+        root._ability_cache = cache
+        return rule
+
+    def daemonforge_overcharge_available(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        rule = root._daemonforge_dark_pacts_rule()
+        if not isinstance(rule, dict):
+            return False
+        once_key = str(rule.get("once_per_battle_key", "") or "").strip()
+        if once_key and bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+            return False
+        return True
+
     def _dark_ascension_aura_applies(self, game_map=None) -> bool:
         """Return True if this unit is affected by Dark Ascension (Aura)."""
         try:
@@ -15275,6 +15370,7 @@ class ActionsMovementMixin:
         trigger: str,
         empyric_wellspring_choice: Optional[str] = None,
         invoke_contract: bool = False,
+        daemonforge_overcharge: bool = False,
     ) -> bool:
         trigger_norm = str(trigger or "").strip().lower()
         if trigger_norm not in ("shooting", "fight"):
@@ -15295,6 +15391,17 @@ class ActionsMovementMixin:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
+        daemonforge_rule = root._daemonforge_dark_pacts_rule()
+        daemonforge_source = str(
+            (daemonforge_rule or {}).get("source", "") or "Daemonforge"
+        ).strip() or "Daemonforge"
+        daemonforge_overcharge_active = False
+        if bool(daemonforge_overcharge):
+            if not isinstance(daemonforge_rule, dict):
+                return False
+            if not root.daemonforge_overcharge_available():
+                return False
+            daemonforge_overcharge_active = True
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         can_invoke_contract_fn = (
@@ -15368,9 +15475,11 @@ class ActionsMovementMixin:
             set_contract_test_modifier_fn(root, modifier=0)
         if not passed:
             try:
-                from ...utility.dice import DiceCollection
-                dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
-                mortal_wounds = int(dmg_roll or 0)
+                mortal_wounds = 3 if daemonforge_overcharge_active else 0
+                if not daemonforge_overcharge_active:
+                    from ...utility.dice import DiceCollection
+                    dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
+                    mortal_wounds = int(dmg_roll or 0)
                 if (
                     mortal_wounds > 0
                     and bool(tempting_addendum_active)
@@ -15389,6 +15498,16 @@ class ActionsMovementMixin:
         sr["dark_pacts_choice"] = "BOTH" if dark_ascension_active else choice_norm
         sr["dark_pacts_test_passed"] = bool(passed)
         sr["dark_pacts_expires_phase"] = phase_key
+        if isinstance(daemonforge_rule, dict):
+            sr["daemonforge_active"] = True
+            sr["daemonforge_expires_phase"] = phase_key
+            sr["daemonforge_source"] = daemonforge_source
+            sr["daemonforge_overcharge_active"] = bool(daemonforge_overcharge_active)
+        else:
+            sr.pop("daemonforge_active", None)
+            sr.pop("daemonforge_expires_phase", None)
+            sr.pop("daemonforge_source", None)
+            sr.pop("daemonforge_overcharge_active", None)
         if empyric_required:
             sr["empyric_wellspring_choice"] = empyric_choice_norm
             sr["empyric_wellspring_expires_phase"] = phase_key
@@ -15401,6 +15520,10 @@ class ActionsMovementMixin:
             sr["dark_ascension_active"] = True
             sr["dark_ascension_expires_phase"] = phase_key
             sr["dark_ascension_source"] = "Dark Ascension (Aura)"
+        else:
+            sr.pop("dark_ascension_active", None)
+            sr.pop("dark_ascension_expires_phase", None)
+            sr.pop("dark_ascension_source", None)
         # Despoilers: re-roll Hit roll after making a Dark Pact.
         if root.has_despoilers():
             sr["despoilers_active"] = True
@@ -15414,6 +15537,10 @@ class ActionsMovementMixin:
                 sr["unholy_bloodshed_expires_phase"] = phase_key
                 sr["unholy_bloodshed_source"] = "Unholy Bloodshed"
                 root.mark_unit_once_per_battle_used(once_key, ability_name="Unholy Bloodshed")
+        if daemonforge_overcharge_active:
+            once_key = str(daemonforge_rule.get("once_per_battle_key", "") or "").strip()
+            if once_key:
+                root.mark_unit_once_per_battle_used(once_key, ability_name=daemonforge_source)
         root.special_rules = sr
         eye_of_tzeentch_fn = (
             getattr(csm_mgr, "pactbound_zealots_eye_of_tzeentch_on_dark_pact", None) if csm_mgr is not None else None
@@ -15486,6 +15613,7 @@ class ActionsMovementMixin:
             getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
         )
         can_invoke_contract = bool(callable(can_invoke_contract_fn) and can_invoke_contract_fn(root, game=game))
+        can_overcharge_daemonforge = bool(root.daemonforge_overcharge_available())
         try:
             sr = getattr(self, "special_rules", None)
             exp = ""
@@ -15527,6 +15655,15 @@ class ActionsMovementMixin:
                     "Invoke Contract: -1 Leadership test, +1 to wound (ranged), +2 Attacks (melee) until end of phase.",
                 )
             )
+        daemonforge_variants = [("", False, "")]
+        if can_overcharge_daemonforge:
+            daemonforge_variants.append(
+                (
+                    " + Overcharge",
+                    True,
+                    "Daemonforge overcharge: re-roll the Wound roll until end of phase; failed Dark Pacts test inflicts 3 mortal wounds instead of D3.",
+                )
+            )
         base_choices = (
             ("LETHAL HITS", "Lethal Hits"),
             ("SUSTAINED HITS 1", "Sustained Hits 1"),
@@ -15548,41 +15685,52 @@ class ActionsMovementMixin:
             for dark_pact_choice, dark_pact_label in base_choices:
                 for empyric_choice, empyric_label, empyric_summary in empyric_choices:
                     for label_suffix, invoke_flag, invoke_summary in contract_variants:
-                        summary = f"{dark_pact_label}; {empyric_summary}"
-                        if invoke_summary:
-                            summary = f"{summary}; {invoke_summary}"
-                        decision_options.append(
-                            DecisionOption.create(
-                                f"{dark_pact_label} + {empyric_label}{label_suffix}",
-                                payload={
-                                    "choice": dark_pact_choice,
-                                    "empyric_wellspring_choice": empyric_choice,
-                                    "invoke_contract": bool(invoke_flag),
-                                    "summary": summary,
-                                    "unit_id": unit_id,
-                                    "phase_name": phase_name or "",
-                                    "trigger": trigger or "",
-                                },
+                        for overcharge_suffix, overcharge_flag, overcharge_summary in daemonforge_variants:
+                            summary = f"{dark_pact_label}; {empyric_summary}"
+                            if invoke_summary:
+                                summary = f"{summary}; {invoke_summary}"
+                            if overcharge_summary:
+                                summary = f"{summary}; {overcharge_summary}"
+                            decision_options.append(
+                                DecisionOption.create(
+                                    f"{dark_pact_label} + {empyric_label}{label_suffix}{overcharge_suffix}",
+                                    payload={
+                                        "choice": dark_pact_choice,
+                                        "empyric_wellspring_choice": empyric_choice,
+                                        "invoke_contract": bool(invoke_flag),
+                                        "daemonforge_overcharge": bool(overcharge_flag),
+                                        "summary": summary,
+                                        "unit_id": unit_id,
+                                        "phase_name": phase_name or "",
+                                        "trigger": trigger or "",
+                                    },
+                                )
                             )
-                        )
         else:
             for dark_pact_choice, dark_pact_label in base_choices:
                 for label_suffix, invoke_flag, invoke_summary in contract_variants:
-                    payload = {
-                        "choice": dark_pact_choice,
-                        "invoke_contract": bool(invoke_flag),
-                        "unit_id": unit_id,
-                        "phase_name": phase_name or "",
-                        "trigger": trigger or "",
-                    }
-                    if invoke_summary:
-                        payload["summary"] = f"{dark_pact_label}; {invoke_summary}"
-                    decision_options.append(
-                        DecisionOption.create(
-                            f"{dark_pact_label}{label_suffix}",
-                            payload=payload,
+                    for overcharge_suffix, overcharge_flag, overcharge_summary in daemonforge_variants:
+                        payload = {
+                            "choice": dark_pact_choice,
+                            "invoke_contract": bool(invoke_flag),
+                            "daemonforge_overcharge": bool(overcharge_flag),
+                            "unit_id": unit_id,
+                            "phase_name": phase_name or "",
+                            "trigger": trigger or "",
+                        }
+                        summary_parts = [dark_pact_label]
+                        if invoke_summary:
+                            summary_parts.append(invoke_summary)
+                        if overcharge_summary:
+                            summary_parts.append(overcharge_summary)
+                        if len(summary_parts) > 1:
+                            payload["summary"] = "; ".join(summary_parts)
+                        decision_options.append(
+                            DecisionOption.create(
+                                f"{dark_pact_label}{label_suffix}{overcharge_suffix}",
+                                payload=payload,
+                            )
                         )
-                    )
         req = DecisionRequest.create(
             DECISION_CHOOSE_DARK_PACT,
             f"Select Dark Pact for {getattr(self, 'name', 'Unit')}",
@@ -18765,8 +18913,10 @@ class ActionsMovementMixin:
             if not text:
                 continue
             stripped = leader._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
-            if not stripped or stripped == text:
+            if not stripped:
                 continue
+            if stripped == text:
+                stripped = text
             for clause in self._iter_eligibility_text_clauses(stripped):
                 canon_clause = _canon(clause)
                 if not canon_clause:
@@ -18803,29 +18953,44 @@ class ActionsMovementMixin:
             for source in list(excluded_sources or [])
             if str(source or "").strip()
         }
-        for name, desc in self._iter_ability_entries_for_rules():
-            if excluded_source_keys and self._ability_source_key(name) in excluded_source_keys:
+
+        def _matches_simple_eligibility(unit_obj) -> bool:
+            for name, desc in unit_obj._iter_ability_entries_for_rules():
+                if excluded_source_keys and self._ability_source_key(name) in excluded_source_keys:
+                    continue
+                name_key = str(name or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                if name_key == "feinting withdrawal":
+                    army = root.get_parent_army() if root is not None else None
+                    sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    apply_fn = (
+                        getattr(sm_mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None)
+                        if sm_mgr is not None
+                        else None
+                    )
+                    if callable(apply_fn) and not bool(apply_fn(root)):
+                        continue
+                text_src = unit_obj._strip_eligibility_prefix(desc or name or "")
+                for clause in self._iter_eligibility_text_clauses(text_src):
+                    text = _canon(clause)
+                    if not text:
+                        continue
+                    if not any(pattern in text for pattern in normalized_patterns):
+                        continue
+                    if self._eligibility_text_has_extra_clauses(text):
+                        continue
+                    return True
+            return False
+
+        if _matches_simple_eligibility(self):
+            return True
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        for member in members:
+            if member is None or member is self:
                 continue
-            name_key = str(name or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
-            if name_key == "feinting withdrawal":
-                army = root.get_parent_army() if root is not None else None
-                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
-                apply_fn = (
-                    getattr(sm_mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None)
-                    if sm_mgr is not None
-                    else None
-                )
-                if callable(apply_fn) and not bool(apply_fn(root)):
-                    continue
-            text_src = self._strip_eligibility_prefix(desc or name or "")
-            for clause in self._iter_eligibility_text_clauses(text_src):
-                text = _canon(clause)
-                if not text:
-                    continue
-                if not any(pattern in text for pattern in normalized_patterns):
-                    continue
-                if self._eligibility_text_has_extra_clauses(text):
-                    continue
+            if _matches_simple_eligibility(member):
                 return True
         if self._has_attached_leader_simple_eligibility_rule(patterns, excluded_sources=excluded_sources):
             return True
@@ -19041,10 +19206,8 @@ class ActionsMovementMixin:
         if cache_key in getattr(self, '_ability_cache', {}):
             return self._ability_cache[cache_key]
 
-        found = False
+            found = False
         if self.has_thrill_seekers():
-            found = True
-        elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
             found = True
         elif self._thousand_sons_rubricae_stratagem_active(
             active_key="space_marines_angelic_host_death_from_the_skies_active",
@@ -19133,8 +19296,6 @@ class ActionsMovementMixin:
 
         found = False
         if self.has_thrill_seekers():
-            found = True
-        elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
             found = True
         elif self._thousand_sons_rubricae_stratagem_active(
             active_key="space_marines_angelic_host_death_from_the_skies_active",

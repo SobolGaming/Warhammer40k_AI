@@ -16497,7 +16497,7 @@ class GameView:
             subtitle = "Select one visible enemy unit to be marked for friendly Torrent and Melta wound re-rolls this phase."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Forgefather target."
         elif str(ability_key) == "seeker_of_lost_relics":
-            title = ability_name or "Seeker of Lost Relics"
+            title = ability_name or "Seeker of the Unfound"
             subtitle = "Select one objective marker on the battlefield."
             header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
         elif str(ability_key) == "opponent_movement_embark":

@@ -31,3 +31,4 @@ def test_warrior_bioform_leader_beasts_detachment_ability_is_supported():
     notes_l = str(notes or "").lower()
     assert "battleline" in notes_l
     assert "objective control" in notes_l
+    assert "lash whip" in notes_l

@@ -119,6 +119,12 @@ def test_leader_beasts_grants_five_up_invulnerable_save():
         faction_keywords=["TYRANIDS"],
         invulnerable_save=0,
     )
+    lash_whip_prime = _make_unit(
+        "Tyranid Prime with Lash Whip",
+        keywords=["INFANTRY", "CHARACTER", "TYRANID PRIME WITH LASH WHIP"],
+        faction_keywords=["TYRANIDS"],
+        invulnerable_save=0,
+    )
     non_eligible = _make_unit(
         "Termagants",
         keywords=["INFANTRY"],
@@ -128,15 +134,19 @@ def test_leader_beasts_grants_five_up_invulnerable_save():
 
     army.add_unit(warriors)
     army.add_unit(prime)
+    army.add_unit(lash_whip_prime)
     army.add_unit(non_eligible)
 
     warriors_inv, warriors_source = warriors.get_model_invulnerable_save_override(warriors.models[0])
     prime_inv, prime_source = prime.get_model_invulnerable_save_override(prime.models[0])
+    lash_whip_inv, lash_whip_source = lash_whip_prime.get_model_invulnerable_save_override(lash_whip_prime.models[0])
     other_inv, other_source = non_eligible.get_model_invulnerable_save_override(non_eligible.models[0])
 
     assert int(warriors_inv or 0) == 5
     assert str(warriors_source or "").strip().lower() == "leader-beasts"
     assert int(prime_inv or 0) == 5
     assert str(prime_source or "").strip().lower() == "leader-beasts"
+    assert int(lash_whip_inv or 0) == 5
+    assert str(lash_whip_source or "").strip().lower() == "leader-beasts"
     assert other_inv is None
     assert other_source is None

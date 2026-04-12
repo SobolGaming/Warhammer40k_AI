@@ -8950,7 +8950,7 @@ class AbilitySpecsMixin:
                 specs.append(
                     {
                         "source": source,
-                        "requires_eligible_to_fight": False,
+                        "requires_eligible_to_fight": bool(normal_or_fall_back.group("eligible")),
                         "select_movement_mode": True,
                         "normal_move_expr": normal_expr,
                         "fall_back_move_expr": "M",

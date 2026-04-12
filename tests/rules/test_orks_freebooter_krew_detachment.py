@@ -6,7 +6,7 @@ from warhammer40k_ai.battlefield.map import ObjectivePoint
 from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.decisions import DecisionResult
-from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
@@ -100,13 +100,22 @@ def _set_objectives(game: Game):
 
 
 def _find_here_be_loot_request(game: Game):
-    for req in list(game.decision_queue.list() or []):
+    for req in reversed(list(game.decision_queue.list() or [])):
         if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
             continue
         if str((getattr(req, "context", {}) or {}).get("ability", "") or "") != "here_be_loot":
             continue
         return req
     return None
+
+
+def _begin_command_phase(game: Game, player, ork_army) -> None:
+    if player is getattr(game, "players", [None])[0]:
+        game.current_player_index = 0
+    elif player is getattr(game, "players", [None, None])[1]:
+        game.current_player_index = 1
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    ork_army.orks_detachments.on_command_phase_start(game=game, player=player)
 
 
 def _choose_objective(game: Game, player, objective):
@@ -130,13 +139,13 @@ def _choose_objective(game: Game, player, objective):
     assert bool(apply_result.ok)
 
 
-def test_here_be_loot_queues_objective_selection_each_battle_round():
+def test_here_be_loot_queues_objective_selection_each_own_command_phase():
     attacker = _create_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
     enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"])
-    game, _ork_player, ork_army = _build_game(ork_units=[attacker], enemy_units=[enemy])
+    game, ork_player, ork_army = _build_game(ork_units=[attacker], enemy_units=[enemy])
     objective_a, objective_b = _set_objectives(game)
 
-    ork_army.on_battle_round_start(1)
+    _begin_command_phase(game, ork_player, ork_army)
     request = _find_here_be_loot_request(game)
     assert request is not None
 
@@ -150,6 +159,9 @@ def test_here_be_loot_queues_objective_selection_each_battle_round():
             str(get_entity_id(objective_b) or ""),
         ]
     )
+    assert str((request.context or {}).get("phase_name", "") or "") == "Command phase"
+    assert int((request.context or {}).get("turn", 0) or 0) == 1
+    assert str((request.context or {}).get("turn_owner_id", "") or "") == str(ork_player.id or "")
 
 
 def test_here_be_loot_grants_sustained_when_attacker_unit_is_on_loot_objective():
@@ -161,7 +173,7 @@ def test_here_be_loot_grants_sustained_when_attacker_unit_is_on_loot_objective()
     attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
     target.models[0].set_location(20.0, 0.0, 0.0, 0.0)
 
-    ork_army.on_battle_round_start(1)
+    _begin_command_phase(game, ork_player, ork_army)
     _choose_objective(game, ork_player, objective_a)
 
     profile = _make_profile()
@@ -188,7 +200,7 @@ def test_here_be_loot_grants_sustained_when_target_unit_is_on_loot_objective():
     attacker.models[0].set_location(20.0, 0.0, 0.0, 0.0)
     target.models[0].set_location(0.0, 0.0, 0.0, 0.0)
 
-    ork_army.on_battle_round_start(1)
+    _begin_command_phase(game, ork_player, ork_army)
     _choose_objective(game, ork_player, objective_a)
 
     profile = _make_profile()
@@ -214,7 +226,7 @@ def test_here_be_loot_does_not_grant_sustained_when_neither_unit_is_in_objective
     attacker.models[0].set_location(20.0, 0.0, 0.0, 0.0)
     target.models[0].set_location(24.0, 0.0, 0.0, 0.0)
 
-    ork_army.on_battle_round_start(1)
+    _begin_command_phase(game, ork_player, ork_army)
     _choose_objective(game, ork_player, objective_a)
 
     profile = _make_profile()
@@ -228,3 +240,33 @@ def test_here_be_loot_does_not_grant_sustained_when_neither_unit_is_in_objective
         log_roll=False,
     )
     assert int(attack_instance.get("sustained_hit", 0) or 0) == 0
+
+
+def test_here_be_loot_persists_through_opponent_turn_and_expires_next_own_command_phase():
+    attacker = _create_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"])
+    game, ork_player, ork_army = _build_game(ork_units=[attacker], enemy_units=[enemy])
+    objective_a, objective_b = _set_objectives(game)
+
+    _begin_command_phase(game, ork_player, ork_army)
+    _choose_objective(game, ork_player, objective_a)
+
+    active = ork_army.orks_detachments._active_here_be_loot_objective_point(game=game)
+    assert active is not None
+
+    game.current_player_index = 1
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    active = ork_army.orks_detachments._active_here_be_loot_objective_point(game=game)
+    assert active is not None
+
+    game.turn = 2
+    game.current_player_index = 0
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    assert ork_army.orks_detachments._active_here_be_loot_objective_point(game=game) is None
+
+    ork_army.orks_detachments.on_command_phase_start(game=game, player=ork_player)
+    request = _find_here_be_loot_request(game)
+    assert request is not None
+
+    _choose_objective(game, ork_player, objective_b)
+    assert str(ork_army.orks_detachments.freebooter_loot_objective_id or "") == str(get_entity_id(objective_b) or "")

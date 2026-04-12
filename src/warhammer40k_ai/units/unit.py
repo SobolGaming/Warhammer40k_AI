@@ -3250,7 +3250,7 @@ class Unit(
     _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
         r"each\s+time\s+(?:a\s+model\s+in\s+)?(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+"
         r"makes\s+a\s+.*?\bmove\b.*?(?:it|models\s+in\s+that\s+unit|models\s+in\s+this\s+unit|that\s+unit)\s+"
-        r"can\s+move(?:\s+horizontally)?\s+through\s+models\s+and\s+terrain\s+features",
+        r"can\s+move(?:\s+horizontally)?\s+through\s+models(?:\s*\(?excluding\s+titanic\s+models\)?)?\s+and\s+terrain\s+features",
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_TERRAIN_ONLY_RE = re.compile(
@@ -3258,7 +3258,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
-        r"(?:models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit|they)\s+can\s+move\s+"
+        r"(?:models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit|they|it)\s+can\s+move\s+"
         r"within\s+engagement\s+range\s+of\s+(?:enemy|such)\s+models.*?"
         r"cannot\s+end\s+that\s+move\s+within\s+engagement\s+range\s+of\s+them",
         re.IGNORECASE,
@@ -4774,7 +4774,7 @@ class Unit(
         re.IGNORECASE,
     )
     _END_OF_FIGHT_NORMAL_OR_FALL_BACK_MOVE_RE = re.compile(
-        r"at the end of the fight phase(?: if this unit was eligible to fight this phase)? "
+        r"at the end of the fight phase(?: (?P<eligible>if this unit was eligible to fight this phase))? "
         r"this unit can either make a normal move of up to (?P<normal>d\d+(?: \d+)?|\d+) "
         r"or a fall back move",
         re.IGNORECASE,

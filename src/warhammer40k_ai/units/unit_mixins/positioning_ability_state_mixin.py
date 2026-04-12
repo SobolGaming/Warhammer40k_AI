@@ -1021,7 +1021,7 @@ class PositioningAbilityStateMixin:
 
     def seeker_of_lost_relics_effects_active(self, *, model=None, game=None, game_map=None) -> bool:
         """
-        Space Marines: Seeker of Lost Relics.
+        Space Marines: Seeker of the Unfound.
         Active while the selected source model is within range of its chosen objective marker.
         """
         return self._selected_model_objective_effects_active(

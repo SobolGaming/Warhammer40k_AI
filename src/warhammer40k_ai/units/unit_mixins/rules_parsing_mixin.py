@@ -3210,6 +3210,7 @@ class RulesParsingMixin:
         phase_move_types: set[str] = set()
         phase_move_terrain_only_types: set[str] = set()
         phase_engagement_types: set[str] = set()
+        phase_move_block_titanic_types: set[str] = set()
         auto_pass_desperate_escape = False
         grant_deep_strike = False
         kunnin_but_brutal_active = False
@@ -3949,6 +3950,8 @@ class RulesParsingMixin:
                         move_types = _parse_move_types(sentence_lower)
                         if move_types:
                             phase_move_types.update(move_types)
+                            if "excluding titanic models" in sentence_lower:
+                                phase_move_block_titanic_types.update(move_types)
                     elif self._BEARER_UNIT_PHASE_TERRAIN_ONLY_RE.search(sentence_lower):
                         move_types = _parse_move_types(sentence_lower)
                         if move_types:
@@ -3956,6 +3959,8 @@ class RulesParsingMixin:
 
                     if self._BEARER_UNIT_PHASE_ENGAGEMENT_RE.search(sentence_lower):
                         move_types = _parse_move_types(sentence_lower)
+                        if not move_types:
+                            move_types = set(phase_move_types)
                         if move_types:
                             phase_engagement_types.update(move_types)
                         if "desperate escape" in sentence_lower and "automatic" in sentence_lower and "pass" in sentence_lower:
@@ -4501,6 +4506,15 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_phase_move_terrain_only_types"] = list(move_types_sorted)
+                u.special_rules = sr
+
+        if phase_move_block_titanic_types:
+            move_types_sorted = sorted(phase_move_block_titanic_types)
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_phase_move_block_titanic_types"] = list(move_types_sorted)
                 u.special_rules = sr
 
         if phase_engagement_types:

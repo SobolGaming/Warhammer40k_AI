@@ -13362,12 +13362,6 @@ class WargearProfile:
                     _add_hit_mod(-1, f"-1 from {source}")
         except Exception:
             pass
-        # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
-        try:
-            if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
-                _add_hit_mod(-1, "-1 from First Prince of Chaos (Tzeentch)")
-        except Exception:
-            pass
         # Suppressed units take -1 to hit (e.g. Agonising Suppression, post-shoot suppression).
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -21363,15 +21357,6 @@ class WargearProfile:
                 if applies and bonus:
                     dice_modifier += int(bonus)
                     wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
-
-        # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
-        try:
-            if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():
-                if isinstance(strength, int) and isinstance(target_toughness, int) and strength > target_toughness:
-                    dice_modifier -= 1
-                    wound_result['modifiers'].append("-1 to wound from First Prince of Chaos (Nurgle)")
-        except Exception:
-            pass
 
         # Defensive reaction stratagems: -1 to wound (generic template).
         try:

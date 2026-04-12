@@ -289,7 +289,7 @@ def test_vulkan_hestan_seeker_of_lost_relics_selects_objective_and_applies_condi
 
     special_rules = dict(getattr(vulkan, "special_rules", {}) or {})
     assert str(special_rules.get("seeker_of_lost_relics_objective_id", "") or "") == "obj-alpha"
-    assert str(special_rules.get("seeker_of_lost_relics_source", "") or "") == "Seeker of Lost Relics"
+    assert str(special_rules.get("seeker_of_lost_relics_source", "") or "") == "Seeker of the Unfound"
     assert str(special_rules.get("seeker_of_lost_relics_source_model_id", "") or "") == str(get_entity_id(vulkan_model) or "")
 
     assert vulkan.get_effective_model_characteristic(vulkan_model, "objective_control", game_map=game.map) == 10

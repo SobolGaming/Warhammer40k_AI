@@ -1552,6 +1552,7 @@ def _validate_choose_dark_pact(game: object, request: DecisionRequest, result: D
     if callable(requires_fn):
         requires_empyric = bool(requires_fn())
     invoke_contract = bool(payload.get("invoke_contract", False))
+    daemonforge_overcharge = bool(payload.get("daemonforge_overcharge", False))
     if invoke_contract:
         try:
             root = unit.get_attached_unit_root()
@@ -1565,6 +1566,10 @@ def _validate_choose_dark_pact(game: object, request: DecisionRequest, result: D
         invoke_fn = getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
         if not callable(invoke_fn) or not bool(invoke_fn(root, game=game)):
             return ("Dark Pact invoke contract selection is invalid for this unit.",)
+    if daemonforge_overcharge:
+        overcharge_fn = getattr(unit, "daemonforge_overcharge_available", None)
+        if not callable(overcharge_fn) or not bool(overcharge_fn()):
+            return ("Dark Pact daemonforge overcharge selection is invalid for this unit.",)
     if requires_empyric:
         key = str(empyric_choice or "").strip().upper()
         if key not in ("LEAPING_WARPFLAME", "MONSTROUS_MANIFESTATION"):
@@ -1584,6 +1589,7 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
     choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
     empyric_choice = payload.get("empyric_wellspring_choice")
     invoke_contract = bool(payload.get("invoke_contract", False))
+    daemonforge_overcharge = bool(payload.get("daemonforge_overcharge", False))
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
     trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
     apply_fn = getattr(unit, "apply_dark_pacts_choice", None)
@@ -1599,6 +1605,7 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
                 str(empyric_choice).strip().upper() if str(empyric_choice or "").strip() else None
             ),
             invoke_contract=bool(invoke_contract),
+            daemonforge_overcharge=bool(daemonforge_overcharge),
         )
     )
 
@@ -10883,36 +10890,36 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return ()
     if ability == "seeker_of_lost_relics":
         if is_skip_choice(request, result):
-            return ("Seeker of Lost Relics selection cannot be skipped.",)
+            return ("Seeker of the Unfound selection cannot be skipped.",)
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is None:
-            return ("Seeker of Lost Relics source unit was not found.",)
+            return ("Seeker of the Unfound source unit was not found.",)
         source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
         if source_root is None:
-            return ("Seeker of Lost Relics source unit was not found.",)
+            return ("Seeker of the Unfound source unit was not found.",)
         objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
         if not objective_id:
-            return ("Seeker of Lost Relics requires objective_id.",)
+            return ("Seeker of the Unfound requires objective_id.",)
         objective = get_objective(game, objective_id)
         if objective is None:
-            return ("Seeker of Lost Relics selected objective marker was not found.",)
+            return ("Seeker of the Unfound selected objective marker was not found.",)
         candidate_ids = {
             str(v or "").strip()
             for v in list(ctx.get("candidate_objective_ids", []) or [])
             if str(v or "").strip()
         }
         if candidate_ids and objective_id not in candidate_ids:
-            return ("Seeker of Lost Relics selected objective marker is not an eligible candidate.",)
+            return ("Seeker of the Unfound selected objective marker is not an eligible candidate.",)
         source_model_id = str(payload.get("model_id") or ctx.get("model_id") or "").strip()
         if source_model_id:
             source_model = resolve_model(game, source_model_id)
             if source_model is None:
-                return ("Seeker of Lost Relics source model was not found.",)
+                return ("Seeker of the Unfound source model was not found.",)
             alive_attr = getattr(source_model, "is_alive", False)
             alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
             if not alive:
-                return ("Seeker of Lost Relics source model must be alive.",)
+                return ("Seeker of the Unfound source model must be alive.",)
         return ()
     if ability == "forgefather":
         if is_skip_choice(request, result):
@@ -11172,7 +11179,8 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             objective_id,
             game=game,
             player=player,
-            battle_round=int(ctx.get("battle_round", 0) or 0),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
         )
         if not bool(valid):
             return (str(reason or "Here Be Loot selection is not valid."),)
@@ -20095,7 +20103,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         objective_control = int(rule.get("objective_control", 10) or 10) if isinstance(rule, dict) else 10
         leadership = int(rule.get("leadership", 5) or 5) if isinstance(rule, dict) else 5
         feel_no_pain = int(rule.get("feel_no_pain", 4) or 4) if isinstance(rule, dict) else 4
-        ability_name = str(ctx.get("ability_name", "") or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics"
+        ability_name = str(ctx.get("ability_name", "") or "Seeker of the Unfound").strip() or "Seeker of the Unfound"
         for member in list(members or []):
             sr = getattr(member, "special_rules", None)
             if not isinstance(sr, dict):
@@ -20478,18 +20486,18 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             objective_id,
             game=game,
             player=player,
-            battle_round=int(ctx.get("battle_round", 0) or 0),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
         )
         if not isinstance(outcome, dict):
             return None
         ability_name = str(ctx.get("ability_name", "") or "Here Be Loot").strip() or "Here Be Loot"
         objective = get_objective(game, objective_id)
         objective_name = str(outcome.get("objective_name", "") or getattr(objective, "name", "") or "Objective marker")
-        round_value = int(outcome.get("battle_round", 0) or 0)
         _log_action_for_players(
             game,
             player,
-            f"{ability_name}: selected {objective_name} as your loot objective for battle round {round_value}.",
+            f"{ability_name}: selected {objective_name} as your loot objective until your next Command phase.",
         )
         return outcome
     if ability == "strike_swiftly":

@@ -212,9 +212,21 @@ def test_korsarro_khan_leader_targets_match_latest_space_marines_errata():
 
     assert actual_names == {
         "Assault Intercessor Squad",
+        "Assault Squad",
         "Bladeguard Veteran Squad",
+        "Command Squad",
         "Company Heroes",
+        "Crusader Squad",
+        "Crusader Squad (Legendary)",
+        "Deathwatch Veterans",
+        "Decimus Kill Team",
+        "Fortis Kill Team",
+        "Inner Circle Companions",
         "Intercessor Squad",
         "Sternguard Veteran Squad",
+        "Sword Brethren Squad",
         "Tactical Squad",
+        "Vanguard Veteran Squad",
+        "Victrix Honour Guard",
+        "Wolf Guard",
     }

@@ -8315,7 +8315,7 @@ class Game(
         if not options:
             return
 
-        ability_name = str(rule.get("source", "") or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics"
+        ability_name = str(rule.get("source", "") or "Seeker of the Unfound").strip() or "Seeker of the Unfound"
         source_unit_id = str(get_entity_id(root) or "")
         self.request_decision(
             DecisionRequest.create(

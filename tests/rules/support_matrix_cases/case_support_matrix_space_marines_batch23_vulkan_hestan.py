@@ -29,7 +29,7 @@ def test_space_marines_batch23_vulkan_hestan_seeker_of_lost_relics_support_matri
     )
 
     status, notes = _classify_ability(
-        "Seeker of Lost Relics",
+        "Seeker of the Unfound",
         description,
         faction_id="SM",
         datasheet_id="000002726",

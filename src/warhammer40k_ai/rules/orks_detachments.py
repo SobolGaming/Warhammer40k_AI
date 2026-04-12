@@ -64,6 +64,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
         self.da_big_hunt_prey_owner_id: str = ""
         self.freebooter_loot_objective_id: str = ""
         self.freebooter_loot_battle_round: int = 0
+        self.freebooter_loot_turn_owner_id: str = ""
         self._taktikal_brigade_issued_by_model_round: dict[str, int] = {}
         self._taktikal_brigade_issued_to_unit_round: dict[str, int] = {}
 
@@ -1364,6 +1365,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         army_player = getattr(self.army, "player", None)
         if player is not None and army_player is not None and army_player is not player:
             return
+        if self.is_freebooter_krew():
+            self.clear_here_be_loot_objective()
+            request = self.build_here_be_loot_request(game=game, player=army_player)
+            if request is not None and hasattr(game, "request_decision"):
+                game.request_decision(request)
         if self.is_da_big_hunt():
             self.clear_da_big_hunt_prey()
         if self.is_taktikal_brigade():
@@ -1451,8 +1457,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
     def clear_here_be_loot_objective(self) -> None:
         self.freebooter_loot_objective_id = ""
         self.freebooter_loot_battle_round = 0
+        self.freebooter_loot_turn_owner_id = ""
 
-    def build_here_be_loot_request(self, *, game=None, player=None, battle_round: int = 0):
+    def build_here_be_loot_request(self, *, game=None, player=None):
         if not self.is_freebooter_krew():
             return None
         if self.army is None:
@@ -1473,6 +1480,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not entries:
             return None
         objective_ids = [str(entry[0]) for entry in entries]
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        turn_owner_id = str(getattr(player, "id", "") or "")
 
         queue = getattr(game, "decision_queue", None)
         if queue is not None and hasattr(queue, "list"):
@@ -1484,7 +1496,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
                 ctx = dict(getattr(req, "context", {}) or {})
                 if str(ctx.get("ability", "") or "") != "here_be_loot":
                     continue
-                if int(ctx.get("battle_round", 0) or 0) != int(battle_round or 0):
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                if str(ctx.get("turn_owner_id", "") or "") != turn_owner_id:
                     continue
                 return None
 
@@ -1510,14 +1524,16 @@ class OrksDetachmentManager(DetachmentManagerBase):
 
         return DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
-            "Here Be Loot: select one objective marker to be your loot objective until the next battle round.",
+            "Here Be Loot: select one objective marker to be your loot objective until the start of your next Command phase.",
             player_id=getattr(player, "id", None),
             options=options,
             context={
                 "ability": "here_be_loot",
                 "ability_name": "Here Be Loot",
                 "army_id": str(get_entity_id(self.army) or ""),
-                "battle_round": int(battle_round or 0),
+                "phase_name": "Command phase",
+                "turn": int(turn or 0),
+                "turn_owner_id": turn_owner_id,
                 "candidate_objective_ids": list(objective_ids),
                 "optional": False,
             },
@@ -1529,7 +1545,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
         *,
         game=None,
         player=None,
-        battle_round: int = 0,
+        turn: int = 0,
+        turn_owner_id: str = "",
     ) -> tuple[bool, str]:
         if not self.is_freebooter_krew():
             return False, "Here Be Loot requires Freebooter Krew detachment."
@@ -1544,14 +1561,22 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return False, "Here Be Loot selection requires objective_id."
         if self._objective_entry_by_id(objective_id, game=game) is None:
             return False, "Here Be Loot selected objective marker was not found."
-        expected_round = int(battle_round or 0)
-        if expected_round and game is not None:
+        expected_turn = int(turn or 0)
+        expected_owner_id = str(turn_owner_id or "").strip()
+        if game is not None:
+            if self._phase_key_from_game(game) != "COMMAND_PHASE":
+                return False, "Here Be Loot selection is no longer in the current Command phase."
             try:
-                current_round = int(getattr(game, "turn", 0) or 0)
+                current_turn = int(getattr(game, "turn", 0) or 0)
             except (TypeError, ValueError):
-                current_round = 0
-            if current_round and current_round != expected_round:
-                return False, "Here Be Loot selection is no longer in the current battle round."
+                current_turn = 0
+            if expected_turn and current_turn and current_turn != expected_turn:
+                return False, "Here Be Loot selection is no longer in the current Command phase."
+            if expected_owner_id:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(current_player, "id", "") or "")
+                if current_owner_id and current_owner_id != expected_owner_id:
+                    return False, "Here Be Loot selection is no longer in the current Command phase."
         return True, ""
 
     def select_here_be_loot_objective(
@@ -1560,13 +1585,15 @@ class OrksDetachmentManager(DetachmentManagerBase):
         *,
         game=None,
         player=None,
-        battle_round: int = 0,
+        turn: int = 0,
+        turn_owner_id: str = "",
     ):
         valid, reason = self.validate_here_be_loot_objective_choice(
             objective_id,
             game=game,
             player=player,
-            battle_round=battle_round,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
         )
         if not valid:
             return None
@@ -1579,31 +1606,24 @@ class OrksDetachmentManager(DetachmentManagerBase):
             try:
                 self.freebooter_loot_battle_round = int(getattr(game, "turn", 0) or 0)
             except (TypeError, ValueError):
-                self.freebooter_loot_battle_round = int(battle_round or 0)
+                self.freebooter_loot_battle_round = int(turn or 0)
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            self.freebooter_loot_turn_owner_id = str(getattr(current_player, "id", "") or turn_owner_id or "")
         else:
-            self.freebooter_loot_battle_round = int(battle_round or 0)
+            self.freebooter_loot_battle_round = int(turn or 0)
+            self.freebooter_loot_turn_owner_id = str(turn_owner_id or "")
         return {
             "objective_id": str(objective_key),
             "objective_name": str(getattr(objective, "name", "") or "Objective marker"),
             "battle_round": int(self.freebooter_loot_battle_round or 0),
+            "turn_owner_id": str(self.freebooter_loot_turn_owner_id or ""),
             "source": "Here Be Loot",
         }
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
-        self.clear_here_be_loot_objective()
         if self.is_taktikal_brigade():
             self.apply_taktikal_brigade_stormboyz_battleline_keywords()
             self._cleanup_taktikal_tracking_for_round(int(battle_round or 0))
-        if not self.is_freebooter_krew() or self.army is None:
-            return
-        player = getattr(self.army, "player", None)
-        if game is None:
-            game = getattr(player, "game", None) if player is not None else None
-        if game is None or not bool(getattr(game, "is_authoritative", True)):
-            return
-        request = self.build_here_be_loot_request(game=game, player=player, battle_round=int(battle_round or 0))
-        if request is not None and hasattr(game, "request_decision"):
-            game.request_decision(request)
 
     def _active_here_be_loot_objective_point(self, *, game=None, game_map=None):
         if not self.is_freebooter_krew():
@@ -1619,8 +1639,12 @@ class OrksDetachmentManager(DetachmentManagerBase):
                 current_round = int(getattr(game, "turn", 0) or 0)
             except (TypeError, ValueError):
                 current_round = 0
-            if current_round and int(self.freebooter_loot_battle_round or 0) != current_round:
-                return None
+            if current_round and current_round > int(self.freebooter_loot_battle_round or 0):
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(current_player, "id", "") or "")
+                stored_owner_id = str(self.freebooter_loot_turn_owner_id or "")
+                if not stored_owner_id or stored_owner_id == current_owner_id:
+                    return None
         entry = self._objective_entry_by_id(objective_id, game=game, game_map=game_map)
         if entry is None:
             return None

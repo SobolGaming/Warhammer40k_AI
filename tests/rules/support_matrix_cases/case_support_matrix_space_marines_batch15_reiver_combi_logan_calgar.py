@@ -44,9 +44,9 @@ def test_space_marines_batch15_reiver_combi_logan_calgar_support_matrix_cases():
 
     master_status, master_notes = _classify_ability(
         "Master Tactician",
-        "At the start of your Command phase, if this unit's Marneus Calgar model is your WARLORD and is on the battlefield, you gain 1CP.",
+        "At the start of your Command phase, if this model is your WARLORD and is on the battlefield, you gain 1CP.",
         faction_id="SM",
-        datasheet_id="000002199",
+        datasheet_id="000004183",
     )
     assert master_status == "Supported"
     lowered_master = str(master_notes).lower()
@@ -55,9 +55,9 @@ def test_space_marines_batch15_reiver_combi_logan_calgar_support_matrix_cases():
 
     inspiring_status, inspiring_notes = _classify_ability(
         "Inspiring Leader",
-        "While this unit is leading a unit and contains a MARNEUS CALGAR model, that unit is eligible to shoot and declare a charge in a turn in which it Advanced or Fell Back.",
+        "This unit is eligible to shoot and declare a charge in a turn in which it Advanced or Fell Back.",
         faction_id="SM",
-        datasheet_id="000002199",
+        datasheet_id="000004183",
     )
     assert inspiring_status == "Supported"
     lowered_inspiring = str(inspiring_notes).lower()

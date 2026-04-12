@@ -32,7 +32,7 @@ import pytest
         (
             "TAU",
             "Retro-thrusters",
-            "At the end of the Fight phase, this unit can either make a Normal move of up to 6\" or a Fall Back move.",
+            "At the end of the Fight phase, if this unit was eligible to fight this phase, this unit can either make a Normal move of up to 6\" or a Fall Back move.",
         ),
         (
             "TAU",

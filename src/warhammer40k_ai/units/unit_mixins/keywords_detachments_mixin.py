@@ -5637,7 +5637,7 @@ class KeywordsDetachmentsMixin:
                     if "feel no pain 4" not in normalized:
                         continue
                     rule = {
-                        "source": str(name or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics",
+                        "source": str(name or "Seeker of the Unfound").strip() or "Seeker of the Unfound",
                         "source_model_id": source_model_id,
                         "objective_control": 10,
                         "leadership": 5,
@@ -10644,68 +10644,6 @@ class KeywordsDetachmentsMixin:
                 return int(near_threshold)
         return int(base_threshold)
 
-    def get_daemonforge_counter_offensive_rule(self) -> Optional[dict]:
-        """
-        Return rule info for abilities like:
-        "Once per Fight phase, one unit from your army with this ability can be targeted with the Counter-offensive
-        Stratagem for 0CP, even if you have already targeted a different unit with that Stratagem this phase."
-        """
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        cache_key = "daemonforge_counter_offensive_rule"
-        if cache_key in getattr(root, "_ability_cache", {}):
-            return root._ability_cache[cache_key]
-
-        rule = None
-        seen = set()
-        try:
-            members = list(root.get_attached_unit_members() or [])
-        except Exception:
-            members = [root]
-        if not members:
-            members = [root]
-
-        for u in members:
-            if u is None:
-                continue
-            for name, desc in u._iter_ability_entries_for_rules(model=None):
-                text_src = desc or name or ""
-                if not text_src:
-                    continue
-                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
-                if key in seen:
-                    continue
-                seen.add(key)
-                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
-                if not text:
-                    continue
-                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
-                norm = norm.lower()
-                norm = re.sub(r"'s\b", "s", norm)
-                norm = re.sub(r"[^a-z0-9]+", " ", norm)
-                norm = re.sub(r"\s+", " ", norm).strip()
-                if "counter offensive" not in norm or "stratagem" not in norm:
-                    continue
-                if "0cp" not in norm:
-                    continue
-                if "once per fight phase" not in norm:
-                    continue
-                source = str(name or "Daemonforge").strip() or "Daemonforge"
-                rule = {
-                    "source": source,
-                    "ability_key": "daemonforge_counter_offensive",
-                }
-                break
-            if rule is not None:
-                break
-
-        if not hasattr(root, "_ability_cache"):
-            root._ability_cache = {}
-        root._ability_cache[cache_key] = rule
-        return rule
-
     def get_beast_handler_heroic_intervention_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -12317,30 +12255,6 @@ class KeywordsDetachmentsMixin:
         if not any(bool(getattr(l, "is_attached_leader", False)) for l in leaders if l is not None):
             return False
         return True
-
-    def can_use_daemonforge_counter_offensive(self, game=None) -> bool:
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        if root is None:
-            return False
-        try:
-            if not root.is_alive() or not getattr(root, "deployed", False):
-                return False
-        except Exception:
-            return False
-        try:
-            if root.is_in_reserves():
-                return False
-        except Exception:
-            pass
-        try:
-            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
-                return False
-        except Exception:
-            pass
-        return bool(root.get_daemonforge_counter_offensive_rule())
 
     def _eye_of_the_augurium_source_unit(self):
         try:

@@ -2264,8 +2264,6 @@ class StratagemManager(
         self._command_reroll_units_this_phase: set[str] = set()
         # Track Grenade stratagem targets per phase for Primed and Ready.
         self._grenade_units_this_phase: set[str] = set()
-        # CSM: Daemonforge allows one Counter-offensive repeat per Fight phase.
-        self._daemonforge_used_phase_key: str = ""
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
@@ -4189,32 +4187,6 @@ class StratagemManager(
             return bool(can_use_fn(unit, stratagem_name=stratagem_name))
         return False
 
-    def _daemonforge_phase_key(self) -> str:
-        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
-        phase_name = str(self._current_phase_name or "").strip().upper()
-        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
-        owner = str(getattr(current_player, "id", "") or "") or str(getattr(current_player, "name", "") or "")
-        return f"{turn}:{phase_name}:{owner}"
-
-    def _daemonforge_used_this_phase(self) -> bool:
-        used_key = str(getattr(self, "_daemonforge_used_phase_key", "") or "")
-        if not used_key:
-            return False
-        return used_key == self._daemonforge_phase_key()
-
-    def _mark_daemonforge_used_this_phase(self) -> None:
-        self._daemonforge_used_phase_key = self._daemonforge_phase_key()
-
-    def _unit_can_use_daemonforge_counter_offensive(self, unit) -> bool:
-        if unit is None:
-            return False
-        if self._daemonforge_used_this_phase():
-            return False
-        fn = getattr(unit, "can_use_daemonforge_counter_offensive", None)
-        if callable(fn):
-            return bool(fn(self.game))
-        return False
-
     def _overwatch_brutal_example_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
             return self._unit_can_use_traitor_enforcer_overwatch(
@@ -4326,16 +4298,11 @@ class StratagemManager(
 
     def _counter_offensive_daemonforge_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
-            return (
-                self._unit_can_use_daemonforge_counter_offensive(target_unit)
-                or self._unit_can_use_intraneural_biotech_stratagem_discount(
-                    target_unit,
-                    stratagem_name="COUNTER-OFFENSIVE",
-                )
+            return self._unit_can_use_intraneural_biotech_stratagem_discount(
+                target_unit,
+                stratagem_name="COUNTER-OFFENSIVE",
             )
         for cand in list(candidates or []):
-            if self._unit_can_use_daemonforge_counter_offensive(cand):
-                return True
             if self._unit_can_use_intraneural_biotech_stratagem_discount(
                 cand,
                 stratagem_name="COUNTER-OFFENSIVE",
@@ -4941,10 +4908,6 @@ class StratagemManager(
                     result["reason"] = "Already used this turn"
                     return result
             enemy_unit = context.get("enemy_unit")
-            no_overwatch = getattr(enemy_unit, "has_first_prince_slaanesh_no_overwatch", None)
-            if callable(no_overwatch) and no_overwatch():
-                result["reason"] = "Target cannot be overwatched"
-                return result
             shooter_unit = context.get("shooter_unit") or context.get("target_unit") or context.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
                 result["reason"] = "Unit cannot use Fire Overwatch this turn"
@@ -18118,12 +18081,6 @@ class StratagemManager(
                     return
         except Exception:
             raise
-        # First Prince of Chaos (Shadow Legion Slaanesh): cannot be overwatched.
-        try:
-            if hasattr(moving_unit, "has_first_prince_slaanesh_no_overwatch") and moving_unit.has_first_prince_slaanesh_no_overwatch():
-                return
-        except Exception:
-            raise
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')
         if not s:
             return
@@ -20629,11 +20586,6 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            if bool(apply_info.get("daemonforge_counter_offensive_use", False)):
-                try:
-                    self._mark_daemonforge_used_this_phase()
-                except Exception:
-                    raise
             return True
 
         # Core: SMOKESCREEN (Benefit of Cover + Stealth until end of phase)
