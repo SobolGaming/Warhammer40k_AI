@@ -6843,6 +6843,50 @@ _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.values()
 }
 
+_IMPERIAL_KNIGHTS_FREEBLADE_COMPANY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010755002": EnhancementToolDescriptor(
+        enhancement_id="000010755002",
+        name="Bringer of Justice",
+        timing="melee_attack",
+        target="bearer",
+        duration="constant",
+        effect="bearer_melee_attacks_bonus_and_hit_bonus",
+        effect_params={"attacks_bonus": 2, "hit_bonus": 1},
+    ),
+    "000010755003": EnhancementToolDescriptor(
+        enhancement_id="000010755003",
+        name="Hunter's Eye",
+        timing="ranged_attack",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="bearer_ranged_weapons_gain_keywords",
+        effect_params={"keywords": ("IGNORES COVER",)},
+    ),
+    "000010755004": EnhancementToolDescriptor(
+        enhancement_id="000010755004",
+        name="Mysterious Guardian",
+        timing="passive_and_end_of_opponent_turn",
+        target="bearer",
+        duration="constant_and_once_per_battle",
+        effect="bearer_deep_strike_and_end_of_opponent_turn_strategic_reserves",
+        once_per_battle=True,
+        effect_params={"once_per_battle_key": "mysterious_guardian"},
+    ),
+    "000010755005": EnhancementToolDescriptor(
+        enhancement_id="000010755005",
+        name="Sanctuary",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_unit_invulnerable_save",
+        effect_params={"invulnerable_save": 5},
+    ),
+}
+
+_IMPERIAL_KNIGHTS_FREEBLADE_COMPANY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_FREEBLADE_COMPANY_DESCRIPTORS.values()
+}
+
 _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010502002": EnhancementToolDescriptor(
         enhancement_id="000010502002",
@@ -9820,6 +9864,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _IMPERIAL_KNIGHTS_FREEBLADE_COMPANY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10087,6 +10134,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME.get(key)
+        or _IMPERIAL_KNIGHTS_FREEBLADE_COMPANY_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)

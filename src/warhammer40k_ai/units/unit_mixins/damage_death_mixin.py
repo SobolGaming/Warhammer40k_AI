@@ -2278,6 +2278,12 @@ class DamageDeathMixin:
         if chaos_knights_trigger_threshold > 0:
             trigger_threshold = int(min(int(trigger_threshold), int(chaos_knights_trigger_threshold)))
             setattr(dying_model, "_chaos_knights_spiteful_demise_trigger_threshold_once", 0)
+        imperial_knights_trigger_threshold = int(
+            getattr(dying_model, "_imperial_knights_noble_sacrifice_trigger_threshold_once", 0) or 0
+        )
+        if imperial_knights_trigger_threshold > 0:
+            trigger_threshold = int(min(int(trigger_threshold), int(imperial_knights_trigger_threshold)))
+            setattr(dying_model, "_imperial_knights_noble_sacrifice_trigger_threshold_once", 0)
         trigger_threshold = int(max(2, min(6, int(trigger_threshold or 6))))
 
         # Thousand Sons (Warpforged Cabal): Warpfire Infusion.

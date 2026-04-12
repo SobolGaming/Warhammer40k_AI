@@ -980,6 +980,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Bold Gallantry": (
             r"each time an imperial knights unit from your army advances until the end of the turn ranged weapons equipped by imperial knights models from your army have the assault ability",
         ),
+        "Knights of Legend": (
+            r"imperial knights models from your army have the feel no pain 6 ability",
+            r"in addition at the start of your command phase each imperial knights model from your army regains 1 lost wound",
+        ),
         "Knightly Teachings": (
             r"each time a model from your army uses its bondsman ability if no other model from your army has used that bondsman ability that turn you can select up to three friendly armiger models instead of one within 12 of that model or within 15 of that model while your army is honoured you still cannot select a model that is already being affected by a bondsman ability",
             r"until the start of your next command phase those models are affected by that bondsman ability",
@@ -3268,6 +3272,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bold Gallantry": (
             "Supported",
             "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",
+        ),
+        "Knights of Legend": (
+            "Supported",
+            "Freeblade Company: IMPERIAL KNIGHTS models gain Feel No Pain 6+, and at the start of your Command phase each IMPERIAL KNIGHTS unit regains 1 lost wound.",
         ),
         "Knightly Teachings": (
             "Supported",
@@ -20000,6 +20008,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010502003": "Wyrmslayer Divination: once per battle when the bearer is selected to shoot, optional confirmation lets the bearer re-roll Hit rolls against FLY units until end of phase, until an Oath is fulfilled.",
         "000010502004": "Pennant of Silvered Fury: once per battle when the bearer is selected to fight, optional confirmation grants the bearer's melee weapons [SUSTAINED HITS 2] until end of phase, until an Oath is fulfilled.",
         "000010502005": "Crushing Condemnation: once per battle after the bearer destroys one or more enemy units in the Fight phase, optional CHOOSE_QUARRY selection (with None) picks one visible enemy unit within 12\" not within Engagement Range of any friendly unit and rolls six D6, inflicting 1 mortal wound for each 4+ until an Oath is fulfilled.",
+        "000010755002": "Bringer of Justice: bearer melee weapons gain +2 Attacks and the bearer gains +1 to hit with melee attacks.",
+        "000010755003": "Hunter's Eye: bearer ranged weapons gain [IGNORES COVER].",
+        "000010755004": "Mysterious Guardian: bearer has Deep Strike and once per battle can enter Strategic Reserves at the end of the opponent's turn.",
+        "000010755005": "Sanctuary: bearer has a 5+ invulnerable save.",
         "000010506002": "Mentor's Pride: while two or more friendly ARMIGER units are under the bearer's Bondsman effects, their attacks re-roll Hit rolls of 1.",
         "000010506003": "Fables of Nightmare: while two or more friendly ARMIGER units are under the bearer's Bondsman effects, their melee weapons gain [PRECISION].",
         "000010506004": "Tales of Heroism: while two or more friendly ARMIGER units are under the bearer's Bondsman effects, their melee attacks ignore Hit roll modifiers and Wound roll modifiers.",
@@ -20779,7 +20791,14 @@ def _stratagem_support(
         "STEADFAST SUPERIORITY": "Fight phase: selected IMPERIAL KNIGHTS unit on your defensive line and in Engagement Range that has not yet fought re-rolls melee Hit rolls until end of phase.",
         "TITANIC BOMBARDMENT": "Shooting phase: selected Titanic IMPERIAL KNIGHTS unit on your defensive line that remained stationary and has not yet shot gains [SUSTAINED HITS 2] on ranged weapons until end of phase.",
         "VOW OF RETRIBUTION": "Shooting phase: IMPERIAL KNIGHTS unit that has not yet shot gains Lethal Hits on ranged attacks until end of phase.",
-        "FULL TILT": "Movement phase: IMPERIAL KNIGHTS unit that has not been selected to move gains +2\" Move and +2 to Advance rolls until end of phase.",
+        "000010494004": "Movement phase: selected IMPERIAL KNIGHTS unit that has not been selected to move gains +2\" Move and +2 to Advance rolls until end of phase.",
+        "000010756003": "Your Shooting phase or the Fight phase: selected IMPERIAL KNIGHTS unit that has not yet shot or fought re-rolls Hit rolls of 1 and Wound rolls of 1 while no other friendly units are within 9\" until end of phase.",
+        "000010756002": "Any phase reaction when your IMPERIAL KNIGHTS unit with Deadly Demise is just destroyed: its Deadly Demise triggers on 4+, improving to 3+ if it is an ARMIGER.",
+        "000010756006": "Opponent Shooting phase reaction after enemy targets are selected: selected IMPERIAL KNIGHTS target suffers -1 to incoming Wound rolls from that attacker while its Strength exceeds the target's Toughness until end of phase.",
+        "000010756007": "End of your opponent's Fight phase: selected ARMIGER unit wholly within 9\" of a battlefield edge and not in Engagement Range enters Strategic Reserves.",
+        "000010756005": "Your Shooting phase: selected IMPERIAL KNIGHTS unit that has not yet shot can target enemies within its Engagement Range with Blast ranged weapons if no other friendly units are engaging them; each unmodified Hit roll of 1 from those Blast attacks causes 1 mortal wound to that unit after it shoots.",
+        "000010756004": "Movement phase: selected IMPERIAL KNIGHTS unit that has not been selected to move gains a fixed Advance distance of 6\", or 9\" if it is an ARMIGER or DESTRIER, until end of phase.",
+        "FULL TILT": "Movement phase: IMPERIAL KNIGHTS unit that has not been selected to move gains the detachment-specific Full Tilt movement bonus until end of phase.",
         "RUN THEM THROUGH!": "Fight phase: IMPERIAL KNIGHTS unit that has not been selected to fight gains [LANCE] on melee weapons until end of phase.",
         "THUNDERSTOMP": "Fight phase: selected IMPERIAL KNIGHTS model's Armoured/Titanic Feet melee weapons are set to 8/12 Attacks and improve AP by 1 until end of phase.",
         "TACTICAL FOIL": "Opponent Movement phase reaction after an enemy ends a Normal/Advance/Fall Back move: IMPERIAL KNIGHTS unit within 9\" can make a reactive Normal move of up to D6\".",
@@ -21038,6 +21057,8 @@ def _stratagem_support(
     def _note(default: str) -> str:
         if stratagem_id in notes_by_id:
             return notes_by_id[stratagem_id]
+        if stratagem_id in notes:
+            return notes[stratagem_id]
         return notes.get(name_u, default)
 
     if stratagem_id in {
@@ -21135,6 +21156,16 @@ def _stratagem_support(
         "000010148005",
         "000010148006",
         "000010148007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000010494004",
+        "000010756002",
+        "000010756003",
+        "000010756004",
+        "000010756005",
+        "000010756006",
+        "000010756007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
     if name_u in {

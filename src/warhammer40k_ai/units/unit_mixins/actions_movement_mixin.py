@@ -22024,6 +22024,43 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _is_imperial_knights_point_blank_barrage_active(
+        self,
+        *,
+        game=None,
+        phase_name: Optional[str] = None,
+    ) -> bool:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("freeblade_point_blank_barrage_active", False)):
+            return False
+        if game is None:
+            army = getattr(root, "get_parent_army", lambda: None)()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        owner = str(sr.get("freeblade_point_blank_barrage_turn_owner", "") or "")
+        if owner:
+            army = getattr(root, "get_parent_army", lambda: None)()
+            unit_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+            if unit_owner and owner != unit_owner:
+                return False
+        exp = str(sr.get("freeblade_point_blank_barrage_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = str(phase_name or "").strip().upper().replace(" ", "_") if phase_name else ""
+            if not phase_key and game is not None:
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_key and phase_key != exp:
+                return False
+        turn = int(sr.get("freeblade_point_blank_barrage_turn", 0) or 0)
+        if turn:
+            if game is None:
+                return False
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return False
+        return True
+
     def _ignore_engagement_for_ranged_targeting_active(
         self,
         *,
@@ -22034,6 +22071,7 @@ class ActionsMovementMixin:
             self._is_ficklefire_active(game=game, phase_name=phase_name)
             or self._is_iconoclast_worthless_chattel_active(game=game, phase_name=phase_name)
             or self._is_siege_regiment_callous_sacrifice_active(game=game, phase_name=phase_name)
+            or self._is_imperial_knights_point_blank_barrage_active(game=game, phase_name=phase_name)
         )
 
     def _is_iconoclast_unrestrained_rage_active(

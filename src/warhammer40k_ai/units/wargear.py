@@ -15382,6 +15382,18 @@ class WargearProfile:
                 reroll_hit_values.add(1)
                 source_name = str(source or "Mentor's Pride").strip() or "Mentor's Pride"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        strength_from_exile_fn = getattr(ik_mgr, "freeblade_strength_from_exile_reroll_hit_wound_ones", None) if ik_mgr is not None else None
+        if callable(strength_from_exile_fn):
+            reroll_hit_ones, _reroll_wound_ones, source = strength_from_exile_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Strength from Exile").strip() or "Strength from Exile"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         # Astra Militarum: Bridgehead Strike (Only the Best) re-roll Hit roll of 1
         # for ASTRA MILITARUM INFANTRY models making ranged attacks.
         try:
@@ -22055,6 +22067,18 @@ class WargearProfile:
             if bool(reroll_wound_ones):
                 reroll_wound_values.add(1)
                 source_name = str(source or "Purgation's Hand").strip() or "Purgation's Hand"
+                reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        strength_from_exile_fn = getattr(ik_mgr, "freeblade_strength_from_exile_reroll_hit_wound_ones", None) if ik_mgr is not None else None
+        if callable(strength_from_exile_fn):
+            _reroll_hit_ones, reroll_wound_ones, source = strength_from_exile_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_wound_ones):
+                reroll_wound_values.add(1)
+                source_name = str(source or "Strength from Exile").strip() or "Strength from Exile"
                 reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         # Adeptus Custodes (Solar Spearhead): Auric Armour.
         try:

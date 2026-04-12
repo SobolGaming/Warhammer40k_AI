@@ -13,6 +13,7 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     faction_id = "QI"
     DETACHMENT_VALOURSTRIKE_LANCE = "Valourstrike Lance"
     DETACHMENT_GATE_WARDEN_LANCE = "Gate Warden Lance"
+    DETACHMENT_FREEBLADE_COMPANY = "Freeblade Company"
     DETACHMENT_SPEARHEAD_AT_ARMS = "Spearhead-At-Arms"
     DETACHMENT_QUESTOR_FORGEPACT = "Questor Forgepact"
     DETACHMENT_QUESTORIS_COMPANIONS = "Questoris Companions"
@@ -50,6 +51,11 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_GATE_WARDEN_LANCE)
+
+    def is_freeblade_company(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_FREEBLADE_COMPANY)
 
     def is_spearhead_at_arms(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -863,6 +869,54 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _freeblade_has_no_other_friendly_units_within_distance(
+        self,
+        unit,
+        *,
+        max_distance: float,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        source_root = self._attached_root(unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return False
+        source_id = self._entity_id(source_root)
+        for ally in self._iter_army_roots():
+            if ally is None:
+                continue
+            ally_id = self._entity_id(ally)
+            if source_id and ally_id and ally_id == source_id:
+                continue
+            if not self._unit_on_battlefield(ally):
+                continue
+            if self._unit_within_distance(
+                source_root,
+                ally,
+                max_distance=max_distance,
+                game=game,
+                game_map=game_map,
+            ):
+                return False
+        return True
+
+    def _apply_freeblade_knights_of_legend(self, *, game=None, player=None) -> None:
+        if not self.is_freeblade_company():
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None:
+            return
+        if player is not None and player is not owner:
+            return
+        for unit in self._iter_army_roots():
+            if not self._unit_is_imperial_knights(unit):
+                continue
+            healed = self._heal_most_damaged_model_in_unit(unit, 1)
+            if healed > 0:
+                append_action(
+                    owner,
+                    f"{getattr(unit, 'name', 'Imperial Knights unit')}: Knights of Legend regained {int(healed)} lost wound(s).",
+                )
+
     def _apply_forgepact_sacristan_pledges(self, *, game=None, player=None) -> None:
         if not self.is_questor_forgepact():
             return
@@ -889,6 +943,83 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                     owner,
                     f"{getattr(unit, 'name', 'Imperial Knights unit')}: {source_label}, regained {int(healed)} lost wound(s).",
                 )
+
+    def freeblade_knights_of_legend_feel_no_pain(self, unit, *, target_model=None) -> tuple[int, str]:
+        del target_model
+        root = self._attached_root(unit)
+        if not self.is_freeblade_company():
+            return 0, ""
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_imperial_knights(root):
+            return 0, ""
+        return 6, "Knights of Legend"
+
+    def _freeblade_temporary_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_freeblade_company():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{str(prefix)}_active")):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        current_phase = (
+            str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            if resolved_game is not None
+            else ""
+        )
+        expires_phase = str(sr.get(f"{str(prefix)}_expires_phase", "") or "").strip().upper()
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return None, None
+        try:
+            effect_turn = int(sr.get(f"{str(prefix)}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{str(prefix)}_turn_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return None, None
+        return root, sr
+
+    def freeblade_strength_from_exile_reroll_hit_wound_ones(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, bool, str]:
+        del target_unit, weapon_profile
+        if attacker_model is None:
+            return False, False, ""
+        attacker_root, _sr = self._freeblade_temporary_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="freeblade_strength_from_exile",
+            game=game,
+        )
+        if attacker_root is None:
+            return False, False, ""
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        if not self._freeblade_has_no_other_friendly_units_within_distance(
+            attacker_root,
+            max_distance=9.0,
+            game=resolved_game,
+            game_map=resolved_map,
+        ):
+            return False, False, ""
+        return True, True, "Strength from Exile"
 
     def forgepact_divine_inspiration_reroll_hit_wound_ones(
         self,
@@ -1765,6 +1896,7 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if self.is_questor_forgepact():
             for root in self._iter_army_roots():
                 self.clear_questor_forgepact_machine_focus(root)
+        self._apply_freeblade_knights_of_legend(game=game, player=player)
         self._apply_forgepact_sacristan_pledges(game=game, player=player)
         self._process_heroes_of_legend_start_of_turn(game=game, player=player)
 

@@ -13282,6 +13282,73 @@ _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FREEBLADE_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010756003": StratagemToolDescriptor(
+        stratagem_id="000010756003",
+        name="STRENGTH FROM EXILE",
+        timing="shooting_or_fight_phase_on_select_to_act",
+        target="imperial_knights_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="reroll_hit_and_wound_ones_if_no_other_friendly_units_within_9",
+        cp_cost=1,
+        effect_params={"range_in": 9.0, "reroll_values": (1,)},
+    ),
+    "000010756002": StratagemToolDescriptor(
+        stratagem_id="000010756002",
+        name="NOBLE SACRIFICE",
+        timing="any_phase_on_destroyed_unit_before_removal",
+        target="just_destroyed_imperial_knights_unit_with_deadly_demise",
+        duration="instant",
+        effect="deadly_demise_trigger_threshold_on_destroyed_unit",
+        cp_cost=1,
+        effect_params={"trigger_threshold": 4, "armiger_trigger_threshold": 3},
+    ),
+    "000010756006": StratagemToolDescriptor(
+        stratagem_id="000010756006",
+        name="SURVIVOR OF STRIFE",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="imperial_knights_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="worsen_incoming_wound_roll_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={"wound_roll_modifier": -1},
+    ),
+    "000010756007": StratagemToolDescriptor(
+        stratagem_id="000010756007",
+        name="FLANKING MANOEUVRES",
+        timing="end_of_opponent_fight_phase",
+        target="armiger_unit_within_9_of_battlefield_edge_not_in_engagement_range",
+        duration="instant",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=9.0,
+    ),
+    "000010756005": StratagemToolDescriptor(
+        stratagem_id="000010756005",
+        name="POINT-BLANK BARRAGE",
+        timing="shooting_phase_on_select_to_shoot",
+        target="imperial_knights_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="blast_can_target_own_engagement_with_self_mortal_backlash",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "requires_blast": True, "self_mortal_on_unmodified_hit": 1},
+    ),
+    "000010756004": StratagemToolDescriptor(
+        stratagem_id="000010756004",
+        name="FULL TILT",
+        timing="movement_phase_before_select_to_move",
+        target="imperial_knights_unit_before_it_advances",
+        duration="until_end_of_phase",
+        effect="fixed_advance_distance_by_keyword",
+        cp_cost=1,
+        effect_params={"distance": 6, "armiger_distance": 9, "destrier_distance": 9},
+    ),
+}
+
+_FREEBLADE_COMPANY_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FREEBLADE_COMPANY_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010507002": StratagemToolDescriptor(
         stratagem_id="000010507002",
@@ -15136,6 +15203,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FREEBLADE_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15358,6 +15428,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _GATE_WARDEN_LANCE_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _FREEBLADE_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _QUESTOR_FORGEPACT_STRATAGEM_BY_NAME.get(key)
         or _QUESTORIS_COMPANIONS_STRATAGEM_BY_NAME.get(key)

@@ -2327,6 +2327,21 @@ class LateGameplayMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             cleanup_fn(game=game)
         try:
+            ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            fnp_fn = getattr(ik_mgr, "freeblade_knights_of_legend_feel_no_pain", None) if ik_mgr is not None else None
+            if callable(fnp_fn):
+                fnp_value, fnp_source = fnp_fn(self, target_model=target_model)
+                try:
+                    fnp_value = int(fnp_value or 0)
+                except Exception:
+                    fnp_value = 0
+                if fnp_value > 0:
+                    key = (int(fnp_value), str(fnp_source or ""))
+                    if key not in set((int(v), str(c or "")) for v, c in result):
+                        result.append((int(fnp_value), fnp_source or None))
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             entries = sr.get("bearer_unit_fnp") if isinstance(sr, dict) else None
             if isinstance(entries, list):

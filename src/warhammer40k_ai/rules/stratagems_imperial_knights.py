@@ -40,6 +40,11 @@ class ImperialKnightsStratagemMixin:
         checker = getattr(mgr, "is_gate_warden_lance", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_freeblade_company(self) -> bool:
+        mgr = self._ik_detachment_mgr()
+        checker = getattr(mgr, "is_freeblade_company", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_questor_forgepact(self) -> bool:
         mgr = self._ik_detachment_mgr()
         checker = getattr(mgr, "is_questor_forgepact", None) if mgr is not None else None
@@ -57,7 +62,17 @@ class ImperialKnightsStratagemMixin:
 
     @staticmethod
     def _ik_normalize_name(value: str) -> str:
-        return str(value or "").replace("\u2019", "'").strip().upper()
+        return (
+            str(value or "")
+            .replace("\u2019", "'")
+            .replace("\u2010", "-")
+            .replace("\u2011", "-")
+            .replace("\u2012", "-")
+            .replace("\u2013", "-")
+            .replace("\u2014", "-")
+            .strip()
+            .upper()
+        )
 
     @staticmethod
     def _ik_phase_name_key(value: Any) -> str:
@@ -137,6 +152,14 @@ class ImperialKnightsStratagemMixin:
         if self._ik_has_any_keyword(root, "ARMIGER"):
             return True
         return "ARMIGER" in str(getattr(root, "name", "") or "").strip().upper()
+
+    def _ik_is_destrier_unit(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        if root is None or not self._is_imperial_knights_unit(root):
+            return False
+        if self._ik_has_any_keyword(root, "DESTRIER"):
+            return True
+        return "DESTRIER" in str(getattr(root, "name", "") or "").strip().upper()
 
     def _ik_is_titanic_unit(self, unit: Any) -> bool:
         root = self._ik_root(unit)
@@ -570,6 +593,179 @@ class ImperialKnightsStratagemMixin:
                 return True
         return False
 
+    def _ik_has_deadly_demise(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        has_deadly = getattr(root, "has_deadly_demise", None)
+        if not callable(has_deadly):
+            return False
+        try:
+            return bool(has_deadly()[0])
+        except Exception:
+            return False
+
+    def _ik_unit_within_battlefield_edge_distance(self, unit: Any, distance: float) -> bool:
+        root = self._ik_root(unit)
+        if root is None or self.game is None:
+            return False
+        try:
+            dist = float(distance)
+        except Exception:
+            return False
+        if dist <= 0.0:
+            return False
+        width = getattr(getattr(self.game, "battlefield", None), "width", None)
+        height = getattr(getattr(self.game, "battlefield", None), "height", None)
+        if width is None or height is None:
+            game_map = getattr(self.game, "map", None)
+            width = getattr(game_map, "width", None)
+            height = getattr(game_map, "height", None)
+        if width is None or height is None:
+            return False
+        models = self._ik_unit_models(root)
+        if not models:
+            return False
+        for model in models:
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            try:
+                x = float(getattr(base, "x", 0.0))
+                y = float(getattr(base, "y", 0.0))
+                radius = float(getattr(base, "get_radius", lambda: 0.0)())
+            except Exception:
+                continue
+            if (
+                (x - radius) <= dist + 1e-6
+                or ((float(width) - x) - radius) <= dist + 1e-6
+                or (y - radius) <= dist + 1e-6
+                or ((float(height) - y) - radius) <= dist + 1e-6
+            ):
+                return True
+        return False
+
+    def _freeblade_strength_from_exile_candidates(self, *, phase_name: str = "") -> list[Any]:
+        if not self._is_freeblade_company():
+            return []
+        phase_key = self._ik_phase_name_key(phase_name or self._current_phase_name)
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for root in self._ik_army_roots():
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if phase_key == "fight phase" and self._ik_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _freeblade_survivor_of_strife_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_freeblade_company():
+            return []
+        attacker_root = self._ik_root(attacking_unit)
+        if attacker_root is None or self._ik_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _freeblade_flanking_manoeuvres_candidates(self) -> list[Any]:
+        if not self._is_freeblade_company():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for root in self._ik_army_roots():
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._ik_is_armiger_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if self._ik_unit_in_engagement_range(root):
+                continue
+            if not self._ik_unit_within_battlefield_edge_distance(root, 9.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _freeblade_point_blank_barrage_candidates(self) -> list[Any]:
+        if not self._is_freeblade_company():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for root in self._ik_army_roots():
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _freeblade_noble_sacrifice_candidates(self, *, destroyed_unit: Any = None, destroyed_model: Any = None) -> list[Any]:
+        if not self._is_freeblade_company():
+            return []
+        root = self._ik_root(destroyed_unit)
+        if root is None or not self._ik_owned_by_player(root, self.player):
+            return []
+        if not self._is_imperial_knights_unit(root):
+            return []
+        if not self._ik_has_deadly_demise(root):
+            return []
+        if destroyed_model is None or self._ik_model_is_alive(destroyed_model):
+            return []
+        for model in list(getattr(root, "models", []) or []):
+            if model is destroyed_model:
+                continue
+            if self._ik_model_is_alive(model):
+                return []
+        return [root]
+
     def _imperial_knights_gate_warden_drive_them_out_candidates(self, *, phase_name: str = "") -> list[Any]:
         if not self._is_gate_warden_lance():
             return []
@@ -777,7 +973,7 @@ class ImperialKnightsStratagemMixin:
         return sorted(out, key=self._ik_sort_key)
 
     def _imperial_knights_full_tilt_candidates(self) -> list[Any]:
-        if not self._is_valourstrike_lance():
+        if not self._is_valourstrike_lance() and not self._is_freeblade_company():
             return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -1331,6 +1527,58 @@ class ImperialKnightsStratagemMixin:
             payload["unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_freeblade_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_freeblade_company() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._ik_root(attacking_unit)
+        if attacker_root is None or self._ik_owned_by_player(attacker_root, self.player):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("SURVIVOR OF STRIFE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        candidates = self._freeblade_survivor_of_strife_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_imperial_knights_spearhead_shooting_resolved_reactions(
         self,
         *,
@@ -1441,6 +1689,47 @@ class ImperialKnightsStratagemMixin:
             payload["friendly_candidates"] = friendly_candidates
             if len(friendly_candidates) == 1:
                 payload["selected_units"] = [friendly_candidates[0]]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_freeblade_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_freeblade_company() or self.game is None:
+            return
+        if player is self.player:
+            return
+        phase_key = self._ik_phase_name_key(getattr(phase, "name", phase))
+        if phase_key != "fight phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("FLANKING MANOEUVRES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        candidates = self._freeblade_flanking_manoeuvres_candidates()
+        if not candidates:
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": phase,
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_imperial_knights_gate_warden_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
@@ -1610,6 +1899,30 @@ class ImperialKnightsStratagemMixin:
                         "gate_warden_marshal_the_defence_source",
                     ):
                         sr.pop(key, None)
+                exp = str(sr.get("freeblade_full_tilt_expires_phase", "") or "").strip().upper()
+                if sr.get("freeblade_full_tilt_active") is True and (not exp or exp == phase_name):
+                    effects = list(sr.get("advance_no_roll_effects", []) or [])
+                    kept = [
+                        entry
+                        for entry in effects
+                        if not (
+                            isinstance(entry, dict)
+                            and str(entry.get("tag", "") or "") == "stratagem:imperial_knights_freeblade_full_tilt"
+                        )
+                    ]
+                    if kept:
+                        sr["advance_no_roll_effects"] = kept
+                    else:
+                        sr.pop("advance_no_roll_effects", None)
+                    for key in (
+                        "freeblade_full_tilt_active",
+                        "freeblade_full_tilt_distance",
+                        "freeblade_full_tilt_expires_phase",
+                        "freeblade_full_tilt_turn_owner",
+                        "freeblade_full_tilt_turn",
+                        "freeblade_full_tilt_source",
+                    ):
+                        sr.pop(key, None)
             if phase_name == "SHOOTING_PHASE":
                 exp = str(sr.get("imperial_knights_exemplars_wisdom_expires_phase", "") or "").strip().upper()
                 if sr.get("imperial_knights_exemplars_wisdom_active") is True and (not exp or exp == phase_name):
@@ -1676,6 +1989,27 @@ class ImperialKnightsStratagemMixin:
                         "questor_forgepact_aggression_begets_aggression_source",
                     ):
                         sr.pop(key, None)
+                exp = str(sr.get("freeblade_strength_from_exile_expires_phase", "") or "").strip().upper()
+                if sr.get("freeblade_strength_from_exile_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "freeblade_strength_from_exile_active",
+                        "freeblade_strength_from_exile_expires_phase",
+                        "freeblade_strength_from_exile_turn_owner",
+                        "freeblade_strength_from_exile_turn",
+                        "freeblade_strength_from_exile_source",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("freeblade_point_blank_barrage_expires_phase", "") or "").strip().upper()
+                if sr.get("freeblade_point_blank_barrage_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "freeblade_point_blank_barrage_active",
+                        "freeblade_point_blank_barrage_expires_phase",
+                        "freeblade_point_blank_barrage_turn_owner",
+                        "freeblade_point_blank_barrage_turn",
+                        "freeblade_point_blank_barrage_source",
+                        "freeblade_point_blank_barrage_pending_mortal_wounds",
+                    ):
+                        sr.pop(key, None)
             if phase_name == "FIGHT_PHASE":
                 exp = str(sr.get("gate_warden_drive_them_out_expires_phase", "") or "").strip().upper()
                 if sr.get("gate_warden_drive_them_out_active") is True and (not exp or exp == phase_name):
@@ -1709,6 +2043,16 @@ class ImperialKnightsStratagemMixin:
                         "spearhead_virtue_of_courage_turn_owner",
                         "spearhead_virtue_of_courage_turn",
                         "spearhead_virtue_of_courage_source",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("freeblade_strength_from_exile_expires_phase", "") or "").strip().upper()
+                if sr.get("freeblade_strength_from_exile_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "freeblade_strength_from_exile_active",
+                        "freeblade_strength_from_exile_expires_phase",
+                        "freeblade_strength_from_exile_turn_owner",
+                        "freeblade_strength_from_exile_turn",
+                        "freeblade_strength_from_exile_source",
                     ):
                         sr.pop(key, None)
             if phase_name == "CHARGE_PHASE":
@@ -1882,6 +2226,52 @@ class ImperialKnightsStratagemMixin:
                 "unit": root,
                 "target_unit": root,
                 "enemy_unit": enemy_root,
+            },
+            use_timer=False,
+        )
+
+    def _queue_freeblade_model_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        model: Any,
+    ) -> None:
+        if not self._is_freeblade_company() or self.game is None:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or self._ik_display_phase_name(
+            getattr(getattr(self.game, "phase", None), "name", "") or "",
+            default="Any phase",
+        )
+        stratagem = self.get_by_name("NOBLE SACRIFICE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._freeblade_noble_sacrifice_candidates(destroyed_unit=unit, destroyed_model=model)
+        if not candidates:
+            return
+        root = candidates[0]
+        if self._ik_reaction_already_queued(
+            event_name="model_destroyed_before_removal",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "model_destroyed_before_removal",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "destroyed_unit": root,
+                "destroyed_model": model,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
             },
             use_timer=False,
         )
@@ -2103,6 +2493,11 @@ class ImperialKnightsStratagemMixin:
 
     def _use_imperial_knights_valourstrike_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        stratagem_id = str(
+            getattr(stratagem, "id", "")
+            or getattr(stratagem, "stratagem_id", "")
+            or ""
+        ).strip()
         if name_u == "DRIVE THEM OUT!":
             return self._use_gate_warden_drive_them_out(stratagem, **kwargs)
         if name_u == "FORTRESS OF INTIMIDATION":
@@ -2118,7 +2513,19 @@ class ImperialKnightsStratagemMixin:
         if name_u == "VOW OF RETRIBUTION":
             return self._use_valourstrike_vow_of_retribution(stratagem, **kwargs)
         if name_u == "FULL TILT":
+            if stratagem_id == "000010756004" or self._is_freeblade_company():
+                return self._use_freeblade_full_tilt(stratagem, **kwargs)
             return self._use_valourstrike_full_tilt(stratagem, **kwargs)
+        if name_u == "STRENGTH FROM EXILE":
+            return self._use_freeblade_strength_from_exile(stratagem, **kwargs)
+        if name_u == "NOBLE SACRIFICE":
+            return self._use_freeblade_noble_sacrifice(stratagem, **kwargs)
+        if name_u == "SURVIVOR OF STRIFE":
+            return self._use_freeblade_survivor_of_strife(stratagem, **kwargs)
+        if name_u == "FLANKING MANOEUVRES":
+            return self._use_freeblade_flanking_manoeuvres(stratagem, **kwargs)
+        if name_u == "POINT-BLANK BARRAGE":
+            return self._use_freeblade_point_blank_barrage(stratagem, **kwargs)
         if name_u == "RUN THEM THROUGH!":
             return self._use_valourstrike_run_them_through(stratagem, **kwargs)
         if name_u == "THUNDERSTOMP":
@@ -3028,6 +3435,317 @@ class ImperialKnightsStratagemMixin:
         logger.info(
             "INFO: SQUIRES OFTHE HUNT: %d Armiger unit(s) entered Strategic Reserves.",
             moved_units,
+        )
+        return True
+
+    def _use_freeblade_full_tilt(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FULL TILT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FULL TILT: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._imperial_knights_full_tilt_candidates())
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FULL TILT: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: FULL TILT: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: FULL TILT: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FULL TILT: target is not currently eligible")
+            return False
+        if self._ik_selected_to_move_this_phase(root):
+            logger.error("ERROR: FULL TILT: target has already been selected to move this phase")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        fixed_distance = 9 if (self._ik_is_armiger_unit(root) or self._ik_is_destrier_unit(root)) else 6
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effect_tag = "stratagem:imperial_knights_freeblade_full_tilt"
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": int(fixed_distance),
+                "source": str(getattr(stratagem, "name", "") or "FULL TILT"),
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["freeblade_full_tilt_active"] = True
+        sr["freeblade_full_tilt_distance"] = int(fixed_distance)
+        sr["freeblade_full_tilt_expires_phase"] = "MOVEMENT_PHASE"
+        sr["freeblade_full_tilt_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["freeblade_full_tilt_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["freeblade_full_tilt_source"] = str(getattr(stratagem, "name", "") or "FULL TILT")
+        root.special_rules = sr
+        refresh = getattr(root, "_refresh_advance_no_roll_flags", None)
+        if callable(refresh):
+            refresh()
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FULL TILT: %s advances a fixed %d\" this phase.",
+            getattr(root, "name", "Unit"),
+            int(fixed_distance),
+        )
+        return True
+
+    def _use_freeblade_strength_from_exile(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        phase_key = self._ik_phase_name_key(kwargs.get("phase_name") or self._current_phase_name)
+        if phase_key not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: STRENGTH FROM EXILE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: STRENGTH FROM EXILE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._freeblade_strength_from_exile_candidates(phase_name=phase_key))
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: STRENGTH FROM EXILE: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: STRENGTH FROM EXILE: target unit is not yours")
+            return False
+        if not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: STRENGTH FROM EXILE: target is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        expires_phase = "SHOOTING_PHASE" if phase_key == "shooting phase" else "FIGHT_PHASE"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["freeblade_strength_from_exile_active"] = True
+        sr["freeblade_strength_from_exile_expires_phase"] = expires_phase
+        sr["freeblade_strength_from_exile_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["freeblade_strength_from_exile_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["freeblade_strength_from_exile_source"] = str(getattr(stratagem, "name", "") or "STRENGTH FROM EXILE")
+        root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: STRENGTH FROM EXILE: %s can re-roll Hit/Wound rolls of 1 while isolated this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_freeblade_survivor_of_strife(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or attacking_unit is None:
+            merged = self._ik_pending_context(stratagem.name, kwargs)
+            unit = unit or merged.get("unit") or merged.get("target_unit")
+            attacking_unit = attacking_unit or merged.get("attacking_unit") or merged.get("enemy_unit")
+            if not target_units:
+                target_units = list(merged.get("target_units") or [])
+            if not candidates:
+                candidates = list(merged.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SURVIVOR OF STRIFE: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        attacker_root = self._ik_root(attacking_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_key = self._ik_phase_name_key(kwargs.get("phase_name") or self._current_phase_name)
+        if phase_key != "shooting phase":
+            logger.error("ERROR: SURVIVOR OF STRIFE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SURVIVOR OF STRIFE: not your opponent's Shooting phase")
+            return False
+        eligible = candidates or self._freeblade_survivor_of_strife_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not self._ik_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SURVIVOR OF STRIFE: target is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        self._append_defensive_effect(
+            root,
+            "defensive_wound_mods",
+            {
+                "value": 1,
+                "attack_type": "any",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": str(getattr(stratagem, "name", "") or "SURVIVOR OF STRIFE"),
+                "requires_strength_gt_toughness": True,
+            },
+        )
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SURVIVOR OF STRIFE: %s imposes -1 to wound against stronger attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_freeblade_flanking_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        unit = merged.get("unit") or merged.get("target_unit")
+        candidates = list(merged.get("candidates") or self._freeblade_flanking_manoeuvres_candidates())
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FLANKING MANOEUVRES: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        phase_key = self._ik_phase_name_key(merged.get("phase_name") or self._current_phase_name)
+        if phase_key != "fight phase":
+            logger.error("ERROR: FLANKING MANOEUVRES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: FLANKING MANOEUVRES: not your opponent's Fight phase")
+            return False
+        if str(merged.get("event", "") or "").strip().lower() != "phase_end":
+            logger.error("ERROR: FLANKING MANOEUVRES: requires the end of your opponent's Fight phase")
+            return False
+        if not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FLANKING MANOEUVRES: target is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        enter_reserves = getattr(root, "enter_strategic_reserves_midgame", None)
+        if not callable(enter_reserves) or not bool(
+            enter_reserves(
+                game=self.game,
+                game_map=getattr(self.game, "map", None) if self.game is not None else None,
+                reason=str(getattr(stratagem, "name", "") or "FLANKING MANOEUVRES"),
+            )
+        ):
+            logger.error("ERROR: FLANKING MANOEUVRES: target unit did not enter Strategic Reserves")
+            return False
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FLANKING MANOEUVRES: %s entered Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_freeblade_noble_sacrifice(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        merged = self._ik_pending_context(stratagem.name, kwargs)
+        root = self._ik_root(merged.get("destroyed_unit") or merged.get("unit") or merged.get("target_unit"))
+        destroyed_model = merged.get("destroyed_model") or merged.get("model") or merged.get("target_model")
+        if root is None or destroyed_model is None:
+            logger.error("ERROR: NOBLE SACRIFICE: destroyed unit or model missing")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: NOBLE SACRIFICE: target unit is not yours")
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: NOBLE SACRIFICE: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if not self._ik_has_deadly_demise(root):
+            logger.error("ERROR: NOBLE SACRIFICE: target unit does not have Deadly Demise")
+            return False
+        if self._ik_model_is_alive(destroyed_model):
+            logger.error("ERROR: NOBLE SACRIFICE: destroyed model is still alive")
+            return False
+        eligible = list(merged.get("candidates") or self._freeblade_noble_sacrifice_candidates(destroyed_unit=root, destroyed_model=destroyed_model))
+        if not self._ik_unit_in_candidates(root, eligible):
+            logger.error("ERROR: NOBLE SACRIFICE: target is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        trigger_threshold = 3 if self._ik_is_armiger_unit(root) else 4
+        setattr(destroyed_model, "_imperial_knights_noble_sacrifice_trigger_threshold_once", int(trigger_threshold))
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: NOBLE SACRIFICE: %s triggers Deadly Demise on %d+ for this destruction.",
+            getattr(root, "name", "Unit"),
+            int(trigger_threshold),
+        )
+        return True
+
+    def _use_freeblade_point_blank_barrage(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freeblade_company():
+            return False
+        phase_key = self._ik_phase_name_key(kwargs.get("phase_name") or self._current_phase_name)
+        if phase_key != "shooting phase":
+            logger.error("ERROR: POINT-BLANK BARRAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: POINT-BLANK BARRAGE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._freeblade_point_blank_barrage_candidates())
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: POINT-BLANK BARRAGE: no target unit provided")
+            return False
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: POINT-BLANK BARRAGE: target unit is not yours")
+            return False
+        if not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: POINT-BLANK BARRAGE: target is not currently eligible")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["freeblade_point_blank_barrage_active"] = True
+        sr["freeblade_point_blank_barrage_expires_phase"] = "SHOOTING_PHASE"
+        sr["freeblade_point_blank_barrage_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["freeblade_point_blank_barrage_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["freeblade_point_blank_barrage_source"] = str(getattr(stratagem, "name", "") or "POINT-BLANK BARRAGE")
+        sr["freeblade_point_blank_barrage_pending_mortal_wounds"] = int(
+            sr.get("freeblade_point_blank_barrage_pending_mortal_wounds", 0) or 0
+        )
+        root.special_rules = sr
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POINT-BLANK BARRAGE: %s can fire Blast weapons into its own Engagement Range this phase.",
+            getattr(root, "name", "Unit"),
         )
         return True
 

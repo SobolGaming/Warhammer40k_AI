@@ -2070,6 +2070,10 @@ class Enhancement:
         except Exception:
             is_gate_warden_lance = False
         try:
+            is_freeblade_company = bool(ik_mgr and ik_mgr.is_freeblade_company())
+        except Exception:
+            is_freeblade_company = False
+        try:
             is_questor_forgepact = bool(ik_mgr and ik_mgr.is_questor_forgepact())
         except Exception:
             is_questor_forgepact = False
@@ -15265,6 +15269,102 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010755002" or (is_freeblade_company and name == "bringer of justice"):
+            if not is_freeblade_company:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Bringer of Justice").strip() or "Bringer of Justice"
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 2) or 2, default=2)
+            hit_bonus = _coerce_int(params.get("hit_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_bringer_of_justice"] = True
+            unit.special_rules["enhancement_bringer_of_justice_source"] = source_name
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(attacks_bonus)
+            unit.special_rules["enhancement_bearer_melee_hit_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_hit_bonus", 0) or 0
+            ) + int(hit_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bringer_of_justice_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010755003" or (is_freeblade_company and name in ("hunter's eye", "hunters eye")):
+            if not is_freeblade_company:
+                return
+            unit.special_rules["enhancement_hunters_eye"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ("IGNORES COVER",))
+                if str(v or "").strip()
+            ]
+            if keywords:
+                unit.special_rules["enhancement_hunters_eye_keywords"] = keywords
+            unit.special_rules["enhancement_hunters_eye_source"] = (
+                str(getattr(desc, "name", "") or "Hunter's Eye").strip() or "Hunter's Eye"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hunters_eye_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010755004" or (is_freeblade_company and name == "mysterious guardian"):
+            if not is_freeblade_company:
+                return
+            unit.special_rules["enhancement_mysterious_guardian"] = True
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "mysterious_guardian") or "mysterious_guardian").strip().lower()
+            if not once_key:
+                once_key = "mysterious_guardian"
+            unit.special_rules["enhancement_mysterious_guardian_once_key"] = once_key
+            unit.special_rules["enhancement_mysterious_guardian_source"] = (
+                str(getattr(desc, "name", "") or "Mysterious Guardian").strip() or "Mysterious Guardian"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mysterious_guardian_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if enh_id == "000010755005" or (is_freeblade_company and name == "sanctuary"):
+            if not is_freeblade_company:
+                return
+            unit.special_rules["enhancement_sanctuary"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            invuln = _coerce_int(params.get("invulnerable_save", 5) or 5, default=5)
+            invuln = int(max(2, min(7, invuln)))
+            source_name = str(getattr(desc, "name", "") or "Sanctuary").strip() or "Sanctuary"
+            entries = list(unit.special_rules.get("bearer_unit_invulnerable_save", []) or [])
+            entry = {"value": int(invuln), "source": source_name}
+            found = False
+            for existing in entries:
+                if not isinstance(existing, dict):
+                    continue
+                try:
+                    val = int(existing.get("value"))
+                except Exception:
+                    continue
+                src = str(existing.get("source", "") or "").strip()
+                if val == int(invuln) and src == source_name:
+                    found = True
+                    break
+            if not found:
+                entries.append(entry)
+            unit.special_rules["bearer_unit_invulnerable_save"] = entries
+            unit.special_rules["enhancement_sanctuary_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sanctuary_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "herald of triumph" or enh_id == "000010502002":
             if not is_questoris_companions:

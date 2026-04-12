@@ -1029,6 +1029,40 @@ class RulesParsingMixin:
                     "min_enemy_distance_horiz": 0,
                     "min_battlefield_edge_distance_horiz": 0,
                 }
+        if isinstance(sr, dict) and bool(sr.get("enhancement_mysterious_guardian")):
+            bearer_alive = False
+            bearer_id = str(
+                sr.get("enhancement_mysterious_guardian_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for model in list(getattr(self, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            else:
+                bearer = getattr(self, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if bearer_alive:
+                ability_name = str(sr.get("enhancement_mysterious_guardian_source", "") or "Mysterious Guardian").strip()
+                if not ability_name:
+                    ability_name = "Mysterious Guardian"
+                ability_key = str(sr.get("enhancement_mysterious_guardian_once_key", "") or "mysterious_guardian").strip().lower()
+                if not ability_key:
+                    ability_key = "mysterious_guardian"
+                return {
+                    "name": ability_name,
+                    "description": "",
+                    "once_per_battle": True,
+                    "ability_key": ability_key,
+                    "min_enemy_distance_horiz": 0,
+                    "min_battlefield_edge_distance_horiz": 0,
+                }
         if isinstance(sr, dict) and bool(sr.get("enhancement_warprot_talisman")):
             bearer_alive = False
             bearer_id = str(
@@ -4421,6 +4455,7 @@ class RulesParsingMixin:
                     if isinstance(sr, dict) and (
                         sr.get("enhancement_beacon_angelis")
                         or sr.get("enhancement_orb_of_the_emperors_aegis")
+                        or sr.get("enhancement_mysterious_guardian")
                         or sr.get("enhancement_webway_awl")
                         or sr.get("enhancement_webway_pathstone")
                         or sr.get("enhancement_webway_walker")

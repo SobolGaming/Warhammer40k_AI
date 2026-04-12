@@ -2705,6 +2705,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
         if "EXEMPLAR'S WISDOM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_exemplars_wisdom)
+        if "POINT-BLANK BARRAGE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_freeblade_point_blank_barrage)
         if "BLAZING IRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bringers_of_flame_blazing_ire)
         if "DEVOUT FANATICISM" in names:
@@ -6790,6 +6792,54 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not been selected to move"
             return result
+        if name_u == "STRENGTH FROM EXILE":
+            if self._freeblade_strength_from_exile_candidates(phase_name=str(context.get("phase_name") or self._current_phase_name or "")):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an IMPERIAL KNIGHTS unit on battlefield that has not yet shot or fought this phase"
+            return result
+        if name_u == "NOBLE SACRIFICE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._freeblade_noble_sacrifice_candidates(
+                    destroyed_unit=context.get("destroyed_unit") or context.get("unit") or context.get("target_unit"),
+                    destroyed_model=context.get("destroyed_model") or context.get("model") or context.get("target_model"),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a just-destroyed IMPERIAL KNIGHTS unit with Deadly Demise"
+            return result
+        if name_u == "SURVIVOR OF STRIFE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._freeblade_survivor_of_strife_candidates(
+                    attacking_unit=context.get("attacking_unit") or context.get("enemy_unit"),
+                    target_units=context.get("target_units"),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase after targets are selected and an IMPERIAL KNIGHTS target among them"
+            return result
+        if name_u == "FLANKING MANOEUVRES":
+            candidates = list(context.get("candidates") or self._freeblade_flanking_manoeuvres_candidates())
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an ARMIGER unit within 9\" of a battlefield edge and not in Engagement Range"
+            return result
+        if name_u == "POINT-BLANK BARRAGE":
+            if self._freeblade_point_blank_barrage_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an IMPERIAL KNIGHTS unit on battlefield that has not shot"
+            return result
         if name_u == "RUN THEM THROUGH!":
             if self._imperial_knights_run_them_through_candidates():
                 result["available"] = True
@@ -9349,7 +9399,12 @@ class StratagemManager(
             "STEADFAST SUPERIORITY": "Target: IMPERIAL KNIGHTS unit on your defensive line, in Engagement Range, and not yet selected to fight; melee attacks re-roll Hit rolls this phase",
             "TITANIC BOMBARDMENT": "Target: Titanic IMPERIAL KNIGHTS unit on your defensive line that remained stationary and has not shot; ranged weapons gain [SUSTAINED HITS 2] this phase",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
-            "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
+            "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; Valourstrike grants +2\" Move/+2 Advance, Freeblade makes an Advance a fixed +6\" or +9\" for Armiger/Destrier units",
+            "STRENGTH FROM EXILE": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot or fight this phase; while no other friendly units are within 9\", it re-rolls Hit rolls of 1 and Wound rolls of 1 this phase",
+            "NOBLE SACRIFICE": "Target: your just-destroyed IMPERIAL KNIGHTS unit with Deadly Demise; its explosion triggers on 4+, or 3+ if it is an Armiger",
+            "SURVIVOR OF STRIFE": "Target: IMPERIAL KNIGHTS unit selected as a target in your opponent's Shooting phase; stronger attacks suffer -1 to wound it this phase",
+            "FLANKING MANOEUVRES": "Target: your ARMIGER unit within 9\" of a battlefield edge and not in Engagement Range at the end of your opponent's Fight phase; it enters Strategic Reserves",
+            "POINT-BLANK BARRAGE": "Target: your IMPERIAL KNIGHTS unit that has not been selected to shoot; Blast weapons can target enemies within its Engagement Range if no other friendly units are also engaging them, and unmodified hit rolls of 1 with those Blast attacks cause self-inflicted mortal wounds after shooting",
             "RUN THEM THROUGH!": "Target: IMPERIAL KNIGHTS unit that has not been selected to fight this phase; melee weapons gain [LANCE] this phase",
             "THUNDERSTOMP": "Target: IMPERIAL KNIGHTS model in a unit not yet selected to fight this phase; Armoured/Titanic Feet attacks set to 8/12 and AP improves by 1",
             "TACTICAL FOIL": "Target: IMPERIAL KNIGHTS unit within 9\" of enemy mover after it ends a Normal/Advance/Fall Back move; make a reactive Normal move of D6\"",
@@ -11820,6 +11875,10 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_knights_spearhead_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_freeblade_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -14804,6 +14863,51 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_imperial_knights_freeblade_point_blank_barrage(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ):
+        if attacker_unit is None or self.game is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except Exception:
+            raise
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("freeblade_point_blank_barrage_active"):
+            return
+        exp = str(sr.get("freeblade_point_blank_barrage_expires_phase", "") or "").strip().upper()
+        if exp and exp != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("freeblade_point_blank_barrage_turn_owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        pending = int(sr.get("freeblade_point_blank_barrage_pending_mortal_wounds", 0) or 0)
+        if pending <= 0:
+            return
+        game_map = getattr(self.game, "map", None)
+        try:
+            root._apply_mortal_wounds_to_unit(root, int(pending), game_map=game_map)
+        except Exception:
+            raise
+        try:
+            from ..utility.event_bus import append_action
+            append_action(self.player, f"{root.name}: Point-Blank Barrage backlash ({int(pending)} mortal wounds).")
+        except Exception:
+            pass
+        sr["freeblade_point_blank_barrage_pending_mortal_wounds"] = 0
+        root.special_rules = sr
+
     def _on_unit_shooting_resolved_bringers_of_flame_blazing_ire(
         self,
         attacker_unit=None,
@@ -15634,6 +15738,13 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_knights_spearhead_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_freeblade_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -19181,6 +19292,10 @@ class StratagemManager(
             raise
         try:
             self._queue_genestealer_cults_biosanctic_saintly_paroxysm_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_freeblade_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

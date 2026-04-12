@@ -2262,6 +2262,31 @@ class ShootingMixin:
                             engaged_damage_map[target_unit] = (
                                 int(engaged_damage_map.get(target_unit, 0) or 0) + damage
                             )
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                if bool(target_was_within_attacker_engagement) and root is not None:
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and bool(sr.get("freeblade_point_blank_barrage_active")):
+                        is_blast = getattr(active_profile, "is_blast", None)
+                        if callable(is_blast) and bool(is_blast()):
+                            hit_results = list(getattr(attack_result, "hit_results", []) or [])
+                            backlash_wounds = 0
+                            for hit_result in hit_results:
+                                if not isinstance(hit_result, dict):
+                                    continue
+                                try:
+                                    hit_roll = int(hit_result.get("roll", 0) or 0)
+                                except Exception:
+                                    continue
+                                if hit_roll == 1:
+                                    backlash_wounds += 1
+                            if backlash_wounds > 0:
+                                sr["freeblade_point_blank_barrage_pending_mortal_wounds"] = int(
+                                    sr.get("freeblade_point_blank_barrage_pending_mortal_wounds", 0) or 0
+                                ) + int(backlash_wounds)
+                                root.special_rules = sr
                 if attack_tracker is not None and target_unit is not None:
                     try:
                         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
