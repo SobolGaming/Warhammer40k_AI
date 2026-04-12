@@ -119,6 +119,13 @@
         "type": ""
     },
     {
+        "id": "000001143",
+        "faction_id": "AdM",
+        "name": "Eradication Cohort",
+        "legend": "",
+        "type": ""
+    },
+    {
         "id": "000000919",
         "faction_id": "AE",
         "name": "Khaine\u2019s Arrow",
@@ -581,6 +588,20 @@
         "type": ""
     },
     {
+        "id": "000001141",
+        "faction_id": "CSM",
+        "name": "Warpstrike Champions",
+        "legend": "<p class=\"ShowFluff legend\">When a stronghold must be broken from within, or a surprise assault launched, some Chaos Space Marine commanders turn to massed empyric attack. Such tactics are risky but devastating. Whether by the power of daemonic allies or through sacrificial blood rites, temporary warp rifts are torn in the fabric of reality. Through these, the elite of a warband\u2019s warriors may not only attack without warning, but can also fade back into the Immaterium to emerge far across the battlefield and strike anew. Terminators shimmer into being, guns blazing as they storm their shocked foes. Packs of Obliterators and Mutilators lumber from rents in reality, the former unleashing torrents of firepower while the latter fall upon victims and rend them limb from limb. Such a brutal onslaught is often enough to break the enemy before the battle has truly begun. For those who resist, the heavily armoured killers rampaging through their lines spell almost certain doom when the rest of the warband closes in to complete the slaughter.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001142",
+        "faction_id": "CSM",
+        "name": "Cult of the Arkifane",
+        "legend": "<p class=\"ShowFluff legend\">The influence of Vashtorr the Arkifane spreads insidiously through time and space. His unholy name rings through the Warp like the clangour of smiths\u2019 hammers. It is chanted by Traitors and mortal cultists, who gather to fight for the Arkifane and seek his infernal blessings. Such hosts seethe with biomechanoid mutation and warp augmentation. Tanks, Daemon Engines and Helbrutes are much in evidence with possessor daemons bound within their hulls, haloed by malevolent energies, or boasting helforged weaponry. The traitorous warriors alongside them shudder with technoviral strains and cybermutations. Some bear rune-cursed ammunition that punches through armour with supernatural ease. Others host technoparasitic familiars that gnaw their way into enemy comms and vomit intelligence into their masters\u2019 minds. Wielding armaments forged beyond the bounds of reality and empowered by the might of the Arkifane, these cults sweep across the battlefield to reduce their enemies to glowing ashes.</p>",
+        "type": ""
+    },
+    {
         "id": "000000930",
         "faction_id": "DG",
         "name": "Vectors of Decay",
@@ -1036,6 +1057,13 @@
         "type": ""
     },
     {
+        "id": "000001140",
+        "faction_id": "NEC",
+        "name": "Harbinger Cabal",
+        "legend": "<b>Ominous heralds on missions of acquisition for their dynastic betters or the Nekrosor itself, cabals of Crypteks wield technosorcerous ingenuity. The space lanes and hidden sites of Ultramar are preyed upon by many such groups whose unliving soldiery attack with reality-warping augmentations.</b>",
+        "type": "Boarding Actions"
+    },
+    {
         "id": "000000852",
         "faction_id": "ORK",
         "name": "War Horde",
@@ -1148,6 +1176,13 @@
         "type": ""
     },
     {
+        "id": "000001145",
+        "faction_id": "QI",
+        "name": "Freeblade Company",
+        "legend": "<p class=\"ShowFluff legend\">Many Freeblades become figures of legend, whether for their mighty deeds or thanks to their strange and supernatural natures. Often they fight alone. However, when fate brings several such wanderers together they are capable of defeating entire armies, and of carving out names for themselves that echo through the ages. Each brings unique skills and experiences to the muster. Some wield ancient relic weapons from the Dark Age of Technology. Others are masters of battling a particular foe, exemplars of an unusual way of war, or have been turned fey and dangerous by the touch of sorcery or strange cosmic phenomena. Combining such unusual abilities and tactics, Freeblades can surprise their enemies at every turn by attacking in unorthodox ways and unleashing unexpected weapons and powers. Each scion amongst them is a storied veteran who knows just where to place their shots and land their blows to inflict maximum devastation. Against such titanic and canny foes, few enemies can stand for long</p>",
+        "type": ""
+    },
+    {
         "id": "000000806",
         "faction_id": "QT",
         "name": "Traitoris Lance",
@@ -1180,6 +1215,13 @@
         "faction_id": "QT",
         "name": "Houndpack Lance",
         "legend": "<p class=\"ShowFluff legend\">Swift, comparatively numerous, yet each still a towering war engine in its own right, when War Dogs gather for the hunt they bring terrifying might to bear. Sometimes this power is leashed to the mental domination of masters piloting Abhorrent-class Knights. Such formations lope out like some feudal world hunting party, the larger Knights inhabiting the roles of bloodthirsty nobles while the War Dogs serve as their baying hounds. Other dread households prefer to give their War Dogs more freedom. They dispatch formations of these light and fast Knight suits into the wilds of the war zone to raid and cause mayhem at will, choking off supply lines and tearing apart targets of opportunity until the foe fears to leave their strongholds. Then there are the Unleashed. These masterless packs of War Dogs have broken their former masters\u2019 control and now hunt and slaughter in pursuit of their own glories. Over time, these packs become ever more feral, following the direction of their alphas and dragging down prey like murderous super-predators.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001144",
+        "faction_id": "QT",
+        "name": "Helhunt Lance",
+        "legend": "<p class=\"ShowFluff legend\">When the Chaos Knight houses ride out on the hunt, their prey endure a living nightmare. Eye lenses blaze in the gloom. Ion shields flicker like corpselight. The howl of brazen vox-horns announces the coming of the hunt. War Dogs lead the charge, loping beasts plunging into the densest terrain to flush warriors-turned-quarry into the open. Behind them come their masters, diabolical scions in monstrous steeds. They sneer in contempt, rune-locking choice prey upon their Knights\u2019 targeters before picking them off with the clinical precision of master hunters. All the while the War Dog packs continue to harry the enemy, snarling target triangulation data to their masters through neural uplinks, redoubling their efforts with every goading lash. Soon enough, the enemy are reduced to heaped corpses and burning wrecks. Pausing only long enough to select the finest trophies to be lashed and chained to their Knight suits\u2019 hulls, the hunt then moves on in search of new prey.</p>",
         "type": ""
     },
     {
@@ -1460,6 +1502,20 @@
         "faction_id": "SM",
         "name": "Reclamation Force",
         "legend": "<p class=\"ShowFluff legend\">The Ultramarines and their brother Shield Chapters forge ever outward into the darkness beyond the bounds of Ultramar, to conquer new territories for the Five Hundred Worlds. Acting as the speartips of the wider reconquest, their compact but powerful reclamation forces hit the enemy hard and drive deep into their lines to seize key strategic locations and deny them to the foe. With this done, they draw upon their dedication to the vision of Roboute Guilliman and the absolute loyalty they owe the empire of Macragge to fill themselves with unbending resolve and indomitable vigour. Fighting to uphold their oaths in the face of often overwhelming odds, still the Space Marines drive their enemies back and shatter their strength.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001139",
+        "faction_id": "SM",
+        "name": "Shield of the Void",
+        "legend": "<b>The Reclamation of Ultramar saw the Shield Chapters conquer countless threats in the void with the tactically divergent warriors at hand. They alloyed these into lethal ly effective forces that struck at enemy vessels using coordinated aggression and methodical precision to purge the foe deck by deck.</b>",
+        "type": "Boarding Actions"
+    },
+    {
+        "id": "000001146",
+        "faction_id": "SM",
+        "name": "Ceramite Sentinels",
+        "legend": "<p class=\"ShowFluff legend\">Some Space Marines \u2013 most notably the gene-sons of Dorn \u2013 are as lethal when defending a fortified position as they are when attacking suddenly from orbit. These specialists in both offensive and defensive siegecraft can turn even the most bullet-riddled and crumbling ruin into a veritable fortress. Equally, they are expertly trained in picking off foes dug-in behind barricades and ramparts, and in rapidly clearing out garrison forces who believed themselves safe behind their walls. Typically, Space Marines operating in this fashion establish temporary battlefield strongpoints where they can meet and halt the advance of some powerful foe before switching to the offensive the moment the enemy\u2019s momentum stalls. Equally, though, on those rare occasions that the Adeptus Astartes are called upon to garrison a true fortress, these forces are as immovable as they are brutal. Shrugging off incoming fire, raining down their own furious volleys in return and launching punishing counterassaults, they destroy all who assail them.</p>",
         "type": ""
     },
     {

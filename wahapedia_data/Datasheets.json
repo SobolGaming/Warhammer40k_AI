@@ -1072,6 +1072,54 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/Servitor-Battleclade"
     },
     {
+        "id": "000004210",
+        "name": "Thulia Ghuld",
+        "faction_id": "AdM",
+        "source_id": "",
+        "legend": "An avatar of the Omnissiah\u2019s martial aspect, Thulia Ghuld commands fanatical devotion from the Martian cohorts she leads to war. With her Jericho-class conversion resonator, she blasts swathes of enemies into scattering sonic energy, while her Rod of the War Forge beams out carrier waves to goad her warriors into battle.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> Jericho-class conversion resonator; Rod of the War Forge.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/Thulia-Ghuld"
+    },
+    {
+        "id": "000004211",
+        "name": "Hastarii Exterminators",
+        "faction_id": "AdM",
+        "source_id": "",
+        "legend": "These heavily armoured Skitarii lay down withering firepower with heightened efficiency. The expanding energy cones of their eradication casters disrupt the target at a molecular level, grossly maiming or completely obliterating their victims. Combined with their shoulder-mounted arc blasters, this arsenal allows Hastarii Exterminators to blast the heart from the enemy battle line.",
+        "role": "Other",
+        "loadout": "<b>The Hastarii Exterminator Alpha is equipped with:</b> Hastarii arc blaster; eradication caster; power weapon.<br><br><b>Every Hastarii Exterminator is equipped with:</b> Hastarii arc blaster; eradication caster; close combat weapon.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/Hastarii-Exterminators"
+    },
+    {
+        "id": "000004212",
+        "name": "Hastarii Fusiliers",
+        "faction_id": "AdM",
+        "source_id": "",
+        "legend": "The role of Hastarii Fusiliers is to lay down overwhelming firepower against the foe\u2019s most heavily armoured assets. While their shoulder-mounted phosphor blasters drive back enemy counterattacks, the Fusiliers level one salvo after another, reducing battle tanks, elite infantry and monstrous beasts to blazing wrecks and burned out carcasses.",
+        "role": "Other",
+        "loadout": "<b>The Hastarii Fusilier Alpha is equipped with:</b> neutron fusil; Hastarii phosphor blaster; power weapon.<br><br><b>Every Hastarii Fusiller is equipped with:</b> neutron fusil; Hastarii phosphor blaster; close combat weapon.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/Hastarii-Fusiliers"
+    },
+    {
         "id": "000000568",
         "name": "Eldrad Ulthran",
         "faction_id": "AE",
@@ -8081,7 +8129,7 @@
     },
     {
         "id": "000000955",
-        "name": "Mutilators",
+        "name": "Mutilators (Legendary)",
         "faction_id": "CSM",
         "source_id": "000000355",
         "legend": "",
@@ -8093,7 +8141,7 @@
         "leader_footer": "",
         "damaged_w": "",
         "damaged_description": "",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Mutilators"
+        "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Mutilators-Legendary-"
     },
     {
         "id": "000000956",
@@ -8308,15 +8356,15 @@
         "name": "Defiler",
         "faction_id": "CSM",
         "source_id": "000000012",
-        "legend": "Towering creations that stomp across the battlefield on piston-driven legs, their clanking claws easily capable of cutting a Space Marine in half, Defilers are Daemon Engines possessed by abominable entities. Foes are not safe at a distance either, as Defilers\u2019 monstrous cannons and other heavy weapons can inflict a toll of carnage.",
+        "legend": "Towering creations that stomp across the battlefield on piston-driven legs, Defilers are Daemon Engines possessed by abominable entities. Foes are not safe at a distance either, as Defilers\u2019 monstrous cannons and other heavy weapons can inflict a toll of carnage.",
         "role": "Other",
-        "loadout": "<b>This model is equipped with:</b> Defiler cannon; reaper autocannon; twin heavy flamer; Defiler claws.",
+        "loadout": "<b>This model is equipped with:</b> 1 Hades battle cannon; 2 excruciator cannons; 1 heavy missile launcher; 1 heavy baleflamer; 1 shearing claws.",
         "transport": "",
         "virtual": "false",
         "leader_head": "",
         "leader_footer": "",
-        "damaged_w": "1-5",
-        "damaged_description": "While this model has 1-5 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
         "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Defiler"
     },
     {
@@ -9440,6 +9488,38 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Red-Corsairs-Reave-Captain"
     },
     {
+        "id": "000004205",
+        "name": "Kravek Morne",
+        "faction_id": "CSM",
+        "source_id": "000000012",
+        "legend": "A being of adamant and singular purpose, Warsmith Kravek Morne is a living weapon in service to the Daemon Primarch Perturabo. With a will powerful enough to dominate even the insane Obliterators and Mutilators, Morne leads attacks by hulking elite warriors to break open enemy battle lines and fortress gates alike.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> baleflamer; combi-bolter; servo-harness; Last Argument and power fist.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Kravek-Morne"
+    },
+    {
+        "id": "000004206",
+        "name": "Mutilators",
+        "faction_id": "CSM",
+        "source_id": "000000012",
+        "legend": "The grotesque, warp-saturated forms of Mutilators shift at will, sprouting oversized close-combat weapons and mutant siege appendages depending on the foes they face. Bursting from amidst coruscating teleportation flares, the hulking brutes charge headlong into their shocked victims to butcher everything within arm\u2019s reach.",
+        "role": "Other",
+        "loadout": "<b>Every model is equipped with:</b> 1 fleshmetal weapons.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines/Mutilators"
+    },
+    {
         "id": "000001037",
         "name": "Death Guard Chaos Lord",
         "faction_id": "DG",
@@ -9614,22 +9694,6 @@
         "damaged_w": "1-4",
         "damaged_description": "While this model has 1-4 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
         "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Chaos-Predator-Annihilator"
-    },
-    {
-        "id": "000001051",
-        "name": "Defiler",
-        "faction_id": "DG",
-        "source_id": "000000014",
-        "legend": "Huge arachnoid Daemon Engines, Defilers are potent whether bombarding the foe from range or tearing through them at close quarters with piston-driven talons and claws. Those possessed by daemons of Nurgle fire grotesquely diseased projectiles that detonate in choking miasmic clouds or rains of corrosive slop, driving their targets from cover and rendering them easy prey.",
-        "role": "Other",
-        "loadout": "<b>This model is equipped with:</b> battle cannon; reaper autocannon; twin heavy flamer; Defiler claws.",
-        "transport": "",
-        "virtual": "false",
-        "leader_head": "",
-        "leader_footer": "",
-        "damaged_w": "1-5",
-        "damaged_description": "While this model has 1-5 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Defiler"
     },
     {
         "id": "000001052",
@@ -10574,6 +10638,22 @@
         "damaged_w": "",
         "damaged_description": "",
         "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Nurglings"
+    },
+    {
+        "id": "000004209",
+        "name": "Defiler",
+        "faction_id": "DG",
+        "source_id": "",
+        "legend": "Huge Daemon Engines dripping with corruption, the Defilers used by the Death Guard are horrifically powerful whether bombarding the foe from range with grotesquely diseased projectiles or tearing them apart at close quarters with piston-driven claws of rusted metal etched with cursed runes of corrosion.",
+        "role": "Other",
+        "loadout": "<b>This model is equipped with:</b> 1 Hades battle cannon; 2 excruciator cannons; 1 heavy missile launcher; 1 heavy baleflamer; 1 shearing claws",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Defiler-1"
     },
     {
         "id": "000000634",
@@ -11678,6 +11758,22 @@
         "damaged_w": "",
         "damaged_description": "",
         "link": "https://wahapedia.ru/wh40k10ed/factions/emperor-s-children/Seekers"
+    },
+    {
+        "id": "000004208",
+        "name": "Defiler",
+        "faction_id": "EC",
+        "source_id": "000000280",
+        "legend": "Monstrous bio-mechanical Daemon Engines, Defilers are possessed of an insuppressible thirst for souls and lust for lurid slaughter. They are relentless in their pursuit of gratification, obliterating targets in tempests of gunfire and wading into enemy formations to rip warriors to shreds with their clanking claws.",
+        "role": "Other",
+        "loadout": "<b>This model is equipped with:</b> 1 Hades battle cannon; 2 excruciator cannons; 1 heavy missile launcher; 1 heavy baleflamer; 1 shearing claws",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/emperor-s-children/Defiler"
     },
     {
         "id": "000000507",
@@ -17536,6 +17632,22 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/imperial-knights/Knight-Defender"
     },
     {
+        "id": "000004213",
+        "name": "Knight Destrier",
+        "faction_id": "QI",
+        "source_id": "",
+        "legend": "The Knight Destrier is agile and fleet-footed. Employing rocket thrusters, skilled pilots are able to lend greater speed to their charge, tearing into the foe with thundershock spears or reaper chainswords before mowing down what remains of their shattered enemies with hails of chastiser gatling rounds or explosive munitions from their frag bombards.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> 1 chastiser gatling cannon;<br>1 frag bombard; 1 Questoris heavy stubber; 1 titanic feet.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, subtract 4 from this model\u2019s Objective Control characteristic and each time this model makes an attack, subtract 1 from the Hit roll.",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/imperial-knights/Knight-Destrier"
+    },
+    {
         "id": "000001094",
         "name": "Chaos Cerastus Knight Acheron",
         "faction_id": "QT",
@@ -18350,22 +18462,6 @@
         "damaged_w": "",
         "damaged_description": "",
         "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Librarian-In-Terminator-Armour"
-    },
-    {
-        "id": "000000081",
-        "name": "Captain Sicarius",
-        "faction_id": "SM",
-        "source_id": "000000139",
-        "legend": "Sicarius is a swordsman without equal, whipping his Tempest Blade through the air in a shimmering blur of thrusts and parries. He is also the undisputed master of the lightning assault, capable of appraising the most complex tactical situation with little more than a glance and deploying his warriors with absolute confidence.",
-        "role": "Characters",
-        "loadout": "<b>This model is equipped with:</b> artisan plasma pistol; Talassarian Tempest Blade.",
-        "transport": "",
-        "virtual": "false",
-        "leader_head": "",
-        "leader_footer": "",
-        "damaged_w": "",
-        "damaged_description": "",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Captain-Sicarius"
     },
     {
         "id": "000000083",
@@ -21038,22 +21134,6 @@
         "damaged_w": "1-5",
         "damaged_description": "While this model has 1-5 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
         "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Land-Raider-Redeemer"
-    },
-    {
-        "id": "000002199",
-        "name": "Marneus Calgar",
-        "faction_id": "SM",
-        "source_id": "000000139",
-        "legend": "On the battlefield, Marneus Calgar is an inspiring leader and superlative warrior. He heralds his advance with thunderous volleys of bolt shells from the Gauntlets of Ultramar before tearing apart anything in his grip. When he judges the endgame of his strategy to be imminent, he leads his Ultramarines into the heart of enemy lines.",
-        "role": "Characters",
-        "loadout": "<b>Marneus Calgar is equipped with:</b> Gauntlets of Ultramar.<br><br><b>Every Victrix Honour Guard is equipped with:</b> Victrix power sword.",
-        "transport": "",
-        "virtual": "false",
-        "leader_head": "",
-        "leader_footer": "",
-        "damaged_w": "",
-        "damaged_description": "",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Marneus-Calgar"
     },
     {
         "id": "000002202",
@@ -24196,15 +24276,15 @@
         "name": "Defiler",
         "faction_id": "TS",
         "source_id": "000000027",
-        "legend": "These towering war engines advance upon iron-bound arachnid limbs that crush and rend even as their array of heavy guns rain fire on the foe. Wreathed in infernal warpflame, they shrug off enemy fire by transmuting incoming projectiles, or flow like reknitting flesh to repair damage as swiftly as it is inflicted.",
+        "legend": "These hulking masses of sorcery-wreathed mechanisms and daemon-bound flesh advance upon mechanical limbs that crush and rend even as the monstrosity\u2019s heavy guns rain death on the foe, while shrugging off enemy fire by transmuting incoming projectiles or reknitting their flesh to repair damage.",
         "role": "Other",
-        "loadout": "<b>This model is equipped with:</b> Defiler cannon; reaper autocannon; twin heavy flamer; Defiler claws.",
+        "loadout": "<b>This model is equipped with:</b> 1 Hades battle cannon; 2 excruciator cannons; 1 heavy missile launcher; 1 heavy baleflamer; 1 shearing claws",
         "transport": "",
         "virtual": "false",
         "leader_head": "",
         "leader_footer": "",
-        "damaged_w": "1-5",
-        "damaged_description": "While this model has 1-5 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
         "link": "https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Defiler"
     },
     {
@@ -26400,22 +26480,6 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/world-eaters/Chaos-Land-Raider"
     },
     {
-        "id": "000002635",
-        "name": "Defiler",
-        "faction_id": "WE",
-        "source_id": "000000210",
-        "legend": "Defilers are Daemon Engines possessed by abominable entities. Towering creations that stomp across the battlefield on piston-driven legs, their clanking claws are easily capable of cutting a Space Marine in half. Foes are not safe at a distance either, as Defilers\u2019 monstrous heavy weapons are just as deadly at long range.",
-        "role": "Other",
-        "loadout": "<b>This model is equipped with:</b> Defiler cannon; reaper autocannon; twin heavy flamer; Defiler claws.",
-        "transport": "",
-        "virtual": "false",
-        "leader_head": "",
-        "leader_footer": "",
-        "damaged_w": "1-5",
-        "damaged_description": "While this model has 1-5 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/world-eaters/Defiler"
-    },
-    {
         "id": "000002636",
         "name": "Chaos Predator Destructor",
         "faction_id": "WE",
@@ -27102,5 +27166,21 @@
         "damaged_w": "",
         "damaged_description": "",
         "link": "https://wahapedia.ru/wh40k10ed/factions/world-eaters/Flesh-Hounds"
+    },
+    {
+        "id": "000004207",
+        "name": "Defiler",
+        "faction_id": "WE",
+        "source_id": "000000210",
+        "legend": "Infernal many-legged Daemon Engines of enormous size, Defilers combine an arsenal of heavy weapons with brutal close-quarters butchery. Those hurled into battle by the World Eaters are rune-daubed prisons for ferocious warp entities that vent their hate and fury upon the foe with cataclysmically gory results.",
+        "role": "Other",
+        "loadout": "<b>This model is equipped with:</b> 1 Hades battle cannon; 2 excruciator cannons; 1 heavy missile launcher; 1 heavy baleflamer; 1 shearing claws.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "1-6",
+        "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/world-eaters/Defiler"
     }
 ]

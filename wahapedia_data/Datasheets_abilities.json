@@ -2670,46 +2670,6 @@
         "parameter": ""
     },
     {
-        "datasheet_id": "000000081",
-        "line": "1",
-        "ability_id": "000008346",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Core",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000000081",
-        "line": "2",
-        "ability_id": "000008350",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Faction",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000000081",
-        "line": "3",
-        "ability_id": "",
-        "model": "",
-        "name": "Lead From the Front",
-        "description": "While this model is leading a unit, models in that unit have the Scouts 6\" ability and ranged weapons equipped by models in that unit have the [ASSAULT] ability.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000000081",
-        "line": "4",
-        "ability_id": "",
-        "model": "",
-        "name": "Lightning Assault",
-        "description": "Once per turn, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this model, if this model\u2019s unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to 6\".",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
         "datasheet_id": "000000083",
         "line": "1",
         "ability_id": "000008343",
@@ -25187,7 +25147,7 @@
         "name": "",
         "description": "",
         "type": "Core",
-        "parameter": "D3"
+        "parameter": "D6"
     },
     {
         "datasheet_id": "000000969",
@@ -25204,8 +25164,8 @@
         "line": "3",
         "ability_id": "",
         "model": "",
-        "name": "Daemonforge",
-        "description": "Once per Fight phase, one unit from your army with this ability can be targeted with the Counter-offensive Stratagem for 0CP, even if you have already targeted a different unit with that Stratagem this phase.",
+        "name": "Scuttling Walker",
+        "description": "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models (excluding <span class=\"kwb\">TITANIC</span> models) and terrain features. When doing so, it can move within Engagement Range of enemy models, but cannot end that move within Engagement Range of them, and any Desperate Escape test is automatically passed.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -25214,8 +25174,8 @@
         "line": "4",
         "ability_id": "",
         "model": "",
-        "name": "Scuttling Walker",
-        "description": "Each time this model makes a Normal or Advance move, it can be moved over friendly <span class=\"kwb\">MONSTER</span> and <span class=\"kwb\">VEHICLE</span> models as if they were not there. This model can move over terrain features that are 4\" or less in height as if they were not there.",
+        "name": "Daemonforge",
+        "description": "Each time this unit makes a Dark Pact, until the end of the phase, each time this model makes an attack, re-roll a Wound roll of 1. In addition, once per battle, when this unit makes a Dark Pact, before making the resulting Leadership test, you can declare it will overcharge its daemonforge. If it does:<br><ul><li>If the resulting Leadership test is failed, this model suffers 3 mortal wounds instead of D3 mortal wounds.</li><li>Until the end of the phase, each time this model makes an attack, you can re-roll the Wound roll.</li></ul>",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -25587,7 +25547,7 @@
         "name": "",
         "description": "",
         "type": "Core",
-        "parameter": "D3"
+        "parameter": "D6"
     },
     {
         "datasheet_id": "000001030",
@@ -25605,7 +25565,7 @@
         "ability_id": "",
         "model": "",
         "name": "Scuttling Walker",
-        "description": "Each time this model makes a Normal, Advance or Fall Back move, it can move through friendly Monster and Vehicle models and sections of terrain features that are 4\" or less in height.",
+        "description": "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models (excluding <span class=\"kwb\">TITANIC</span> models) and terrain features. When doing so, it can move within Engagement Range of enemy models, but cannot end that move within Engagement Range of them, and any Desperate Escape test is automatically passed.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -26326,46 +26286,6 @@
         "model": "",
         "name": "Metalophagic Infection",
         "description": "In your Shooting phase, after this model has shot, select one enemy <span class=\"kwb\">MONSTER</span> or <span class=\"kwb\">VEHICLE</span> unit hit by one or more of those attacks. Roll one D6, adding 1 to the result if that unit is Afflicted; on a 5+, that unit suffers D3 mortal wounds.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "1",
-        "ability_id": "000008339",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Core",
-        "parameter": "D3"
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "2",
-        "ability_id": "000008396",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Faction",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "3",
-        "ability_id": "",
-        "model": "",
-        "name": "Scuttling Walker",
-        "description": "Each time this model makes a Normal, Advance or Fall Back move, it can move through friendly <span class=\"kwb\">MONSTER</span> and <span class=\"kwb\">VEHICLE</span> models and terrain features that are 4\" or less in height.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "4",
-        "ability_id": "",
-        "model": "",
-        "name": "Barrage of Filth",
-        "description": "In your Shooting phase, after this model has shot, select one enemy unit hit by one or more of those attacks. Until the end of the phase, that unit cannot have the Benefit of Cover.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -39280,56 +39200,6 @@
         "parameter": ""
     },
     {
-        "datasheet_id": "000002199",
-        "line": "1",
-        "ability_id": "000008346",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Core",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002199",
-        "line": "2",
-        "ability_id": "000008350",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Faction",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002199",
-        "line": "3",
-        "ability_id": "",
-        "model": "",
-        "name": "Inspiring Leader",
-        "description": "While this unit is leading a unit and contains a <span class=\"kwb\">MARNEUS</span> <span class=\"kwb\">CALGAR</span> model, that unit is eligible to shoot and declare a charge in a turn in which it Advanced or Fell Back",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002199",
-        "line": "4",
-        "ability_id": "",
-        "model": "",
-        "name": "Master Tactician",
-        "description": "At the start of your Command phase, if this unit\u2019s Marneus Calgar model is your <span class=\"kwb\">WARLORD</span> and is on the battlefield, you gain 1CP.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002199",
-        "line": "5",
-        "ability_id": "",
-        "model": "",
-        "name": "Honour Guard of Macragge",
-        "description": "While this unit contains one or more Victrix Honour Guard models, this unit\u2019s <span class=\"kwb\">MARNEUS</span> <span class=\"kwb\">CALGAR</span> model has the Feel No Pain 4+ ability.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
         "datasheet_id": "000002202",
         "line": "1",
         "ability_id": "000008350",
@@ -45970,46 +45840,6 @@
         "parameter": ""
     },
     {
-        "datasheet_id": "000002635",
-        "line": "1",
-        "ability_id": "000008339",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Core",
-        "parameter": "D3"
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "2",
-        "ability_id": "000008428",
-        "model": "",
-        "name": "",
-        "description": "",
-        "type": "Faction",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "3",
-        "ability_id": "",
-        "model": "",
-        "name": "Scuttling Walker",
-        "description": "Each time this model makes a Normal, Advance or Fall Back move, it can move through friendly Monster and Vehicle models and sections of terrain features that are 4\" or less in height.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "4",
-        "ability_id": "",
-        "model": "",
-        "name": "Unleash Wrath",
-        "description": "At the end of your opponent\u2019s Movement phase, you can select one enemy unit that was set up on the battlefield within 12\" of this model; this model can then either:<br><ul><li>Shoot at that unit, but only if it is an eligible target.</li><li>Declare a charge against that unit (note that even if this charge is successful, this model does not receive any Charge bonus this turn).</li></ul>",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
         "datasheet_id": "000002636",
         "line": "1",
         "ability_id": "000008339",
@@ -48084,9 +47914,19 @@
         "line": "5",
         "ability_id": "",
         "model": "",
-        "name": "Seeker of Lost Relics",
+        "name": "Seeker of the Unfound",
         "description": "The first time this model is set up on the battlefield, select one objective marker on the battlefield. While this model is within range of that objective marker, this model has an Objective Control characteristic of 10, a Leadership characteristic of 5+ and the Feel No Pain 4+ ability.",
         "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000002726",
+        "line": "6",
+        "ability_id": "",
+        "model": "",
+        "name": "INSPIRING COMMANDER",
+        "description": "If you include this model in your army, until the end of the battle, non-<span class=\"kwb\">CHARACTER</span> models in Infernus Squad units from your army have an Objective Control characteristic of 2 while they are not Battle-shocked.",
+        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""
     },
     {
@@ -69630,16 +69470,6 @@
         "parameter": ""
     },
     {
-        "datasheet_id": "000004183",
-        "line": "6",
-        "ability_id": "",
-        "model": "",
-        "name": "LORD CALGAR",
-        "description": "Your army cannot include more than one Marneus Calgar unit.",
-        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
-        "parameter": ""
-    },
-    {
         "datasheet_id": "000004184",
         "line": "1",
         "ability_id": "000008346",
@@ -69677,16 +69507,6 @@
         "name": "Honour or Death",
         "description": "You can target this unit with the Heroic Intervention Stratagem for 0CP, even if you have already used that Stratagem on a different unit this phase.",
         "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000004184",
-        "line": "5",
-        "ability_id": "",
-        "model": "",
-        "name": "CAPTAIN OF THE HONOUR GUARD",
-        "description": "Your army cannot include more than one Captain Sicarius unit.",
-        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""
     },
     {
@@ -70645,7 +70465,7 @@
         "ability_id": "",
         "model": "",
         "name": "Retro-thrusters",
-        "description": "At the end of the Fight phase, this unit can either make a Normal move of up to 6\" or a Fall Back move.",
+        "description": "At the end of the Fight phase, if this unit was eligible to fight this phase, this unit can either make a Normal move of up to 6\" or a Fall Back move.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -70696,6 +70516,416 @@
         "model": "",
         "name": "Unrelenting and Uncompromising",
         "description": "While this model is leading a unit, each time a model in that unit makes an attack, you can ignore any or all modifiers to that attack\u2019s Ballistic Skill or Weapon Skill characteristics and/or all modifiers to the Hit roll.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "1",
+        "ability_id": "000008343",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "2",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "3",
+        "ability_id": "000008359",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Headlong Destruction",
+        "description": "Each time a model in this unit makes an attack that targets the closest eligible enemy unit, improve the Armour Penetration characteristic of that attack by 1.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Architect of Ruin",
+        "description": "At the start of the battle, select one unit in your opponent\u2019s army to be this model\u2019s hated foe. Each time this model makes an attack that targets its hated foe, you can re-roll the Wound roll. Each time this model\u2019s hated foe is destroyed, you can select a new unit from your opponent\u2019s army to be its hated foe. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004206",
+        "line": "1",
+        "ability_id": "000008343",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004206",
+        "line": "2",
+        "ability_id": "000008359",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004206",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Crushing Charge",
+        "description": "You can re-roll charge rolls made for this unit, and each time this unit makes a Charge move, select one enemy unit and roll one D6 for each model in this unit that is within Engagement Range of that unit: for each 4+, that enemy unit suffers D3 mortal wounds.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "D6"
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "2",
+        "ability_id": "000008428",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Scuttling Walker",
+        "description": "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models (excluding <span class=\"kwb\">TITANIC</span> models) and terrain features. When doing so, it can move within Engagement Range of enemy models, but cannot end that move within Engagement Range of them, and any Desperate Escape test is automatically passed.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Unleash Wrath",
+        "description": "At the end of your opponent\u2019s Movement phase, you can select one enemy unit that was set up on the battlefield within 12\" of this model; this model can then either:<br><ul><li>Shoot at that unit, but only if it is an eligible target.</li><li>Declare a charge against that unit (note that even if this charge is successful, this model does not receive any Charge bonus this turn).</li></ul>",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "D6"
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "2",
+        "ability_id": "000009994",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Scuttling Walker",
+        "description": "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models (excluding <span class=\"kwb\">TITANIC</span> models) and terrain features. When doing so, it can move within Engagement Range of enemy models, but cannot end that move within Engagement Range of them, and any Desperate Escape test is automatically passed.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Revel in Desecration",
+        "description": "Each time this model makes an attack that targets an enemy unit that is not below Half-strength, add 1 to the Hit roll.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "D6"
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "2",
+        "ability_id": "000008396",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Scuttling Walker",
+        "description": "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models (excluding <span class=\"kwb\">TITANIC</span> models) and terrain features. When doing so, it can move within Engagement Range of enemy models, but cannot end that move within Engagement Range of them, and any Desperate Escape test is automatically passed.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Barrage of Filth",
+        "description": "In your Shooting phase, after this model has shot, select one enemy unit hit by one or more of those attacks. Until the end of the phase, that unit cannot have the Benefit of Cover.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "1",
+        "ability_id": "000008382",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "2",
+        "ability_id": "",
+        "model": "",
+        "name": "Rod of the War Forge",
+        "description": "In your Command phase, select one of the abilities in the Icon of War section (see next page). Until the start of your next Command phase, this model has that ability. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Mechanicus Bodyguard",
+        "description": "While this model is within 3\" of one or more other friendly <span class=\"kwb\">ADEPTUS</span> <span class=\"kwb\">MECHANICUS</span> units, this model has the Lone Operative ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Cybernetic Augmentation",
+        "description": "This model can move through terrain features, but cannot end a move within a wall, a floor, etc. This model can be set up or end a move on any floor level of <span class=\"kwb\">RUINS</span>, but if that level is not the ground floor, it can only do so if its base does not overhang the floor at that level.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Secutor of Olympus",
+        "description": "At the start of your Shooting phase, select one enemy <span class=\"kwb\">VEHICLE</span> unit within 12\" of this model and roll one D6: on a 2+, that enemy unit suffers D3+1 mortal wounds.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "6",
+        "ability_id": "",
+        "model": "",
+        "name": "SUPREME COMMANDER",
+        "description": "If this model is in your army, it must be your Warlord.",
+        "type": "Special (\u043f\u0440\u0430\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "7",
+        "ability_id": "",
+        "model": "",
+        "name": "Fanatical Devotion",
+        "description": "You can select one friendly Skitarii or <span class=\"kwb\">THULIA</span> <span class=\"kwb\">GHULD</span> unit within 6\" of this model; until the start of your next Command phase, that unit is eligible to shoot and declare a charge in a turn in which it Advanced.",
+        "type": "Primarch",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "8",
+        "ability_id": "",
+        "model": "",
+        "name": "Adaptive Tactics",
+        "description": "You can select one friendly Skitarii or <span class=\"kwb\">THULIA</span> <span class=\"kwb\">GHULD</span> unit within 6\" of this model; until the start of your next Command phase, that unit is eligible to shoot and declare a charge in a turn in which it Fell Back.",
+        "type": "Primarch",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "9",
+        "ability_id": "",
+        "model": "",
+        "name": "The Fires of Mars",
+        "description": "You can select one friendly Skitarii or <span class=\"kwb\">THULIA</span> <span class=\"kwb\">GHULD</span> unit within 6\" of this model; until the start of your next Command phase, the Conqueror Imperative and Protector Imperative are both active for that unit.",
+        "type": "Primarch",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "1",
+        "ability_id": "000008382",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "2",
+        "ability_id": "",
+        "model": "",
+        "name": "Broad-spectrum Targeting Augurs",
+        "description": "Each time a model in this unit makes an attack with an eradication caster that targets a unit (excluding <span class=\"kwb\">MONSTER</span> and <span class=\"kwb\">VEHICLE</span> units), that attack has the [SUSTAINED HITS 1] ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "ATTACHED UNIT",
+        "description": "If a Character unit from your army can be attached to a Skitarii Rangers unit, it can be attached to this unit instead",
+        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "1",
+        "ability_id": "000008382",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "2",
+        "ability_id": "",
+        "model": "",
+        "name": "Monocular Targeting Helms",
+        "description": "Each time a model in this unit makes an attack with a neutron fusil against a <span class=\"kwb\">MONSTER</span> or <span class=\"kwb\">VEHICLE</span> unit, that attack has the [IGNORES COVER] ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "ATTACHED UNIT",
+        "description": "If a Character unit from your army can be attached to a Skitarii Rangers unit, it can be attached to this unit instead",
+        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "D6"
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "2",
+        "ability_id": "000008458",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "3",
+        "ability_id": "000008460",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Ram Jets",
+        "description": "Each time this unit is selected to make a Normal or Advance move, until the end of the phase, add D3\" to the Move characteristic of this model. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Thundercharge",
+        "description": "If this model is equipped with a thundershock spear and a bellatus reaper chainsword, add 2 to the Attacks characteristic of melee weapons equipped by this model. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "6",
+        "ability_id": "",
+        "model": "",
+        "name": "Saturation Fire",
+        "description": "Each time this model makes a ranged attack that targets a unit within range of one or more objective markers, that attack has the [IGNORES COVER] ability.",
         "type": "Datasheet",
         "parameter": ""
     }

@@ -22,9 +22,9 @@
         "name": "Munitorum Field Manual",
         "type": "Expansion",
         "edition": "10",
-        "version": "4.0",
-        "errata_date": "04.03.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_04-03_wh40k_core&key_munitorum_field_manual-wusmp8gbdw-poy2kdhoy0.pdf"
+        "version": "4.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_core&key_munitorum_field_manual-edzlo0khea-wiubxfn3nw.pdf"
     },
     {
         "id": "000000259",
@@ -86,8 +86,8 @@
         "type": "Faction Pack",
         "edition": "10",
         "version": "1.1",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_-orks-btwsaaayei-sww6vtlfjk.pdf"
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_orks-5uazfdv6ks-70hwghaajr.pdf"
     },
     {
         "id": "000000271",
@@ -121,72 +121,72 @@
         "name": "T\u2019au Empire",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "12.11.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_12-11_wh40k_faction_pack_tau_empire-kfbfzu33ut-6jpiayfmhl.pdf"
+        "version": "1.2",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_tau_empire-ng7qzitz2j-rpmg3pbwhk.pdf"
     },
     {
         "id": "000000203",
         "name": "Leagues of Votann",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "04.03.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_leagues_of_votann-nga9c4cumk-snm4dohuql.pdf"
+        "version": "1.3",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_leagues_of_votann-bnjtiibaxz-yexor54fbk.pdf"
     },
     {
         "id": "000000015",
         "name": "Adeptus Mechanicus",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "08.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_08-10_warhammer40000_faction_pack_adeptus_mechanicus-8exwkk773l-yaf5xu2lvr.pdf"
+        "version": "1.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_adeptus_mechanicus-nh181csxvf-e4ye5z23jl.pdf"
     },
     {
         "id": "000000027",
         "name": "Thousand Sons",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "08.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_08-10_warhammer40000_faction_pack_thousand_sons-c4rppmo6ey-42f0pdj2xt.pdf"
+        "version": "1.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_thousand_sons-g5bgk0rgrv-wce6qeshza.pdf"
     },
     {
         "id": "000000014",
         "name": "Death Guard",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "08.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_08-10_warhammer40000_faction_pack_death_guard-q6ymklgmjr-qnqozce7k2.pdf"
+        "version": "1.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_death_guard-lp8dafzobs-shnagjdk5b.pdf"
     },
     {
         "id": "000000280",
         "name": "Emperor\u2019s Children",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_emperor_s_children-8jzbvhie4l-1o2td8k9zv.pdf"
+        "version": "1.3",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_emperors_children-ehx6dskmke-uque7oypup.pdf"
     },
     {
         "id": "000000210",
         "name": "World Eaters",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "08.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_08-10_warhammer40000_faction_pack_world_eaters-qg2v2u0e9j-gtdhmqzchj.pdf"
+        "version": "1.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_world_eaters-1don2dzeun-zxlbftajex.pdf"
     },
     {
         "id": "000000070",
         "name": "Chaos Knights",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "08.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_08-10_warhammer40000_faction_pack_chaos_knights-ikb0qfhxks-50tfi0mtbm.pdf"
+        "version": "1.1",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_chaos_knights-fkn0neaf5f-yfjckxxmkj.pdf"
     },
     {
         "id": "000000025",
@@ -202,9 +202,9 @@
         "name": "Imperial Knights",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "10.12.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_10-12_wh40k_faction_pack_imperial_knights-jhq8vhepvw-shkwjunejq.pdf"
+        "version": "1.2",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_imperial_knights-ghqb5ptegp-nn5zi5y301.pdf"
     },
     {
         "id": "000000139",
@@ -220,9 +220,9 @@
         "name": "Tyranids",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "04.03.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_04-03_wh40k_faction_pack_tyranids-ksw1crafj8-tolo4c5tuq.pdf"
+        "version": "1.3",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_tyranids-sf6mef6kej-xoe2gbwxu9.pdf"
     },
     {
         "id": "000000024",
@@ -247,9 +247,9 @@
         "name": "Chaos Space Marines",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.4",
-        "errata_date": "04.03.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_chaos_space_marines-ekqehcsuwl-qmyuudm97y.pdf"
+        "version": "1.5",
+        "errata_date": "01.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_chaos-space-marines-nunztu9xce-6m9obpn0zn.pdf"
     },
     {
         "id": "000000031",
@@ -627,6 +627,15 @@
         "edition": "10",
         "version": "",
         "errata_date": "01.10.2025 0:00:00",
+        "errata_link": ""
+    },
+    {
+        "id": "000000387",
+        "name": "500 Worlds: Dread Incursions",
+        "type": "Expansion",
+        "edition": "10",
+        "version": "",
+        "errata_date": "01.01.2026 0:00:00",
         "errata_link": ""
     }
 ]

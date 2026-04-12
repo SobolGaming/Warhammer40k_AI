@@ -425,11 +425,6 @@
         "description": "1 Librarian in Terminator Armour"
     },
     {
-        "datasheet_id": "000000081",
-        "line": "1",
-        "description": "1 Captain Sicarius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
-    },
-    {
         "datasheet_id": "000000083",
         "line": "1",
         "description": "1 Captain with Jump Pack"
@@ -3790,11 +3785,6 @@
         "description": "1 Chaos Predator Annihilator"
     },
     {
-        "datasheet_id": "000001051",
-        "line": "1",
-        "description": "1 Defiler"
-    },
-    {
         "datasheet_id": "000001052",
         "line": "1",
         "description": "1 Daemon Prince of Nurgle"
@@ -5440,16 +5430,6 @@
         "description": "1 Land Raider Redeemer"
     },
     {
-        "datasheet_id": "000002199",
-        "line": "1",
-        "description": "1 Marneus Calgar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
-    },
-    {
-        "datasheet_id": "000002199",
-        "line": "2",
-        "description": "2 Victrix Honour Guard"
-    },
-    {
         "datasheet_id": "000002202",
         "line": "1",
         "description": "1 Devastator Sergeant"
@@ -6503,11 +6483,6 @@
         "datasheet_id": "000002634",
         "line": "1",
         "description": "1 Chaos Land Raider"
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "1",
-        "description": "1 Defiler"
     },
     {
         "datasheet_id": "000002636",
@@ -10738,5 +10713,60 @@
         "datasheet_id": "000004204",
         "line": "1",
         "description": "1 Ferren Areios \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "1",
+        "description": "1 Kravek Morne \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004206",
+        "line": "1",
+        "description": "3 Mutilators"
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "1",
+        "description": "1 Defiler"
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "1",
+        "description": "1 Defiler"
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "1",
+        "description": "1 Defiler"
+    },
+    {
+        "datasheet_id": "000004210",
+        "line": "1",
+        "description": "1 Archmagos Terminus Thulia Ghuld \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "1",
+        "description": "1 Hastarii Exterminator Alpha"
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "2",
+        "description": "4 Hastarii Exterminators"
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "1",
+        "description": "1 Hastarii Fusilier Alpha"
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "2",
+        "description": "4 Hastarii Fusiliers"
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "1",
+        "description": "1 Knight Defender"
     }
 ]

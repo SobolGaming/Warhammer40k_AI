@@ -5493,19 +5493,25 @@
         "datasheet_id": "000000969",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy flamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Defiler scourge</li><li>1 havoc launcher</li></ul>"
+        "description": "This model\u2019s Hades battle cannon can be replaced with 1 ectoplasma destructor."
     },
     {
         "datasheet_id": "000000969",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s reaper autocannon can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 twin heavy bolter</li><li>1 twin lascannon</li></ul>"
+        "description": " This model\u2019s excruciator cannons can be replaced with 2 magma cutters."
     },
     {
         "datasheet_id": "000000969",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-bolter</li><li>1 combi-weapon</li></ul>"
+        "description": "This model\u2019s heavy baleflamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000000969",
+        "line": "4",
+        "button": "\u2022",
+        "description": " This model\u2019s heavy missile launcher can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
     },
     {
         "datasheet_id": "000000970",
@@ -5655,19 +5661,25 @@
         "datasheet_id": "000001030",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy flamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Defiler scourge</li><li>1 havoc launcher</li></ul>"
+        "description": "This model\u2019s Hades battle cannon can be replaced with 1 ectoplasma destructor."
     },
     {
         "datasheet_id": "000001030",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s reaper autocannon can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 twin lascannon</li><li>1 twin inferno heavy bolter</li></ul>"
+        "description": "This model\u2019s excruciator cannons can be replaced with 2 pyraflux magma cutters"
     },
     {
         "datasheet_id": "000001030",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with 1 inferno combi-weapon."
+        "description": "This model\u2019s heavy baleflamer can be replaced with one of the following:<br><ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000001030",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model\u2019s heavy missile launcher can be replaced with one of the following:<br><ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
     },
     {
         "datasheet_id": "000001033",
@@ -5908,24 +5920,6 @@
         "line": "3",
         "button": "\u2022",
         "description": "This model can be equipped with 1 havoc launcher."
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "1",
-        "button": "\u2022",
-        "description": "This model\u2019s twin heavy flamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Defiler scourge</li><li>1 havoc launcher</li></ul>"
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "2",
-        "button": "\u2022",
-        "description": "This model\u2019s reaper autocannon can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 twin heavy bolter</li><li>1 twin lascannon</li></ul>"
-    },
-    {
-        "datasheet_id": "000001051",
-        "line": "3",
-        "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-bolter</li><li>1 combi-weapon</li></ul>"
     },
     {
         "datasheet_id": "000001057",
@@ -9400,24 +9394,6 @@
         "line": "2",
         "button": "\u2022",
         "description": "This model can be equipped with 1 havoc launcher."
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "1",
-        "button": "\u2022",
-        "description": "This model\u2019s twin heavy flamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 havoc launcher</li><li>1 Defiler scourge</li></ul>"
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "2",
-        "button": "\u2022",
-        "description": "This model\u2019s reaper autocannon can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 twin heavy bolter</li><li>1 twin lascannon</li></ul>"
-    },
-    {
-        "datasheet_id": "000002635",
-        "line": "3",
-        "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-bolter</li><li>1 combi-weapon</li></ul>"
     },
     {
         "datasheet_id": "000002636",
@@ -16792,5 +16768,119 @@
         "line": "1",
         "button": "\u2022",
         "description": "None."
+    },
+    {
+        "datasheet_id": "000004205",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004206",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "1",
+        "button": "\u2022",
+        "description": "This model\u2019s Hades battle cannon can be replaced with 1 ectoplasma destructor."
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "2",
+        "button": "\u2022",
+        "description": " This model\u2019s excruciator cannons can be replaced with 2 magma cutters."
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "3",
+        "button": "\u2022",
+        "description": "This model\u2019s heavy baleflamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004207",
+        "line": "4",
+        "button": "\u2022",
+        "description": " This model\u2019s heavy missile launcher can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "1",
+        "button": "\u2022",
+        "description": "This model\u2019s Hades battle cannon can be replaced with 1 ectoplasma destructor."
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "2",
+        "button": "\u2022",
+        "description": " This model\u2019s excruciator cannons can be replaced with 2 magma cutters"
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "3",
+        "button": "\u2022",
+        "description": "This model\u2019s heavy baleflamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004208",
+        "line": "4",
+        "button": "\u2022",
+        "description": " This model\u2019s heavy missile launcher can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "1",
+        "button": "\u2022",
+        "description": "This model\u2019s Hades battle cannon can be replaced with 1 ectoplasma destructor."
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "2",
+        "button": "\u2022",
+        "description": " This model\u2019s excruciator cannons can be replaced with 2 magma cutters"
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "3",
+        "button": "\u2022",
+        "description": "This model\u2019s heavy baleflamer can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004209",
+        "line": "4",
+        "button": "\u2022",
+        "description": " This model\u2019s heavy missile launcher can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 Hades lascannon</li><li>1 heavy reaper autocannon</li><li>1 electroscourge (a model cannot be equipped with more than one electroscourge)</li></ul>"
+    },
+    {
+        "datasheet_id": "000004211",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004212",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "1",
+        "button": "\u2022",
+        "description": "This model\u2019s chastiser gatling cannon can be replaced with one of the following:<br><ul style=\"list-style-type:circle\"><li>1 bellatus reaper chainsword*</li><li>1 thundershock spear*</li></ul>"
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "2",
+        "button": "\u2022",
+        "description": "This model\u2019s frag bombard can be replaced with one of the following:<br><ul style=\"list-style-type:circle\"><li>1 bellatus reaper chainsword*</li><li>1 thundershock spear*</li></ul>"
+    },
+    {
+        "datasheet_id": "000004213",
+        "line": "3",
+        "button": "*",
+        "description": "* A model cannot be equipped with more than one bellatus reaper chainsword or more than one thundershock spear."
     }
 ]
