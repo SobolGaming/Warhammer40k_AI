@@ -6470,6 +6470,7 @@ def _classify_ability_base(
     melee_damage_support = _melee_damage_bonus_support(description)
     melee_charge_strength_damage_support = _melee_charge_strength_damage_support(description)
     melee_charge_weapon_damage_support = _melee_charge_weapon_damage_support(description)
+    equipped_wargear_melee_attacks_support = _equipped_wargear_melee_attacks_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     two_melee_weapons_twin_linked_support = _two_melee_weapons_twin_linked_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
@@ -6631,6 +6632,7 @@ def _classify_ability_base(
     space_marines_hunting_hounds_support = _space_marines_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
     tau_nova_charge_support = _tau_nova_charge_support(description)
+    selected_move_characteristic_bonus_support = _selected_move_characteristic_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
@@ -7074,6 +7076,8 @@ def _classify_ability_base(
         return melee_charge_strength_damage_support
     if melee_charge_weapon_damage_support:
         return melee_charge_weapon_damage_support
+    if equipped_wargear_melee_attacks_support:
+        return equipped_wargear_melee_attacks_support
     if two_melee_weapons_support:
         return two_melee_weapons_support
     if two_melee_weapons_twin_linked_support:
@@ -7334,6 +7338,8 @@ def _classify_ability_base(
         return tau_rites_of_feasting_support
     if tau_nova_charge_support:
         return tau_nova_charge_support
+    if selected_move_characteristic_bonus_support:
+        return selected_move_characteristic_bonus_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
     if movement_phase_end_mortal_table_support:
@@ -17308,6 +17314,31 @@ def _movement_phase_once_normal_move_weapon_attacks_bonus_support(description: s
     )
 
 
+def _selected_move_characteristic_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time this unit is selected to make a (?P<actions>[a-z ]+?) move until the end of the phase add (?P<move>(?:\d+d\d+|d\d+|\d+)) to the move characteristic of this model",
+        norm,
+    )
+    if m:
+        action_tokens = str(m.group("actions") or "").strip().lower()
+        actions: list[str] = []
+        for token, label in (("normal", "Normal"), ("advance", "Advance"), ("fall back", "Fall Back")):
+            if token in action_tokens:
+                actions.append(label)
+        if actions:
+            move = str(m.group("move") or "").strip().upper()
+            return (
+                "Supported",
+                f"Movement phase: when selected to make a {'/'.join(actions)} move, add {move}\" to this model's Move until end of phase.",
+            )
+    return None
+
+
 def _movement_phase_normal_move_speed_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -18852,6 +18883,26 @@ def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group('amt')} Attacks.",
+    )
+
+
+def _equipped_wargear_melee_attacks_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"if this model is equipped with an? (?P<wargear_a>[a-z0-9 \-]+?) and an? (?P<wargear_b>[a-z0-9 \-]+?) add (?P<amt>\d+) to the attacks characteristic of melee weapons equipped by this model",
+        norm,
+    )
+    if not m:
+        return None
+    wargear_a = str(m.group("wargear_a") or "").strip()
+    wargear_b = str(m.group("wargear_b") or "").strip()
+    return (
+        "Supported",
+        f"If equipped with {wargear_a} and {wargear_b}, this model's melee weapons gain +{m.group('amt')} Attacks.",
     )
 
 

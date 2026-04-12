@@ -995,6 +995,30 @@ class Model:
         t = re.sub(r"[^a-z0-9]+", " ", t)
         return re.sub(r"\s+", " ", t).strip()
 
+    def set_temporary_movement_bonus(
+        self,
+        *,
+        key: str,
+        movement_bonus: int = 0,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        movement_bonus = int(movement_bonus or 0)
+        if movement_bonus <= 0:
+            effects.pop(key_norm, None)
+            return
+        effects[key_norm] = {
+            "expires_phase": str(expires_phase or "").strip().upper(),
+            "movement_bonus": int(movement_bonus),
+            "movement_bonus_source": str(source or "").strip() or "Movement bonus",
+        }
+
     def set_temporary_weapon_bonus(
         self,
         *,

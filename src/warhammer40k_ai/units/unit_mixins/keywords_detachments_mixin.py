@@ -16198,6 +16198,74 @@ class KeywordsDetachmentsMixin:
             return 0, []
         return bonus, eligible
 
+    def get_equipped_wargear_melee_attacks_bonus(self, model: Optional['Model'] = None) -> tuple[int, list[str]]:
+        """
+        Return (bonus, reasons) for abilities like:
+        "If this model is equipped with a X and a Y, add 2 to the Attacks characteristic
+        of melee weapons equipped by this model."
+        """
+        if model is None:
+            return 0, []
+        cache_key = f"equipped_wargear_melee_attacks_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            cached = self._ability_cache[cache_key]
+            if isinstance(cached, dict):
+                return int(cached.get("bonus", 0) or 0), list(cached.get("reasons", []) or [])
+            return 0, []
+
+        pattern = re.compile(
+            r"if this model is equipped with an? (?P<wargear_a>[a-z0-9 \-]+?) and an? (?P<wargear_b>[a-z0-9 \-]+?) "
+            r"add (?P<bonus>\d+) to the attacks characteristic of melee weapons equipped by this model"
+        )
+
+        def _has_wargear_name(required_name: str) -> bool:
+            required_norm = self._norm_wargear_name(required_name)
+            if not required_norm:
+                return False
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                wargear_norm = self._norm_wargear_name(getattr(wargear, "name", "") or "")
+                if not wargear_norm:
+                    continue
+                if wargear_norm == required_norm or required_norm in wargear_norm or wargear_norm in required_norm:
+                    return True
+            return False
+
+        total_bonus = 0
+        reasons: list[str] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            normalized = text.lower().replace("\u2019", "'")
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            wargear_a = str(match.group("wargear_a") or "").strip()
+            wargear_b = str(match.group("wargear_b") or "").strip()
+            if not _has_wargear_name(wargear_a) or not _has_wargear_name(wargear_b):
+                continue
+            bonus = int(match.group("bonus") or 0)
+            if bonus <= 0:
+                continue
+            source = str(name or "Equipped wargear melee bonus").strip() or "Equipped wargear melee bonus"
+            dedupe_key = (source.lower(), bonus)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            total_bonus += int(bonus)
+            reasons.append(f"{source} +{int(bonus)}A (melee)")
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = {"bonus": int(total_bonus), "reasons": list(reasons)}
+        return int(total_bonus), list(reasons)
+
     def can_reroll_blood_surge_roll(self) -> bool:
         """Check for a leader-provided reroll to the Blood Surge D6 (e.g., Forwards, for Blood!)."""
         for t in self._iter_attached_leader_ability_texts():

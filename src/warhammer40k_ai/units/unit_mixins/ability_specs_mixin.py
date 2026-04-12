@@ -7971,6 +7971,80 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_selected_move_characteristic_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: when selected to make a Normal/Advance/Fall Back move, add to Move until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: deterministic temporary-effect key
+            - actions: tuple[str, ...] of supported action keys
+            - move_bonus_dice: str (e.g. "D3")
+            - move_bonus_flat: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_selected_move_characteristic_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        pattern = re.compile(
+            r"each time this unit is selected to make a (?P<actions>[a-z ]+?) move until the end of the phase "
+            r"add (?P<move>(?:\d+d\d+|d\d+|\d+)) to the move characteristic of this model"
+        )
+
+        specs: list[dict] = []
+        seen: set[tuple[str, tuple[str, ...]]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            action_tokens = str(match.group("actions") or "").strip().lower()
+            parsed_actions: list[str] = []
+            for token in ("normal", "advance", "fall back"):
+                if token in action_tokens:
+                    parsed_actions.append(
+                        "move" if token == "normal" else "advance" if token == "advance" else "fall_back"
+                    )
+            actions = tuple(parsed_actions)
+            if not actions:
+                continue
+            move_token = str(match.group("move") or "").strip().upper()
+            move_bonus_dice = move_token if "D" in move_token else ""
+            move_bonus_flat = 0 if move_bonus_dice else int(move_token or 0)
+            if not move_bonus_dice and move_bonus_flat <= 0:
+                continue
+            source = str(name or "Selected move characteristic bonus").strip() or "Selected move characteristic bonus"
+            key_seed = self._normalize_keyword_phrase(source) or "selected_move_characteristic_bonus"
+            dedupe_key = (key_seed, actions)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": f"selected_move_characteristic_bonus:{key_seed}:{'_'.join(actions)}",
+                    "actions": actions,
+                    "move_bonus_dice": move_bonus_dice,
+                    "move_bonus_flat": int(move_bonus_flat),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_movement_phase_normal_move_speed_mortal_wounds_specs(self) -> List[dict]:
         """
         Unit-specific rule: optional pre-Normal move speed set with end-of-phase mortal wounds.

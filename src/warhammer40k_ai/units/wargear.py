@@ -7159,6 +7159,17 @@ class WargearProfile:
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_equipped_wargear_melee_attacks_bonus", None):
+                    bonus, reasons = unit.get_equipped_wargear_melee_attacks_bonus(attacker)
+                    if bonus:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:equipped_wargear_melee_attacks_add"))
+                        attack_result.attacks_special_modifiers.extend(list(reasons or ()))
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
                 if unit is not None and getattr(unit, "get_two_melee_weapons_bonus", None):
                     bonus, bonus_wargear = unit.get_two_melee_weapons_bonus(attacker)
                     if bonus and bonus_wargear and self.parent_wargear in bonus_wargear:

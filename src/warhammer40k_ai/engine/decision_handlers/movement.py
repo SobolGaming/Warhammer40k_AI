@@ -68,6 +68,41 @@ def _clear_battle_focus_reactive_flags(unit) -> None:
             sr.pop(key, None)
 
 
+def _apply_selected_move_characteristic_bonuses(unit, *, action_type: str) -> None:
+    action_key = str(action_type or "").strip().lower()
+    if action_key not in {"move", "advance", "fall_back"}:
+        return
+    specs_fn = getattr(unit, "model_selected_move_characteristic_bonus_specs", None)
+    if not callable(specs_fn):
+        return
+    for model in list(getattr(unit, "models", []) or []):
+        if not getattr(model, "is_alive", True):
+            continue
+        for spec in list(specs_fn(model) or []):
+            actions = {str(value or "").strip().lower() for value in list(spec.get("actions", ()) or ())}
+            if action_key not in actions:
+                continue
+            key = str(spec.get("key") or "").strip().lower()
+            if not key:
+                continue
+            existing_effects = getattr(model, "_temporary_effects", {})
+            if isinstance(existing_effects, dict) and key in existing_effects:
+                continue
+            movement_bonus = int(spec.get("move_bonus_flat", 0) or 0)
+            move_bonus_dice = str(spec.get("move_bonus_dice", "") or "").strip().upper()
+            if move_bonus_dice:
+                movement_bonus += int(get_roll(move_bonus_dice) or 0)
+            if movement_bonus <= 0:
+                continue
+            source = str(spec.get("source", "") or "Selected move characteristic bonus").strip()
+            model.set_temporary_movement_bonus(
+                key=key,
+                movement_bonus=int(movement_bonus),
+                source=source or "Selected move characteristic bonus",
+                expires_phase="MOVEMENT_PHASE",
+            )
+
+
 def _parse_xy_point(value: object) -> tuple[float, float] | None:
     if not isinstance(value, (list, tuple)) or len(value) < 2:
         return None
@@ -1257,6 +1292,7 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         except Exception as exc:
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
     elif action == "advance":
+        _apply_selected_move_characteristic_bonuses(unit, action_type=action)
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
         queue_fn = getattr(game, "_queue_chaos_cult_desperate_devotion", None)
         if callable(queue_fn):
@@ -1288,6 +1324,7 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
             except Exception as exc:
                 raise RuntimeError(f"Advance roll request failed: {exc}") from exc
     elif action in ("move", "fall_back"):
+        _apply_selected_move_characteristic_bonuses(unit, action_type=action)
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
         if action == "move":
             try:
