@@ -43,7 +43,8 @@ Pathfinding is layered CDT + corridor-aware SE(2) refinement. Important building
 - `measure_direct_distance()` for straight-line checks prior to pathfinding.
 - `get_terrain_blocking_polygons()` and `is_terrain_impassable()` for collision gating.
 - `build_movement_profile()` for deterministic movement capability extraction
-  (climb thresholds, vertical-ignore behavior, breaches, engagement/fall-back interaction flags).
+  (climb thresholds, vertical-ignore behavior, breaches, model/terrain passthrough,
+  TITANIC and MONSTER/VEHICLE blocker exceptions, and engagement/fall-back interaction flags).
 - `pathing/surfaces.py` and `pathing/world_snapshot.py` for deterministic layered support
   extraction (GROUND + RUINS floors + explicit elevated support tops) and immutable
   per-query world snapshots.

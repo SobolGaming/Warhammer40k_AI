@@ -37,6 +37,9 @@ class MovementProfile:
     can_end_on_upper_surfaces: bool
     can_move_through_enemy_models: bool
     can_move_through_friendly_models: bool
+    can_move_through_terrain: bool
+    block_titanic_models: bool
+    block_monster_vehicle_models: bool
     pivot_cost_mode: str
     engagement_buffer_rules: Mapping[str, object] = field(default_factory=dict)
     terrain_transition_rules: Mapping[str, object] = field(default_factory=dict)

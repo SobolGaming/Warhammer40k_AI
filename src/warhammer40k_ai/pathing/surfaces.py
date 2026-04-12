@@ -198,6 +198,8 @@ def terrain_ignored_for_ground_transit(
     movement_profile: MovementProfile,
 ) -> bool:
     """Return True when a terrain feature should not be treated as a ground routing obstacle."""
+    if bool(getattr(movement_profile, "can_move_through_terrain", False)):
+        return True
     from ..battlefield.map import TerrainType
 
     threshold = float(movement_profile.free_climb_height_inches)
@@ -232,6 +234,8 @@ def extract_ground_transit_obstacles(
 
     Low terrain (<= free_climb_height_inches) is omitted.
     """
+    if bool(getattr(movement_profile, "can_move_through_terrain", False)):
+        return ()
     from ..battlefield.map import TerrainType
 
     obstacles: list[BaseGeometry] = []

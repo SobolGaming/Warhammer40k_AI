@@ -185,13 +185,146 @@ def units_share_army_identity(unit_a: "Unit", unit_b: "Unit") -> bool:
     return bool(faction_a and faction_b and faction_a == faction_b)
 
 
-def _engagement_buffer_rules(move_tag: str) -> dict[str, object]:
+def _coerce_move_types(value: object) -> set[str]:
+    move_types: set[str] = set()
+    if isinstance(value, str) and value:
+        move_types.add(str(value).strip().lower())
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            if not item:
+                continue
+            move_types.add(str(item).strip().lower())
+    return move_types
+
+
+def _iter_special_rule_dicts(unit: "Unit") -> tuple[dict[str, object], ...]:
+    if unit is None:
+        return ()
+    sources: list[dict[str, object]] = []
+    seen_ids: set[int] = set()
+
+    root_rules = getattr(unit, "special_rules", None)
+    if isinstance(root_rules, dict):
+        sources.append(root_rules)
+        seen_ids.add(id(root_rules))
+
+    attached_members_fn = getattr(unit, "get_attached_unit_members", None)
+    members = list(attached_members_fn() or ()) if callable(attached_members_fn) else []
+    for member in members:
+        member_rules = getattr(member, "special_rules", None)
+        if not isinstance(member_rules, dict):
+            continue
+        if id(member_rules) in seen_ids:
+            continue
+        seen_ids.add(id(member_rules))
+        sources.append(member_rules)
+
+    return tuple(sources)
+
+
+def _special_movement_rule_state(unit: "Unit", movement_type: object) -> dict[str, bool]:
+    move_tag = movement_type_tag(movement_type)
+    state = {
+        "can_move_through_enemy_models": False,
+        "can_move_through_friendly_models": False,
+        "can_move_through_terrain": False,
+        "block_titanic_models": False,
+        "block_monster_vehicle_models": False,
+        "allow_engagement_range_entry": False,
+        "cannot_end_in_engagement_range": False,
+        "auto_pass_desperate_escape": False,
+    }
+    if unit is None or move_tag is None:
+        return state
+
+    phase_move_types: set[str] = set()
+    phase_move_enemy_models_only_types: set[str] = set()
+    phase_move_models_only_types: set[str] = set()
+    phase_move_models_only_block_titanic_types: set[str] = set()
+    phase_move_terrain_only_types: set[str] = set()
+    phase_engagement_types: set[str] = set()
+    phase_move_block_titanic_types: set[str] = set()
+    phase_move_block_monster_vehicle_types: set[str] = set()
+
+    for special_rules in _iter_special_rule_dicts(unit):
+        phase_move_types.update(_coerce_move_types(special_rules.get("bearer_unit_phase_move_types")))
+        phase_move_enemy_models_only_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_enemy_models_only_types"))
+        )
+        phase_move_models_only_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_models_only_types"))
+        )
+        phase_move_models_only_block_titanic_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_models_only_block_titanic_types"))
+        )
+        phase_move_terrain_only_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_terrain_only_types"))
+        )
+        phase_engagement_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_engagement_types"))
+        )
+        phase_move_block_titanic_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_block_titanic_types"))
+        )
+        phase_move_block_monster_vehicle_types.update(
+            _coerce_move_types(special_rules.get("bearer_unit_phase_move_block_monster_vehicle_types"))
+        )
+        phase_move_types.update(_coerce_move_types(special_rules.get("titanic_phase_move_types")))
+        phase_engagement_types.update(
+            _coerce_move_types(special_rules.get("titanic_phase_move_engagement_types"))
+        )
+        phase_move_block_titanic_types.update(
+            _coerce_move_types(special_rules.get("titanic_phase_move_block_titanic_types"))
+        )
+        if bool(special_rules.get("bearer_unit_auto_pass_desperate_escape")):
+            state["auto_pass_desperate_escape"] = True
+
+    if move_tag in phase_move_enemy_models_only_types:
+        state["can_move_through_enemy_models"] = True
+        if move_tag in phase_move_block_monster_vehicle_types:
+            state["block_monster_vehicle_models"] = True
+        if move_tag in ("move", "advance", "fall_back"):
+            state["allow_engagement_range_entry"] = True
+            state["cannot_end_in_engagement_range"] = True
+
+    if move_tag in phase_move_models_only_types:
+        state["can_move_through_enemy_models"] = True
+        state["can_move_through_friendly_models"] = True
+        if move_tag in phase_move_models_only_block_titanic_types:
+            state["block_titanic_models"] = True
+
+    if move_tag in phase_move_types:
+        state["can_move_through_enemy_models"] = True
+        state["can_move_through_friendly_models"] = True
+        state["can_move_through_terrain"] = True
+        if move_tag in phase_move_block_titanic_types:
+            state["block_titanic_models"] = True
+        if move_tag in phase_move_block_monster_vehicle_types:
+            state["block_monster_vehicle_models"] = True
+        if move_tag in ("move", "advance"):
+            state["allow_engagement_range_entry"] = True
+            state["cannot_end_in_engagement_range"] = True
+    elif move_tag in phase_move_terrain_only_types:
+        state["can_move_through_terrain"] = True
+
+    if move_tag in phase_engagement_types:
+        state["allow_engagement_range_entry"] = True
+        state["cannot_end_in_engagement_range"] = True
+
+    return state
+
+
+def _engagement_buffer_rules(move_tag: str, *, allow_engagement_range_entry: bool = False) -> dict[str, object]:
+    allow_entry = bool(allow_engagement_range_entry) or move_tag in ("charge", "pile_in", "consolidate", "fall_back")
+    normal_buffer = float(ENGAGEMENT_RANGE_HORIZONTAL)
+    if allow_entry and move_tag in ("move", "advance", "fall_back"):
+        normal_buffer = 0.0
     return {
-        "normal_move_buffer_inches": float(ENGAGEMENT_RANGE_HORIZONTAL),
+        "normal_move_buffer_inches": float(normal_buffer),
         "scout_buffer_inches": 9.0,
         "use_normal_move_buffer": move_tag in ("move", "advance"),
         "use_scout_buffer": move_tag == "scout",
-        "allow_engagement_range_entry": move_tag in ("charge", "pile_in", "consolidate", "fall_back"),
+        "allow_engagement_range_entry": bool(allow_entry),
     }
 
 
@@ -209,10 +342,15 @@ def _terrain_transition_rules(unit: "Unit", movement_type: object, free_climb_he
     }
 
 
-def _fall_back_interaction_rules(move_tag: str) -> dict[str, object]:
+def _fall_back_interaction_rules(
+    move_tag: str,
+    *,
+    check_desperate_escape: bool,
+    cannot_end_in_engagement_range: bool,
+) -> dict[str, object]:
     return {
-        "check_desperate_escape": move_tag == "fall_back",
-        "cannot_end_in_engagement_range": move_tag == "fall_back",
+        "check_desperate_escape": bool(check_desperate_escape),
+        "cannot_end_in_engagement_range": bool(cannot_end_in_engagement_range),
     }
 
 
@@ -250,11 +388,54 @@ def build_movement_profile(
     can_ignore_vertical = False
     can_breach = False
     can_end_upper = True
+    can_move_through_enemy_models = move_tag == "fall_back"
+    can_move_through_friendly_models = move_tag == "fall_back"
+    can_move_through_terrain = False
+    block_titanic_models = False
+    block_monster_vehicle_models = False
+    allow_engagement_range_entry = move_tag in ("charge", "pile_in", "consolidate", "fall_back")
+    cannot_end_in_engagement_range = move_tag == "fall_back"
+    check_desperate_escape = move_tag == "fall_back"
     if unit is not None:
         free_climb_height_inches = get_freely_climbable_range(unit, movement_type)
         can_ignore_vertical = unit_ignores_vertical_distance(unit, movement_type)
         can_breach = can_breach_ruins_walls(unit)
         can_end_upper = can_end_on_upper_surfaces(unit)
+        can_move_through_enemy_models = _can_move_through_enemy_models(unit, movement_type, move_tag)
+        can_move_through_friendly_models = _can_move_through_friendly_models(unit, movement_type, move_tag)
+
+        if super_heavy_walker_active_for_move(unit, movement_type):
+            can_move_through_enemy_models = True
+            can_move_through_friendly_models = True
+            block_titanic_models = True
+            if move_tag in ("move", "advance"):
+                allow_engagement_range_entry = True
+                cannot_end_in_engagement_range = True
+
+        special_state = _special_movement_rule_state(unit, movement_type)
+        can_move_through_enemy_models = bool(
+            can_move_through_enemy_models or special_state["can_move_through_enemy_models"]
+        )
+        can_move_through_friendly_models = bool(
+            can_move_through_friendly_models or special_state["can_move_through_friendly_models"]
+        )
+        can_move_through_terrain = bool(
+            can_move_through_terrain or special_state["can_move_through_terrain"]
+        )
+        block_titanic_models = bool(
+            block_titanic_models or special_state["block_titanic_models"]
+        )
+        block_monster_vehicle_models = bool(
+            block_monster_vehicle_models or special_state["block_monster_vehicle_models"]
+        )
+        allow_engagement_range_entry = bool(
+            allow_engagement_range_entry or special_state["allow_engagement_range_entry"]
+        )
+        cannot_end_in_engagement_range = bool(
+            cannot_end_in_engagement_range or special_state["cannot_end_in_engagement_range"]
+        )
+        if special_state["auto_pass_desperate_escape"] and move_tag == "fall_back":
+            check_desperate_escape = False
 
     return MovementProfile(
         movement_type_tag=move_tag,
@@ -262,14 +443,24 @@ def build_movement_profile(
         can_ignore_vertical_distance=bool(can_ignore_vertical),
         can_breach_ruins_walls=bool(can_breach),
         can_end_on_upper_surfaces=bool(can_end_upper),
-        can_move_through_enemy_models=bool(_can_move_through_enemy_models(unit, movement_type, move_tag)),
-        can_move_through_friendly_models=bool(_can_move_through_friendly_models(unit, movement_type, move_tag)),
+        can_move_through_enemy_models=bool(can_move_through_enemy_models),
+        can_move_through_friendly_models=bool(can_move_through_friendly_models),
+        can_move_through_terrain=bool(can_move_through_terrain),
+        block_titanic_models=bool(block_titanic_models),
+        block_monster_vehicle_models=bool(block_monster_vehicle_models),
         pivot_cost_mode=_pivot_cost_mode(unit),
-        engagement_buffer_rules=_engagement_buffer_rules(move_tag),
+        engagement_buffer_rules=_engagement_buffer_rules(
+            move_tag,
+            allow_engagement_range_entry=bool(allow_engagement_range_entry),
+        ),
         terrain_transition_rules=_terrain_transition_rules(unit, movement_type, free_climb_height_inches)
         if unit is not None
         else {},
-        fall_back_interaction_rules=_fall_back_interaction_rules(move_tag),
+        fall_back_interaction_rules=_fall_back_interaction_rules(
+            move_tag,
+            check_desperate_escape=bool(check_desperate_escape),
+            cannot_end_in_engagement_range=bool(cannot_end_in_engagement_range),
+        ),
     )
 
 

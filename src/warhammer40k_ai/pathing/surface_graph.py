@@ -90,6 +90,25 @@ def _ordered_support_surfaces(world_snapshot: WorldSnapshot) -> tuple[SupportSur
     )
 
 
+def _enemy_blocker_ignored_for_profile(
+    blocker: object,
+    movement_profile: MovementProfile,
+) -> bool:
+    if not bool(getattr(blocker, "is_enemy", False)):
+        return False
+    if not bool(getattr(movement_profile, "can_move_through_enemy_models", False)):
+        return False
+    if bool(getattr(movement_profile, "block_titanic_models", False)) and bool(
+        getattr(blocker, "is_titanic", False)
+    ):
+        return False
+    if bool(getattr(movement_profile, "block_monster_vehicle_models", False)) and bool(
+        getattr(blocker, "is_big_model", False)
+    ):
+        return False
+    return True
+
+
 def _surface_dynamic_cutouts(
     surface: SupportSurface,
     movement_profile: MovementProfile,
@@ -103,7 +122,7 @@ def _surface_dynamic_cutouts(
     for blocker in dynamic_overlay.blockers:
         if abs(float(blocker.z_bottom) - float(surface.surface_z)) > z_tolerance:
             continue
-        if blocker.is_enemy and movement_profile.can_move_through_enemy_models:
+        if _enemy_blocker_ignored_for_profile(blocker, movement_profile):
             continue
         if blocker.is_friendly and movement_profile.can_move_through_friendly_models:
             continue
@@ -187,7 +206,7 @@ def _connector_dynamic_blocked(
     anchor = Point(float(connector.anchor_xy[0]), float(connector.anchor_xy[1]))
     z_tolerance = 1.0
     for blocker in dynamic_overlay.blockers:
-        if blocker.is_enemy and movement_profile.can_move_through_enemy_models:
+        if _enemy_blocker_ignored_for_profile(blocker, movement_profile):
             continue
         if blocker.is_friendly and movement_profile.can_move_through_friendly_models:
             continue
@@ -625,7 +644,7 @@ def _blocked_triangles_by_overlay(
             continue
         applicable_blockers = []
         for blocker in dynamic_overlay.blockers:
-            if blocker.is_enemy and movement_profile.can_move_through_enemy_models:
+            if _enemy_blocker_ignored_for_profile(blocker, movement_profile):
                 continue
             if blocker.is_friendly and movement_profile.can_move_through_friendly_models:
                 continue

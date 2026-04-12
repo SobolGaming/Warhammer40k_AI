@@ -322,7 +322,18 @@ def _overlay_for_query(
         )
     )
     ignore_enemy_models_blocking = bool(validation_rules.get("ignore_enemy_models_blocking", False))
-    block_monster_vehicle_models = bool(validation_rules.get("block_monster_vehicle_models", False))
+    block_titanic_models = bool(
+        validation_rules.get(
+            "block_titanic_models",
+            getattr(movement_profile, "block_titanic_models", False),
+        )
+    )
+    block_monster_vehicle_models = bool(
+        validation_rules.get(
+            "block_monster_vehicle_models",
+            getattr(movement_profile, "block_monster_vehicle_models", False),
+        )
+    )
 
     blockers: list[object] = []
     for blocker in dynamic_overlay.blockers:
@@ -344,6 +355,9 @@ def _overlay_for_query(
             # AIRCRAFT are not transit blockers during movement; endpoint legality is checked separately.
             continue
         if bool(getattr(blocker, "is_enemy", False)) and allow_through_enemy:
+            if block_titanic_models and bool(getattr(blocker, "is_titanic", False)):
+                blockers.append(blocker)
+                continue
             blocks_big_models = block_monster_vehicle_models or (
                 is_fly_move
                 and not can_fly_over_big_models

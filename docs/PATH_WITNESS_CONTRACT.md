@@ -14,5 +14,5 @@ Artifact fields:
 Validation invariants:
 - Witness path entries must be contiguous and complete.
 - `final_pose` must match the move payload end pose.
-- For normal moves, continuous segment checks reject paths that cross enemy engagement range.
-- For normal moves, continuous sweep checks reject paths that cross blocking terrain between waypoints.
+- For normal moves, continuous segment checks reject paths that cross enemy engagement range unless the active movement profile explicitly permits transient engagement-range entry.
+- For normal moves, continuous sweep checks reject paths that cross blocking terrain between waypoints unless the active movement profile explicitly permits terrain passthrough.

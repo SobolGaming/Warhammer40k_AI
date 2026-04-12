@@ -21,6 +21,7 @@ class DynamicModelBlocker:
     is_friendly: bool
     is_aircraft: bool
     is_big_model: bool
+    is_titanic: bool
     footprint: BaseGeometry
     z_bottom: float
     z_top: float
@@ -79,6 +80,10 @@ def _unit_is_big_model(unit: object) -> bool:
         or _unit_has_keyword(unit, "MONSTER")
         or _unit_has_keyword(unit, "TITANIC")
     )
+
+
+def _unit_is_titanic(unit: object) -> bool:
+    return _bool_attr(unit, "is_titanic") or _unit_has_keyword(unit, "TITANIC")
 
 
 def _sort_key_for_entity(entity: object, fallback_prefix: str, fallback_index: int) -> str:
@@ -142,6 +147,7 @@ def build_dynamic_overlay(
         is_enemy = not is_friendly
         is_aircraft = _unit_is_aircraft(unit)
         is_big_model = _unit_is_big_model(unit)
+        is_titanic = _unit_is_titanic(unit)
 
         model_records: list[tuple[str, int, object]] = []
         for model_index, model in enumerate(_unit_models_for_collision(unit)):
@@ -167,6 +173,7 @@ def build_dynamic_overlay(
                 is_friendly=is_friendly,
                 is_aircraft=is_aircraft,
                 is_big_model=is_big_model,
+                is_titanic=is_titanic,
                 footprint=model_shape,
                 z_bottom=z_bottom,
                 z_top=z_top,

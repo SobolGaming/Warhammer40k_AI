@@ -374,6 +374,22 @@ def _offset_xy(sample: _SpineSample, lateral_offset: float) -> tuple[float, floa
     )
 
 
+def _enemy_blocker_ignored_for_profile(blocker: object, movement_profile: MovementProfile) -> bool:
+    if not bool(getattr(blocker, "is_enemy", False)):
+        return False
+    if not bool(getattr(movement_profile, "can_move_through_enemy_models", False)):
+        return False
+    if bool(getattr(movement_profile, "block_titanic_models", False)) and bool(
+        getattr(blocker, "is_titanic", False)
+    ):
+        return False
+    if bool(getattr(movement_profile, "block_monster_vehicle_models", False)) and bool(
+        getattr(blocker, "is_big_model", False)
+    ):
+        return False
+    return True
+
+
 def _pose_valid(
     request: Se2RefineRequest,
     corridor_geometry: BaseGeometry,
@@ -402,7 +418,7 @@ def _pose_valid(
 
     z_here = float(request.surface.surface_z)
     for blocker in request.dynamic_overlay.blockers:
-        if blocker.is_enemy and request.movement_profile.can_move_through_enemy_models:
+        if _enemy_blocker_ignored_for_profile(blocker, request.movement_profile):
             continue
         if blocker.is_friendly and request.movement_profile.can_move_through_friendly_models:
             continue

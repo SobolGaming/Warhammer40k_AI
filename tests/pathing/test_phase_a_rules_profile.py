@@ -15,7 +15,13 @@ import warhammer40k_ai.utility.calcs as calcs
 
 
 class MockDatasheet:
-    def __init__(self, name: str, movement: int = 6, base_size: str = "32mm"):
+    def __init__(
+        self,
+        name: str,
+        movement: int = 6,
+        base_size: str = "32mm",
+        abilities: list[dict[str, str]] | None = None,
+    ):
         self.name = name
         self.faction_data = {"name": "MirrorFaction"}
         self.keywords = []
@@ -37,12 +43,19 @@ class MockDatasheet:
         ]
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
-        self.datasheets_abilities = []
+        self.datasheets_abilities = list(abilities or [])
         self.loadout = "This model is equipped with: nothing"
 
 
-def _make_unit(name: str, *, faction: str = "MirrorFaction", x: float = 0.0, y: float = 0.0) -> Unit:
-    unit = Unit(MockDatasheet(name))
+def _make_unit(
+    name: str,
+    *,
+    faction: str = "MirrorFaction",
+    x: float = 0.0,
+    y: float = 0.0,
+    abilities: list[dict[str, str]] | None = None,
+) -> Unit:
+    unit = Unit(MockDatasheet(name, abilities=abilities))
     unit.faction = faction
     unit.deployed = True
     unit.models[0].model_base = Base(BaseType.CIRCULAR, 1.0)
@@ -89,6 +102,36 @@ def test_phase_a_validation_rules_embed_movement_profile() -> None:
     assert rules["can_move_through_enemy_models"] is True
     assert rules["free_climb_height_inches"] == profile.free_climb_height_inches
     assert rules["can_end_on_upper_surfaces"] == profile.can_end_on_upper_surfaces
+
+
+def test_phase_a_profile_extracts_phase_move_passthrough_support() -> None:
+    ability = {
+        "name": "Scuttling Walker",
+        "description": (
+            "Each time this unit makes a Normal, Advance or Fall Back move, it can move through models "
+            "(excluding TITANIC models) and terrain features. When doing so, it can move within Engagement "
+            "Range of enemy models, but cannot end that move within Engagement Range of them, and any "
+            "Desperate Escape test is automatically passed."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit("PhaseWalker", x=5.0, y=5.0, abilities=[ability])
+
+    move_profile = build_movement_profile(unit, MovementType.MOVE)
+    assert move_profile.can_move_through_enemy_models is True
+    assert move_profile.can_move_through_friendly_models is True
+    assert move_profile.can_move_through_terrain is True
+    assert move_profile.block_titanic_models is True
+    assert bool(move_profile.engagement_buffer_rules["allow_engagement_range_entry"]) is True
+
+    fall_back_profile = build_movement_profile(unit, MovementType.FALL_BACK)
+    assert fall_back_profile.can_move_through_enemy_models is True
+    assert fall_back_profile.can_move_through_friendly_models is True
+    assert fall_back_profile.can_move_through_terrain is True
+    assert fall_back_profile.block_titanic_models is True
+    assert bool(fall_back_profile.fall_back_interaction_rules["check_desperate_escape"]) is False
+    assert bool(fall_back_profile.fall_back_interaction_rules["cannot_end_in_engagement_range"]) is True
 
 
 def test_phase_a_build_collision_trees_uses_army_identity_not_faction() -> None:
