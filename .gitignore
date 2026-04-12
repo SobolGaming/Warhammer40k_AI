@@ -46,3 +46,5 @@ wahapedia_data/Archive
 
 # Local game session data
 games/data/
+data/headless_self_play_replays/
+data/headless_self_play_decision_records.json
