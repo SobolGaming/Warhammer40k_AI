@@ -10466,11 +10466,21 @@ def _unit_phase_move_auto_pass_desperate_escape_support(description: str) -> Opt
         r"models in that unit can move through models and terrain features when doing so they can move within engagement range of such models "
         r"but cannot end that move within engagement range of them and any desperate escape test is automatically passed"
     )
-    if not re.fullmatch(pattern, norm):
+    if re.fullmatch(pattern, norm):
+        return (
+            "Supported",
+            "Re-roll Advance rolls; on Normal/Advance/Fall Back, the unit moves through models and terrain, can move within Engagement Range but cannot end there, and auto-passes Desperate Escape tests.",
+        )
+    scuttling_walker_pattern = (
+        r"each time this unit makes a normal advance or fall back move it can move through models excluding titanic models and terrain features "
+        r"when doing so it can move within engagement range of enemy models but cannot end that move within engagement range of them "
+        r"and any desperate escape test is automatically passed"
+    )
+    if not re.fullmatch(scuttling_walker_pattern, norm):
         return None
     return (
         "Supported",
-        "Re-roll Advance rolls; on Normal/Advance/Fall Back, the unit moves through models and terrain, can move within Engagement Range but cannot end there, and auto-passes Desperate Escape tests.",
+        "Normal/Advance/Fall Back movement can pass through models excluding TITANIC models and terrain features, can move within Engagement Range during that move, cannot end there, and automatically passes Desperate Escape tests.",
     )
 
 
