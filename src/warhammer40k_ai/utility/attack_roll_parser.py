@@ -25,6 +25,7 @@ class AttackRollCondition:
     target_exclude_keywords_any: Tuple[str, ...] = ()
     target_can_fly: Optional[bool] = None
     target_below_half_strength: bool = False
+    target_not_below_half_strength: bool = False
 
     def merge(self, other: "AttackRollCondition") -> "AttackRollCondition":
         if other is None:
@@ -74,6 +75,9 @@ class AttackRollCondition:
             target_exclude_keywords_any=tuple({*self.target_exclude_keywords_any, *other.target_exclude_keywords_any}),
             target_can_fly=other.target_can_fly if other.target_can_fly is not None else self.target_can_fly,
             target_below_half_strength=bool(self.target_below_half_strength or other.target_below_half_strength),
+            target_not_below_half_strength=bool(
+                self.target_not_below_half_strength or other.target_not_below_half_strength
+            ),
         )
 
 
@@ -256,10 +260,16 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_below_starting_strength=True)
     if re.fullmatch(r"that enemy unit is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(target_below_half_strength=True)
+    if re.fullmatch(r"that enemy unit is (?:also )?not below half[- ]strength", t):
+        return AttackRollCondition(target_not_below_half_strength=True)
     if re.fullmatch(r"that target is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(target_below_starting_strength=True)
     if re.fullmatch(r"that target is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(target_below_half_strength=True)
+    if re.fullmatch(r"that target is (?:also )?not below half[- ]strength", t):
+        return AttackRollCondition(target_not_below_half_strength=True)
+    if re.fullmatch(r"(?:the )?target(?: of that attack)? is (?:also )?not below half[- ]strength", t):
+        return AttackRollCondition(target_not_below_half_strength=True)
     if re.fullmatch(r"that (?:enemy )?unit is afflicted", t):
         return AttackRollCondition(target_keywords_any=("afflicted",))
 
@@ -469,12 +479,18 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
     m = re.fullmatch(r"unit that is below half[- ]strength", t)
     if m:
         return AttackRollCondition(target_below_half_strength=True)
+    m = re.fullmatch(r"unit that is not below half[- ]strength", t)
+    if m:
+        return AttackRollCondition(target_not_below_half_strength=True)
     m = re.fullmatch(r"unit below (?:its )?starting strength", t)
     if m:
         return AttackRollCondition(target_below_starting_strength=True)
     m = re.fullmatch(r"unit below half[- ]strength", t)
     if m:
         return AttackRollCondition(target_below_half_strength=True)
+    m = re.fullmatch(r"unit not below half[- ]strength", t)
+    if m:
+        return AttackRollCondition(target_not_below_half_strength=True)
     m = re.fullmatch(r"unit \(excluding (?P<ex>[^)]+)\)", t)
     if m:
         raw = m.group("ex").replace(" and ", ",")

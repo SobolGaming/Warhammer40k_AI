@@ -6714,6 +6714,7 @@ def _classify_ability_base(
     stasis_bomb_support = _stasis_bomb_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
+    model_target_not_below_half_strength_support = _model_target_not_below_half_strength_hit_bonus_support(description)
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
@@ -7403,8 +7404,6 @@ def _classify_ability_base(
         return reinforcements_denial_support
     if cp_on_destroy_support:
         return cp_on_destroy_support
-    if attack_roll_rule_support:
-        return attack_roll_rule_support
     if unit_contains_model_weapon_keyword_grant_support:
         return unit_contains_model_weapon_keyword_grant_support
     if unit_target_keyword_weapon_keyword_grant_support:
@@ -7461,10 +7460,14 @@ def _classify_ability_base(
         return model_hit_vs_fly_support
     if model_target_strength_support:
         return model_target_strength_support
+    if model_target_not_below_half_strength_support:
+        return model_target_not_below_half_strength_support
     if model_self_strength_support:
         return model_self_strength_support
     if model_attack_roll_bonus_support:
         return model_attack_roll_bonus_support
+    if attack_roll_rule_support:
+        return attack_roll_rule_support
     if model_closest_target_ap_bonus_support:
         return model_closest_target_ap_bonus_support
     if model_target_keyword_ap_bonus_support:
@@ -11112,6 +11115,46 @@ def _model_target_strength_hit_wound_support(description: str) -> Optional[Tuple
     return (
         "Supported",
         "Model melee attacks vs weakened targets: +hit below Starting Strength, +wound below Half-strength.",
+    )
+
+
+def _model_target_not_below_half_strength_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    rule = parse_attack_roll_text(description)
+    if rule is None:
+        return None
+    if rule.subject != "this_model":
+        return None
+    if rule.attack_type not in ("melee", "ranged", "any"):
+        return None
+    if rule.scope not in ("unit", "leading"):
+        return None
+
+    hit_bonus = 0
+    for eff in rule.effects:
+        if eff.roll != "hit" or eff.kind != "add":
+            continue
+        cond = eff.condition
+        if not cond or not cond.target_not_below_half_strength:
+            continue
+        try:
+            hit_bonus = int(eff.value or 0)
+        except (TypeError, ValueError):
+            hit_bonus = 0
+        if hit_bonus > 0:
+            break
+    if hit_bonus <= 0:
+        return None
+
+    attack_scope = "Model attacks"
+    if rule.attack_type == "melee":
+        attack_scope = "Model melee attacks"
+    elif rule.attack_type == "ranged":
+        attack_scope = "Model ranged attacks"
+    return (
+        "Supported",
+        f"{attack_scope} gain +{hit_bonus} to hit against targets that are not Below Half-strength.",
     )
 
 

@@ -5470,6 +5470,12 @@ class ActionsMovementMixin:
                     return False
             except Exception:
                 return False
+        if condition.target_not_below_half_strength:
+            try:
+                if target is None or target.is_below_half_strength():
+                    return False
+            except Exception:
+                return False
 
         def _target_has_keyword(keyword: str) -> bool:
             if target is None:
@@ -5622,6 +5628,8 @@ class ActionsMovementMixin:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
+            if cond.target_not_below_half_strength:
+                parts.append("vs targets that are not Below Half-strength")
             if cond.target_exclude_keywords_any:
                 parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
             if not parts:
@@ -6511,6 +6519,8 @@ class ActionsMovementMixin:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
+            if cond.target_not_below_half_strength:
+                parts.append("vs targets that are not Below Half-strength")
             if cond.target_exclude_keywords_any:
                 parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
             if not parts:
@@ -8688,6 +8698,8 @@ class ActionsMovementMixin:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
+            if cond.target_not_below_half_strength:
+                parts.append("vs targets that are not Below Half-strength")
             if cond.target_exclude_keywords_any:
                 parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
             if not parts:
@@ -10134,7 +10146,7 @@ class ActionsMovementMixin:
                 return False
             if cond.target_can_fly is not None:
                 return False
-            if cond.target_below_half_strength:
+            if cond.target_below_half_strength or cond.target_not_below_half_strength:
                 return False
             if cond.target_keywords_all or cond.target_exclude_keywords_any:
                 return False

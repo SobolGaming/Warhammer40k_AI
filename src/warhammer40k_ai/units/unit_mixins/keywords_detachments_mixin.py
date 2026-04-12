@@ -17242,6 +17242,8 @@ class KeywordsDetachmentsMixin:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
+            if cond.target_not_below_half_strength:
+                parts.append("vs targets that are not Below Half-strength")
             if cond.target_exclude_keywords_any:
                 parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
             if not parts:
@@ -17454,53 +17456,6 @@ class KeywordsDetachmentsMixin:
             for name, desc in self._iter_ability_entries_for_rules(model=None):
                 rule = _parse_entry(name, desc)
                 if rule:
-                    break
-
-        if not hasattr(self, "_ability_cache"):
-            self._ability_cache = {}
-        self._ability_cache[cache_key] = rule
-        return rule
-
-    def get_model_non_below_half_strength_ranged_hit_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
-        """Parse ranged full hit re-rolls against targets that are not Below Half-strength."""
-        if model is None:
-            return None
-        cache_key = f"non_below_half_strength_ranged_hit_reroll:{get_entity_id(model)}"
-        cache = getattr(self, "_ability_cache", None)
-        if isinstance(cache, dict) and cache_key in cache:
-            return cache.get(cache_key)
-
-        rule: Optional[dict] = None
-
-        def _parse_entry(name: str, desc: str) -> Optional[dict]:
-            source = str(name or "").strip()
-            text_src = desc or name or ""
-            if not text_src:
-                return None
-            normalized = self._normalize_rules_text(text_src)
-            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-            low = normalized.lower().replace("reroll", "re roll")
-            low = re.sub(r"[^a-z0-9]+", " ", low)
-            low = re.sub(r"\s+", " ", low).strip()
-            if "each time this model makes a ranged attack" not in low:
-                return None
-            if "targets a unit that is not below half strength" not in low:
-                return None
-            if "re roll the hit roll" not in low:
-                return None
-            return {
-                "source": source or "Ballistus Strike",
-                "attack_type": "ranged",
-            }
-
-        for name, desc in self._iter_model_specific_ability_entries(model):
-            rule = _parse_entry(name, desc)
-            if rule is not None:
-                break
-        if rule is None:
-            for name, desc in self._iter_ability_entries_for_rules(model=model):
-                rule = _parse_entry(name, desc)
-                if rule is not None:
                     break
 
         if not hasattr(self, "_ability_cache"):
@@ -17965,20 +17920,6 @@ class KeywordsDetachmentsMixin:
                 elif mode == "ones":
                     reroll_values.add(1)
                     reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs targets at Starting Strength")
-        non_below_half = self.get_model_non_below_half_strength_ranged_hit_reroll_rule(model)
-        if non_below_half and target is not None:
-            required_attack_type = str(non_below_half.get("attack_type", "any") or "any").strip().lower()
-            attack_type_ok = required_attack_type not in {"melee", "ranged"} or attack_scope in {"any", required_attack_type}
-            below_half = False
-            is_below_half_strength = getattr(target, "is_below_half_strength", None)
-            if callable(is_below_half_strength):
-                below_half = bool(is_below_half_strength())
-            if attack_type_ok and not below_half:
-                source = str(non_below_half.get("source", "") or "Ballistus Strike").strip() or "Ballistus Strike"
-                reroll_full = True
-                reroll_full_reasons.append(
-                    f"{source}: re-roll Hit roll vs targets that are not Below Half-strength"
-                )
         silent_source = self.get_silent_executioner_source(model)
         if silent_source and target is not None:
             try:
@@ -18623,6 +18564,8 @@ class KeywordsDetachmentsMixin:
                 return False
             if cond.target_below_half_strength:
                 return False
+            if cond.target_not_below_half_strength:
+                return False
             return True
 
         for name, desc in self._iter_model_specific_ability_entries(model):
@@ -18760,6 +18703,8 @@ class KeywordsDetachmentsMixin:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
+            if cond.target_not_below_half_strength:
+                parts.append("vs targets that are not Below Half-strength")
             if cond.target_exclude_keywords_any:
                 parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
             if not parts:
