@@ -4378,6 +4378,93 @@ _SKITARII_HUNTER_COHORT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SKITARII_HUNTER_COHORT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ERADICATION_COHORT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010748002": StratagemToolDescriptor(
+        stratagem_id="000010748002",
+        name="Servo-Driven Charge",
+        timing="fight_phase_on_select_to_fight",
+        target="adeptus_mechanicus_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_weapons_gain_lance",
+        cp_cost=1,
+        effect_params={"keyword": "LANCE"},
+    ),
+    "000010748003": StratagemToolDescriptor(
+        stratagem_id="000010748003",
+        name="Unrelenting Aggression",
+        timing="your_movement_phase_after_fall_back",
+        target="that_adeptus_mechanicus_unit",
+        duration="until_end_of_turn",
+        effect="shoot_after_fall_back_and_charge_if_skitarii",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back_if_keywords_any": ["SKITARII"],
+        },
+    ),
+    "000010748004": StratagemToolDescriptor(
+        stratagem_id="000010748004",
+        name="Unshackled Wrath",
+        timing="your_shooting_phase",
+        target="skitarii_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_keyword_choice_with_optional_hazardous",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                {"choice_key": "LETHAL_HITS", "grant_keywords": ["LETHAL HITS"]},
+                {"choice_key": "SUSTAINED_HITS_1", "grant_keywords": ["SUSTAINED HITS 1"]},
+                {
+                    "choice_key": "OVERDRIVE",
+                    "grant_keywords": ["SUSTAINED HITS 1", "LETHAL HITS", "HAZARDOUS"],
+                },
+            ],
+        },
+    ),
+    "000010748005": StratagemToolDescriptor(
+        stratagem_id="000010748005",
+        name="Threat-Cogitation Targeters",
+        timing="your_shooting_phase",
+        target="skitarii_vehicle_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_damage_reroll_vs_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "target_keywords_any": ["MONSTER", "VEHICLE"],
+            "reroll_damage": True,
+        },
+    ),
+    "000010748006": StratagemToolDescriptor(
+        stratagem_id="000010748006",
+        name="Precision Onslaught",
+        timing="your_charge_phase_after_charge_declared",
+        target="sicarian_unit_that_just_declared_a_charge",
+        duration="until_end_of_phase",
+        effect="charge_end_mortal_wounds_per_engaged_model",
+        cp_cost=1,
+        effect_params={
+            "threshold": 4,
+            "mortal_per_success": 1,
+            "engagement_only": True,
+        },
+    ),
+    "000010748007": StratagemToolDescriptor(
+        stratagem_id="000010748007",
+        name="Analytic Reprisals",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="friendly_skitarii_infantry_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_shooting_at_attacker",
+        cp_cost=1,
+        effect_params={"target_restriction": "attacking_enemy_unit_only"},
+    ),
+}
+
+_ERADICATION_COHORT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ERADICATION_COHORT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009746002": StratagemToolDescriptor(
         stratagem_id="000009746002",
@@ -15022,6 +15109,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SKITARII_HUNTER_COHORT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ERADICATION_COHORT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALOSCREED_BATTLE_CLADE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15472,6 +15562,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DATA_PSALM_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_STRATAGEM_BY_NAME.get(key)
         or _SKITARII_HUNTER_COHORT_STRATAGEM_BY_NAME.get(key)
+        or _ERADICATION_COHORT_STRATAGEM_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)

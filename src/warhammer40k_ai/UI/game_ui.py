@@ -20439,10 +20439,16 @@ class GameView:
 
         if name_u in (
             "AGGRESSIVE IMPULSE",
+            "ANALYTIC REPRISALS",
             "ANALYTICAL DIVINATION",
             "ERADICATION PROTOCOLS",
             "GUIDED RETREAT",
+            "PRECISION ONSLAUGHT",
+            "SERVO-DRIVEN CHARGE",
             "TARGETING OVERRIDE",
+            "THREAT-COGITATION TARGETERS",
+            "UNRELENTING AGGRESSION",
+            "UNSHACKLED WRATH",
         ) and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -20452,10 +20458,16 @@ class GameView:
                 if not candidates:
                     getter_name = {
                         "AGGRESSIVE IMPULSE": "_haloscreed_aggressive_impulse_candidates",
+                        "ANALYTIC REPRISALS": "_eradication_analytic_reprisals_candidates",
                         "ANALYTICAL DIVINATION": "_haloscreed_analytical_divination_candidates",
                         "ERADICATION PROTOCOLS": "_haloscreed_phase_buff_candidates",
                         "GUIDED RETREAT": "_haloscreed_guided_retreat_candidates",
+                        "PRECISION ONSLAUGHT": "_eradication_precision_onslaught_candidates",
+                        "SERVO-DRIVEN CHARGE": "_eradication_servo_driven_charge_candidates",
                         "TARGETING OVERRIDE": "_haloscreed_phase_buff_candidates",
+                        "THREAT-COGITATION TARGETERS": "_eradication_threat_cogitation_targeters_candidates",
+                        "UNRELENTING AGGRESSION": "_eradication_unrelenting_aggression_candidates",
+                        "UNSHACKLED WRATH": "_eradication_unshackled_wrath_candidates",
                     }.get(name_u, "")
                     getter = getattr(manager, getter_name, None)
                     if callable(getter):
@@ -20480,14 +20492,44 @@ class GameView:
                                 )
                                 or []
                             )
+                        elif name_u == "ANALYTIC REPRISALS":
+                            candidates = list(
+                                getter(
+                                    attacking_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                                    target_units=list(context.get("target_units") or context.get("candidates") or []),
+                                )
+                                or []
+                            )
+                        elif name_u == "PRECISION ONSLAUGHT":
+                            candidates = list(
+                                getter(
+                                    unit=context.get("charging_unit") or context.get("unit") or context.get("target_unit"),
+                                    action="charge",
+                                )
+                                or []
+                            )
+                        elif name_u == "UNRELENTING AGGRESSION":
+                            candidates = list(
+                                getter(
+                                    unit=context.get("unit") or context.get("target_unit"),
+                                    action=str(context.get("action") or ""),
+                                )
+                                or []
+                            )
                         else:
                             candidates = list(getter() or [])
                 subtitle = {
                     "AGGRESSIVE IMPULSE": "Skorpius Dunerider that has not been selected to move this phase.",
+                    "ANALYTIC REPRISALS": "Skitarii Infantry unit that lost one or more models to the attacking enemy unit and can shoot it.",
                     "ANALYTICAL DIVINATION": "ADEPTUS MECHANICUS INFANTRY (excluding KATAPHRON) within 9\" of the enemy mover and not in Engagement Range.",
                     "ERADICATION PROTOCOLS": "ADEPTUS MECHANICUS unit that has not been selected to shoot or fight this phase.",
                     "GUIDED RETREAT": "ADEPTUS MECHANICUS unit that just made a Fall Back move.",
+                    "PRECISION ONSLAUGHT": "Sicarian unit from your army that just declared a charge.",
+                    "SERVO-DRIVEN CHARGE": "ADEPTUS MECHANICUS unit that has not been selected to fight this phase.",
                     "TARGETING OVERRIDE": "ADEPTUS MECHANICUS unit that has not been selected to shoot or fight this phase.",
+                    "THREAT-COGITATION TARGETERS": "Skitarii Vehicle unit from your army that has not been selected to shoot this phase.",
+                    "UNRELENTING AGGRESSION": "ADEPTUS MECHANICUS unit that just made a Fall Back move.",
+                    "UNSHACKLED WRATH": "Skitarii unit from your army that has not been selected to shoot this phase.",
                 }.get(name_u, "Select an eligible ADEPTUS MECHANICUS unit.")
                 self._resolve_unit_selection_dialog(
                     player=player,

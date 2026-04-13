@@ -69,6 +69,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY = "data_psalm_autosermon_source_unit_id"
     _CULT_MECHANICUS_KEYWORD = "CULT MECHANICUS"
     _SKITARII_KEYWORD = "SKITARII"
+    _VEHICLE_KEYWORD = "VEHICLE"
     _ERADICATION_COHORT_NAME = "Eradication Cohort"
     _ERADICATION_BELICOSA_SOURCE = "Belicosa-Class Capacitor Vanes"
     _ERADICATION_MURDEROUS_SOURCE = "Murderous Imperative"
@@ -2778,6 +2779,42 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                 return ""
         return str(sr.get(f"{prefix}_source", "") or prefix.replace("_", " ").title()).strip() or prefix.replace("_", " ").title()
 
+    def _eradication_timed_effect_source(self, unit, *, prefix: str, game=None) -> str:
+        if not self.is_eradication_cohort():
+            return ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return ""
+        gm = game
+        if gm is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            gm = getattr(owner, "game", None) if owner is not None else None
+        if gm is not None:
+            expected_phase = self._normalize_phase_key(str(sr.get(f"{prefix}_expires_phase", "") or ""))
+            if expected_phase:
+                phase_name = self._normalize_phase_key(str(getattr(getattr(gm, "phase", None), "name", "") or ""))
+                if phase_name and phase_name != expected_phase:
+                    return ""
+            owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+            current_player = getattr(gm, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if not expected_phase and owner_id and current_owner_id and owner_id != current_owner_id:
+                return ""
+            try:
+                turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            try:
+                current_turn = int(getattr(gm, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if turn and current_turn and turn != current_turn:
+                return ""
+        return str(sr.get(f"{prefix}_source", "") or prefix.replace("_", " ").title()).strip() or prefix.replace("_", " ").title()
+
     def _haloscreed_clear_neural_overload_effect(self, unit) -> None:
         root = self._attached_root(unit)
         if root is None:
@@ -3020,6 +3057,63 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._unit_has_halo_override_keyword(unit):
             return False, ""
         return True, source_name
+
+    def eradication_unrelenting_aggression_can_shoot_after_fall_back(self, unit, *, game=None) -> bool:
+        return bool(
+            self._eradication_timed_effect_source(
+                unit,
+                prefix="eradication_unrelenting_aggression",
+                game=game,
+            )
+        )
+
+    def eradication_unrelenting_aggression_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        source_name = self._eradication_timed_effect_source(
+            unit,
+            prefix="eradication_unrelenting_aggression",
+            game=game,
+        )
+        if not source_name:
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        return bool(self._unit_has_keyword(root, self._SKITARII_KEYWORD))
+
+    def eradication_threat_cogitation_targeters_monster_vehicle_reroll_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict[str, object] | None:
+        if not self.is_eradication_cohort() or attacker_model is None:
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        source_name = self._eradication_timed_effect_source(
+            attacker_unit,
+            prefix="eradication_threat_cogitation_targeters",
+            game=game,
+        )
+        if not source_name:
+            return None
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return None
+        if not self._unit_is_on_battlefield_or_embarked(attacker_root):
+            return None
+        if not self._unit_has_keyword(attacker_root, self._SKITARII_KEYWORD):
+            return None
+        if not self._unit_has_keyword(attacker_root, self._VEHICLE_KEYWORD):
+            return None
+        return {
+            "reroll_hit": False,
+            "reroll_wound": False,
+            "reroll_damage": True,
+            "attack_type": "ranged",
+            "requires_shooting_phase": True,
+            "requires_fight_phase": False,
+            "source": str(source_name or "THREAT-COGITATION TARGETERS"),
+        }
 
     def haloscreed_transoracular_halo_override_applies(self, unit) -> bool:
         root = self._attached_root(unit)

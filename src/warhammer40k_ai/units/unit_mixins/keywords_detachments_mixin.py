@@ -15011,73 +15011,112 @@ class KeywordsDetachmentsMixin:
         if model is None:
             return None
         cache_key = f"monster_vehicle_reroll_rule:{get_entity_id(model)}"
-        if cache_key in getattr(self, "_ability_cache", {}):
-            return self._ability_cache[cache_key]
-
-        rule = None
-        try:
-            for name, desc in self._iter_ability_entries_for_rules(model=model):
-                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
-                if not text:
-                    continue
-                low = text.lower().replace("\u2019", "'")
-                attack_type = "any"
-                if "ranged attack" in low:
-                    attack_type = "ranged"
-                elif "melee attack" in low:
-                    attack_type = "melee"
-                else:
-                    continue
-                if "monster" not in low or "vehicle" not in low:
-                    continue
-                if "closest" in low:
-                    continue
-                if attack_type == "ranged":
-                    model_attack_phrase = bool(
-                        ("each time a model in this unit makes a ranged attack" in low)
-                        or ("each time a ranged attack made by a model in this unit" in low)
-                        or ("each time this model makes a ranged attack" in low)
-                        or ("each time a ranged attack made by this model" in low)
-                    )
-                else:
-                    model_attack_phrase = bool(
-                        ("each time a model in this unit makes a melee attack" in low)
-                        or ("each time a melee attack made by a model in this unit" in low)
-                        or ("each time this model makes a melee attack" in low)
-                        or ("each time a melee attack made by this model" in low)
-                    )
-                if not model_attack_phrase:
-                    continue
-                if not re.search(
-                    r"(?:targets?|allocated to) (?:an? )?(?:enemy )?monster or vehicle (?:unit|model)",
-                    low,
-                ):
-                    continue
-                if ("re-roll" not in low) and ("reroll" not in low):
-                    continue
-                allow_hit = bool(re.search(r"re-?roll the hit roll", low))
-                allow_wound = bool(re.search(r"re-?roll the wound roll", low))
-                allow_damage = bool(re.search(r"re-?roll the damage roll", low))
-                if not (allow_hit or allow_wound or allow_damage):
-                    continue
-                source = str(name or "Monster/Vehicle rerolls").strip() or "Monster/Vehicle rerolls"
-                rule = {
-                    "reroll_hit": bool(allow_hit),
-                    "reroll_wound": bool(allow_wound),
-                    "reroll_damage": bool(allow_damage),
-                    "attack_type": str(attack_type or "any"),
-                    "requires_shooting_phase": ("shooting phase" in low),
-                    "requires_fight_phase": ("fight phase" in low),
-                    "source": source,
-                }
-                break
-        except Exception:
+        rule = getattr(self, "_ability_cache", {}).get(cache_key)
+        if cache_key not in getattr(self, "_ability_cache", {}):
             rule = None
+            try:
+                for name, desc in self._iter_ability_entries_for_rules(model=model):
+                    text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                    if not text:
+                        continue
+                    low = text.lower().replace("\u2019", "'")
+                    attack_type = "any"
+                    if "ranged attack" in low:
+                        attack_type = "ranged"
+                    elif "melee attack" in low:
+                        attack_type = "melee"
+                    else:
+                        continue
+                    if "monster" not in low or "vehicle" not in low:
+                        continue
+                    if "closest" in low:
+                        continue
+                    if attack_type == "ranged":
+                        model_attack_phrase = bool(
+                            ("each time a model in this unit makes a ranged attack" in low)
+                            or ("each time a ranged attack made by a model in this unit" in low)
+                            or ("each time this model makes a ranged attack" in low)
+                            or ("each time a ranged attack made by this model" in low)
+                        )
+                    else:
+                        model_attack_phrase = bool(
+                            ("each time a model in this unit makes a melee attack" in low)
+                            or ("each time a melee attack made by a model in this unit" in low)
+                            or ("each time this model makes a melee attack" in low)
+                            or ("each time a melee attack made by this model" in low)
+                        )
+                    if not model_attack_phrase:
+                        continue
+                    if not re.search(
+                        r"(?:targets?|allocated to) (?:an? )?(?:enemy )?monster or vehicle (?:unit|model)",
+                        low,
+                    ):
+                        continue
+                    if ("re-roll" not in low) and ("reroll" not in low):
+                        continue
+                    allow_hit = bool(re.search(r"re-?roll the hit roll", low))
+                    allow_wound = bool(re.search(r"re-?roll the wound roll", low))
+                    allow_damage = bool(re.search(r"re-?roll the damage roll", low))
+                    if not (allow_hit or allow_wound or allow_damage):
+                        continue
+                    source = str(name or "Monster/Vehicle rerolls").strip() or "Monster/Vehicle rerolls"
+                    rule = {
+                        "reroll_hit": bool(allow_hit),
+                        "reroll_wound": bool(allow_wound),
+                        "reroll_damage": bool(allow_damage),
+                        "attack_type": str(attack_type or "any"),
+                        "requires_shooting_phase": ("shooting phase" in low),
+                        "requires_fight_phase": ("fight phase" in low),
+                        "source": source,
+                    }
+                    break
+            except Exception:
+                rule = None
 
-        if not hasattr(self, "_ability_cache"):
-            self._ability_cache = {}
-        self._ability_cache[cache_key] = rule
-        return rule
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache[cache_key] = rule
+
+        dynamic_rule = None
+        try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        except Exception:
+            army = None
+        mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        dynamic_rule_fn = (
+            getattr(mgr, "eradication_threat_cogitation_targeters_monster_vehicle_reroll_rule", None)
+            if mgr is not None
+            else None
+        )
+        if callable(dynamic_rule_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            dynamic_rule = dynamic_rule_fn(model, game=game)
+
+        if not isinstance(dynamic_rule, dict):
+            return rule
+        if not isinstance(rule, dict):
+            return dict(dynamic_rule)
+
+        merged = dict(rule)
+        for key in ("reroll_hit", "reroll_wound", "reroll_damage", "requires_shooting_phase", "requires_fight_phase"):
+            merged[key] = bool(rule.get(key, False)) or bool(dynamic_rule.get(key, False))
+        attack_types = {
+            str(rule.get("attack_type", "any") or "any").strip().lower(),
+            str(dynamic_rule.get("attack_type", "any") or "any").strip().lower(),
+        }
+        if "any" in attack_types:
+            merged["attack_type"] = "any"
+        elif len(attack_types) == 1:
+            merged["attack_type"] = next(iter(attack_types))
+        else:
+            merged["attack_type"] = "any"
+        sources = [
+            str(value or "").strip()
+            for value in (rule.get("source", ""), dynamic_rule.get("source", ""))
+            if str(value or "").strip()
+        ]
+        merged["source"] = "; ".join(dict.fromkeys(sources)) if sources else "Monster/Vehicle rerolls"
+        return merged
 
     def get_model_target_keyword_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """

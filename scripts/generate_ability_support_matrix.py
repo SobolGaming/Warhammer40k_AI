@@ -57,9 +57,47 @@ WARGEAR_KEYWORD_SUPPORT_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[str, str]
 DETACHMENT_ABILITY_IDS: set[str] = set()
 
 
+def _normalize_stratagem_rows(rows: Any) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    normalized: list[dict[str, Any]] = []
+    idx = 0
+    while idx < len(rows):
+        row = rows[idx]
+        if not isinstance(row, dict):
+            normalized.append(row)
+            idx += 1
+            continue
+        name = _norm(str(row.get("name", "") or ""))
+        stratagem_id = str(row.get("id", "") or "").strip()
+        if name == _norm("THREAT-COGITATION TARGETERS") and stratagem_id == "000010748005" and idx + 1 < len(rows):
+            continuation = rows[idx + 1]
+            if isinstance(continuation, dict) and str(continuation.get("type", "") or "").strip() == "Eradication Cohort":
+                merged = dict(row)
+                legend_parts = [
+                    str(row.get("legend", "") or "").strip(),
+                    str(continuation.get("faction_id", "") or "").strip(),
+                ]
+                merged["legend"] = " ".join(part for part in legend_parts if part).strip()
+                merged["turn"] = continuation.get("name")
+                merged["phase"] = continuation.get("id")
+                merged["detachment"] = continuation.get("type")
+                merged["detachment_id"] = continuation.get("cp_cost")
+                merged["description"] = continuation.get("legend")
+                normalized.append(merged)
+                idx += 2
+                continue
+        normalized.append(row)
+        idx += 1
+    return normalized
+
+
 def _read_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    if os.path.basename(path) == "Stratagems.json":
+        return _normalize_stratagem_rows(data)
+    return data
 
 
 def _norm(text: str) -> str:
@@ -20329,6 +20367,12 @@ def _stratagem_support(
     name_u = _canon_stratagem_name(name)
     det_u = _norm(detachment_name).upper()
     notes_by_id = {
+        "000010748002": "Fight phase: selected ADEPTUS MECHANICUS unit that has not been selected to fight gains [LANCE] on melee weapons until end of phase.",
+        "000010748003": "Your Movement phase reaction after an ADEPTUS MECHANICUS unit Falls Back: that unit can shoot later this turn, and SKITARII units can also declare a charge.",
+        "000010748004": "Your Shooting phase: selected SKITARII unit that has not been selected to shoot queues a deterministic choice between [SUSTAINED HITS 1], [LETHAL HITS], or both plus [HAZARDOUS] for its ranged weapons until end of phase.",
+        "000010748005": "Your Shooting phase: selected SKITARII VEHICLE unit that has not been selected to shoot can re-roll ranged Damage rolls against MONSTER and VEHICLE targets until end of phase.",
+        "000010748006": "Your Charge phase, just after a SICARIAN unit declares a charge: until end of phase, when it ends a Charge move, select one engaged enemy and roll one D6 for each model in the unit within Engagement Range; each 4+ inflicts 1 mortal wound.",
+        "000010748007": "Opponent Shooting phase reaction after an enemy unit has shot: selected SKITARII INFANTRY unit that lost one or more models to that enemy can make a reactive shooting attack only into that attacker if it remains an eligible target.",
         "000008931002": "Any phase reaction after a friendly ADEPTUS CUSTODES CHARACTER unit destroys your current Assemblage of Might target: select one enemy unit on the battlefield; friendly ADEPTUS CUSTODES CHARACTER models gain +1 to wound against it until your next Command phase, and gain 1CP if the destroyed unit was a CHARACTER unit.",
         "000008931003": "Any phase reaction after your ADEPTUS CUSTODES WARLORD uses a once-per-battle datasheet or Enhancement ability: that model gains one additional use of that same ability for a later phase this battle.",
         "000008931004": "Opponent Shooting phase or the Fight phase reaction after an enemy selects targets: selected ADEPTUS CUSTODES CHARACTER unit gains Feel No Pain 4+ for its CHARACTER models until end of phase.",
@@ -21204,6 +21248,15 @@ def _stratagem_support(
             return notes[stratagem_id]
         return notes.get(name_u, default)
 
+    if stratagem_id in {
+        "000010748002",
+        "000010748003",
+        "000010748004",
+        "000010748005",
+        "000010748006",
+        "000010748007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
     if stratagem_id in {
         "000010309002",
         "000010309003",

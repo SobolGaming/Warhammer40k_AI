@@ -47,6 +47,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSIVE MOBILITY",
     "AGGRESSIVE IMPULSE",
     "AGGRESSOR IMPERATIVE",
+    "ANALYTIC REPRISALS",
     "ANALYTICAL DIVINATION",
     "AUTO-ORACULAR RETRIEVAL",
     "AUGMENTED TARGETING",
@@ -127,18 +128,23 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LUMINESCENT BLESSING",
     "MERCILESS FUSILLADE",
     "NEURAL OVERLOAD",
+    "PRECISION ONSLAUGHT",
     "PUNISHMENT INESCAPABLE",
     "PROGRAMMED WITHDRAWAL",
     "RELENTLESS PERSECUTION",
+    "SERVO-DRIVEN CHARGE",
     "SHROUD PROTOCOLS",
     "SHIELD OF HONOUR",
     "GUIDED RETREAT",
     "TALONED PINCER",
     "TALONS INTERLOCKED",
     "TARGETING OVERRIDE",
+    "THREAT-COGITATION TARGETERS",
     "STAND TO THE END",
     "TRIBUTE OF EMPHATIC VENERATION",
     "TRANSCENDENT COGITATION",
+    "UNRELENTING AGGRESSION",
+    "UNSHACKLED WRATH",
     "UNYIELDING MIGHT",
     "UNSTOPPABLE",
     "VERSE OF VENGEANCE",
@@ -1043,6 +1049,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNYIELDING AGGRESSION",
     "VENGEANCE FLARE",
     "WALL OF STEEL",
+    "ANALYTIC REPRISALS",
     "GRIM RETRIBUTION",
     "HAIL OF VENGEANCE",
     "INTRACTABLE",
@@ -2501,6 +2508,7 @@ class StratagemManager(
             "RAPID FEINT",
             "HARRYING HOUNDS",
             "THRONEGHEIST FURY",
+            "UNRELENTING AGGRESSION",
             "UNSTOPPABLE WARRIOR",
             "DUTY UNENDING",
             "GRIND THEM UNDERFOOT",
@@ -2523,6 +2531,7 @@ class StratagemManager(
             "FORTRESS OF INTIMIDATION",
             "HASTY EXTRACTION",
             "PHOTON GRENADES",
+            "PRECISION ONSLAUGHT",
             "REACTIVE SAFEGUARD",
             "SHADE PATH",
             "TANGLEFOOT GRENADES",
@@ -2674,6 +2683,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "HAIL OF VENGEANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
+        if "ANALYTIC REPRISALS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_adeptus_mechanicus)
         if "POWER OF THE MACHINE SPIRIT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
         if "GRIM RETRIBUTION" in names:
@@ -10488,6 +10499,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_eradication_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_imperial_agents_ordo_hereticus_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -13915,6 +13930,7 @@ class StratagemManager(
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
         self._queue_haloscreed_guided_retreat_reactions(unit=unit, action=action)
         self._queue_haloscreed_analytical_divination_reactions(unit=unit, action=action)
+        self._queue_eradication_unrelenting_aggression_reactions(unit=unit, action=action)
         self._queue_recon_draw_them_out_reactions(unit=unit, action=action)
         self._queue_genestealer_cults_outlander_move_end_reactions(unit=unit, action=action)
         self._queue_brotherhood_strike_move_end_reactions(unit=unit, action=action)
@@ -13966,6 +13982,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_tau_retaliation_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_eradication_precision_onslaught_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -14891,6 +14911,20 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_adeptus_mechanicus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ):
+        try:
+            self._queue_eradication_analytic_reprisals_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_tau_pulse_onslaught(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_tau_montka_shooting_resolved_reactions(
@@ -15408,6 +15442,13 @@ class StratagemManager(
             raise
         try:
             self._queue_skitarii_hunter_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._capture_eradication_analytic_reprisals_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

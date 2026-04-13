@@ -20439,6 +20439,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(guided_retreat_fn(self, game=game)):
                     return True
+            unrelenting_aggression_fn = (
+                getattr(mgr, "eradication_unrelenting_aggression_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(unrelenting_aggression_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(unrelenting_aggression_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()
@@ -21033,6 +21042,25 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            guided_retreat_fn = getattr(mgr, "haloscreed_guided_retreat_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(guided_retreat_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(guided_retreat_fn(self, game=game)):
+                    return True
+            unrelenting_aggression_fn = (
+                getattr(mgr, "eradication_unrelenting_aggression_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(unrelenting_aggression_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(unrelenting_aggression_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
             apply_fn = (
                 getattr(mgr, "skitarii_hunter_expedited_purge_protocol_can_charge_after_advance", None)
                 if mgr is not None
@@ -21605,6 +21633,15 @@ class ActionsMovementMixin:
             if callable(guided_retreat_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(guided_retreat_fn(self, game=game)):
+                    return True
+            unrelenting_aggression_fn = (
+                getattr(mgr, "eradication_unrelenting_aggression_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(unrelenting_aggression_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(unrelenting_aggression_fn(self, game=game)):
                     return True
         except Exception:
             pass

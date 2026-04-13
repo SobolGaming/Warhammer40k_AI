@@ -54,6 +54,11 @@ class AdeptusMechanicusStratagemMixin:
         checker = getattr(mgr, "is_haloscreed_battle_clade", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_eradication_cohort(self) -> bool:
+        mgr = self._get_adeptus_mechanicus_mgr()
+        checker = getattr(mgr, "is_eradication_cohort", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_skitarii_hunter_cohort(self) -> bool:
         mgr = self._get_adeptus_mechanicus_mgr()
         checker = getattr(mgr, "is_skitarii_hunter_cohort", None) if mgr is not None else None
@@ -284,6 +289,123 @@ class AdeptusMechanicusStratagemMixin:
             if models:
                 return models
         return list(getattr(unit, "models", []) or [])
+
+    def _admech_alive_model_count(self, unit: Any) -> int:
+        count = 0
+        for model in self._admech_unit_models(unit):
+            alive_attr = getattr(model, "is_alive", False)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                count += 1
+        return count
+
+    def _admech_unit_has_weapon_type(self, unit: Any, attack_type: str) -> bool:
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        attack_type_key = str(attack_type or "").strip().lower()
+        for model in self._admech_unit_models(root):
+            alive_attr = getattr(model, "is_alive", False)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                checker = getattr(wargear, "is_ranged", None) if attack_type_key == "ranged" else getattr(wargear, "is_melee", None)
+                if callable(checker) and bool(checker()):
+                    return True
+        return False
+
+    def _admech_submit_decision_request(self, request: Any) -> bool:
+        if request is None or self.game is None:
+            return False
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def _admech_pending_choose_quarry_request(self, *, ability: str, **match_context: Any) -> bool:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != str(DECISION_CHOOSE_QUARRY):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability or ""):
+                continue
+            matches = True
+            for key, value in dict(match_context or {}).items():
+                if isinstance(value, (list, tuple, set)):
+                    expected = [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+                    current = [
+                        str(item or "").strip()
+                        for item in list(ctx.get(key, []) or [])
+                        if str(item or "").strip()
+                    ]
+                    if current != expected:
+                        matches = False
+                        break
+                    continue
+                if str(ctx.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+    @staticmethod
+    def _eradication_unshackled_wrath_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "SUSTAINED_HITS_1", "label": "[SUSTAINED HITS 1]"},
+            {"choice_key": "LETHAL_HITS", "label": "[LETHAL HITS]"},
+            {"choice_key": "OVERDRIVE", "label": "[SUSTAINED HITS 1], [LETHAL HITS], [HAZARDOUS]"},
+        ]
+
+    @classmethod
+    def _eradication_unshackled_wrath_choice_key(cls, choice: Any) -> str:
+        if isinstance(choice, dict):
+            choice = choice.get("choice_key") or choice.get("choice") or choice.get("label")
+        text = str(choice or "").strip().upper()
+        text = text.replace("[", "").replace("]", "")
+        text = text.replace("-", "_").replace(" ", "_")
+        text = text.replace("__", "_")
+        if text in {"SUSTAINED_HITS", "SUSTAINED_HITS_1", "SUSTAINED_HITS1"}:
+            return "SUSTAINED_HITS_1"
+        if text == "LETHAL_HITS":
+            return "LETHAL_HITS"
+        if text in {"OVERDRIVE", "BOTH", "SUSTAINED_HITS_1_LETHAL_HITS_HAZARDOUS"}:
+            return "OVERDRIVE"
+        return ""
+
+    @classmethod
+    def _eradication_unshackled_wrath_choice_label(cls, choice_key: Any) -> str:
+        resolved = cls._eradication_unshackled_wrath_choice_key(choice_key)
+        labels = {
+            "SUSTAINED_HITS_1": "[SUSTAINED HITS 1]",
+            "LETHAL_HITS": "[LETHAL HITS]",
+            "OVERDRIVE": "[SUSTAINED HITS 1], [LETHAL HITS], [HAZARDOUS]",
+        }
+        return labels.get(resolved, str(choice_key or "").strip() or "Choice")
+
+    @classmethod
+    def _eradication_unshackled_wrath_choice_keywords(cls, choice_key: Any) -> list[str]:
+        resolved = cls._eradication_unshackled_wrath_choice_key(choice_key)
+        if resolved == "SUSTAINED_HITS_1":
+            return ["SUSTAINED HITS 1"]
+        if resolved == "LETHAL_HITS":
+            return ["LETHAL HITS"]
+        if resolved == "OVERDRIVE":
+            return ["SUSTAINED HITS 1", "LETHAL HITS", "HAZARDOUS"]
+        return []
 
     def _admech_distance_between_units(self, first: Any, second: Any) -> float | None:
         game_map = getattr(self.game, "map", None) if self.game is not None else None
@@ -652,6 +774,100 @@ class AdeptusMechanicusStratagemMixin:
         if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
             return []
         return [root]
+
+    def _eradication_precision_onslaught_candidates(self, *, unit: Any = None, action: str = "") -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key not in {"", "charge", "charge_move"}:
+            return []
+        root = self._admech_root(unit)
+        if root is None:
+            return []
+        if not self._admech_on_battlefield(root) or not self._admech_owned_by_player(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)) or not self._is_adeptus_mechanicus_unit(root):
+            return []
+        if not self._admech_has_any_keyword(root, "SICARIAN"):
+            return []
+        return [root]
+
+    def _eradication_unrelenting_aggression_candidates(self, *, unit: Any = None, action: str = "") -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if action_key != "fall_back":
+            return []
+        root = self._admech_root(unit)
+        if root is None:
+            return []
+        if not self._admech_on_battlefield(root) or not self._admech_owned_by_player(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)) or not self._is_adeptus_mechanicus_unit(root):
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return []
+        return [root]
+
+    def _eradication_unshackled_wrath_candidates(self) -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        return [
+            unit
+            for unit in list(self._admech_battlefield_units(require_not_shot=True, require_skitarii=True) or [])
+            if self._admech_unit_has_weapon_type(unit, "ranged")
+        ]
+
+    def _eradication_servo_driven_charge_candidates(self) -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        return [
+            unit
+            for unit in list(self._admech_battlefield_units(require_not_fought=True) or [])
+            if self._admech_unit_has_weapon_type(unit, "melee")
+        ]
+
+    def _eradication_threat_cogitation_targeters_candidates(self) -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        return [
+            unit
+            for unit in list(self._admech_battlefield_units(require_not_shot=True, require_skitarii=True) or [])
+            if self._admech_has_any_keyword(unit, "VEHICLE") and self._admech_unit_has_weapon_type(unit, "ranged")
+        ]
+
+    def _eradication_analytic_reprisals_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: list[Any] | None = None,
+    ) -> list[Any]:
+        if not self._is_eradication_cohort():
+            return []
+        attacker_root = self._admech_root(attacking_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root) or not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_skitarii_unit(root) or not self._admech_has_any_keyword(root, "INFANTRY"):
+                continue
+            if not self._admech_unit_has_weapon_type(root, "ranged"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
 
     def _admech_enemy_battlefield_units(self) -> list[Any]:
         if self.game is None:
@@ -1104,6 +1320,501 @@ class AdeptusMechanicusStratagemMixin:
             payload["unit"] = affordable[0]
             payload["target_unit"] = affordable[0]
         self._queue_reaction(payload)
+
+    def _queue_eradication_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_eradication_cohort() or self.game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "SHOOTING_PHASE":
+            attr = "_eradication_analytic_reprisals_loss_snapshots"
+            snapshots = getattr(self, attr, None)
+            if isinstance(snapshots, dict):
+                snapshots.clear()
+
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            for stratagem_name, candidates in (
+                ("UNSHACKLED WRATH", self._eradication_unshackled_wrath_candidates()),
+                ("THREAT-COGITATION TARGETERS", self._eradication_threat_cogitation_targeters_candidates()),
+            ):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None:
+                    continue
+                if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                affordable = [
+                    candidate
+                    for candidate in list(candidates or [])
+                    if self._admech_effective_cp_cost(stratagem, target_unit=candidate)
+                    <= int(getattr(self.player, "command_points", 0) or 0)
+                ]
+                if not affordable:
+                    continue
+                already_queued = any(
+                    reaction.get("event") == "phase_start" and reaction.get("stratagem") == stratagem.name
+                    for reaction in list(getattr(self, "_pending_reactions", []) or [])
+                )
+                if already_queued:
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": affordable,
+                }
+                if len(affordable) == 1:
+                    payload["unit"] = affordable[0]
+                    payload["target_unit"] = affordable[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("SERVO-DRIVEN CHARGE")
+            if stratagem is None:
+                return
+            if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            candidates = [
+                candidate
+                for candidate in list(self._eradication_servo_driven_charge_candidates() or [])
+                if self._admech_effective_cp_cost(stratagem, target_unit=candidate)
+                <= int(getattr(self.player, "command_points", 0) or 0)
+            ]
+            if not candidates:
+                return
+            already_queued = any(
+                reaction.get("event") == "phase_start" and reaction.get("stratagem") == stratagem.name
+                for reaction in list(getattr(self, "_pending_reactions", []) or [])
+            )
+            if already_queued:
+                return
+            payload = {
+                "event": "phase_start",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _capture_eradication_analytic_reprisals_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_eradication_cohort():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._admech_root(attacking_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("ANALYTIC REPRISALS")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._admech_effective_cp_cost(stratagem):
+            return
+        attacker_id = self._admech_sort_key(attacker_root)
+        if not attacker_id:
+            return
+
+        snapshot_by_unit: dict[str, dict[str, Any]] = {}
+        for root in list(self._eradication_analytic_reprisals_candidates(attacking_unit=attacker_root, target_units=target_units) or []):
+            unit_id = self._admech_sort_key(root)
+            if not unit_id:
+                continue
+            models_before = self._admech_alive_model_count(root)
+            if models_before <= 0:
+                continue
+            snapshot_by_unit[unit_id] = {
+                "unit": root,
+                "models_before": models_before,
+            }
+        if not snapshot_by_unit:
+            return
+        attr = "_eradication_analytic_reprisals_loss_snapshots"
+        snapshots = getattr(self, attr, None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            setattr(self, attr, snapshots)
+        snapshots[attacker_id] = snapshot_by_unit
+
+    def _queue_eradication_analytic_reprisals_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        del hits_by_target
+        if not self._is_eradication_cohort():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._admech_root(attacker_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("ANALYTIC REPRISALS")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._admech_effective_cp_cost(stratagem):
+            return
+        attacker_id = self._admech_sort_key(attacker_root)
+        if not attacker_id:
+            return
+        attr = "_eradication_analytic_reprisals_loss_snapshots"
+        snapshots = getattr(self, attr, None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot_by_unit = dict(snapshots.pop(attacker_id, {}) or {})
+        if not snapshot_by_unit:
+            return
+        can_shoot_fn = getattr(getattr(self, "game", None), "_setup_reactive_can_shoot_target", None)
+        if not callable(can_shoot_fn):
+            return
+
+        candidates: list[Any] = []
+        for unit_id in sorted(snapshot_by_unit):
+            entry = snapshot_by_unit.get(unit_id)
+            if not isinstance(entry, dict):
+                continue
+            root = self._admech_root(entry.get("unit"))
+            if root is None:
+                continue
+            if not self._admech_on_battlefield(root) or not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            before = int(entry.get("models_before", 0) or 0)
+            if before <= 0 or self._admech_alive_model_count(root) >= before:
+                continue
+            if not can_shoot_fn(root, attacker_root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        already_queued = any(
+            reaction.get("event") == "unit_shooting_resolved"
+            and reaction.get("stratagem") == stratagem.name
+            and self._admech_root(reaction.get("attacking_unit")) is attacker_root
+            for reaction in list(getattr(self, "_pending_reactions", []) or [])
+        )
+        if already_queued:
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": sorted(candidates, key=self._admech_sort_key),
+        }
+        if len(payload["candidates"]) == 1:
+            payload["unit"] = payload["candidates"][0]
+            payload["target_unit"] = payload["candidates"][0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_eradication_unrelenting_aggression_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_eradication_cohort() or self.game is None:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = self.get_by_name("UNRELENTING AGGRESSION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._eradication_unrelenting_aggression_candidates(unit=unit, action=action)
+        if not candidates:
+            return
+        root = candidates[0]
+        if self._admech_effective_cp_cost(stratagem, target_unit=root) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        already_queued = any(
+            reaction.get("event") == "unit_move_ended"
+            and reaction.get("stratagem") == stratagem.name
+            and self._admech_root(reaction.get("unit")) is root
+            for reaction in list(getattr(self, "_pending_reactions", []) or [])
+        )
+        if already_queued:
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "fall_back",
+                "candidates": candidates,
+            }
+        )
+
+    def _queue_eradication_precision_onslaught_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: list[Any] | None = None,
+    ) -> None:
+        del target_units
+        if not self._is_eradication_cohort():
+            return
+        if self.game is None:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        root = self._admech_root(charging_unit)
+        if root is None or not self._admech_owned_by_player(root):
+            return
+        stratagem = self.get_by_name("PRECISION ONSLAUGHT")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._eradication_precision_onslaught_candidates(unit=root, action="charge")
+        if not candidates:
+            return
+        if self._admech_effective_cp_cost(stratagem, target_unit=root) > int(getattr(self.player, "command_points", 0) or 0):
+            return
+        already_queued = any(
+            reaction.get("event") == "charge_declared"
+            and reaction.get("stratagem") == stratagem.name
+            and self._admech_root(reaction.get("charging_unit") or reaction.get("unit")) is root
+            for reaction in list(getattr(self, "_pending_reactions", []) or [])
+        )
+        if already_queued:
+            return
+        self._queue_reaction(
+            {
+                "event": "charge_declared",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "charging_unit": root,
+                "candidates": candidates,
+            }
+        )
+
+    def _build_eradication_unshackled_wrath_choice_request(
+        self,
+        *,
+        unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._admech_root(unit)
+        if root is None:
+            return None
+        unit_id = self._admech_sort_key(root)
+        if not unit_id:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        turn_owner_id = str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or "")
+        phase_label = str(phase_name or "").strip() or "Shooting phase"
+        if self._admech_pending_choose_quarry_request(
+            ability="eradication_cohort_unshackled_wrath_choice",
+            player_id=player_id,
+            unit_id=unit_id,
+            phase_name=phase_label,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                str(option.get("label", "") or option.get("choice_key", "") or "Choice"),
+                payload={"choice_key": str(option.get("choice_key", "") or ""), "unit_id": unit_id},
+            )
+            for option in self._eradication_unshackled_wrath_options()
+        ]
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'UNSHACKLED WRATH'}: choose a weapon ability.",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "eradication_cohort_unshackled_wrath_choice",
+                "ability_name": str(stratagem_name or "").strip() or "UNSHACKLED WRATH",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "player_id": player_id,
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "attack_type": "ranged",
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_choice_keys": [
+                    str(option.get("choice_key", "") or "")
+                    for option in self._eradication_unshackled_wrath_options()
+                ],
+                "stratagem_name": str(stratagem_name or "").strip() or "UNSHACKLED WRATH",
+                "optional": False,
+            },
+        )
+
+    def validate_eradication_unshackled_wrath_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        del attack_type
+        del stratagem_name
+        root = self._admech_root(unit)
+        if root is None:
+            return False, "UNSHACKLED WRATH choice unit was not found."
+        if player is not None and player is not self.player:
+            return False, "UNSHACKLED WRATH choice must be resolved by the owning player."
+        if not self._is_eradication_cohort():
+            return False, "UNSHACKLED WRATH requires Eradication Cohort."
+        if not self._admech_owned_by_player(root):
+            return False, "UNSHACKLED WRATH target must belong to you."
+        if not self._admech_on_battlefield(root):
+            return False, "UNSHACKLED WRATH target must be on the battlefield."
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return False, "UNSHACKLED WRATH target can no longer be selected."
+        if root not in self._eradication_unshackled_wrath_candidates():
+            return False, "UNSHACKLED WRATH target is no longer eligible."
+        choice_key = self._eradication_unshackled_wrath_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        if not self._eradication_unshackled_wrath_choice_keywords(choice_key):
+            return False, "UNSHACKLED WRATH choice is invalid."
+        if game is not None:
+            current_phase = self._phase_key_from_name(str(getattr(getattr(game, "phase", None), "name", "") or ""))
+            expected_phase = self._phase_key_from_name(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "UNSHACKLED WRATH choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "UNSHACKLED WRATH choice is no longer in the same battle round."
+            current_owner_id = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            if turn_owner_id and current_owner_id and current_owner_id != str(turn_owner_id):
+                return False, "UNSHACKLED WRATH choice is no longer on the same player's turn."
+        return True, ""
+
+    def apply_eradication_unshackled_wrath_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> dict[str, Any] | None:
+        del game
+        del player
+        del attack_type
+        del turn
+        del turn_owner_id
+        root = self._admech_root(unit)
+        if root is None:
+            return None
+        choice_key = self._eradication_unshackled_wrath_choice_key(
+            payload.get("choice_key", "") or payload.get("choice", "")
+        )
+        return self._apply_eradication_unshackled_wrath_effect(
+            root,
+            choice_key=choice_key,
+            phase_name=phase_name,
+            stratagem_name=str(stratagem_name or payload.get("stratagem_name", "") or "UNSHACKLED WRATH"),
+        )
+
+    def _apply_eradication_unshackled_wrath_effect(
+        self,
+        unit: Any,
+        *,
+        choice_key: str,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> dict[str, Any] | None:
+        root = self._admech_root(unit)
+        if root is None:
+            return None
+        resolved_choice = self._eradication_unshackled_wrath_choice_key(choice_key)
+        keyword_bonuses = self._eradication_unshackled_wrath_choice_keywords(resolved_choice)
+        if not keyword_bonuses:
+            return None
+        root_id = self._admech_sort_key(root) or str(id(root))
+        phase_key = self._phase_key_from_name(phase_name)
+        for model in self._admech_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                continue
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = self._admech_sort_key(model) or str(id(model))
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"eradication_unshackled_wrath:{root_id}:{model_id}:{weapon_name}:{resolved_choice}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=list(keyword_bonuses),
+                    source=str(stratagem_name or "UNSHACKLED WRATH").strip() or "UNSHACKLED WRATH",
+                    expires_phase=phase_key,
+                    attack_type="ranged",
+                )
+        special_rules = dict(getattr(root, "special_rules", {}) or {})
+        special_rules["eradication_unshackled_wrath_active"] = True
+        special_rules["eradication_unshackled_wrath_choice_key"] = resolved_choice
+        special_rules["eradication_unshackled_wrath_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["eradication_unshackled_wrath_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["eradication_unshackled_wrath_expires_phase"] = phase_key
+        special_rules["eradication_unshackled_wrath_source"] = str(stratagem_name or "UNSHACKLED WRATH").strip() or "UNSHACKLED WRATH"
+        root.special_rules = special_rules
+        return {
+            "unit_id": self._admech_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "choice_key": resolved_choice,
+            "choice_label": self._eradication_unshackled_wrath_choice_label(resolved_choice),
+            "attack_type": "ranged",
+            "hazardous": "HAZARDOUS" in keyword_bonuses,
+            "stratagem_name": str(stratagem_name or "UNSHACKLED WRATH").strip() or "UNSHACKLED WRATH",
+        }
 
     def _queue_skitarii_hunter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_skitarii_hunter_cohort() or self.game is None or player is not self.player:
@@ -2180,6 +2891,8 @@ class AdeptusMechanicusStratagemMixin:
             updated = dict(sr)
             changed = False
             for prefix in (
+                "eradication_threat_cogitation_targeters",
+                "eradication_unshackled_wrath",
                 "haloscreed_eradication_protocols",
                 "haloscreed_targeting_override",
                 "haloscreed_aggressive_impulse",
@@ -2216,6 +2929,24 @@ class AdeptusMechanicusStratagemMixin:
                     else:
                         updated.pop("unit_reroll_desperate_escape_sources", None)
                         updated.pop("unit_reroll_desperate_escape_tests", None)
+                    changed = True
+            if phase_name == "FIGHT_PHASE" and player is self.player and bool(updated.get("eradication_unrelenting_aggression_active", False)):
+                for key in list(updated.keys()):
+                    if key == "eradication_unrelenting_aggression_active" or key.startswith("eradication_unrelenting_aggression_"):
+                        updated.pop(key, None)
+                changed = True
+            charge_specs = list(updated.get("charge_end_mortal_wounds", []) or [])
+            retained_specs = [
+                spec
+                for spec in charge_specs
+                if str((spec or {}).get("source_key", "") or "").strip().lower() != "eradication_precision_onslaught"
+                or phase_name != "FIGHT_PHASE"
+            ]
+            if len(retained_specs) != len(charge_specs):
+                if retained_specs:
+                    updated["charge_end_mortal_wounds"] = retained_specs
+                else:
+                    updated.pop("charge_end_mortal_wounds", None)
                 changed = True
             if changed:
                 root.special_rules = updated
@@ -2228,6 +2959,8 @@ class AdeptusMechanicusStratagemMixin:
 
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"):
+            name_u = name_u.replace(dash, "-")
         if name_u == "BALEFUL HALO":
             return self._use_rad_zone_baleful_halo(stratagem, **kwargs)
         if name_u == "BULWARK IMPERATIVE":
@@ -2248,6 +2981,8 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_skitarii_hunter_binharic_offence(stratagem, **kwargs)
         if name_u == "BIONIC ENDURANCE":
             return self._use_skitarii_hunter_bionic_endurance(stratagem, **kwargs)
+        if name_u == "ANALYTIC REPRISALS":
+            return self._use_eradication_analytic_reprisals(stratagem, **kwargs)
         if name_u == "ERADICATION PROTOCOLS":
             return self._use_haloscreed_eradication_protocols(stratagem, **kwargs)
         if name_u == "EXPEDITED PURGE PROTOCOL":
@@ -2284,20 +3019,30 @@ class AdeptusMechanicusStratagemMixin:
             return self._use_cohort_motive_imperative(stratagem, **kwargs)
         if name_u == "NEURAL OVERLOAD":
             return self._use_haloscreed_neural_overload(stratagem, **kwargs)
+        if name_u == "PRECISION ONSLAUGHT":
+            return self._use_eradication_precision_onslaught(stratagem, **kwargs)
         if name_u == "PROGRAMMED WITHDRAWAL":
             return self._use_skitarii_hunter_programmed_withdrawal(stratagem, **kwargs)
         if name_u == "PRIORITY RECLAMATION":
             return self._use_explorator_priority_reclamation(stratagem, **kwargs)
         if name_u == "REACTIVE SAFEGUARD":
             return self._use_explorator_reactive_safeguard(stratagem, **kwargs)
+        if name_u == "SERVO-DRIVEN CHARGE":
+            return self._use_eradication_servo_driven_charge(stratagem, **kwargs)
         if name_u == "SHROUD PROTOCOLS":
             return self._use_skitarii_hunter_shroud_protocols(stratagem, **kwargs)
         if name_u == "TARGETING OVERRIDE":
             return self._use_haloscreed_targeting_override(stratagem, **kwargs)
+        if name_u == "THREAT-COGITATION TARGETERS":
+            return self._use_eradication_threat_cogitation_targeters(stratagem, **kwargs)
         if name_u == "TRIBUTE OF EMPHATIC VENERATION":
             return self._use_data_psalm_tribute_of_emphatic_veneration(stratagem, **kwargs)
         if name_u == "TRANSCENDENT COGITATION":
             return self._use_cohort_transcendent_cogitation(stratagem, **kwargs)
+        if name_u == "UNRELENTING AGGRESSION":
+            return self._use_eradication_unrelenting_aggression(stratagem, **kwargs)
+        if name_u == "UNSHACKLED WRATH":
+            return self._use_eradication_unshackled_wrath(stratagem, **kwargs)
         if name_u == "VERSE OF VENGEANCE":
             return self._use_data_psalm_verse_of_vengeance(stratagem, **kwargs)
         return None
@@ -2975,6 +3720,398 @@ class AdeptusMechanicusStratagemMixin:
             "INFO: ANALYTICAL DIVINATION: %s can make a reactive Normal move of up to %d\".",
             getattr(primary, "name", "Unit"),
             int(max_distance),
+        )
+        return True
+
+    def _use_eradication_precision_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: PRECISION ONSLAUGHT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PRECISION ONSLAUGHT: not your Charge phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if unit is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                unit = self._admech_root(candidates[0])
+        if unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PRECISION ONSLAUGHT":
+                    continue
+                unit = reaction.get("charging_unit") or reaction.get("unit") or reaction.get("target_unit")
+                break
+        root = self._admech_root(unit)
+        candidates = self._eradication_precision_onslaught_candidates(unit=root, action="charge")
+        if root is None or root not in candidates:
+            logger.error("ERROR: PRECISION ONSLAUGHT: target must be the Sicarian unit that just declared a charge")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: PRECISION ONSLAUGHT: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "PRECISION ONSLAUGHT")
+        special_rules = dict(getattr(root, "special_rules", {}) or {})
+        specs = list(special_rules.get("charge_end_mortal_wounds", []) or [])
+        specs.append(
+            {
+                "name": source_name,
+                "kind": "per_model_4plus_1",
+                "engagement_only": True,
+                "source": source_name,
+                "source_key": "eradication_precision_onslaught",
+            }
+        )
+        special_rules["charge_end_mortal_wounds"] = specs
+        root.special_rules = special_rules
+        refresh_charge_end = getattr(root, "_refresh_charge_end_mortal_wounds_flags", None)
+        if callable(refresh_charge_end):
+            refresh_charge_end()
+            special_rules = dict(getattr(root, "special_rules", {}) or {})
+            extra_specs = [
+                spec
+                for spec in list(special_rules.get("charge_end_mortal_wounds", []) or [])
+                if str((spec or {}).get("source_key", "") or "").strip().lower() == "eradication_precision_onslaught"
+            ]
+            if not extra_specs:
+                specs = list(special_rules.get("charge_end_mortal_wounds", []) or [])
+                specs.append(
+                    {
+                        "name": source_name,
+                        "kind": "per_model_4plus_1",
+                        "engagement_only": True,
+                        "source": source_name,
+                        "source_key": "eradication_precision_onslaught",
+                    }
+                )
+                special_rules["charge_end_mortal_wounds"] = specs
+                root.special_rules = special_rules
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PRECISION ONSLAUGHT: %s gains charge-end mortal wounds against one engaged enemy unit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_eradication_analytic_reprisals(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ANALYTIC REPRISALS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ANALYTIC REPRISALS: not opponent's Shooting phase")
+            return False
+
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (attacker_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ANALYTIC REPRISALS":
+                    continue
+                if attacker_unit is None:
+                    attacker_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        attacker_root = self._admech_root(attacker_unit)
+        if attacker_root is None or self._admech_owned_by_player(attacker_root):
+            logger.error("ERROR: ANALYTIC REPRISALS: attacking unit must be an enemy unit")
+            return False
+
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if unit is None and len(candidates) == 1:
+            unit = self._admech_root(candidates[0])
+        root = self._admech_root(unit)
+        if root is None:
+            logger.error("ERROR: ANALYTIC REPRISALS: no friendly unit selected")
+            return False
+        if candidates and all(self._admech_sort_key(candidate) != self._admech_sort_key(root) for candidate in candidates):
+            logger.error("ERROR: ANALYTIC REPRISALS: target is not currently eligible")
+            return False
+        if not candidates:
+            logger.error("ERROR: ANALYTIC REPRISALS: missing lost-model trigger context")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: ANALYTIC REPRISALS: cannot be used in current state")
+            return False
+        setup_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None) if self.game is not None else None
+        if not callable(setup_can_shoot) or not bool(setup_can_shoot(root, attacker_root)):
+            logger.error("ERROR: ANALYTIC REPRISALS: target cannot shoot the attacking unit")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+
+        request = self.game._queue_setup_reactive_shooting_decision(
+            player=self.player,
+            unit=root,
+            target_unit=attacker_root,
+            source=str(getattr(stratagem, "name", "") or "ANALYTIC REPRISALS"),
+        ) if self.game is not None else None
+        if request is not None:
+            request.context["analytic_reprisals_flow"] = True
+            request.context["analytic_reprisals_source"] = str(getattr(stratagem, "name", "") or "ANALYTIC REPRISALS")
+            request.context["analytic_reprisals_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
+            request.context["analytic_reprisals_unit_id"] = str(get_entity_id(root) or "")
+
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANALYTIC REPRISALS: %s can make a reactive shooting attack against %s.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_eradication_unrelenting_aggression(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNRELENTING AGGRESSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNRELENTING AGGRESSION: not your Movement phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        action = str(kwargs.get("action") or "")
+        if (unit is None or not action) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNRELENTING AGGRESSION":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not action:
+                    action = str(reaction.get("action") or "")
+                break
+        candidates = self._eradication_unrelenting_aggression_candidates(unit=unit, action=action)
+        if not candidates:
+            logger.error("ERROR: UNRELENTING AGGRESSION: target must be the ADEPTUS MECHANICUS unit that just fell back")
+            return False
+        root = candidates[0]
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: UNRELENTING AGGRESSION: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "UNRELENTING AGGRESSION")
+        self._mark_haloscreed_turn_effect(
+            root,
+            prefix="eradication_unrelenting_aggression",
+            source_name=source_name,
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNRELENTING AGGRESSION: %s can shoot after Falling Back this turn%s.",
+            getattr(root, "name", "Unit"),
+            ", and can also declare a charge" if self._is_skitarii_unit(root) else "",
+        )
+        return True
+
+    def _use_eradication_unshackled_wrath(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: UNSHACKLED WRATH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNSHACKLED WRATH: not your Shooting phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = self._admech_root(candidates[0])
+        if unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNSHACKLED WRATH":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        root = self._admech_root(unit)
+        eligible = list(self._eradication_unshackled_wrath_candidates() or [])
+        if root is None or root not in eligible:
+            logger.error("ERROR: UNSHACKLED WRATH: target must be an eligible Skitarii unit that has not been selected to shoot")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: UNSHACKLED WRATH: cannot be used in current state")
+            return False
+        choice_key = self._eradication_unshackled_wrath_choice_key(
+            kwargs.get("choice_key", "") or kwargs.get("choice", "") or kwargs.get("selected_choice", "")
+        )
+        if choice_key:
+            valid, reason = self.validate_eradication_unshackled_wrath_choice(
+                root,
+                {"choice_key": choice_key, "stratagem_name": stratagem.name},
+                game=self.game,
+                player=self.player,
+                phase_name="Shooting phase",
+                attack_type="ranged",
+                turn=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                turn_owner_id=str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""),
+                stratagem_name=str(stratagem.name or "UNSHACKLED WRATH"),
+            )
+            if not valid:
+                logger.error("ERROR: UNSHACKLED WRATH: %s", reason)
+                return False
+            if not self._admech_spend_cp(stratagem, target_unit=root):
+                return False
+            if self._apply_eradication_unshackled_wrath_effect(
+                root,
+                choice_key=choice_key,
+                phase_name="Shooting phase",
+                stratagem_name=str(stratagem.name or "UNSHACKLED WRATH"),
+            ) is None:
+                return False
+            self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: UNSHACKLED WRATH: %s gains %s on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+                self._eradication_unshackled_wrath_choice_label(choice_key),
+            )
+            return True
+        choice_request = self._build_eradication_unshackled_wrath_choice_request(
+            unit=root,
+            phase_name="Shooting phase",
+            stratagem_name=str(getattr(stratagem, "name", "") or "UNSHACKLED WRATH"),
+        )
+        if choice_request is None:
+            logger.error("ERROR: UNSHACKLED WRATH: failed to build choice request")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._admech_submit_decision_request(choice_request):
+            logger.error("ERROR: UNSHACKLED WRATH: failed to queue choice request")
+            return False
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_eradication_servo_driven_charge(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SERVO-DRIVEN CHARGE: wrong phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = self._admech_root(candidates[0])
+        if unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SERVO-DRIVEN CHARGE":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        root = self._admech_root(unit)
+        eligible = list(self._eradication_servo_driven_charge_candidates() or [])
+        if root is None or root not in eligible:
+            logger.error("ERROR: SERVO-DRIVEN CHARGE: target must be an eligible ADEPTUS MECHANICUS unit that has not been selected to fight")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: SERVO-DRIVEN CHARGE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "SERVO-DRIVEN CHARGE")
+        phase_key = self._phase_key_from_name("Fight phase")
+        root_id = self._admech_sort_key(root) or str(id(root))
+        for model in self._admech_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                continue
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = self._admech_sort_key(model) or str(id(model))
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"eradication_servo_driven_charge:{root_id}:{model_id}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=["LANCE"],
+                    source=source_name,
+                    expires_phase=phase_key,
+                    attack_type="melee",
+                )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SERVO-DRIVEN CHARGE: %s gains [LANCE] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_eradication_threat_cogitation_targeters(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_eradication_cohort():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: THREAT-COGITATION TARGETERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THREAT-COGITATION TARGETERS: not your Shooting phase")
+            return False
+        unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = self._admech_root(candidates[0])
+        if unit is None and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THREAT-COGITATION TARGETERS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        root = self._admech_root(unit)
+        eligible = list(self._eradication_threat_cogitation_targeters_candidates() or [])
+        if root is None or root not in eligible:
+            logger.error("ERROR: THREAT-COGITATION TARGETERS: target must be an eligible Skitarii Vehicle unit that has not been selected to shoot")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: THREAT-COGITATION TARGETERS: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "THREAT-COGITATION TARGETERS")
+        self._mark_haloscreed_phase_effect(
+            root,
+            prefix="eradication_threat_cogitation_targeters",
+            source_name=source_name,
+        )
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THREAT-COGITATION TARGETERS: %s can re-roll ranged Damage rolls against MONSTER and VEHICLE targets this phase.",
+            getattr(root, "name", "Unit"),
         )
         return True
 
