@@ -6836,6 +6836,15 @@ class ActionsMovementMixin:
         get_parent_army = getattr(root, "get_parent_army", None)
         if callable(get_parent_army):
             army = get_parent_army()
+        admech_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        murderous_fn = getattr(admech_mgr, "murderous_imperative_reroll_hit_wound_ones", None) if admech_mgr is not None else None
+        if callable(murderous_fn):
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            reroll_hit_ones, _reroll_wound_ones, source = murderous_fn(root, game=game_local)
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Murderous Imperative").strip() or "Murderous Imperative"
+                reroll_hit_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
         mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         bonus_fn = getattr(mgr, "ruthless_discipline_reroll_hit_ones", None) if mgr is not None else None
         if callable(bonus_fn) and bonus_fn(root):
@@ -9129,6 +9138,14 @@ class ActionsMovementMixin:
         if callable(get_parent_army):
             army = get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        admech_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        murderous_fn = getattr(admech_mgr, "murderous_imperative_reroll_hit_wound_ones", None) if admech_mgr is not None else None
+        if callable(murderous_fn):
+            _reroll_hit_ones, reroll_wound_ones, source = murderous_fn(root, game=game)
+            if bool(reroll_wound_ones):
+                reroll_wound_values.add(1)
+                source_name = str(source or "Murderous Imperative").strip() or "Murderous Imperative"
+                reroll_wound_reasons.append(f"{source_name}: re-roll Wound rolls of 1")
         gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
         spiritus_fn = getattr(gk_mgr, "spiritus_machina_wound_reroll", None) if gk_mgr is not None else None
         if callable(spiritus_fn):

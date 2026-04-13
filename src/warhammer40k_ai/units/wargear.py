@@ -1900,6 +1900,16 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            range_bonus_fn = getattr(mgr, "eradication_omnicogitator_ranged_bonuses", None) if mgr is not None else None
+            if callable(range_bonus_fn):
+                range_bonus, _strength_bonus, _source = range_bonus_fn(attacker, weapon_profile=self)
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
             range_bonus_fn = getattr(mgr, "mortarions_hammer_bilemaw_blight_range_bonus", None) if mgr is not None else None
             if callable(range_bonus_fn):
@@ -18979,6 +18989,20 @@ class WargearProfile:
                     if s_bonus:
                         strength = strength + int(s_bonus)
                         source_name = str(source or "Close-range Eradication").strip() or "Close-range Eradication"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(adm_mgr, "eradication_omnicogitator_ranged_bonuses", None) if adm_mgr is not None else None
+                if callable(bonus_fn):
+                    _range_bonus, s_bonus, source = bonus_fn(attacker, weapon_profile=self)
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Omnicogitator").strip() or "Omnicogitator"
                         wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass

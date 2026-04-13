@@ -90,6 +90,38 @@ def _grant_enhancement_bearer_keyword(unit, bearer, keyword: str) -> bool:
     return changed
 
 
+def _grant_enhancement_unit_keyword(unit, keyword: str) -> bool:
+    if unit is None:
+        return False
+    token = str(keyword or "").strip().upper()
+    if not token:
+        return False
+    special_rules = getattr(unit, "special_rules", None)
+    if not isinstance(special_rules, dict):
+        special_rules = {}
+    current = [
+        str(value or "").strip()
+        for value in list(special_rules.get("ability_added_keywords", []) or [])
+        if str(value or "").strip()
+    ]
+    seen = {value.lower() for value in current}
+    if token.lower() in seen:
+        return False
+    current.append(token)
+    special_rules["ability_added_keywords"] = list(current)
+    unit.special_rules = special_rules
+    invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+    if callable(invalidate_cache):
+        invalidate_cache()
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    root = get_root() if callable(get_root) else unit
+    if root is not None and root is not unit:
+        root_invalidate_cache = getattr(root, "_invalidate_ability_cache", None)
+        if callable(root_invalidate_cache):
+            root_invalidate_cache()
+    return True
+
+
 def _current_unit_wounds(unit) -> int:
     total = 0
     for model in list(getattr(unit, "models", []) or []):
@@ -1515,6 +1547,16 @@ class Enhancement:
             )
         except Exception:
             name = ""
+        name_ascii = (
+            str(name or "")
+            .replace("\u2010", "-")
+            .replace("\u2011", "-")
+            .replace("\u2012", "-")
+            .replace("\u2013", "-")
+            .replace("\u2014", "-")
+            .replace("\xa0", " ")
+            .strip()
+        )
         try:
             enh_id = str(getattr(self, "id", "") or "").strip()
         except Exception:
@@ -2009,6 +2051,9 @@ class Enhancement:
         )
         is_haloscreed_battle_clade = bool(
             adm_mgr and getattr(adm_mgr, "is_haloscreed_battle_clade", lambda: False)()
+        )
+        is_eradication_cohort = bool(
+            adm_mgr and getattr(adm_mgr, "is_eradication_cohort", lambda: False)()
         )
         is_skitarii_hunter_cohort = bool(
             adm_mgr and getattr(adm_mgr, "is_skitarii_hunter_cohort", lambda: False)()
@@ -4216,6 +4261,86 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_haloscreed_inloaded_lethality_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010747002" or (name_ascii == "belicosa-class capacitor vanes" and is_eradication_cohort):
+            if not is_eradication_cohort:
+                return
+            unit.special_rules["enhancement_eradication_belicosa_capacitor_vanes"] = True
+            unit.special_rules["enhancement_eradication_belicosa_capacitor_vanes_source"] = (
+                "Belicosa-Class Capacitor Vanes"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eradication_belicosa_capacitor_vanes_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010747003" or (name == "martial signatum amplificator" and is_eradication_cohort):
+            if not is_eradication_cohort:
+                return
+            unit.special_rules["enhancement_eradication_martial_signatum_amplificator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            added_keyword = str(params.get("added_keyword", "SKITARII") or "SKITARII").strip().upper()
+            if not added_keyword:
+                added_keyword = "SKITARII"
+            _grant_enhancement_unit_keyword(unit, added_keyword)
+            unit.special_rules["enhancement_eradication_martial_signatum_added_keyword"] = added_keyword
+            unit.special_rules["enhancement_eradication_martial_signatum_source"] = "Martial Signatum Amplificator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eradication_martial_signatum_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010747004" or (name == "omnicogitator" and is_eradication_cohort):
+            if not is_eradication_cohort:
+                return
+            unit.special_rules["enhancement_eradication_omnicogitator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_bonus = int(params.get("range_bonus", 6) or 6)
+            except (TypeError, ValueError):
+                range_bonus = 6
+            try:
+                strength_bonus = int(params.get("strength_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                strength_bonus = 1
+            unit.special_rules["enhancement_eradication_omnicogitator_range_bonus"] = int(max(0, range_bonus))
+            unit.special_rules["enhancement_eradication_omnicogitator_strength_bonus"] = int(max(0, strength_bonus))
+            unit.special_rules["enhancement_eradication_omnicogitator_source"] = "Omnicogitator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eradication_omnicogitator_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010747005" or (name == "omnissiah's fury" and is_eradication_cohort):
+            if not is_eradication_cohort:
+                return
+            unit.special_rules["enhancement_eradication_omnissiahs_fury"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                attacks_bonus = int(params.get("melee_attacks_bonus", 2) or 2)
+            except (TypeError, ValueError):
+                attacks_bonus = 2
+            try:
+                ap_bonus = int(params.get("melee_ap_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                ap_bonus = 1
+            try:
+                damage_bonus = int(params.get("melee_damage_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                damage_bonus = 1
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, attacks_bonus))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + int(max(0, ap_bonus))
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + int(max(0, damage_bonus))
+            unit.special_rules["enhancement_eradication_omnissiahs_fury_source"] = "Omnissiah's Fury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eradication_omnissiahs_fury_bearer_model_id"] = bearer_id
 
         if name == "decoy targets" or enh_id == "000009757002":
             if not is_veiled_blade_elimination_force:

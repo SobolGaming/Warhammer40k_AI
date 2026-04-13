@@ -175,11 +175,23 @@ class DoctrinaImperativesManager:
             return False
         return bool(the_fires_of_mars_applies(unit))
 
+    def _eradication_belicosa_capacitor_vanes_applies(self, unit) -> bool:
+        if self.army is None or unit is None:
+            return False
+        adm_mgr = getattr(self.army, "adeptus_mechanicus_detachments", None)
+        if adm_mgr is None:
+            return False
+        checker = getattr(adm_mgr, "eradication_belicosa_capacitor_vanes_applies", None)
+        if not callable(checker):
+            return False
+        return bool(checker(unit))
+
     def get_active_imperative_keys_for_unit(self, unit, *, game=None) -> set[str]:
         active_keys: set[str] = set()
         game = self._resolve_game(unit=unit, game=game)
         if (
             self._haloscreed_cognitive_reinforcement_applies(unit)
+            or self._eradication_belicosa_capacitor_vanes_applies(unit)
             or self._skitarii_cantic_thrallnet_applies(unit, game=game)
             or self._transcendent_cogitation_applies(unit, game=game)
             or self._thulia_ghuld_fires_of_mars_applies(unit)

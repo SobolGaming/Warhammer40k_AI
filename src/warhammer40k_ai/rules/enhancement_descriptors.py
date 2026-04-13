@@ -2147,6 +2147,55 @@ _HALOSCREED_BATTLE_CLADE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HALOSCREED_BATTLE_CLADE_DESCRIPTORS.values()
 }
 
+_ERADICATION_COHORT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010747002": EnhancementToolDescriptor(
+        enhancement_id="000010747002",
+        name="Belicosa-Class Capacitor Vanes",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="treat_conqueror_and_protector_imperatives_as_active_for_bearer_unit",
+    ),
+    "000010747003": EnhancementToolDescriptor(
+        enhancement_id="000010747003",
+        name="Martial Signatum Amplificator",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_skitarii_keyword_to_bearer_unit",
+        effect_params={"added_keyword": "SKITARII"},
+    ),
+    "000010747004": EnhancementToolDescriptor(
+        enhancement_id="000010747004",
+        name="Omnicogitator",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="add_ranged_range_and_strength_to_bearer_unit",
+        effect_params={
+            "range_bonus": 6,
+            "strength_bonus": 1,
+        },
+    ),
+    "000010747005": EnhancementToolDescriptor(
+        enhancement_id="000010747005",
+        name="Omnissiah's Fury",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="add_melee_attacks_ap_and_damage_to_bearer_melee_weapons",
+        effect_params={
+            "melee_attacks_bonus": 2,
+            "melee_ap_bonus": 1,
+            "melee_damage_bonus": 1,
+        },
+    ),
+}
+
+_ERADICATION_COHORT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ERADICATION_COHORT_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -9710,6 +9759,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _HALOSCREED_BATTLE_CLADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ERADICATION_COHORT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10156,6 +10208,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
+        or _ERADICATION_COHORT_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _CHAOS_CULT_BY_NAME.get(key)

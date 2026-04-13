@@ -1232,6 +1232,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Armoured Wrath": (
             r"once per phase for each adeptus astartes unit in your army you can reroll one hit roll one wound roll or one damage roll made for a model in that unit",
         ),
+        "Murderous Imperative": (
+            r"each time a model in a skitarii unit from your army makes an attack",
+            r"if the protector imperative is active for that unit reroll a hit roll of \d+",
+            r"if the conqueror imperative is active for that unit reroll a wound roll of \d+",
+        ),
         "Heroes All": (
             r"each time an adeptus astartes unit from your army is selected to shoot or fight apply one of the following when resolving those attacks",
             r"if your saga is completed see below you can reroll one hit roll one wound roll and one damage roll",
@@ -3086,6 +3091,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Calculated Annihilation": (
             "Supported",
             "Hammer of Avernii: attacks by ADEPTUS ASTARTES models against the current Oath of Moment target can re-roll Wound rolls of 1.",
+        ),
+        "Murderous Imperative": (
+            "Supported",
+            "Eradication Cohort: SKITARII units re-roll Hit rolls of 1 while Protector Imperative is active for that unit and re-roll Wound rolls of 1 while Conqueror Imperative is active, including temporary effects that make both Imperatives active.",
         ),
         "Recalculating": (
             "Supported",
@@ -20091,6 +20100,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009745003": "Cognitive Reinforcement: the bearer's unit treats both Protector and Conqueror Imperatives as active (BS/WS, Heavy/Assault, AP, and defensive hit penalty clauses apply as eligible).",
         "000009745004": "Sanctified Ordnance: ranged weapons in the bearer's unit gain +6\" range, and Hazardous tests for that unit gain reroll support through deterministic reroll rules.",
         "000009745005": "Inloaded Lethality: the bearer gains +3 Attacks and +1 Damage for melee weapons.",
+        "000010747002": "Belicosa-Class Capacitor Vanes: the bearer's unit treats both Protector and Conqueror Imperatives as active.",
+        "000010747003": "Martial Signatum Amplificator: models in the bearer's unit gain the SKITARII keyword.",
+        "000010747004": "Omnicogitator: ranged weapons equipped by models in the bearer's unit gain +6\" range and +1 Strength.",
+        "000010747005": "Omnissiah's Fury: the bearer's melee weapons gain +2 Attacks, +1 AP, and +1 Damage.",
         "000008930002": "Blade Imperator: after Charge, select one enemy unit within Engagement Range of the bearer and roll one D6 (4+ => D3 mortal wounds); once per battle after charging, all enemy units within 6\" of the bearer take a Battle-shock test.",
         "000008930003": "Inspirational Exemplar: bearer Leadership is set to 5+; once per battle at the start of any phase, clear Battle-shock on one friendly ADEPTUS CUSTODES unit within 12\".",
         "000008930004": "Martial Philosopher: bearer unit can shoot and declare a charge after Falling Back; once per battle when an enemy ends a Normal/Advance/Fall Back move within 9\" and the bearer unit is not engaged, optional reactive Normal move up to 6\".",

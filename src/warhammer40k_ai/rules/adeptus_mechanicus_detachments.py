@@ -68,6 +68,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY = "data_psalm_autosermon_expires_round"
     _DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY = "data_psalm_autosermon_source_unit_id"
     _CULT_MECHANICUS_KEYWORD = "CULT MECHANICUS"
+    _SKITARII_KEYWORD = "SKITARII"
+    _ERADICATION_COHORT_NAME = "Eradication Cohort"
+    _ERADICATION_BELICOSA_SOURCE = "Belicosa-Class Capacitor Vanes"
+    _ERADICATION_MURDEROUS_SOURCE = "Murderous Imperative"
+    _ERADICATION_OMNICOGITATOR_SOURCE = "Omnicogitator"
 
     _RAD_BOMBARDMENT_ABILITY_KEY = "rad_bombardment"
     _RAD_BOMBARDMENT_CHOICE_KEY = "rad_bombardment_choice"
@@ -125,6 +130,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._SKITARII_HUNTER_COHORT_NAME)
+
+    def is_eradication_cohort(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._ERADICATION_COHORT_NAME)
 
     @staticmethod
     def _clear_prefixed_special_rules(sr: dict[str, object], prefix: str) -> None:
@@ -1117,6 +1127,29 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             game=game,
         )
         return sr is not None
+
+    def murderous_imperative_reroll_hit_wound_ones(self, unit, *, game=None) -> tuple[bool, bool, str]:
+        if not self.is_eradication_cohort():
+            return False, False, ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False, False, ""
+        if not self._unit_has_keyword(root, self._SKITARII_KEYWORD):
+            return False, False, ""
+        doctrina_mgr = getattr(self.army, "doctrina_imperatives", None) if self.army is not None else None
+        active_keys_fn = getattr(doctrina_mgr, "get_active_imperative_keys_for_unit", None) if doctrina_mgr is not None else None
+        if not callable(active_keys_fn):
+            return False, False, ""
+        active_keys = {
+            str(key or "").strip().upper()
+            for key in list(active_keys_fn(root, game=game) or [])
+            if str(key or "").strip()
+        }
+        reroll_hit_ones = "PROTECTOR" in active_keys
+        reroll_wound_ones = "CONQUEROR" in active_keys
+        if not reroll_hit_ones and not reroll_wound_ones:
+            return False, False, ""
+        return reroll_hit_ones, reroll_wound_ones, self._ERADICATION_MURDEROUS_SOURCE
 
     def _cleanup_expired_cohort_cybernetica_command_phase_effects(self, *, game=None) -> None:
         if not self.is_cohort_cybernetica() or self.army is None:
@@ -2216,6 +2249,48 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         )
         return sources
 
+    def _iter_eradication_enhancement_sources(self, enhancement_flag_key: str) -> list[tuple]:
+        if not self.is_eradication_cohort() or self.army is None:
+            return []
+        enhancement_key = str(enhancement_flag_key or "").strip()
+        if not enhancement_key:
+            return []
+        sources: list[tuple] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield_or_embarked(root):
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                special_rules = getattr(member, "special_rules", None)
+                if not isinstance(special_rules, dict) or not bool(special_rules.get(enhancement_key, False)):
+                    continue
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._is_model_alive(bearer):
+                    continue
+                member_id = self._entity_id(member) or str(id(member))
+                dedupe_key = (str(root_id), str(member_id))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                sources.append((str(root_id), root, member, special_rules, bearer))
+        sources.sort(
+            key=lambda item: (
+                str(item[0] or ""),
+                self._entity_id(item[2]) or str(id(item[2])),
+            )
+        )
+        return sources
+
     def _haloscreed_transoracular_root_ids(self) -> set[str]:
         root_ids: set[str] = set()
         for source_root_id, source_root, source_member, source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
@@ -2970,6 +3045,69 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             if str(source_root_id or "") == root_id:
                 return True
         return False
+
+    def eradication_belicosa_capacitor_vanes_applies(self, unit) -> bool:
+        if not self.is_eradication_cohort():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        root_id = str(self._entity_id(root) or "").strip()
+        if not root_id:
+            return False
+        for source_root_id, _source_root, _source_member, _source_sr, _bearer in self._iter_eradication_enhancement_sources(
+            "enhancement_eradication_belicosa_capacitor_vanes"
+        ):
+            if str(source_root_id or "") == root_id:
+                return True
+        return False
+
+    def eradication_omnicogitator_ranged_bonuses(self, attacker_model, *, weapon_profile=None) -> tuple[int, int, str]:
+        if not self.is_eradication_cohort():
+            return 0, 0, ""
+        if attacker_model is None:
+            return 0, 0, ""
+        if weapon_profile is not None and not self._weapon_is_attack_type(weapon_profile, "ranged"):
+            return 0, 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, 0, ""
+        if not self._unit_is_on_battlefield_or_embarked(attacker_root):
+            return 0, 0, ""
+        attacker_root_id = str(self._entity_id(attacker_root) or "").strip()
+        if not attacker_root_id:
+            return 0, 0, ""
+        best_range_bonus = 0
+        best_strength_bonus = 0
+        best_source = ""
+        for source_root_id, _source_root, _source_member, source_sr, _bearer in self._iter_eradication_enhancement_sources(
+            "enhancement_eradication_omnicogitator"
+        ):
+            if str(source_root_id or "") != attacker_root_id:
+                continue
+            try:
+                range_bonus = int(source_sr.get("enhancement_eradication_omnicogitator_range_bonus", 6) or 6)
+            except (TypeError, ValueError):
+                range_bonus = 6
+            try:
+                strength_bonus = int(source_sr.get("enhancement_eradication_omnicogitator_strength_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                strength_bonus = 1
+            range_bonus = int(max(0, range_bonus))
+            strength_bonus = int(max(0, strength_bonus))
+            if range_bonus <= 0 and strength_bonus <= 0:
+                continue
+            if (range_bonus + strength_bonus) > (best_range_bonus + best_strength_bonus):
+                best_range_bonus = int(range_bonus)
+                best_strength_bonus = int(strength_bonus)
+                best_source = str(
+                    source_sr.get("enhancement_eradication_omnicogitator_source", "")
+                    or self._ERADICATION_OMNICOGITATOR_SOURCE
+                ).strip() or self._ERADICATION_OMNICOGITATOR_SOURCE
+        if best_range_bonus <= 0 and best_strength_bonus <= 0:
+            return 0, 0, ""
+        return int(best_range_bonus), int(best_strength_bonus), str(best_source or self._ERADICATION_OMNICOGITATOR_SOURCE)
 
     def haloscreed_sanctified_ordnance_range_bonus(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
         if not self.is_haloscreed_battle_clade():
