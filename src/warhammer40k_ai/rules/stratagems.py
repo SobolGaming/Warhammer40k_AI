@@ -1060,6 +1060,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VOID HARDENED",
 }
 
+IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
+    "000010740002",  # Empyric Dislocation
+    "000010740003",  # Armour of Corruption
+}
+
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A DARK NETWORK",
@@ -1677,18 +1682,24 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
         return None
 
     target_text = _strip_html(target_html)
+    excluded_target_keywords: List[str] = []
+    exclusion_match = re.search(r"\(\s*excluding\s+([^)]+?)\s+units?\s*\)", target_text, flags=re.IGNORECASE)
+    if exclusion_match:
+        excluded_target_keywords = [
+            part.strip()
+            for part in re.split(r"\s*,\s*|\s+or\s+|\s+and\s+", exclusion_match.group(1), flags=re.IGNORECASE)
+            if part.strip()
+        ]
+        target_text = re.sub(r"\(\s*excluding\s+([^)]+?)\s+units?\s*\)", "", target_text, flags=re.IGNORECASE).strip()
     target_keywords = _extract_kwb_keywords(target_html)
     if not target_keywords:
-        try:
-            m = re.search(r"\bone\s+(.+?)\s+unit from your army", target_text, flags=re.IGNORECASE)
-        except Exception:
-            raise
+        m = re.search(r"\bone\s+(.+?)\s+unit from your army", target_text, flags=re.IGNORECASE)
         if m:
             kw_text = m.group(1).strip()
             if kw_text:
                 target_keywords = [
                     part.strip()
-                    for part in re.split(r"\s+or\s+|\s+and\s+", kw_text, flags=re.IGNORECASE)
+                    for part in re.split(r"\s*,\s*|\s+or\s+|\s+and\s+", kw_text, flags=re.IGNORECASE)
                     if part.strip()
                 ]
     replaced = target_text
@@ -1720,6 +1731,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
     rest = None
     for label, prefix in (
         ("phase", "until the end of the phase,"),
+        ("turn", "until the end of the turn,"),
         ("attacker", "until the attacking unit has finished making its attacks,"),
     ):
         if effect_text.startswith(prefix):
@@ -1761,6 +1773,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": 1,
             "attack_type": (m.group("atype") or "any"),
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
     m = wound_re.fullmatch(rest)
@@ -1773,6 +1786,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": 1,
             "attack_type": (m.group("atype") or "any"),
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
     if ap_re.fullmatch(rest):
@@ -1784,6 +1798,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": 1,
             "attack_type": "any",
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
     m = damage_re.fullmatch(rest)
@@ -1796,6 +1811,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": 1,
             "attack_type": (m.group("atype") or "any"),
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
     m = invuln_re.fullmatch(rest) or invuln_unit_re.fullmatch(rest)
@@ -1808,6 +1824,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": int(m.group("value")),
             "attack_type": "any",
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
     m = fnp_re.fullmatch(rest) or fnp_unit_re.fullmatch(rest)
@@ -1820,6 +1837,7 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
             "value": int(m.group("value")),
             "attack_type": "any",
             "target_keywords": list(target_keywords or []),
+            "excluded_target_keywords": list(excluded_target_keywords or []),
             "target_keyword_mode": mode,
         }
 
@@ -1986,6 +2004,8 @@ def defensive_reaction_note(spec: Dict[str, Any]) -> str:
     duration_desc = "until end of phase"
     if duration == "attacker":
         duration_desc = "until the attacking unit finishes its attacks"
+    elif duration == "turn":
+        duration_desc = "until end of turn"
 
     keywords = spec.get("target_keywords") or []
     if keywords:
@@ -3398,9 +3418,12 @@ class StratagemManager(
         if stratagem is None:
             return None
         name_u = (str(getattr(stratagem, "name", "") or "")).strip().upper()
-        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
-            return None
         key = str(getattr(stratagem, "id", "") or name_u)
+        if (
+            name_u in IMPLEMENTED_STRATAGEM_NAMES
+            and key not in IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE
+        ):
+            return None
         if key in self._defensive_reaction_cache:
             return self._defensive_reaction_cache[key]
         spec = parse_defensive_reaction_stratagem(stratagem.name or "", stratagem.description or "")
@@ -3534,6 +3557,9 @@ class StratagemManager(
                     return all(has_any_keyword(p) for p in parts)
             return False
 
+        excluded_keywords = list(spec.get("excluded_target_keywords") or [])
+        if excluded_keywords and any(_match_keyword(k) for k in excluded_keywords):
+            return False
         if mode == "any":
             return any(_match_keyword(k) for k in keywords)
         return all(_match_keyword(k) for k in keywords)
@@ -3892,6 +3918,15 @@ class StratagemManager(
 
     def _is_custom_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
+        if stratagem_id in {
+            "000010740002",
+            "000010740003",
+            "000010740004",
+            "000010740005",
+            "000010740006",
+            "000010740007",
+        }:
+            return bool(self._is_warpstrike_champions_detachment())
         if stratagem_id in {
             "000008973002",
             "000008973003",
@@ -10477,6 +10512,7 @@ class StratagemManager(
             self._queue_renegade_raiders_phase_start_reactions(player=player, phase=phase)
             self._queue_soulforged_phase_start_reactions(player=player, phase=phase)
             self._queue_veterans_phase_start_reactions(player=player, phase=phase)
+            self._queue_warpstrike_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

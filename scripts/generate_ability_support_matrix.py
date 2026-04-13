@@ -20431,6 +20431,12 @@ def _stratagem_support(
         "000010440007": "Opponent Shooting phase reaction after an enemy unit selects targets: selected LEAGUES OF VOTANN INFANTRY or MOUNTED target gains Stealth and Benefit of Cover against ranged attacks until end of phase.",
         "000010655002": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected EMPEROR'S CHILDREN unit imposes -1 to wound against attacks from that attacker while its Strength is greater than the target's Toughness until end of phase.",
         "000008961003": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
+        "000010740002": "Opponent Shooting phase or the Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 against that attacker until it finishes its attacks, and cannot be combined on the same unit in the same phase with Armour of Corruption.",
+        "000010740003": "Opponent Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit reduces incoming attack Damage by 1 for the rest of the phase, and cannot be combined on the same unit in the same phase with Empyric Dislocation.",
+        "000010740004": "Your Movement phase: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit can shoot and declare a charge after Advancing this turn.",
+        "000010740005": "Your Movement phase: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at phase end.",
+        "000010740006": "Your Shooting phase: select up to two HERETIC ASTARTES units that were set up using Deep Strike this turn and have not shot; selected units gain [IGNORES COVER] on ranged weapons until end of phase.",
+        "000010740007": "Your Charge phase: selected HERETIC ASTARTES unit that was set up using Deep Strike this turn and has not yet declared a charge gains +2 to Charge rolls when it includes the closest eligible enemy among its declared targets this phase.",
         "000010210003": "Your Command phase: selected THOUSAND SONS PSYKER unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at the end of a phase, and while you retain control it deals D3 mortal wounds on a 4+ to enemy units ending a Normal, Advance, Fall Back, or Charge move within its range.",
         "000010210004": "Movement phase reaction after one of your THOUSAND SONS VEHICLE units Falls Back while within 6\" of a friendly THOUSAND SONS PSYKER: selected unit can shoot and declare a charge this turn despite Falling Back.",
         "000010210005": "Your Command phase: selected THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER ignores modifiers to its characteristics, Weapon Skill, Ballistic Skill, and to its rolls or tests (excluding saving throws) until your next Command phase.",
@@ -22405,6 +22411,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected HERETIC ASTARTES non-MONSTER/non-VEHICLE unit that was hit can make a D6 reactive Normal move.",
+            name_u,
+        )
+    if stratagem_id == "000010740002":
+        return (
+            "Supported",
+            "Opponent Shooting phase or the Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 against that attacker until it finishes its attacks, and cannot be combined on the same unit in the same phase with Armour of Corruption.",
+            name_u,
+        )
+    if stratagem_id == "000010740003":
+        return (
+            "Supported",
+            "Opponent Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit reduces incoming attack Damage by 1 for the rest of the phase, and cannot be combined on the same unit in the same phase with Empyric Dislocation.",
+            name_u,
+        )
+    if stratagem_id == "000010740004":
+        return (
+            "Supported",
+            "Your Movement phase: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit can shoot and declare a charge after Advancing this turn.",
+            name_u,
+        )
+    if stratagem_id == "000010740005":
+        return (
+            "Supported",
+            "Your Movement phase: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at phase end.",
+            name_u,
+        )
+    if stratagem_id == "000010740006":
+        return (
+            "Supported",
+            "Your Shooting phase: select up to two HERETIC ASTARTES units that were set up using Deep Strike this turn and have not shot; selected units gain [IGNORES COVER] on ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010740007":
+        return (
+            "Supported",
+            "Your Charge phase: selected HERETIC ASTARTES unit that was set up using Deep Strike this turn and has not yet declared a charge gains +2 to Charge rolls when it includes the closest eligible enemy among its declared targets this phase.",
             name_u,
         )
     if stratagem_id == "000010642002":

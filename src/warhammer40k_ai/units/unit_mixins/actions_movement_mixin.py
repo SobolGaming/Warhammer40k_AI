@@ -14087,6 +14087,16 @@ class ActionsMovementMixin:
             bonus, source = raiders_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Reavers' Haste")))
+        warpstrike_bonus_fn = (
+            getattr(csm_mgr, "warpstrike_portal_of_spite_charge_roll_bonus", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(warpstrike_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = warpstrike_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Portal of Spite")))
         return modifiers
 
     def _charge_roll_target_keyword_specs(self) -> list[dict]:
@@ -20011,6 +20021,16 @@ class ActionsMovementMixin:
                 if bool(apply_fn(self, profile=profile, game=game)):
                     if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                         return True
+            warpstrike_apply_fn = (
+                getattr(mgr, "warpstrike_warp_flicker_can_shoot_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(warpstrike_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(warpstrike_apply_fn(self, profile=profile, game=game)):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
             veterans_apply_fn = getattr(mgr, "veterans_black_crusade_can_shoot_after_advance", None) if mgr is not None else None
             if callable(veterans_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -21129,6 +21149,15 @@ class ActionsMovementMixin:
             if callable(hurons_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(hurons_apply_fn(self, game=game)):
+                    return True
+            warpstrike_apply_fn = (
+                getattr(mgr, "warpstrike_warp_flicker_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(warpstrike_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(warpstrike_apply_fn(self, game=game)):
                     return True
             nightmare_apply_fn = (
                 getattr(mgr, "nightmare_hunt_malicious_surge_can_charge_after_advance", None)

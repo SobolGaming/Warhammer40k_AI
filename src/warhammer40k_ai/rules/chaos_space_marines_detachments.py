@@ -124,6 +124,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE = "Hardened Killers"
     _HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX = "hurons_marauders_reavers_flurry"
     _HURONS_MARAUDERS_REAVERS_FLURRY_SOURCE = "Reavers' Flurry"
+    _WARPSTRIKE_DEEP_STRIKE_SETUP_PREFIX = "warpstrike_deep_strike_setup"
+    _WARPSTRIKE_DEEP_STRIKE_SETUP_SOURCE = "Deep Strike"
+    _WARPSTRIKE_EMPYRIC_DISLOCATION_PREFIX = "warpstrike_empyric_dislocation"
+    _WARPSTRIKE_EMPYRIC_DISLOCATION_SOURCE = "Empyric Dislocation"
+    _WARPSTRIKE_ARMOUR_OF_CORRUPTION_PREFIX = "warpstrike_armour_of_corruption"
+    _WARPSTRIKE_ARMOUR_OF_CORRUPTION_SOURCE = "Armour of Corruption"
+    _WARPSTRIKE_WARP_FLICKER_PREFIX = "warpstrike_warp_flicker"
+    _WARPSTRIKE_WARP_FLICKER_SOURCE = "Warp Flicker"
+    _WARPSTRIKE_PORTAL_OF_SPITE_PREFIX = "warpstrike_portal_of_spite"
+    _WARPSTRIKE_PORTAL_OF_SPITE_SOURCE = "Portal of Spite"
     _NIGHTMARE_HUNT_MALICIOUS_SURGE_PREFIX = "nightmare_hunt_malicious_surge"
     _NIGHTMARE_HUNT_MALICIOUS_SURGE_SOURCE = "Malicious Surge"
     _NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX = "nightmare_hunt_prey_on_the_weak"
@@ -885,6 +895,32 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         candidates.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
         return candidates
 
+    def _warpstrike_used_deep_strike_setup(
+        self,
+        unit,
+        *,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+    ) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        used_deep_strike_setup = bool(used_deep_strike)
+        if not used_deep_strike_setup and bool(set_up_as_reinforcements):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if callable(has_deep_strike):
+                used_deep_strike_setup = bool(has_deep_strike())
+        return bool(used_deep_strike_setup)
+
+    def warpstrike_unit_set_up_via_deep_strike_this_turn(self, unit, *, game=None) -> bool:
+        root, _sr = self._warpstrike_effect_state(
+            unit,
+            prefix=self._WARPSTRIKE_DEEP_STRIKE_SETUP_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None)
+
     def _tyrannical_motivation_unit_id(self, unit) -> str:
         root = self._unit_root(unit)
         if root is None:
@@ -1346,6 +1382,22 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                         take_test = getattr(enemy, "take_battle_shock_test", None)
                         if callable(take_test):
                             take_test(current_turn)
+
+        if self.is_warpstrike_champions():
+            if bool(set_up_as_reinforcements) and self._unit_in_army(root) and self._unit_on_battlefield(root):
+                if self._warpstrike_used_deep_strike_setup(
+                    root,
+                    set_up_as_reinforcements=set_up_as_reinforcements,
+                    used_deep_strike=used_deep_strike,
+                ):
+                    self._set_warpstrike_effect_state(
+                        root,
+                        prefix=self._WARPSTRIKE_DEEP_STRIKE_SETUP_PREFIX,
+                        source=self._WARPSTRIKE_DEEP_STRIKE_SETUP_SOURCE,
+                        player=getattr(self.army, "player", None) if self.army is not None else None,
+                        game=game,
+                        track_phase=False,
+                    )
 
         if not self.is_dread_talons():
             return
@@ -6004,6 +6056,78 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    @staticmethod
+    def _warpstrike_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _warpstrike_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_warpstrike_champions():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_warpstrike_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     def _pactbound_effect_state(
         self,
         unit,
@@ -6755,6 +6879,99 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             require_phase_match=False,
         )
         return bool(root is not None and self._unit_is_heretic_astartes(root))
+
+    def warpstrike_warp_flicker_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._warpstrike_effect_state(
+            unit,
+            prefix=self._WARPSTRIKE_WARP_FLICKER_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_warp_portals_unit(root))
+
+    def warpstrike_warp_flicker_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._warpstrike_effect_state(
+            unit,
+            prefix=self._WARPSTRIKE_WARP_FLICKER_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_warp_portals_unit(root))
+
+    def warpstrike_portal_of_spite_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        root, sr = self._warpstrike_effect_state(
+            unit,
+            prefix=self._WARPSTRIKE_PORTAL_OF_SPITE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        if not self.warpstrike_unit_set_up_via_deep_strike_this_turn(root, game=game):
+            return 0, ""
+        targets = list(target_units or [])
+        if not targets:
+            return 0, ""
+
+        resolved_game = self._resolve_game(game=game)
+        game_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if not callable(get_enemy_units):
+            return 0, ""
+
+        from ..utility.aura_utils import min_distance_between_units_3d
+
+        selected_ids: set[str] = set()
+        for target in list(targets or []):
+            target_root = self._unit_root(target)
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or self._unit_root_key(target_root))
+            if target_id:
+                selected_ids.add(target_id)
+        if not selected_ids:
+            return 0, ""
+
+        can_charge = getattr(root, "can_declare_charge_against", None)
+        if not callable(can_charge):
+            return 0, ""
+
+        closest_ids: list[str] = []
+        closest_distance: float | None = None
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._unit_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._unit_on_battlefield(enemy_root):
+                continue
+            if self._unit_in_army(enemy_root):
+                continue
+            if not bool(can_charge(enemy_root, resolved_game)):
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or self._unit_root_key(enemy_root))
+            if not enemy_id:
+                continue
+            distance = float(min_distance_between_units_3d(root, enemy_root, use_attached_aggregate=True))
+            if closest_distance is None or distance < closest_distance - 1e-6:
+                closest_distance = distance
+                closest_ids = [enemy_id]
+            elif closest_distance is not None and abs(distance - closest_distance) <= 1e-6:
+                closest_ids.append(enemy_id)
+        if not closest_ids or not any(enemy_id in selected_ids for enemy_id in closest_ids):
+            return 0, ""
+
+        try:
+            bonus = int(sr.get(f"{self._WARPSTRIKE_PORTAL_OF_SPITE_PREFIX}_charge_roll_bonus", 2) or 0)
+        except (TypeError, ValueError):
+            bonus = 2
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._warpstrike_effect_source(
+            sr,
+            prefix=self._WARPSTRIKE_PORTAL_OF_SPITE_PREFIX,
+            default=self._WARPSTRIKE_PORTAL_OF_SPITE_SOURCE,
+        )
 
     def hurons_marauders_hardened_killers_attack_skill_override(
         self,

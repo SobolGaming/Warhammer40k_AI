@@ -5862,6 +5862,96 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WARPSTRIKE_CHAMPIONS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010740002": StratagemToolDescriptor(
+        stratagem_id="000010740002",
+        name="Empyric Dislocation",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_by_enemy_attacks_excluding_damned",
+        duration="until_attacking_unit_finishes_attacks",
+        effect="defensive_ap_worsen",
+        cp_cost=1,
+        effect_params={
+            "ap_worsen": 1,
+            "excluded_keywords_any": ["DAMNED"],
+            "mutually_exclusive_with": ["ARMOUR OF CORRUPTION"],
+        },
+    ),
+    "000010740003": StratagemToolDescriptor(
+        stratagem_id="000010740003",
+        name="Armour of Corruption",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_terminator_obliterators_or_mutilators_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_turn",
+        effect="defensive_damage_reduction",
+        cp_cost=2,
+        effect_params={
+            "damage_reduction": 1,
+            "required_keywords_any": ["TERMINATOR", "OBLITERATORS", "MUTILATORS"],
+            "mutually_exclusive_with": ["EMPYRIC DISLOCATION"],
+        },
+    ),
+    "000010740004": StratagemToolDescriptor(
+        stratagem_id="000010740004",
+        name="Warp Flicker",
+        timing="your_movement_phase",
+        target="heretic_astartes_terminator_obliterators_or_mutilators_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "charge_after_advance": True,
+            "required_keywords_any": ["TERMINATOR", "OBLITERATORS", "MUTILATORS"],
+        },
+    ),
+    "000010740005": StratagemToolDescriptor(
+        stratagem_id="000010740005",
+        name="Warp-Tainted",
+        timing="your_movement_phase",
+        target="heretic_astartes_terminator_obliterators_or_mutilators_unit_within_range_of_controlled_objective",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["TERMINATOR", "OBLITERATORS", "MUTILATORS"],
+            "requires_controlled_objective": True,
+        },
+    ),
+    "000010740006": StratagemToolDescriptor(
+        stratagem_id="000010740006",
+        name="Siegebreaker Strike",
+        timing="your_shooting_phase",
+        target="up_to_two_heretic_astartes_units_set_up_using_deep_strike_this_turn_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_weapons_gain_ignores_cover",
+        cp_cost=1,
+        effect_params={
+            "ignores_cover": True,
+            "max_units": 2,
+            "requires_set_up_using_deep_strike_this_turn": True,
+        },
+    ),
+    "000010740007": StratagemToolDescriptor(
+        stratagem_id="000010740007",
+        name="Portal of Spite",
+        timing="your_charge_phase",
+        target="heretic_astartes_unit_set_up_using_deep_strike_this_turn_not_yet_attempted_charge",
+        duration="until_end_of_phase",
+        effect="conditional_charge_roll_bonus_if_closest_eligible_target_selected",
+        cp_cost=1,
+        effect_params={
+            "charge_roll_bonus": 2,
+            "requires_set_up_using_deep_strike_this_turn": True,
+            "requires_closest_eligible_enemy_target": True,
+        },
+    ),
+}
+
+_WARPSTRIKE_CHAMPIONS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPSTRIKE_CHAMPIONS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VETERANS_OF_THE_LONG_WAR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008961002": StratagemToolDescriptor(
         stratagem_id="000008961002",
@@ -15169,6 +15259,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WARPSTRIKE_CHAMPIONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VETERANS_OF_THE_LONG_WAR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15582,6 +15675,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _WARPSTRIKE_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_WARBAND_STRATAGEM_BY_NAME.get(key)

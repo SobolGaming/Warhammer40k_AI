@@ -140,6 +140,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_soulforged_warpack", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_warpstrike_champions_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_warpstrike_champions", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_veterans_of_the_long_war_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_veterans_of_the_long_war", None) if mgr is not None else None
@@ -881,6 +886,110 @@ class ChaosSpaceMarinesStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
 
+    def _csm_controlled_objective_candidates(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not bool(is_within(location)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
+
+    @staticmethod
+    def _csm_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "")
+        for candidate in list(candidates or []):
+            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
+            if candidate_root is None:
+                continue
+            cid = str(get_entity_id(candidate_root) or "")
+            if rid and cid and rid == cid:
+                return True
+            if candidate_root is root:
+                return True
+        return False
+
+    def _warpstrike_targetable_units(
+        self,
+        *,
+        require_warp_portals: bool = False,
+        require_deep_strike_this_turn: bool = False,
+        require_not_shot: bool = False,
+        require_not_attempted_charge: bool = False,
+    ) -> list[Any]:
+        if not self._is_warpstrike_champions_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._get_chaos_space_marines_mgr()
+        is_warp_portals_unit = getattr(mgr, "_unit_is_warp_portals_unit", None) if mgr is not None else None
+        deep_strike_setup = getattr(mgr, "warpstrike_unit_set_up_via_deep_strike_this_turn", None) if mgr is not None else None
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_warp_portals and (not callable(is_warp_portals_unit) or not bool(is_warp_portals_unit(root))):
+                continue
+            if require_deep_strike_this_turn and (
+                not callable(deep_strike_setup) or not bool(deep_strike_setup(root, game=self.game))
+            ):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_attempted_charge and bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _warpstrike_controlled_objective_candidates(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        mgr = self._get_chaos_space_marines_mgr()
+        is_warp_portals_unit = getattr(mgr, "_unit_is_warp_portals_unit", None) if mgr is not None else None
+        if root is None or not callable(is_warp_portals_unit) or not bool(is_warp_portals_unit(root)):
+            return []
+        return self._csm_controlled_objective_candidates(root)
+
     def _renegade_warband_targetable_units(
         self,
         *,
@@ -935,33 +1044,7 @@ class ChaosSpaceMarinesStratagemMixin:
         return sorted(candidates, key=self._csm_sort_key)
 
     def _renegade_warband_controlled_objective_candidates(self, unit: Any) -> list[Any]:
-        root = self._csm_root(unit)
-        game_map = getattr(self.game, "map", None) if self.game is not None else None
-        if root is None or game_map is None:
-            return []
-        is_within = getattr(root, "is_within_objective_range", None)
-        if not callable(is_within):
-            return []
-        out: list[Any] = []
-        seen: set[str] = set()
-        for objective in list(getattr(game_map, "objectives", []) or []):
-            location = getattr(objective, "location", None)
-            if location is None or bool(getattr(location, "removed", False)):
-                continue
-            if not bool(is_within(location)):
-                continue
-            controller = getattr(location, "controlling_player", None)
-            sticky_controller = getattr(location, "sticky_controller", None)
-            if controller is not self.player and sticky_controller is not self.player:
-                continue
-            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
-            if objective_id and objective_id in seen:
-                continue
-            if objective_id:
-                seen.add(objective_id)
-            out.append(objective)
-        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
-        return out
+        return self._csm_controlled_objective_candidates(unit)
 
     def _renegade_warband_selected_targets_include_vendetta(self, *, target_units: list[Any]) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
@@ -978,19 +1061,7 @@ class ChaosSpaceMarinesStratagemMixin:
 
     @staticmethod
     def _renegade_warband_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
-        if root is None:
-            return False
-        rid = str(get_entity_id(root) or "")
-        for candidate in list(candidates or []):
-            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
-            if candidate_root is None:
-                continue
-            cid = str(get_entity_id(candidate_root) or "")
-            if rid and cid and rid == cid:
-                return True
-            if candidate_root is root:
-                return True
-        return False
+        return ChaosSpaceMarinesStratagemMixin._csm_unit_in_candidates(root, candidates)
 
     @staticmethod
     def _renegade_warband_never_outgunned_choice_key(choice_payload: Any) -> str:
@@ -3718,6 +3789,101 @@ class ChaosSpaceMarinesStratagemMixin:
                     payload["objective"] = objective_candidates[0]
                     payload["objective_marker"] = objective_candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_warpstrike_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_warpstrike_champions_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if player is not self.player:
+            return
+
+        def queue_phase_start_stratagem(
+            stratagem_name: str,
+            *,
+            phase_name: str,
+            candidates: list[Any],
+            extra_payload: Optional[dict[str, Any]] = None,
+        ) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            for key, value in dict(extra_payload or {}).items():
+                payload[str(key)] = value
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "MOVEMENT_PHASE":
+            queue_phase_start_stratagem(
+                "WARP FLICKER",
+                phase_name="Movement phase",
+                candidates=self._warpstrike_targetable_units(require_warp_portals=True),
+            )
+
+            candidates: list[Any] = []
+            objective_map: dict[str, list[Any]] = {}
+            for root in list(self._warpstrike_targetable_units(require_warp_portals=True) or []):
+                objectives = self._warpstrike_controlled_objective_candidates(root)
+                if not objectives:
+                    continue
+                candidates.append(root)
+                objective_map[self._csm_sort_key(root)] = list(objectives)
+            extra_payload: dict[str, Any] = {"objective_candidates_by_unit": objective_map} if objective_map else {}
+            if len(candidates) == 1:
+                objective_candidates = list(objective_map.get(self._csm_sort_key(candidates[0])) or [])
+                if objective_candidates:
+                    extra_payload["objective_candidates"] = objective_candidates
+                    if len(objective_candidates) == 1:
+                        extra_payload["objective"] = objective_candidates[0]
+                        extra_payload["objective_marker"] = objective_candidates[0]
+            queue_phase_start_stratagem(
+                "WARP-TAINTED",
+                phase_name="Movement phase",
+                candidates=candidates,
+                extra_payload=extra_payload,
+            )
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            queue_phase_start_stratagem(
+                "SIEGEBREAKER STRIKE",
+                phase_name="Shooting phase",
+                candidates=self._warpstrike_targetable_units(require_deep_strike_this_turn=True, require_not_shot=True),
+                extra_payload={"max_target_count": 2},
+            )
+            return
+
+        if phase_key != "CHARGE_PHASE":
+            return
+        queue_phase_start_stratagem(
+            "PORTAL OF SPITE",
+            phase_name="Charge phase",
+            candidates=self._warpstrike_targetable_units(
+                require_deep_strike_this_turn=True,
+                require_not_attempted_charge=True,
+            ),
+        )
 
     def _queue_renegade_warband_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
         if not self._is_renegade_warband_detachment():
@@ -10277,6 +10443,549 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _warpstrike_resolve_selected_units(self, raw_units: Any, *, candidates: list[Any]) -> list[Any]:
+        if raw_units is None:
+            return []
+        if isinstance(raw_units, (list, tuple, set)):
+            items = list(raw_units)
+        else:
+            items = [raw_units]
+        candidate_by_id: dict[str, Any] = {}
+        for candidate in list(candidates or []):
+            candidate_root = self._csm_root(candidate)
+            if candidate_root is None:
+                continue
+            sort_key = self._csm_sort_key(candidate_root)
+            if sort_key:
+                candidate_by_id[sort_key] = candidate_root
+            entity_id = str(get_entity_id(candidate_root) or "")
+            if entity_id:
+                candidate_by_id[entity_id] = candidate_root
+
+        selected_roots: list[Any] = []
+        seen: set[str] = set()
+        for item in list(items or []):
+            root = self._csm_root(item)
+            if root is None:
+                item_id = str(item or "").strip()
+                if item_id:
+                    root = candidate_by_id.get(item_id)
+            if root is None:
+                continue
+            root_id = self._csm_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            selected_roots.append(root)
+        return selected_roots
+
+    def _use_warpstrike_empyric_dislocation(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        pending = self._csm_find_pending_reaction("EMPYRIC DISLOCATION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or pending.get("target_units") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: EMPYRIC DISLOCATION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_warpstrike_champions_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        phase_tag = "shooting" if phase_name == "shooting phase" else "fight" if phase_name == "fight phase" else ""
+        if phase_tag not in {"shooting", "fight"}:
+            logger.error("ERROR: EMPYRIC DISLOCATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_tag == "shooting" and active_player is self.player:
+            logger.error("ERROR: EMPYRIC DISLOCATION: not your opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: EMPYRIC DISLOCATION: attacking unit must be enemy")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: EMPYRIC DISLOCATION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: EMPYRIC DISLOCATION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: EMPYRIC DISLOCATION: target cannot be selected")
+            return False
+
+        spec = self._get_defensive_reaction_spec(stratagem)
+        if not spec or phase_tag not in set(spec.get("phases") or []):
+            logger.error("ERROR: EMPYRIC DISLOCATION: defensive reaction spec unavailable")
+            return False
+        if not self._unit_matches_defensive_target_spec(root, spec):
+            logger.error("ERROR: EMPYRIC DISLOCATION: target does not match stratagem restrictions")
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        effect_state = getattr(mgr, "_warpstrike_effect_state", None) if mgr is not None else None
+        set_state = getattr(mgr, "_set_warpstrike_effect_state", None) if mgr is not None else None
+        if not callable(effect_state) or not callable(set_state):
+            logger.error("ERROR: EMPYRIC DISLOCATION: detachment state helpers are unavailable")
+            return False
+        other_root, _other_sr = effect_state(
+            root,
+            prefix=mgr._WARPSTRIKE_ARMOUR_OF_CORRUPTION_PREFIX,
+            game=self.game,
+        )
+        if other_root is not None:
+            logger.error("ERROR: EMPYRIC DISLOCATION: target already used Armour of Corruption this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._apply_generic_defensive_effect(
+            root,
+            spec,
+            attacker_unit=attacker_root,
+            phase_name=phase_name,
+            source_name=stratagem.name,
+        ):
+            logger.error("ERROR: EMPYRIC DISLOCATION: failed to apply defensive effect")
+            return False
+        set_state(
+            root,
+            prefix=mgr._WARPSTRIKE_EMPYRIC_DISLOCATION_PREFIX,
+            source=stratagem.name or "EMPYRIC DISLOCATION",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EMPYRIC DISLOCATION: %s worsens incoming AP from %s by 1 until that attacker finishes its attacks.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_warpstrike_armour_of_corruption(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        pending = self._csm_find_pending_reaction("ARMOUR OF CORRUPTION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or pending.get("target_units") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ARMOUR OF CORRUPTION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_warpstrike_champions_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ARMOUR OF CORRUPTION: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: attacking unit must be enemy")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: target cannot be selected")
+            return False
+
+        spec = self._get_defensive_reaction_spec(stratagem)
+        if not spec or "fight" not in set(spec.get("phases") or []):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: defensive reaction spec unavailable")
+            return False
+        if not self._unit_matches_defensive_target_spec(root, spec):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: target does not match stratagem restrictions")
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        effect_state = getattr(mgr, "_warpstrike_effect_state", None) if mgr is not None else None
+        set_state = getattr(mgr, "_set_warpstrike_effect_state", None) if mgr is not None else None
+        if not callable(effect_state) or not callable(set_state):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: detachment state helpers are unavailable")
+            return False
+        other_root, _other_sr = effect_state(
+            root,
+            prefix=mgr._WARPSTRIKE_EMPYRIC_DISLOCATION_PREFIX,
+            game=self.game,
+        )
+        if other_root is not None:
+            logger.error("ERROR: ARMOUR OF CORRUPTION: target already used Empyric Dislocation this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        apply_spec = dict(spec)
+        if str(apply_spec.get("duration") or "").strip().lower() == "turn":
+            apply_spec["duration"] = "phase"
+        if not self._apply_generic_defensive_effect(
+            root,
+            apply_spec,
+            attacker_unit=attacker_root,
+            phase_name=phase_name,
+            source_name=stratagem.name,
+        ):
+            logger.error("ERROR: ARMOUR OF CORRUPTION: failed to apply defensive effect")
+            return False
+        set_state(
+            root,
+            prefix=mgr._WARPSTRIKE_ARMOUR_OF_CORRUPTION_PREFIX,
+            source=stratagem.name or "ARMOUR OF CORRUPTION",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ARMOUR OF CORRUPTION: %s reduces incoming Damage by 1 for the rest of the Fight phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_warpstrike_warp_flicker(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("WARP FLICKER", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: WARP FLICKER: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_warpstrike_champions_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WARP FLICKER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: WARP FLICKER: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: WARP FLICKER: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: WARP FLICKER: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: WARP FLICKER: target cannot be selected")
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        is_warp_portals_unit = getattr(mgr, "_unit_is_warp_portals_unit", None) if mgr is not None else None
+        set_state = getattr(mgr, "_set_warpstrike_effect_state", None) if mgr is not None else None
+        if not callable(is_warp_portals_unit) or not bool(is_warp_portals_unit(root)):
+            logger.error("ERROR: WARP FLICKER: target must be a Terminator, Obliterators, or Mutilators unit")
+            return False
+        if not callable(set_state):
+            logger.error("ERROR: WARP FLICKER: detachment state helper is unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        set_state(
+            root,
+            prefix=mgr._WARPSTRIKE_WARP_FLICKER_PREFIX,
+            source=stratagem.name or "WARP FLICKER",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WARP FLICKER: %s can shoot and declare a charge after Advancing this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_warpstrike_warp_tainted(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        objective_candidates_by_unit = dict(kwargs.get("objective_candidates_by_unit") or {})
+        pending = self._csm_find_pending_reaction("WARP-TAINTED", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not objective_candidates_by_unit:
+                objective_candidates_by_unit = dict(pending.get("objective_candidates_by_unit") or {})
+            if not objective_candidates:
+                objective_candidates = list(pending.get("objective_candidates") or [])
+            if objective is None:
+                objective = pending.get("objective") or pending.get("objective_marker")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: WARP-TAINTED: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_warpstrike_champions_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WARP-TAINTED: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: WARP-TAINTED: not your Movement phase")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: WARP-TAINTED: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: WARP-TAINTED: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: WARP-TAINTED: target cannot be selected")
+            return False
+
+        if len(candidates) == 1 and not objective_candidates and objective_candidates_by_unit:
+            objective_candidates = list(objective_candidates_by_unit.get(self._csm_sort_key(root)) or [])
+        if not objective_candidates:
+            objective_candidates = self._warpstrike_controlled_objective_candidates(root)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: WARP-TAINTED: no objective marker selected")
+            return False
+
+        selected_objective = None
+        selected_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+        selected_location = getattr(objective, "location", None)
+        selected_location_id = str(get_entity_id(selected_location) or "") if selected_location is not None else ""
+        for candidate in list(objective_candidates or []):
+            candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+            candidate_location = getattr(candidate, "location", None)
+            candidate_location_id = str(get_entity_id(candidate_location) or "") if candidate_location is not None else ""
+            if objective is candidate:
+                selected_objective = candidate
+                break
+            if selected_id and candidate_id and selected_id == candidate_id:
+                selected_objective = candidate
+                break
+            if selected_location_id and candidate_location_id and selected_location_id == candidate_location_id:
+                selected_objective = candidate
+                break
+        if selected_objective is None:
+            logger.error("ERROR: WARP-TAINTED: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(selected_objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: WARP-TAINTED: objective marker location unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="warpstrike_champions_warp_tainted")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "warpstrike_champions_warp_tainted"
+            objective_location.controlling_player = self.player
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: WARP-TAINTED: selected objective remains under your control until broken.")
+        return True
+
+    def _use_warpstrike_siegebreaker_strike(self, stratagem: Any, **kwargs) -> bool:
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SIEGEBREAKER STRIKE")
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        raw_units = (
+            kwargs.get("units")
+            or kwargs.get("selected_units")
+            or kwargs.get("selected_unit_ids")
+            or kwargs.get("target_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        if raw_units is None and len(candidates) == 1:
+            raw_units = [candidates[0]]
+        selected_roots = self._warpstrike_resolve_selected_units(raw_units, candidates=candidates)
+        if not selected_roots:
+            logger.error("ERROR: SIEGEBREAKER STRIKE: no target units selected")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: SIEGEBREAKER STRIKE: may target up to two units")
+            return False
+
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SIEGEBREAKER STRIKE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SIEGEBREAKER STRIKE: not your turn")
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        deep_strike_setup = getattr(mgr, "warpstrike_unit_set_up_via_deep_strike_this_turn", None) if mgr is not None else None
+        if not callable(deep_strike_setup):
+            logger.error("ERROR: SIEGEBREAKER STRIKE: detachment deep-strike helper is unavailable")
+            return False
+        for root in list(selected_roots or []):
+            if candidates and not self._csm_unit_in_candidates(root, candidates):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected unit is not currently eligible")
+                return False
+            if not self._csm_owned_by_player(root, self.player):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected unit is not yours")
+                return False
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(root):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected unit cannot be targeted")
+                return False
+            if not self._is_heretic_astartes_unit(root):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected units must be HERETIC ASTARTES")
+                return False
+            if not bool(deep_strike_setup(root, game=self.game)):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected units must have set up using Deep Strike this turn")
+                return False
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                logger.error("ERROR: SIEGEBREAKER STRIKE: selected units must not have been selected to shoot")
+                return False
+        if not self._cabal_spend_cp(stratagem, target_unit=selected_roots[0]):
+            return False
+
+        for root in list(selected_roots or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["warp_vision_ignores_cover_active"] = True
+            sr["warp_vision_expires_phase"] = "SHOOTING_PHASE"
+            sr["warp_vision_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["warp_vision_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            sr["warp_vision_source"] = str(stratagem.name or "SIEGEBREAKER STRIKE")
+            root.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SIEGEBREAKER STRIKE: %d unit(s) gain [IGNORES COVER] on ranged weapons this phase.",
+            int(len(selected_roots)),
+        )
+        return True
+
+    def _use_warpstrike_portal_of_spite(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PORTAL OF SPITE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PORTAL OF SPITE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_warpstrike_champions_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: PORTAL OF SPITE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PORTAL OF SPITE: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: PORTAL OF SPITE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PORTAL OF SPITE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PORTAL OF SPITE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: PORTAL OF SPITE: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+            logger.error("ERROR: PORTAL OF SPITE: target has already attempted a charge this turn")
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        deep_strike_setup = getattr(mgr, "warpstrike_unit_set_up_via_deep_strike_this_turn", None) if mgr is not None else None
+        set_state = getattr(mgr, "_set_warpstrike_effect_state", None) if mgr is not None else None
+        if not callable(deep_strike_setup) or not bool(deep_strike_setup(root, game=self.game)):
+            logger.error("ERROR: PORTAL OF SPITE: target must have set up using Deep Strike this turn")
+            return False
+        if not callable(set_state):
+            logger.error("ERROR: PORTAL OF SPITE: detachment state helper is unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        set_state(
+            root,
+            prefix=mgr._WARPSTRIKE_PORTAL_OF_SPITE_PREFIX,
+            source=stratagem.name or "PORTAL OF SPITE",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._WARPSTRIKE_PORTAL_OF_SPITE_PREFIX}_charge_roll_bonus": 2},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PORTAL OF SPITE: %s gains +2 to Charge rolls this phase if it charges the closest eligible enemy.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_renegade_raiders_warpcharged_engines(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -11246,6 +11955,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_cabal_unholy_haste(stratagem, **kwargs)
         if name_u == "AUTOSTIMULANTS":
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
+        if name_u == "ARMOUR OF CORRUPTION":
+            return self._use_warpstrike_armour_of_corruption(stratagem, **kwargs)
         if name_u == "BLACK CRUSADE":
             return self._use_veterans_black_crusade(stratagem, **kwargs)
         if name_u == "BLOODY EXAMPLE":
@@ -11274,6 +11985,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_delayed_mutations(stratagem, **kwargs)
         if name_u == "DIABOLIC REGENERATION":
             return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
+        if name_u == "EMPYRIC DISLOCATION":
+            return self._use_warpstrike_empyric_dislocation(stratagem, **kwargs)
         if name_u == "ENDLESS IRE":
             return self._use_veterans_endless_ire(stratagem, **kwargs)
         if name_u == "FEEDING FRENZY":
@@ -11318,6 +12031,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
         if name_u == "OPPORTUNISTIC RAIDERS":
             return self._use_renegade_raiders_opportunistic_raiders(stratagem, **kwargs)
+        if name_u == "PORTAL OF SPITE":
+            return self._use_warpstrike_portal_of_spite(stratagem, **kwargs)
         if name_u == "PREDATORY PURSUIT":
             return self._use_soulforged_predatory_pursuit(stratagem, **kwargs)
         if name_u == "PREY ON THE WEAK":
@@ -11352,6 +12067,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_dread_talons_screaming_descent(stratagem, **kwargs)
         if name_u == "SEIZE THE PRIZE":
             return self._use_hurons_marauders_seize_the_prize(stratagem, **kwargs)
+        if name_u == "SIEGEBREAKER STRIKE":
+            return self._use_warpstrike_siegebreaker_strike(stratagem, **kwargs)
         if name_u == "SIEGECRAFT":
             return self._use_fellhammer_siegecraft(stratagem, **kwargs)
         if name_u == "SKINSHIFT":
@@ -11376,4 +12093,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_renegade_warband_vengeful_destruction(stratagem, **kwargs)
         if name_u == "WARPCHARGED ENGINES":
             return self._use_renegade_raiders_warpcharged_engines(stratagem, **kwargs)
+        if name_u == "WARP FLICKER":
+            return self._use_warpstrike_warp_flicker(stratagem, **kwargs)
+        if name_u == "WARP-TAINTED":
+            return self._use_warpstrike_warp_tainted(stratagem, **kwargs)
         return None
