@@ -4170,6 +4170,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Model attacks gain +1 to hit for belleros energy cannon vs INFANTRY and ferrumite cannon vs MONSTER/VEHICLE.",
         ),
+        ("ADM", "Broad-spectrum Targeting Augurs"): (
+            "Supported",
+            "Eradication caster attacks gain [SUSTAINED HITS 1] against targets that are not MONSTER or VEHICLE.",
+        ),
         ("ADM", "Searing Conflagration"): (
             "Supported",
             "Phosphor torch attacks vs targets within objective range re-roll Wound rolls of 1; while within 6\" of friendly ADEPTUS MECHANICUS BATTLELINE, those attacks can re-roll Wound rolls instead.",
@@ -4239,6 +4243,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "When selected via Canticles, bearer gains BATTLELINE and Binharic Courage aura (+1 Objective Control and +1 to Battle-shock/Leadership tests for friendly ADEPTUS MECHANICUS within 6\").",
         ),
         ("ADM", "Mechanicus Bodyguard"): ("Supported", "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS units."),
+        ("ADM", "Monocular Targeting Helms"): (
+            "Supported",
+            "Neutron fusil attacks gain [IGNORES COVER] against MONSTER and VEHICLE targets.",
+        ),
         ("ADM", "Cybernetic Augmentation"): (
             "Supported",
             "Thulia Ghuld can move through terrain features, can breach RUINS walls, can be set up or end moves on upper RUINS floors, and still cannot overhang a floor.",

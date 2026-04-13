@@ -431,12 +431,17 @@ class PositioningAttackRulesMixin:
                     closest_clause = re.sub(r"\b(?:that|is|are|an?|enemy|unit|target)\b", " ", closest_clause)
                     closest_clause = re.sub(r"\s+", " ", closest_clause).strip()
                     closest_require_keywords = _parse_target_keywords(closest_clause)
+                target_exclude_keywords: tuple[str, ...] = ()
+                exclude_match = re.search(r"\bexcluding\s+(?P<excluded>.+)$", target_raw, flags=re.IGNORECASE)
+                if exclude_match:
+                    target_exclude_keywords = _parse_target_keywords(str(exclude_match.group("excluded") or ""))
+                    target_raw = re.sub(r"\bexcluding\s+.+$", "", target_raw, flags=re.IGNORECASE).strip(" ,")
                 target_keywords = _parse_target_keywords(target_raw)
                 if requires_closest_eligible_target:
                     target_keywords = ()
                 if (not target_keywords) and ("afflicted" in target_raw.lower()):
                     target_keywords = ("AFFLICTED",)
-                if not target_keywords and not requires_closest_eligible_target:
+                if not target_keywords and not target_exclude_keywords and not requires_closest_eligible_target:
                     continue
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
@@ -463,6 +468,8 @@ class PositioningAttackRulesMixin:
                         "source": str(name or "Ability"),
                         "target_keywords_any": target_keywords,
                     }
+                    if target_exclude_keywords:
+                        entry["target_exclude_keywords_any"] = target_exclude_keywords
                     if requires_closest_eligible_target:
                         entry["requires_closest_eligible_target"] = True
                         if closest_require_keywords:

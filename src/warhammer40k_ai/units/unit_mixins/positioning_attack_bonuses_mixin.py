@@ -1757,6 +1757,9 @@ class PositioningAttackBonusesMixin:
         Return weapon-scoped attack keyword bonus rules for patterns like:
         "Each time this model makes an attack with its punisher gatling cannon that targets an enemy unit
          (excluding MONSTERS and VEHICLES), that attack has the [DEVASTATING WOUNDS] ability."
+        Also supports unit-scoped variants like:
+        "Each time a model in this unit makes an attack with an eradication caster that targets a unit
+         (excluding MONSTER and VEHICLE units), that attack has the [SUSTAINED HITS 1] ability."
         """
         if model is None:
             return None
@@ -1775,12 +1778,16 @@ class PositioningAttackBonusesMixin:
                 normalized = text.lower().replace("\u2019", "'")
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                match = re.fullmatch(
-                    r"each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+?) "
-                    r"that targets (?:an? )?(?:enemy )?unit excluding (?P<exclude>[a-z0-9 ]+) that attack has "
+                match = None
+                for pattern in (
+                    r"each time (?:this model|a model in this unit) makes an? (?:melee |ranged )?attack "
+                    r"with (?:(?:its|the|an?) )?(?P<weapon>[a-z0-9 ]+?) that targets "
+                    r"(?:an? )?(?:enemy )?unit(?:s)? excluding (?P<exclude>[a-z0-9 ]+) that attack has "
                     r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
-                    normalized,
-                )
+                ):
+                    match = re.fullmatch(pattern, normalized)
+                    if match:
+                        break
                 if not match:
                     continue
                 weapon_name = str(match.group("weapon") or "").strip()
@@ -1791,6 +1798,9 @@ class PositioningAttackBonusesMixin:
                 excluded_values = []
                 for token in re.split(r"\s*(?:,|and|or)\s*", raw_exclude):
                     token = token.strip()
+                    if not token:
+                        continue
+                    token = re.sub(r"\bunits?\b", "", token, flags=re.IGNORECASE).strip()
                     if not token:
                         continue
                     normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
@@ -1827,6 +1837,9 @@ class PositioningAttackBonusesMixin:
         Also supports weapon-worded variants like:
         "This model's twin heavy onslaught gatling cannon has the [SUSTAINED HITS 2] ability when targeting
          INFANTRY units."
+        Also supports unit-scoped variants like:
+        "Each time a model in this unit makes an attack with a neutron fusil against a MONSTER or VEHICLE unit,
+         that attack has the [IGNORES COVER] ability."
         """
         if model is None:
             return None
@@ -1845,12 +1858,20 @@ class PositioningAttackBonusesMixin:
                 normalized = text.lower().replace("\u2019", "'")
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                match = re.fullmatch(
-                    r"each time this model makes an? (?:melee |ranged )?attack with its (?P<weapon>[a-z0-9 ]+?) "
-                    r"that targets (?:an? )?(?:enemy )?(?P<targets>[a-z0-9 ]+?) unit that attack has "
+                match = None
+                for pattern in (
+                    r"each time (?:this model|a model in this unit) makes an? (?:melee |ranged )?attack "
+                    r"with (?:(?:its|the|an?) )?(?P<weapon>[a-z0-9 ]+?) that targets "
+                    r"(?:an? )?(?:enemy )?(?P<targets>[a-z0-9 ]+?) unit(?:s)? that attack has "
                     r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
-                    normalized,
-                )
+                    r"each time (?:this model|a model in this unit) makes an? (?:melee |ranged )?attack "
+                    r"with (?:(?:its|the|an?) )?(?P<weapon>[a-z0-9 ]+?) against "
+                    r"(?:an? )?(?:enemy )?(?P<targets>[a-z0-9 ]+?) unit(?:s)? that attack has "
+                    r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
+                ):
+                    match = re.fullmatch(pattern, normalized)
+                    if match:
+                        break
                 if not match:
                     match = re.fullmatch(
                         r"this model s (?P<weapon>[a-z0-9 ]+?) has (?:the )?(?P<keyword>[a-z0-9 ]+) ability "
@@ -1863,6 +1884,8 @@ class PositioningAttackBonusesMixin:
                 keyword = str(match.group("keyword") or "").strip().upper()
                 raw_targets = str(match.group("targets") or "").strip().lower()
                 if not weapon_name or not keyword or not raw_targets:
+                    continue
+                if re.search(r"\bexcluding\b", raw_targets):
                     continue
                 target_keywords: list[str] = []
                 for token in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", raw_targets):

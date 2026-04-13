@@ -14,6 +14,11 @@ def test_support_matrix_classifies_remaining_admech_datasheet_abilities_as_suppo
             "Each time this model makes an attack with a ferrumite cannon that targets a MONSTER or VEHICLE unit, add 1 to the Hit roll.",
         ),
         (
+            "Broad-spectrum Targeting Augurs",
+            "Each time a model in this unit makes an attack with an eradication caster that targets a unit "
+            "(excluding MONSTER and VEHICLE units), that attack has the [SUSTAINED HITS 1] ability.",
+        ),
+        (
             "Bomb Rack",
             "Each time this model ends a Normal move, you can select one enemy unit it moved across during that move and roll six D6: "
             "for each 4+, that unit suffers 1 mortal wound.",
@@ -32,6 +37,11 @@ def test_support_matrix_classifies_remaining_admech_datasheet_abilities_as_suppo
             "Fanatical Devotion",
             "You can select one friendly Skitarii or THULIA GHULD unit within 6\" of this model; until the start of your next "
             "Command phase, that unit is eligible to shoot and declare a charge in a turn in which it Advanced.",
+        ),
+        (
+            "Monocular Targeting Helms",
+            "Each time a model in this unit makes an attack with a neutron fusil against a MONSTER or VEHICLE unit, "
+            "that attack has the [IGNORES COVER] ability.",
         ),
         (
             "Adaptive Tactics",
