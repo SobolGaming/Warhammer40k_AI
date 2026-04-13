@@ -1030,6 +1030,46 @@ def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
     return max_dist
 
 
+def handle_space_marines_evasive_repositioning_roll(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit = _get_unit(game, spec.get("unit_id"))
+    if unit is None:
+        return None
+    payload = dict(spec.get("handler_payload", {}) or {})
+    source_name = str(payload.get("source_name", "") or "EVASIVE REPOSITIONING").strip() or "EVASIVE REPOSITIONING"
+    reactive_kind = str(payload.get("reactive_move_kind", "") or "evasive_repositioning").strip() or "evasive_repositioning"
+    try:
+        max_dist = int(state.total or 0)
+    except Exception:
+        max_dist = 0
+    if max_dist <= 0:
+        return 0
+    if not bool(getattr(game, "is_authoritative", True)):
+        return max_dist
+    try:
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+    except Exception:
+        player = None
+    if player is None or not hasattr(game, "_queue_reactive_move_movement_decision"):
+        return max_dist
+    try:
+        attacker_unit = _get_unit(game, payload.get("attacker_unit_id")) if payload.get("attacker_unit_id") else None
+        game._queue_reactive_move_movement_decision(
+            player=player,
+            unit=unit,
+            attacker_unit=attacker_unit,
+            max_distance=int(max_dist),
+            kind=str(reactive_kind),
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(source_name),
+            allow_skip=True,
+        )
+    except Exception:
+        return max_dist
+    return max_dist
+
+
 def handle_shadow_daemonic_terror_mortals(game: object, state: DiceRollState):
     spec = dict(getattr(state, "spec", {}) or {})
     unit_id = spec.get("unit_id")
@@ -1067,4 +1107,5 @@ register_roll_handler("stasis_bomb_restriction", handle_stasis_bomb_restriction)
 register_roll_handler("grenade_pack_flyover", handle_grenade_pack_flyover)
 register_roll_handler("malign_sacrifice", handle_malign_sacrifice_roll)
 register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)
+register_roll_handler("space_marines_evasive_repositioning", handle_space_marines_evasive_repositioning_roll)
 register_roll_handler("shadow_daemonic_terror_mortals", handle_shadow_daemonic_terror_mortals)

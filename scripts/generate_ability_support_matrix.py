@@ -381,6 +381,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the maximum number of units that can be shaken by this rule in each battle round depends on the battle size as shown below",
             r"the maximum number of units you can select in this way depends on the battle size as shown below",
         ),
+        "Adaptive Defence": (
+            r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
+            r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
+            r"that unit is within a terrain feature",
+            r"that unit was not set up on the battlefield this turn",
+            r"no model in that unit has moved more than 3 this turn",
+        ),
         "Shepherds of the Dead": (
             r"each time an asuryani psyker model from your army is destroyed by an enemy unit that enemy unit gains a vengeful dead token",
             r"each time a wraith construct model from your army makes an attack that targets a unit with one or more vengeful dead tokens add 1 to the hit roll and add 1 to the wound roll",
@@ -2609,6 +2616,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "A Perfect Ambush": (
             "Supported",
             "Host of Ascension: each time a GENESTEALER CULTS unit is set up as Reinforcements, its models' weapons gain [SUSTAINED HITS 1] and [IGNORES COVER] until the end of that player's next Fight phase.",
+        ),
+        "Adaptive Defence": (
+            "Supported",
+            "Ceramite Sentinels: ADEPTUS ASTARTES models re-roll Hit rolls of 1 and Wound rolls of 1 while their unit is within a terrain feature, and ADEPTUS ASTARTES units dynamically gain ENTRENCHED while within terrain, not set up this turn, and no model in the unit moved more than 3\" that turn.",
         ),
         "Hypermorphic Fury": (
             "Supported",
@@ -19463,6 +19474,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010629003": "Stormseers' Wisdom: while the bearer is leading and alive, the bearer's attached unit can re-roll Advance rolls.",
         "000010629004": "Hunter's Eye: while the bearer is alive, ranged weapons equipped by models in the bearer's unit gain [SUSTAINED HITS 1] and [IGNORES COVER].",
         "000010629005": "Chogorian Huntmaster: while the bearer is alive and the bearer's unit is in Strategic Reserves, that unit treats the current battle round as one higher for Strategic Reserves setup timing.",
+        "000010759002": "Honour Indefatigable: first time the bearer is destroyed, end-of-phase 2+ return as close as possible to the destroyed position, not within Engagement Range, with full wounds remaining.",
+        "000010759003": "Castellum Omnivox: when the bearer's unit Falls Back, a deterministic choice grants either Action eligibility after Falling Back or the ability to shoot and declare a charge after Falling Back until end of turn.",
+        "000010759004": "Spy-skull Data Link: ranged weapons equipped by models in the bearer's unit gain [IGNORES COVER].",
+        "000010759005": "Defensive Mastery: after deployment, select up to three friendly ADEPTUS ASTARTES units to redeploy, with optional placement into Strategic Reserves regardless of current reserves limits.",
         "000010392002": "Incendiary Animus: improve AP by 1 for melee weapons equipped by models in the bearer's unit.",
         "000010392003": "Oathbound Exemplar: add 1 to Advance rolls for the bearer's unit, and that unit can start Actions in turns in which it Advanced when Actions are enabled by the mission.",
         "000010392004": "Merciless Denunciation: models in the bearer's unit can re-roll Hit rolls for melee attacks.",

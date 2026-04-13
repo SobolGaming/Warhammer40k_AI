@@ -4829,6 +4829,62 @@ class Game(
                         instance_key=str(unit_id or ""),
                     )
 
+        if action_key == "fall_back":
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            can_choose_fn = getattr(sm_mgr, "castellum_omnivox_can_choose_on_fall_back", None) if sm_mgr is not None else None
+            if callable(can_choose_fn) and bool(can_choose_fn(moving_root, game=self)):
+                player = getattr(army, "player", None)
+                if player is not None:
+                    unit_id = str(maybe_entity_id(moving_root) or "")
+                    should_queue = True
+                    queue = getattr(self, "decision_queue", None)
+                    if queue is not None and hasattr(queue, "list"):
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "") != "space_marines_castellum_omnivox_choice":
+                                continue
+                            if str(ctx.get("unit_id", "") or "") != unit_id:
+                                continue
+                            if str(getattr(req, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                                continue
+                            should_queue = False
+                            break
+                    if should_queue:
+                        options = [
+                            DecisionOption.create(
+                                "Perform Action",
+                                payload={
+                                    "unit_id": unit_id,
+                                    "choice_key": "ACTION",
+                                },
+                            ),
+                            DecisionOption.create(
+                                "Shoot and Charge",
+                                payload={
+                                    "unit_id": unit_id,
+                                    "choice_key": "SHOOT_AND_CHARGE",
+                                },
+                            ),
+                        ]
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_QUARRY,
+                            f"Castellum Omnivox: choose how {getattr(moving_root, 'name', 'Unit')} will act after Falling Back.",
+                            player_id=getattr(player, "id", None),
+                            options=options,
+                            context={
+                                "ability": "space_marines_castellum_omnivox_choice",
+                                "ability_name": "Castellum Omnivox",
+                                "phase": "Movement phase",
+                                "unit_id": unit_id,
+                                "unit_name": str(getattr(moving_root, "name", "Unit") or "Unit"),
+                                "allowed_choice_keys": ["ACTION", "SHOOT_AND_CHARGE"],
+                                "battle_round": int(getattr(self, "turn", 0) or 0),
+                            },
+                        )
+                        self.request_decision(request)
+
         game_map = getattr(self, "map", None)
         from ..utility.event_bus import append_action, append_dice
         from ..utility.aura_utils import unit_within_range_of_unit

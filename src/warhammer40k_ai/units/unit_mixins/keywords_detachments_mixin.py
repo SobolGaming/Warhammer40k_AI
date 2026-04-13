@@ -2409,6 +2409,26 @@ class KeywordsDetachmentsMixin:
                         "source": source,
                     }
 
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        sm_rule_fn = (
+            getattr(sm_mgr, "stand_to_the_end_fight_on_death_rule", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(sm_rule_fn):
+            sm_rule = sm_rule_fn(self, model=model, game=game)
+            if isinstance(sm_rule, dict):
+                try:
+                    threshold = int(sm_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(sm_rule.get("source", "") or "Stand to the End").strip() or "Stand to the End"
+                    return {
+                        "threshold": int(threshold),
+                        "source": source,
+                    }
+
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
             resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(

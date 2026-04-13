@@ -49,6 +49,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSOR IMPERATIVE",
     "ANALYTICAL DIVINATION",
     "AUTO-ORACULAR RETRIEVAL",
+    "AUGMENTED TARGETING",
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
     "BASTION OF FAITH",
@@ -131,8 +132,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TALONED PINCER",
     "TALONS INTERLOCKED",
     "TARGETING OVERRIDE",
+    "STAND TO THE END",
     "TRIBUTE OF EMPHATIC VENERATION",
     "TRANSCENDENT COGITATION",
+    "UNYIELDING MIGHT",
     "UNSTOPPABLE",
     "VERSE OF VENGEANCE",
     "WRATHFUL ADVANCE",
@@ -142,6 +145,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL WEAPONRY",
     "EXEMPLAR'S WISDOM",
     "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
+    "EVASIVE REPOSITIONING",
     "MANTLE OF THE MENTOR",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
@@ -178,6 +182,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARGENT WRATH",
     "POINT-BLANK PURGATION",
     "PRECOGNITIVE STRATEGIES",
+    "PRIORITY STRIKE",
     "PSY-CHAFF VOLLEY",
     "PSYCHIC ABOMINATIONS",
     "PURGATION SWEEP",
@@ -2675,6 +2680,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_shadowmark_talon)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
+        if "EVASIVE REPOSITIONING" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ceramite_sentinels)
         if "DEATH ON THE WIND" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_company_of_hunters)
         if names & {"BURNING VENGEANCE", "ONSLAUGHT OF FIRE"}:
@@ -2876,6 +2883,7 @@ class StratagemManager(
             "ONLY IN DEATH DOES DUTY END",
             "THE FOE FORESEEN",
             "FIGHT TO THE END",
+            "STAND TO THE END",
             "FINAL RETRIBUTION",
             "EMPEROR'S VENGEANCE",
             "SELFLESS DEMISE",
@@ -3247,11 +3255,14 @@ class StratagemManager(
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
             "BATTLE DRILL RECALL",
+            "AUGMENTED TARGETING",
             "HEROES OF THE CHAPTER",
             "NO THREAT TOO GREAT",
             "NOT ONE BACKWARDS STEP",
             "BLITZING FUSILLADE",
             "FULL THROTTLE",
+            "PRIORITY STRIKE",
+            "STAND TO THE END",
             "VENOMOUS WRATH",
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
@@ -10248,6 +10259,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_ceramite_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_firestorm_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -11859,6 +11874,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_bastion_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_ceramite_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -14708,6 +14727,19 @@ class StratagemManager(
             hits_by_target=hits_by_target,
         )
 
+    def _on_unit_shooting_resolved_space_marines_ceramite_sentinels(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        declared_targets=None,
+        **_kwargs,
+    ):
+        self._queue_space_marines_ceramite_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+            declared_targets=list(declared_targets or []),
+        )
+
     def _on_unit_shooting_resolved_space_marines_company_of_hunters(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_company_of_hunters_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -16921,6 +16953,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_reclamation_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_ceramite_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -22814,6 +22853,9 @@ class StratagemManager(
         bastion_result = self._use_space_marines_bastion_task_force_stratagem(s, **kwargs)
         if bastion_result is not None:
             return bastion_result
+        ceramite_result = self._use_space_marines_ceramite_sentinels_stratagem(s, **kwargs)
+        if ceramite_result is not None:
+            return ceramite_result
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result

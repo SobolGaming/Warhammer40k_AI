@@ -4707,6 +4707,63 @@ _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_CERAMITE_SENTINELS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010759002": EnhancementToolDescriptor(
+        enhancement_id="000010759002",
+        name="Honour Indefatigable",
+        timing="end_of_phase_when_bearer_destroyed_first_time",
+        target="bearer",
+        duration="once_per_battle",
+        effect="return_bearer_on_2plus_with_fixed_wounds",
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": "full",
+            "return_on_death_key": "honour_indefatigable",
+        },
+    ),
+    "000010759003": EnhancementToolDescriptor(
+        enhancement_id="000010759003",
+        name="Castellum Omnivox",
+        timing="after_bearer_unit_falls_back",
+        target="bearer_unit",
+        duration="until_end_of_turn",
+        effect="choose_action_or_shoot_and_charge_after_fall_back",
+        effect_params={
+            "choices": ("ACTION", "SHOOT_AND_CHARGE"),
+        },
+    ),
+    "000010759004": EnhancementToolDescriptor(
+        enhancement_id="000010759004",
+        name="Spy-skull Data Link",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_ignores_cover_to_bearer_led_unit_ranged_weapons",
+        effect_params={
+            "attack_type": "ranged",
+            "keywords": ("IGNORES COVER",),
+        },
+    ),
+    "000010759005": EnhancementToolDescriptor(
+        enhancement_id="000010759005",
+        name="Defensive Mastery",
+        timing="post_deployment",
+        target="friendly_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "can_place_in_reserves": True,
+            "redeploy_filters": ("ADEPTUS ASTARTES",),
+            "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_CERAMITE_SENTINELS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_CERAMITE_SENTINELS_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_RECLAMATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010684002": EnhancementToolDescriptor(
         enhancement_id="000010684002",
@@ -9747,6 +9804,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_CERAMITE_SENTINELS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_RECLAMATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10095,6 +10155,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_CERAMITE_SENTINELS_BY_NAME.get(key)
         or _SPACE_MARINES_RECLAMATION_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)

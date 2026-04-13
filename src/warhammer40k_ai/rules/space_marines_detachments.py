@@ -8,6 +8,7 @@ from itertools import combinations
 from pathlib import Path
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.calcs import measure_path_distance
 from ..utility.entity_ids import get_entity_id
 
 
@@ -341,6 +342,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Reclamation Force")
 
+    def is_ceramite_sentinels(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Ceramite Sentinels")
+
     def is_saga_of_the_bold(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -563,6 +569,32 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except Exception:
             root = unit
         return root
+
+    def _attached_unit_models(self, unit) -> list:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            try:
+                models = list(get_models() or [])
+            except Exception:
+                models = []
+            if models:
+                return models
+        models = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            try:
+                for model in list(getattr(member, "models", []) or []):
+                    if model is not None:
+                        models.append(model)
+            except Exception:
+                continue
+        return models
 
     def _iter_unique_army_roots(self) -> list:
         army = self.army
@@ -3537,6 +3569,101 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _unit_within_any_terrain_feature(self, unit, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        checker = getattr(game_obj, "_unit_within_any_terrain_feature", None) if game_obj is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except Exception:
+                return False
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        terrain_features = list(getattr(game_map, "terrain_features", []) or []) if game_map is not None else []
+        if not terrain_features:
+            return False
+        for model in self._attached_unit_models(root):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            try:
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = True
+            if not alive or bool(getattr(model, "_pending_placement", False)):
+                continue
+            model_base = getattr(model, "model_base", None)
+            get_shape = getattr(model_base, "get_base_shape", None)
+            if not callable(get_shape):
+                continue
+            try:
+                base_geom = get_shape()
+            except Exception:
+                continue
+            if base_geom is None:
+                continue
+            for terrain in terrain_features:
+                footprint = getattr(terrain, "footprint", None)
+                if footprint is None:
+                    continue
+                try:
+                    if bool(base_geom.intersects(footprint)):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def ceramite_within_terrain_feature(self, unit, *, game=None) -> bool:
+        if not self.is_ceramite_sentinels():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return self._unit_within_any_terrain_feature(root, game=game)
+
+    def ceramite_entrenched_applies(self, unit, *, game=None) -> bool:
+        if not self.is_ceramite_sentinels():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self.ceramite_within_terrain_feature(root, game=game):
+            return False
+        if self._attached_unit_was_set_up_this_turn(root, game=game):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        for model in self._attached_unit_models(root):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            try:
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = True
+            if not alive or bool(getattr(model, "_pending_placement", False)):
+                continue
+            path = list(getattr(model, "last_move_path", []) or [])
+            try:
+                moved_distance = float(measure_path_distance(path, root, None, game_map))
+            except Exception:
+                moved_distance = 0.0
+            if moved_distance > 3.0 + 1e-6:
+                return False
+        return True
+
+    def adaptive_defence_reroll_hit_ones_applies(self, unit, *, game=None) -> bool:
+        return self.ceramite_within_terrain_feature(unit, game=game)
+
+    def adaptive_defence_reroll_wound_ones_applies(self, unit, *, game=None) -> bool:
+        return self.ceramite_within_terrain_feature(unit, game=game)
+
     def orbital_assault_auto_sense_coordination_weapon_keyword(
         self,
         attacker_model,
@@ -4017,6 +4144,100 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    @staticmethod
+    def _clear_ceramite_effect_keys(root, keys: tuple[str, ...]) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in keys:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def _ceramite_turn_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        turn_key: str,
+        owner_key: str,
+        clear_keys: tuple[str, ...],
+        game=None,
+    ) -> bool:
+        if not self.is_ceramite_sentinels():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(active_key, False))):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_player_id = str(sr.get(owner_key, "") or "").strip()
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        if (effect_turn and current_turn and effect_turn != current_turn) or (
+            effect_player_id and current_player_id and effect_player_id != current_player_id
+        ):
+            self._clear_ceramite_effect_keys(root, clear_keys)
+            return False
+        return True
+
+    def _ceramite_phase_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        expires_phase_key: str,
+        clear_keys: tuple[str, ...],
+        game=None,
+    ) -> bool:
+        if not self.is_ceramite_sentinels():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            self._clear_ceramite_effect_keys(root, clear_keys)
+            return False
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            self._clear_ceramite_effect_keys(root, clear_keys)
+            return False
+        return True
+
     def reclamation_force_crusading_conquerors_objective_control_bonus(
         self,
         model,
@@ -4062,6 +4283,262 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         bonus = int(sr.get("space_marines_reclamation_crusading_conquerors_objective_control_bonus", 1) or 1)
         source = str(sr.get("space_marines_reclamation_crusading_conquerors_source", "") or "Crusading Conquerors").strip()
         return max(0, bonus), source or "Crusading Conquerors"
+
+    @staticmethod
+    def _castellum_omnivox_choice_label(choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        if key == "ACTION":
+            return "Perform Action"
+        if key == "SHOOT_AND_CHARGE":
+            return "Shoot and Charge"
+        return str(choice_key or "").strip()
+
+    def _castellum_omnivox_choice_keys(self) -> tuple[str, ...]:
+        return ("ACTION", "SHOOT_AND_CHARGE")
+
+    def _castellum_omnivox_source_member(self, unit):
+        return self._company_of_hunters_enhancement_source_member(unit, "enhancement_castellum_omnivox")
+
+    def castellum_omnivox_can_choose_on_fall_back(self, unit, *, game=None) -> bool:
+        if not self.is_ceramite_sentinels():
+            return False
+        root, member, sr = self._castellum_omnivox_source_member(unit)
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        return not owner_id or not current_player_id or owner_id == current_player_id
+
+    def validate_castellum_omnivox_choice(self, unit, choice_key: str, *, game=None, player=None, battle_round=None) -> tuple[bool, str]:
+        if not self.castellum_omnivox_can_choose_on_fall_back(unit, game=game):
+            return False, "Castellum Omnivox does not currently apply to that unit."
+        normalized = str(choice_key or "").strip().upper()
+        if normalized not in self._castellum_omnivox_choice_keys():
+            return False, "Castellum Omnivox requires a valid choice."
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False, "Castellum Omnivox unit was not found."
+        if player is not None:
+            owner = getattr(getattr(root, "get_parent_army", lambda: None)(), "player", None)
+            if owner is not None and owner is not player:
+                return False, "Castellum Omnivox target must belong to the acting player."
+        if battle_round is not None:
+            try:
+                current_turn = int(getattr(self._resolve_game_context(game=game), "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if current_turn and int(battle_round or 0) and current_turn != int(battle_round or 0):
+                return False, "Castellum Omnivox choice is no longer current."
+        return True, ""
+
+    def select_castellum_omnivox_choice(self, unit, choice_key: str, *, game=None, player=None, battle_round=None):
+        valid, reason = self.validate_castellum_omnivox_choice(
+            unit,
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        normalized = str(choice_key or "").strip().upper()
+        source_name = (
+            str(sr.get("enhancement_castellum_omnivox_source", "") or "Castellum Omnivox").strip()
+            or "Castellum Omnivox"
+        )
+        owner_id = str(
+            getattr(player, "id", "")
+            or getattr(getattr(self.army, "player", None), "id", "")
+            or ""
+        ).strip()
+        current_turn = int(
+            battle_round
+            or getattr(self._resolve_game_context(game=game), "turn", 0)
+            or 0
+        )
+        for key in (
+            "space_marines_ceramite_castellum_omnivox_active",
+            "space_marines_ceramite_castellum_omnivox_turn",
+            "space_marines_ceramite_castellum_omnivox_turn_owner",
+            "space_marines_ceramite_castellum_omnivox_source",
+            "space_marines_ceramite_castellum_omnivox_choice_key",
+            "space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back",
+            "space_marines_ceramite_castellum_omnivox_shoot_after_fall_back",
+            "space_marines_ceramite_castellum_omnivox_charge_after_fall_back",
+        ):
+            sr.pop(key, None)
+        sr["space_marines_ceramite_castellum_omnivox_active"] = True
+        sr["space_marines_ceramite_castellum_omnivox_turn"] = int(current_turn or 0)
+        sr["space_marines_ceramite_castellum_omnivox_turn_owner"] = owner_id
+        sr["space_marines_ceramite_castellum_omnivox_source"] = source_name
+        sr["space_marines_ceramite_castellum_omnivox_choice_key"] = normalized
+        sr["space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back"] = normalized == "ACTION"
+        sr["space_marines_ceramite_castellum_omnivox_shoot_after_fall_back"] = normalized == "SHOOT_AND_CHARGE"
+        sr["space_marines_ceramite_castellum_omnivox_charge_after_fall_back"] = normalized == "SHOOT_AND_CHARGE"
+        root.special_rules = sr
+        return {
+            "unit_id": str(get_entity_id(root) or ""),
+            "unit_name": str(getattr(root, "name", "") or "Unit"),
+            "choice_key": normalized,
+            "choice_label": self._castellum_omnivox_choice_label(normalized),
+            "source": source_name,
+        }
+
+    def castellum_omnivox_allow_action_after_fall_back(self, unit, game) -> bool:
+        if game is None:
+            return False
+        if not self._ceramite_turn_effect_active(
+            unit,
+            active_key="space_marines_ceramite_castellum_omnivox_active",
+            turn_key="space_marines_ceramite_castellum_omnivox_turn",
+            owner_key="space_marines_ceramite_castellum_omnivox_turn_owner",
+            clear_keys=(
+                "space_marines_ceramite_castellum_omnivox_active",
+                "space_marines_ceramite_castellum_omnivox_turn",
+                "space_marines_ceramite_castellum_omnivox_turn_owner",
+                "space_marines_ceramite_castellum_omnivox_source",
+                "space_marines_ceramite_castellum_omnivox_choice_key",
+                "space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_shoot_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_charge_after_fall_back",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back", False)):
+            return False
+        for flag in ("actions_enabled", "mission_actions_enabled", "mission_has_actions"):
+            try:
+                enabled = getattr(game, flag)
+            except Exception:
+                continue
+            if enabled is False:
+                return False
+        return True
+
+    def castellum_omnivox_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        if not self._ceramite_turn_effect_active(
+            unit,
+            active_key="space_marines_ceramite_castellum_omnivox_active",
+            turn_key="space_marines_ceramite_castellum_omnivox_turn",
+            owner_key="space_marines_ceramite_castellum_omnivox_turn_owner",
+            clear_keys=(
+                "space_marines_ceramite_castellum_omnivox_active",
+                "space_marines_ceramite_castellum_omnivox_turn",
+                "space_marines_ceramite_castellum_omnivox_turn_owner",
+                "space_marines_ceramite_castellum_omnivox_source",
+                "space_marines_ceramite_castellum_omnivox_choice_key",
+                "space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_shoot_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_charge_after_fall_back",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_ceramite_castellum_omnivox_shoot_after_fall_back", False)):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def castellum_omnivox_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        if not self._ceramite_turn_effect_active(
+            unit,
+            active_key="space_marines_ceramite_castellum_omnivox_active",
+            turn_key="space_marines_ceramite_castellum_omnivox_turn",
+            owner_key="space_marines_ceramite_castellum_omnivox_turn_owner",
+            clear_keys=(
+                "space_marines_ceramite_castellum_omnivox_active",
+                "space_marines_ceramite_castellum_omnivox_turn",
+                "space_marines_ceramite_castellum_omnivox_turn_owner",
+                "space_marines_ceramite_castellum_omnivox_source",
+                "space_marines_ceramite_castellum_omnivox_choice_key",
+                "space_marines_ceramite_castellum_omnivox_allow_action_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_shoot_after_fall_back",
+                "space_marines_ceramite_castellum_omnivox_charge_after_fall_back",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("space_marines_ceramite_castellum_omnivox_charge_after_fall_back", False))
+
+    def unyielding_might_objective_control_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        if not self.is_ceramite_sentinels():
+            return 0, ""
+        target_unit = unit
+        if target_unit is None and model is not None:
+            target_unit = getattr(model, "parent_unit", None)
+        root = self._attached_unit_root(target_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_ceramite_unyielding_might_active", False)):
+            return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            effect_owner = str(sr.get("space_marines_ceramite_unyielding_might_turn_owner", "") or "").strip()
+            effect_turn = int(sr.get("space_marines_ceramite_unyielding_might_turn", 0) or 0)
+            if current_turn and effect_turn:
+                if current_turn == effect_turn:
+                    pass
+                elif current_turn == effect_turn + 1 and effect_owner and current_player_id and current_player_id != effect_owner:
+                    pass
+                else:
+                    self._clear_ceramite_effect_keys(
+                        root,
+                        (
+                            "space_marines_ceramite_unyielding_might_active",
+                            "space_marines_ceramite_unyielding_might_turn",
+                            "space_marines_ceramite_unyielding_might_turn_owner",
+                            "space_marines_ceramite_unyielding_might_objective_control_bonus",
+                            "space_marines_ceramite_unyielding_might_source",
+                        ),
+                    )
+                    return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_ceramite_unyielding_might_objective_control_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        source = str(sr.get("space_marines_ceramite_unyielding_might_source", "") or "Unyielding Might").strip()
+        return max(0, bonus), source or "Unyielding Might"
 
     def reclamation_force_furious_dedication_charge_roll_bonus(
         self,
@@ -7018,8 +7495,35 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _unit_has_base_keyword_or_faction(self, unit, keyword: str, *, faction_id: str = "") -> bool:
+        if unit is None:
+            return False
+        normalized = str(keyword or "").strip().upper()
+        if not normalized:
+            return False
+        raw_keywords = [
+            str(value or "").strip().upper()
+            for value in list(getattr(unit, "keywords", []) or [])
+            if str(value or "").strip()
+        ]
+        raw_keywords += [
+            str(value or "").strip().upper()
+            for value in list(getattr(unit, "faction_keywords", []) or [])
+            if str(value or "").strip()
+        ]
+        if normalized in raw_keywords:
+            return True
+        if faction_id and str(getattr(unit, "faction_id", "") or "").strip().upper() == str(faction_id).strip().upper():
+            return True
+        faction_data = getattr(unit, "faction_data", None)
+        if isinstance(faction_data, dict):
+            faction_name = str(faction_data.get("name", "") or "").strip().upper()
+            if faction_name == normalized:
+                return True
+        return False
+
     def unit_is_adeptus_astartes(self, unit) -> bool:
-        return self._unit_has_keyword_or_faction(unit, "ADEPTUS ASTARTES", faction_id=self.faction_id)
+        return self._unit_has_base_keyword_or_faction(unit, "ADEPTUS ASTARTES", faction_id=self.faction_id)
 
     def attached_unit_is_adeptus_astartes(self, unit) -> bool:
         if unit is None:
@@ -8862,6 +9366,104 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self.codex_discipline_reroll_hit_ones_applies(unit, game=game):
             return False
         return self.interlocking_tactics_target_is_auspex_scanned_for(unit, target_unit, game=game)
+
+    def priority_strike_reroll_mode(self, unit, target_unit, *, game=None) -> tuple[str, str]:
+        if not self._ceramite_phase_effect_active(
+            unit,
+            active_key="space_marines_ceramite_priority_strike_active",
+            owner_key="space_marines_ceramite_priority_strike_turn_owner",
+            turn_key="space_marines_ceramite_priority_strike_turn",
+            expires_phase_key="space_marines_ceramite_priority_strike_expires_phase",
+            clear_keys=(
+                "space_marines_ceramite_priority_strike_active",
+                "space_marines_ceramite_priority_strike_turn_owner",
+                "space_marines_ceramite_priority_strike_turn",
+                "space_marines_ceramite_priority_strike_expires_phase",
+                "space_marines_ceramite_priority_strike_source",
+            ),
+            game=game,
+        ):
+            return "", ""
+        if target_unit is None:
+            return "", ""
+        if not (
+            self._attached_unit_has_keyword(target_unit, "CHARACTER")
+            or self._attached_unit_has_keyword(target_unit, "MONSTER")
+            or self._attached_unit_has_keyword(target_unit, "VEHICLE")
+        ):
+            return "", ""
+        root = self._attached_unit_root(unit)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return "", ""
+        source = str(sr.get("space_marines_ceramite_priority_strike_source", "") or "Priority Strike").strip()
+        return "full", (source or "Priority Strike")
+
+    def augmented_targeting_weapon_keywords(self, unit, *, weapon_profile=None, game=None) -> tuple[list[str], str]:
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return [], ""
+        if not self._ceramite_phase_effect_active(
+            unit,
+            active_key="space_marines_ceramite_augmented_targeting_active",
+            owner_key="space_marines_ceramite_augmented_targeting_turn_owner",
+            turn_key="space_marines_ceramite_augmented_targeting_turn",
+            expires_phase_key="space_marines_ceramite_augmented_targeting_expires_phase",
+            clear_keys=(
+                "space_marines_ceramite_augmented_targeting_active",
+                "space_marines_ceramite_augmented_targeting_turn_owner",
+                "space_marines_ceramite_augmented_targeting_turn",
+                "space_marines_ceramite_augmented_targeting_expires_phase",
+                "space_marines_ceramite_augmented_targeting_choice",
+                "space_marines_ceramite_augmented_targeting_source",
+            ),
+            game=game,
+        ):
+            return [], ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return [], ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return [], ""
+        source = str(sr.get("space_marines_ceramite_augmented_targeting_source", "") or "Augmented Targeting").strip()
+        if self.ceramite_entrenched_applies(root, game=game):
+            return ["SUSTAINED HITS 1", "LETHAL HITS"], (source or "Augmented Targeting")
+        choice = str(sr.get("space_marines_ceramite_augmented_targeting_choice", "") or "").strip().upper()
+        if choice == "SUSTAINED_HITS_1":
+            return ["SUSTAINED HITS 1"], (source or "Augmented Targeting")
+        if choice == "LETHAL_HITS":
+            return ["LETHAL HITS"], (source or "Augmented Targeting")
+        return [], ""
+
+    def stand_to_the_end_fight_on_death_rule(self, unit, *, model=None, game=None):
+        _ = model
+        if not self._ceramite_phase_effect_active(
+            unit,
+            active_key="space_marines_ceramite_stand_to_the_end_active",
+            owner_key="space_marines_ceramite_stand_to_the_end_turn_owner",
+            turn_key="space_marines_ceramite_stand_to_the_end_turn",
+            expires_phase_key="space_marines_ceramite_stand_to_the_end_expires_phase",
+            clear_keys=(
+                "space_marines_ceramite_stand_to_the_end_active",
+                "space_marines_ceramite_stand_to_the_end_turn_owner",
+                "space_marines_ceramite_stand_to_the_end_turn",
+                "space_marines_ceramite_stand_to_the_end_expires_phase",
+                "space_marines_ceramite_stand_to_the_end_source",
+            ),
+            game=game,
+        ):
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        threshold = 3 if self.ceramite_entrenched_applies(root, game=game) else 4
+        source = str(sr.get("space_marines_ceramite_stand_to_the_end_source", "") or "Stand to the End").strip()
+        return {"threshold": int(threshold), "source": source or "Stand to the End"}
 
     def light_of_vengeance_weapon_keyword(self, unit, target_unit, *, game=None) -> str:
         if not self._bastion_phase_effect_active(

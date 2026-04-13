@@ -977,6 +977,21 @@ class Unit(
             except Exception:
                 pass
             try:
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(sm_mgr, "unyielding_might_objective_control_bonus", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Unyielding Might").strip() or "Unyielding Might"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
+            try:
                 as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
                 bonus_fn = (
                     getattr(as_mgr, "righteous_purpose_sacresants_objective_control_bonus", None)

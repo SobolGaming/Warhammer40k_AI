@@ -10310,6 +10310,72 @@ _BASTION_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CERAMITE_SENTINELS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010760002": StratagemToolDescriptor(
+        stratagem_id="000010760002",
+        name="UNYIELDING MIGHT",
+        timing="command_phase",
+        target="adeptus_astartes_unit_within_engagement_range",
+        duration="until_start_of_your_next_command_phase",
+        effect="objective_control_bonus_until_next_command_phase",
+        cp_cost=1,
+        effect_params={"objective_control_bonus": 1},
+    ),
+    "000010760003": StratagemToolDescriptor(
+        stratagem_id="000010760003",
+        name="PRIORITY STRIKE",
+        timing="your_shooting_or_fight_phase_on_select",
+        target="adeptus_astartes_infantry_or_mounted_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="wound_reroll_vs_character_monster_vehicle",
+        cp_cost=2,
+        effect_params={"target_keywords_any": ("CHARACTER", "MONSTER", "VEHICLE")},
+    ),
+    "000010760006": StratagemToolDescriptor(
+        stratagem_id="000010760006",
+        name="AUGMENTED TARGETING",
+        timing="your_shooting_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_lethal_hits_or_sustained_hits_1_to_ranged_weapons",
+        cp_cost=1,
+        effect_params={
+            "choices": ("SUSTAINED_HITS_1", "LETHAL_HITS"),
+            "grant_both_if_entrenched": True,
+        },
+    ),
+    "000010760005": StratagemToolDescriptor(
+        stratagem_id="000010760005",
+        name="STAND TO THE END",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_astartes_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "threshold": 4,
+            "improve_if_entrenched": 1,
+        },
+    ),
+    "000010760007": StratagemToolDescriptor(
+        stratagem_id="000010760007",
+        name="EVASIVE REPOSITIONING",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved",
+        target="adeptus_astartes_infantry_or_mounted_unit_targeted_by_attacker",
+        duration="immediate",
+        effect="reactive_normal_move_after_enemy_shoots",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "distance_reroll_if_entrenched": True,
+        },
+    ),
+}
+
+_CERAMITE_SENTINELS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CERAMITE_SENTINELS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GLADIUS_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008352005": StratagemToolDescriptor(
         stratagem_id="000008352005",
@@ -15080,6 +15146,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CERAMITE_SENTINELS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GLADIUS_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15386,6 +15455,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _LIBRARIUS_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _CERAMITE_SENTINELS_STRATAGEM_BY_NAME.get(key)
         or _GLADIUS_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)

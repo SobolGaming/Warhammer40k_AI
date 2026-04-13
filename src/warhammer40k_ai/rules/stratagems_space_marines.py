@@ -72,6 +72,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_ceramite_sentinels_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_ceramite_sentinels", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_blade_of_ultramar_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_blade_of_ultramar", None) if mgr is not None else None
@@ -4518,6 +4523,397 @@ class SpaceMarinesStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_ceramite_unyielding_might_candidates(self) -> list[Any]:
+        if not self._is_ceramite_sentinels_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_unit_is_engaged(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_ceramite_priority_strike_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_ceramite_sentinels_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        normalized_phase = str(phase_name or "").strip().lower()
+        if normalized_phase not in {"shooting phase", "fight phase"}:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if normalized_phase == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if normalized_phase == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_ceramite_augmented_targeting_candidates(self) -> list[Any]:
+        if not self._is_ceramite_sentinels_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_ceramite_stand_to_the_end_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_ceramite_sentinels_detachment():
+            return []
+        target_ids = {
+            self._sm_sort_key(self._sm_root(target))
+            for target in list(target_units or [])
+            if self._sm_root(target) is not None
+        }
+        if not target_ids:
+            return []
+        candidates: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if self._sm_sort_key(root) not in target_ids:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_ceramite_evasive_repositioning_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_ceramite_sentinels_detachment():
+            return []
+        target_ids = {
+            self._sm_sort_key(self._sm_root(target))
+            for target in list(target_units or [])
+            if self._sm_root(target) is not None
+        }
+        if not target_ids:
+            return []
+        candidates: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if self._sm_sort_key(root) not in target_ids:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _queue_space_marines_ceramite_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_ceramite_sentinels_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "COMMAND_PHASE":
+            stratagem = self.get_by_name("UNYIELDING MIGHT")
+            candidates = self._space_marines_ceramite_unyielding_might_candidates()
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Command phase",
+                        "phase_name": "Command phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            for stratagem_name, candidates, choice_options in (
+                ("PRIORITY STRIKE", self._space_marines_ceramite_priority_strike_candidates(phase_name="shooting phase"), None),
+                ("AUGMENTED TARGETING", self._space_marines_ceramite_augmented_targeting_candidates(), self._sm_fenris_preytakers_eye_options()),
+            ):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Shooting phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if choice_options:
+                    payload["choice_options"] = list(choice_options)
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("PRIORITY STRIKE")
+            candidates = self._space_marines_ceramite_priority_strike_candidates(phase_name="fight phase")
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_ceramite_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_ceramite_sentinels_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("STAND TO THE END")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_ceramite_stand_to_the_end_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_ceramite_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any,
+        declared_targets: list[Any] | None = None,
+    ) -> None:
+        if not self._is_ceramite_sentinels_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+
+        target_units = self._sm_resolve_units(list(declared_targets or []))
+        if isinstance(hits_by_target, dict):
+            for target_unit in list((hits_by_target or {}).keys()):
+                target_root = self._sm_root(target_unit)
+                if target_root is None:
+                    continue
+                if any(existing is target_root for existing in target_units):
+                    continue
+                target_units.append(target_root)
+        candidates = self._space_marines_ceramite_evasive_repositioning_candidates(target_units=target_units)
+        if not candidates:
+            return
+
+        stratagem = self.get_by_name("EVASIVE REPOSITIONING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_ceramite_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_ceramite_sentinels_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_key == "SHOOTING_PHASE":
+                for key in (
+                    "space_marines_ceramite_priority_strike_active",
+                    "space_marines_ceramite_priority_strike_turn_owner",
+                    "space_marines_ceramite_priority_strike_turn",
+                    "space_marines_ceramite_priority_strike_expires_phase",
+                    "space_marines_ceramite_priority_strike_source",
+                    "space_marines_ceramite_augmented_targeting_active",
+                    "space_marines_ceramite_augmented_targeting_turn_owner",
+                    "space_marines_ceramite_augmented_targeting_turn",
+                    "space_marines_ceramite_augmented_targeting_expires_phase",
+                    "space_marines_ceramite_augmented_targeting_choice",
+                    "space_marines_ceramite_augmented_targeting_source",
+                ):
+                    sr.pop(key, None)
+            if phase_key == "FIGHT_PHASE":
+                for key in (
+                    "space_marines_ceramite_priority_strike_active",
+                    "space_marines_ceramite_priority_strike_turn_owner",
+                    "space_marines_ceramite_priority_strike_turn",
+                    "space_marines_ceramite_priority_strike_expires_phase",
+                    "space_marines_ceramite_priority_strike_source",
+                    "space_marines_ceramite_stand_to_the_end_active",
+                    "space_marines_ceramite_stand_to_the_end_turn_owner",
+                    "space_marines_ceramite_stand_to_the_end_turn",
+                    "space_marines_ceramite_stand_to_the_end_expires_phase",
+                    "space_marines_ceramite_stand_to_the_end_source",
+                ):
+                    sr.pop(key, None)
+            root.special_rules = sr
 
     def _space_marines_bastion_post_attack_source(self, *, attacker_unit: Any, hits_by_target: Any) -> Any:
         if not self._is_bastion_task_force_detachment():
@@ -17675,6 +18071,364 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_unyielding_might(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: UNYIELDING MIGHT: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _choice_payload, _action, _from_pending = self._sm_blade_context(
+            "UNYIELDING MIGHT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: UNYIELDING MIGHT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNYIELDING MIGHT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNYIELDING MIGHT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: UNYIELDING MIGHT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_unit_is_engaged(root):
+            logger.error("ERROR: UNYIELDING MIGHT: target must be within Engagement Range of an enemy unit")
+            return False
+        valid_candidates = candidates or self._space_marines_ceramite_unyielding_might_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: UNYIELDING MIGHT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ceramite_unyielding_might_active"] = True
+        sr["space_marines_ceramite_unyielding_might_objective_control_bonus"] = 1
+        sr["space_marines_ceramite_unyielding_might_turn_owner"] = str(
+            getattr(current_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        sr["space_marines_ceramite_unyielding_might_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ceramite_unyielding_might_source"] = str(
+            getattr(stratagem, "name", "") or "UNYIELDING MIGHT"
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNYIELDING MIGHT: %s gains +1 Objective Control until the start of your next Command phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_priority_strike(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PRIORITY STRIKE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: PRIORITY STRIKE: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _choice_payload, _action, _from_pending = self._sm_blade_context(
+            "PRIORITY STRIKE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: PRIORITY STRIKE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: PRIORITY STRIKE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PRIORITY STRIKE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: PRIORITY STRIKE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: PRIORITY STRIKE: target must be an INFANTRY or MOUNTED unit")
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: PRIORITY STRIKE: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: PRIORITY STRIKE: target has already been selected to fight this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_ceramite_priority_strike_candidates(phase_name=phase_name)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: PRIORITY STRIKE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ceramite_priority_strike_active"] = True
+        sr["space_marines_ceramite_priority_strike_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_ceramite_priority_strike_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ceramite_priority_strike_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["space_marines_ceramite_priority_strike_source"] = str(getattr(stratagem, "name", "") or "PRIORITY STRIKE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PRIORITY STRIKE: %s can re-roll Wound rolls against CHARACTER, MONSTER and VEHICLE units this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_augmented_targeting(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: AUGMENTED TARGETING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AUGMENTED TARGETING: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, choice_payload, _action, _from_pending = self._sm_blade_context(
+            "AUGMENTED TARGETING",
+            kwargs,
+        )
+        choice = self._sm_fenris_preytakers_eye_choice_key(
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+            or choice_payload
+        )
+        if not choice:
+            logger.error("ERROR: AUGMENTED TARGETING: choice must be LETHAL_HITS or SUSTAINED_HITS_1")
+            return False
+        if unit is None:
+            logger.error("ERROR: AUGMENTED TARGETING: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: AUGMENTED TARGETING: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: AUGMENTED TARGETING: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: AUGMENTED TARGETING: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: AUGMENTED TARGETING: target has already been selected to shoot this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_ceramite_augmented_targeting_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: AUGMENTED TARGETING: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ceramite_augmented_targeting_active"] = True
+        sr["space_marines_ceramite_augmented_targeting_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_ceramite_augmented_targeting_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ceramite_augmented_targeting_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_ceramite_augmented_targeting_choice"] = choice
+        sr["space_marines_ceramite_augmented_targeting_source"] = str(
+            getattr(stratagem, "name", "") or "AUGMENTED TARGETING"
+        )
+        root.special_rules = sr
+
+        mgr = self._sm_detachment_mgr()
+        entrenched = bool(getattr(mgr, "ceramite_entrenched_applies", lambda _u, game=None: False)(root, game=self.game)) if mgr is not None else False
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if entrenched:
+            logger.info(
+                "INFO: AUGMENTED TARGETING: %s gains [LETHAL HITS] and [SUSTAINED HITS 1] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: AUGMENTED TARGETING: %s gains [%s] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+                "LETHAL HITS" if choice == "LETHAL_HITS" else "SUSTAINED HITS 1",
+            )
+        return True
+
+    def _use_space_marines_stand_to_the_end(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: STAND TO THE END: wrong phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _choice_payload, _action, _from_pending = self._sm_blade_context(
+            "STAND TO THE END",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: STAND TO THE END: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(trigger_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: STAND TO THE END: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: STAND TO THE END: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: STAND TO THE END: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: STAND TO THE END: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: STAND TO THE END: target must be an ADEPTUS ASTARTES unit")
+            return False
+        valid_candidates = candidates or self._space_marines_ceramite_stand_to_the_end_candidates(
+            target_units=list(target_units or [])
+        )
+        if not valid_candidates or not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: STAND TO THE END: target unit was not selected as an attack target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ceramite_stand_to_the_end_active"] = True
+        sr["space_marines_ceramite_stand_to_the_end_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_ceramite_stand_to_the_end_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ceramite_stand_to_the_end_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_ceramite_stand_to_the_end_source"] = str(
+            getattr(stratagem, "name", "") or "STAND TO THE END"
+        )
+        root.special_rules = sr
+
+        mgr = self._sm_detachment_mgr()
+        entrenched = bool(getattr(mgr, "ceramite_entrenched_applies", lambda _u, game=None: False)(root, game=self.game)) if mgr is not None else False
+        threshold = 3 if entrenched else 4
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: STAND TO THE END: %s fights on death on %d+ this phase.",
+            getattr(root, "name", "Unit"),
+            int(threshold),
+        )
+        return True
+
+    def _use_space_marines_evasive_repositioning(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EVASIVE REPOSITIONING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: EVASIVE REPOSITIONING: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _choice_payload, _action, from_pending = self._sm_blade_context(
+            "EVASIVE REPOSITIONING",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: EVASIVE REPOSITIONING: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(trigger_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: EVASIVE REPOSITIONING: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: EVASIVE REPOSITIONING: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target must be an INFANTRY or MOUNTED unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target must not be within Engagement Range")
+            return False
+        valid_candidates = candidates or self._space_marines_ceramite_evasive_repositioning_candidates(
+            target_units=list(target_units or [])
+        )
+        if not valid_candidates or not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target unit was not selected as an attack target")
+            return False
+        if not from_pending and target_units and not any(self._sm_root(target) is root for target in list(target_units or [])):
+            logger.error("ERROR: EVASIVE REPOSITIONING: target unit was not selected as a target of the enemy attacks")
+            return False
+        request_roll = getattr(self.game, "request_dice_roll", None) if self.game is not None else None
+        if not callable(request_roll):
+            logger.error("ERROR: EVASIVE REPOSITIONING: reactive move roll queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        ability_name = str(getattr(stratagem, "name", "") or "EVASIVE REPOSITIONING").strip() or "EVASIVE REPOSITIONING"
+        reroll_rules: list[dict[str, Any]] = []
+        mgr = self._sm_detachment_mgr()
+        entrenched = bool(getattr(mgr, "ceramite_entrenched_applies", lambda _u, game=None: False)(root, game=self.game)) if mgr is not None else False
+        if entrenched:
+            reroll_rules.append(
+                {
+                    "action_id": "reroll_evasive_repositioning",
+                    "label": "Re-roll Evasive Repositioning distance",
+                    "mode": "all",
+                    "source": ability_name,
+                }
+            )
+        request_roll(
+            player_id=getattr(self.player, "id", None),
+            spec={
+                "dice_count": 1,
+                "faces": 6,
+                "reason": f"{ability_name} roll for {getattr(root, 'name', 'Unit')}",
+                "roll_type": "evasive_repositioning",
+                "unit_id": get_entity_id(root),
+                "handler_key": "space_marines_evasive_repositioning",
+                "show_sum": True,
+                "handler_payload": {
+                    "unit_id": get_entity_id(root),
+                    "attacker_unit_id": get_entity_id(attacker_root),
+                    "source_name": ability_name,
+                    "kind": "evasive_repositioning",
+                },
+                "reroll_rules": reroll_rules,
+            },
+            prompt=f"{ability_name} roll for {getattr(root, 'name', 'Unit')}",
+        )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EVASIVE REPOSITIONING: %s will roll D6 for a reactive Normal move.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_space_marines_blitzing_fusillade(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "shooting phase":
@@ -19060,6 +19814,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_light_of_vengeance(stratagem, **kwargs)
         if name_u == "SHOCK BOMBARDMENT":
             return self._use_space_marines_shock_bombardment(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_ceramite_sentinels_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_ceramite_sentinels_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "UNYIELDING MIGHT":
+            return self._use_space_marines_unyielding_might(stratagem, **kwargs)
+        if name_u == "PRIORITY STRIKE":
+            return self._use_space_marines_priority_strike(stratagem, **kwargs)
+        if name_u == "AUGMENTED TARGETING":
+            return self._use_space_marines_augmented_targeting(stratagem, **kwargs)
+        if name_u == "STAND TO THE END":
+            return self._use_space_marines_stand_to_the_end(stratagem, **kwargs)
+        if name_u == "EVASIVE REPOSITIONING":
+            return self._use_space_marines_evasive_repositioning(stratagem, **kwargs)
         return None
 
     def _use_space_marines_orbital_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

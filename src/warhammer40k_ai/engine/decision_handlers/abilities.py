@@ -10092,6 +10092,43 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if allowed_keys and str(choice_key).strip().upper() not in allowed_keys:
             return ("Neural Overload choice is not an eligible candidate.",)
         return ()
+    if ability == "space_marines_castellum_omnivox_choice":
+        if is_skip_choice(request, result):
+            return ("Castellum Omnivox choice cannot be skipped.",)
+        payload = _option_payload(request, result)
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip()
+        if not choice_key:
+            return ("Castellum Omnivox requires choice_key.",)
+        allowed_keys = {
+            str(val or "").strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val or "").strip()
+        }
+        if allowed_keys and str(choice_key).strip().upper() not in allowed_keys:
+            return ("Castellum Omnivox choice is not an eligible candidate.",)
+        unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or ctx.get("unit_id"))
+        if unit is None:
+            return ("Castellum Omnivox unit was not found.",)
+        army = getattr(unit, "get_parent_army", lambda: None)()
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        validate_choice = getattr(mgr, "validate_castellum_omnivox_choice", None) if mgr is not None else None
+        if not callable(validate_choice):
+            return ("Castellum Omnivox manager support is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        valid, reason = validate_choice(
+            unit,
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if not valid:
+            return (str(reason or "Castellum Omnivox choice is not legal."),)
+        return ()
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return ("Rad-bombardment cannot be skipped.",)
@@ -19330,6 +19367,43 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             return None
         label = str(payload.get("choice_label", "") or choice_key.replace("_", " ").title()).strip()
         return {"choice_key": choice_key, "choice_label": label}
+    if ability == "space_marines_castellum_omnivox_choice":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or ctx.get("unit_id"))
+        if unit is None:
+            return None
+        army = getattr(unit, "get_parent_army", lambda: None)()
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        select_fn = getattr(mgr, "select_castellum_omnivox_choice", None) if mgr is not None else None
+        if not callable(select_fn):
+            return None
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip()
+        if not choice_key:
+            return None
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        outcome = select_fn(
+            unit,
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if outcome is not None:
+            owner = getattr(army, "player", None)
+            label = str((outcome or {}).get("choice_label", "") or choice_key.replace("_", " ").title()).strip()
+            unit_name = str((outcome or {}).get("unit_name", "") or getattr(unit, "name", "Unit")).strip() or "Unit"
+            _log_action_for_players(
+                game,
+                owner,
+                f"Castellum Omnivox: {unit_name} selected {label} after Falling Back.",
+            )
+        return outcome
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return None

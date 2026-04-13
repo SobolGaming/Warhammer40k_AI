@@ -164,6 +164,10 @@ class StateAttachmentMixin:
                 setattr(m, "_shot_via_firing_deck_this_round", False)
             except Exception:
                 pass
+            try:
+                setattr(m, "last_move_path", [])
+            except Exception:
+                pass
 
         # Clear any stale firing-deck virtual wargear bookkeeping.
         try:
@@ -2977,6 +2981,14 @@ class StateAttachmentMixin:
                         if bearer_alive and is_leading and keyword_lower not in seen:
                             seen.add(keyword_lower)
                             kws.append(keyword)
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                entrenched_fn = getattr(sm_mgr, "ceramite_entrenched_applies", None) if sm_mgr is not None else None
+                if callable(entrenched_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if bool(entrenched_fn(root, game=game)) and "entrenched" not in seen:
+                        seen.add("entrenched")
+                        kws.append("ENTRENCHED")
             except Exception:
                 continue
         return kws

@@ -1738,6 +1738,9 @@ class Enhancement:
         is_reclamation_force = bool(
             sm_mgr and getattr(sm_mgr, "is_reclamation_force", lambda: False)()
         )
+        is_ceramite_sentinels = bool(
+            sm_mgr and getattr(sm_mgr, "is_ceramite_sentinels", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -6608,6 +6611,111 @@ class Enhancement:
             cache = getattr(unit, "_ability_cache", None)
             if isinstance(cache, dict):
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "honour indefatigable" or enh_id == "000010759002":
+            if not is_ceramite_sentinels:
+                return
+            unit.special_rules["enhancement_honour_indefatigable"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            wounds_on_return = params.get("wounds_on_return", "full")
+            wounds_expr = (
+                str(wounds_on_return or "full").strip().lower()
+                if isinstance(wounds_on_return, str)
+                else wounds_on_return
+            )
+            if isinstance(wounds_expr, str):
+                if wounds_expr not in {"full", "d3", "d6"}:
+                    wounds_expr = _coerce_int(wounds_expr, default=1)
+            else:
+                wounds_expr = _coerce_int(wounds_expr, default=1)
+            key = str(
+                params.get("return_on_death_key", "honour_indefatigable") or "honour_indefatigable"
+            ).strip().lower()
+            source_name = str(getattr(desc, "name", "") or "Honour Indefatigable").strip() or "Honour Indefatigable"
+            unit.special_rules["enhancement_honour_indefatigable_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_honour_indefatigable_wounds"] = wounds_expr
+            unit.special_rules["enhancement_honour_indefatigable_key"] = key if key else "honour_indefatigable"
+            unit.special_rules["enhancement_honour_indefatigable_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_honour_indefatigable_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "castellum omnivox" or enh_id == "000010759003":
+            if not is_ceramite_sentinels:
+                return
+            unit.special_rules["enhancement_castellum_omnivox"] = True
+            unit.special_rules["enhancement_castellum_omnivox_source"] = (
+                str(getattr(self, "name", "") or "Castellum Omnivox").strip() or "Castellum Omnivox"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_castellum_omnivox_bearer_model_id"] = bearer_id
+
+        if name == "spy-skull data link" or enh_id == "000010759004":
+            if not is_ceramite_sentinels:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Spy-skull Data Link").strip() or "Spy-skull Data Link"
+            unit.special_rules["enhancement_spy_skull_data_link"] = True
+            unit.special_rules["enhancement_spy_skull_data_link_source"] = source_name
+            unit.special_rules["enhancement_bearer_unit_ignores_cover"] = True
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ("IGNORES COVER",))
+                if str(v or "").strip()
+            ) or ("IGNORES COVER",)
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type=str(params.get("attack_type", "ranged") or "ranged"),
+                keywords=keywords,
+                source=source_name,
+                requires_bearer_leading=bool(params.get("requires_bearer_leading", False)),
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_spy_skull_data_link_bearer_model_id"] = bearer_id
+
+        if name == "defensive mastery" or enh_id == "000010759005":
+            if not is_ceramite_sentinels:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Defensive Mastery").strip() or "Defensive Mastery"
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            redeploy_filters = [
+                str(keyword or "").strip().upper()
+                for keyword in list(params.get("redeploy_filters", ("ADEPTUS ASTARTES",)) or ("ADEPTUS ASTARTES",))
+                if str(keyword or "").strip()
+            ]
+            if not redeploy_filters:
+                redeploy_filters = ["ADEPTUS ASTARTES"]
+            unit.special_rules["enhancement_defensive_mastery"] = True
+            unit.special_rules["enhancement_defensive_mastery_source"] = source_name
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source_name,
+                source_model_id=bearer_id,
+                max_units=max_units,
+                can_place_in_reserves=can_place_in_reserves,
+                redeploy_filters=redeploy_filters,
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", True)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_defensive_mastery_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "seals of reconquest" or enh_id == "000010684002":
             if not is_reclamation_force:

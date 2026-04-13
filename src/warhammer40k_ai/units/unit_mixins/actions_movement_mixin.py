@@ -6737,6 +6737,17 @@ class ActionsMovementMixin:
         try:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
             sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(sm_mgr, "adaptive_defence_reroll_hit_ones_applies", None) if sm_mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if apply_fn(root, game=game):
+                    reroll_hit_values.add(1)
+                    reroll_hit_reasons.append("Adaptive Defence: re-roll Hit rolls of 1 while within terrain")
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             reroll_fn = getattr(sm_mgr, "saga_of_the_bold_champions_guidance_reroll_hit", None) if sm_mgr is not None else None
             if callable(reroll_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -8872,6 +8883,37 @@ class ActionsMovementMixin:
                 if sm_mgr.codex_discipline_reroll_wound_ones_applies(root, target, game=game):
                     reroll_wound_values.add(1)
                     reroll_wound_reasons.append("Codex Discipline: re-roll Wound rolls of 1 vs auspex scanned units")
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(sm_mgr, "adaptive_defence_reroll_wound_ones_applies", None) if sm_mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if apply_fn(root, game=game):
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append("Adaptive Defence: re-roll Wound rolls of 1 while within terrain")
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            mode_fn = getattr(sm_mgr, "priority_strike_reroll_mode", None) if sm_mgr is not None else None
+            if callable(mode_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                mode, source = mode_fn(root, target, game=game)
+                source_name = str(source or "Priority Strike").strip() or "Priority Strike"
+                if mode == "full":
+                    mods["reroll_wound_full"] = True
+                    reroll_wound_full_reasons.append(
+                        f"{source_name}: re-roll Wound rolls against CHARACTER, MONSTER or VEHICLE targets"
+                    )
+                elif mode == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(
+                        f"{source_name}: re-roll Wound rolls of 1 against CHARACTER, MONSTER or VEHICLE targets"
+                    )
         except Exception:
             pass
 
@@ -20275,6 +20317,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if spearpoint_fn(self, weapon_profile=profile, game=game):
                     return True
+            castellum_fn = getattr(mgr, "castellum_omnivox_shoot_after_fall_back_applies", None) if mgr is not None else None
+            if callable(castellum_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if castellum_fn(self, weapon_profile=profile, game=game):
+                    return True
             reclamation_fn = (
                 getattr(mgr, "reclamation_force_scions_of_guilliman_shoot_after_fall_back_applies", None)
                 if mgr is not None
@@ -21040,6 +21087,11 @@ class ActionsMovementMixin:
             if callable(reclamation_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if reclamation_fn(self, game=game):
+                    return True
+            castellum_fn = getattr(mgr, "castellum_omnivox_charge_after_fall_back_applies", None) if mgr is not None else None
+            if callable(castellum_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if castellum_fn(self, game=game):
                     return True
             unforgiven_fn = getattr(mgr, "unforgiven_intractable_charge_after_fall_back_applies", None) if mgr is not None else None
             if callable(unforgiven_fn):

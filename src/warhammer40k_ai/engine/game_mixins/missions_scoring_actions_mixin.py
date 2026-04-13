@@ -904,6 +904,9 @@ class GameMissionsScoringActionsMixin:
         if sm_mgr is not None and getattr(sm_mgr, "companions_of_vehemence_oathbound_exemplar_allow_action_after_advance", None):
             if sm_mgr.companions_of_vehemence_oathbound_exemplar_allow_action_after_advance(unit, self):
                 allow_advance_action = True
+        if sm_mgr is not None and getattr(sm_mgr, "castellum_omnivox_allow_action_after_fall_back", None):
+            if sm_mgr.castellum_omnivox_allow_action_after_fall_back(unit, self):
+                allow_fall_back_action = True
         allow_action_after_advance_fn = getattr(unit, "allows_action_after_advance_from_unit_contains_rule", None)
         if callable(allow_action_after_advance_fn) and allow_action_after_advance_fn():
             allow_advance_action = True
