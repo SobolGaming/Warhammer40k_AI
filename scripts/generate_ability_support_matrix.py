@@ -228,13 +228,21 @@ def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
     tokens = _norm_rules_text(description or "")
     if not tokens:
         return None
+
+    def _has_phrase(*phrases: str) -> bool:
+        return any(phrase and phrase in tokens for phrase in phrases)
+
     classic_prey_selector = (
         "start of the first battle round" in tokens
         and "select one enemy unit to be this models prey" in tokens
     )
     start_of_battle_opponent_selector = (
         "start of the battle" in tokens
-        and "select one unit from your opponents army" in tokens
+        and _has_phrase(
+            "select one unit from your opponents army",
+            "select one unit in your opponents army",
+            "select one enemy unit",
+        )
     )
     focused_hunters_selector = (
         start_of_battle_opponent_selector
@@ -243,7 +251,11 @@ def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
     if not (classic_prey_selector or start_of_battle_opponent_selector):
         return None
 
-    repick = "prey is destroyed" in tokens and "select one new enemy unit" in tokens
+    repick = _has_phrase("prey is destroyed", "quarry is destroyed", "hated foe is destroyed") and _has_phrase(
+        "select one new enemy unit",
+        "select one new unit from your opponents army",
+        "select a new unit from your opponents army",
+    )
 
     if (
         focused_hunters_selector
@@ -267,6 +279,27 @@ def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
         note = "Start of battle: select one enemy unit; attacks from this unit against it gain [LETHAL HITS] and [PRECISION]."
         if repick:
             note += " Re-pick when prey is destroyed."
+        else:
+            note += " No re-pick on destruction."
+        return ("Supported", note)
+
+    if (
+        start_of_battle_opponent_selector
+        and "each time this model makes an attack" in tokens
+        and _has_phrase(
+            "targets its prey",
+            "targets that prey",
+            "targets its quarry",
+            "targets that quarry",
+            "targets its hated foe",
+            "targets that hated foe",
+            "targets that unit",
+        )
+        and "reroll the wound roll" in tokens
+    ):
+        note = "Start of battle: select one enemy unit; this model can re-roll Wound rolls against it."
+        if repick:
+            note += " Re-pick when the selected foe is destroyed."
         else:
             note += " No re-pick on destruction."
         return ("Supported", note)
@@ -10658,15 +10691,22 @@ def _model_closest_target_ap_bonus_support(description: str) -> Optional[Tuple[s
     if not norm:
         return None
     m = re.fullmatch(
-        r"each time (?:this model|a model in this unit) makes a ranged attack that targets the closest (?:eligible )?(?:enemy )?(?:target|unit) "
+        r"each time (?:this model|a model in this unit) makes (?:an attack|a (?P<attack_type>ranged|melee) attack) that targets the closest (?:eligible )?(?:enemy )?(?:target|unit) "
         r"(?:improve the armour penetration characteristic of that attack by|add) (?P<val>\d+)"
         r"(?: to the armour penetration characteristic of that attack)?",
         norm,
     )
     if not m:
         return None
+    attack_type = str(m.group("attack_type") or "any").strip().lower() or "any"
     val = str(m.group("val") or "1")
-    return ("Supported", f"Model ranged attacks improve AP by {val} when targeting the closest eligible target.")
+    if attack_type == "ranged":
+        attack_label = "Model ranged attacks"
+    elif attack_type == "melee":
+        attack_label = "Model melee attacks"
+    else:
+        attack_label = "Model attacks"
+    return ("Supported", f"{attack_label} improve AP by {val} when targeting the closest eligible target.")
 
 
 def _model_target_keyword_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:

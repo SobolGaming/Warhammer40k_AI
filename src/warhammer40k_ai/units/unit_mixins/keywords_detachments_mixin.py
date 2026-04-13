@@ -5036,6 +5036,7 @@ class KeywordsDetachmentsMixin:
         - Lethal Hits vs prey.
         - Devastating Wounds + Precision vs quarry for Headtakers-only split units.
         - Start-of-battle selected enemy unit with unit-wide Hit re-rolls vs that unit.
+        - Start-of-battle selected hated foe / quarry with model-only Wound re-rolls.
 
         Returns a rule dict with:
             - source: ability name
@@ -5095,6 +5096,21 @@ class KeywordsDetachmentsMixin:
                 return ""
             return ""
 
+        def _single_model_id_for_source(source_unit) -> str:
+            models = [model for model in list(getattr(source_unit, "models", []) or []) if model is not None]
+            if len(models) != 1:
+                return ""
+            try:
+                return str(get_entity_id(models[0]) or "").strip()
+            except Exception:
+                return ""
+
+        def _bearer_or_single_model_id_for_source(source_unit) -> str:
+            bearer_id = _enhancement_bearer_id_for_source(source_unit)
+            if bearer_id:
+                return bearer_id
+            return _single_model_id_for_source(source_unit)
+
         def _is_headtaker_model(model) -> bool:
             name = _norm(str(getattr(model, "name", "") or ""))
             return bool(name) and "headtaker" in name and "hunting" not in name
@@ -5135,6 +5151,7 @@ class KeywordsDetachmentsMixin:
                     "start of the battle" in normalized
                     and (
                         "select one unit from your opponent s army" in normalized
+                        or "select one unit in your opponent s army" in normalized
                         or "select one enemy unit" in normalized
                     )
                 )
@@ -5149,8 +5166,13 @@ class KeywordsDetachmentsMixin:
                     (
                         "prey is destroyed" in normalized
                         or "quarry is destroyed" in normalized
+                        or "hated foe is destroyed" in normalized
                     )
-                    and "select one new enemy unit" in normalized
+                    and (
+                        "select one new enemy unit" in normalized
+                        or "select one new unit from your opponent s army" in normalized
+                        or "select a new unit from your opponent s army" in normalized
+                    )
                 )
 
                 # Pattern: start-of-battle chosen enemy, unit-wide hit re-rolls vs that unit.
@@ -5236,7 +5258,7 @@ class KeywordsDetachmentsMixin:
                         source_unit=unit,
                         repick_on_destroyed=repick_on_destroyed,
                     )
-                    source_model_id = _enhancement_bearer_id_for_source(unit)
+                    source_model_id = _bearer_or_single_model_id_for_source(unit)
                     if source_model_id:
                         rule["source_model_id"] = source_model_id
                     rule.update({
@@ -5244,6 +5266,37 @@ class KeywordsDetachmentsMixin:
                         "reroll_wound": False,
                         "hit_bonus": 1,
                         "wound_bonus": 1,
+                        "melee_only": False,
+                    })
+                    break
+
+                # Pattern: model-only wound re-roll vs selected hated foe / quarry / prey.
+                if (
+                    start_of_battle_selected_enemy_selector
+                    and _has_phrase(normalized, "each time this model makes an attack")
+                    and _has_phrase(
+                        normalized,
+                        "targets its hated foe",
+                        "targets that hated foe",
+                        "targets its quarry",
+                        "targets that quarry",
+                        "targets its prey",
+                        "targets that prey",
+                        "targets that unit",
+                    )
+                    and _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
+                ):
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    source_model_id = _bearer_or_single_model_id_for_source(unit)
+                    if source_model_id:
+                        rule["source_model_id"] = source_model_id
+                    rule.update({
+                        "reroll_hit": False,
+                        "reroll_wound": True,
                         "melee_only": False,
                     })
                     break
@@ -14577,6 +14630,8 @@ class KeywordsDetachmentsMixin:
         Return rule info for abilities like:
         "Each time this model makes a ranged attack that targets the closest eligible target,
          improve the Armour Penetration characteristic of that attack by 1."
+        "Each time a model in this unit makes an attack that targets the closest eligible enemy unit,
+         improve the Armour Penetration characteristic of that attack by 1."
         """
         if model is None:
             return None
@@ -14593,8 +14648,13 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 low = text.lower().replace("\u2019", "'")
-                if "ranged attack" not in low:
+                attack_type_match = re.search(
+                    r"each time (?:this model|a model in this unit) makes (?:an attack|a (?P<attack_type>ranged|melee) attack) that targets",
+                    low,
+                )
+                if not attack_type_match:
                     continue
+                attack_type = str(attack_type_match.group("attack_type") or "any").strip().lower() or "any"
                 if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
                     continue
                 if "armour penetration" not in low and "armor penetration" not in low:
@@ -14620,7 +14680,7 @@ class KeywordsDetachmentsMixin:
                     continue
                 source = str(name or "Closest eligible target").strip() or "Closest eligible target"
                 rule = {
-                    "attack_type": "ranged",
+                    "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
                     "source": source,
                 }

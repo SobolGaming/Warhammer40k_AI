@@ -4645,18 +4645,27 @@ class WargearProfile:
         except Exception:
             pass
         try:
-            if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
+            if self.parent_wargear and target is not None:
+                attack_type = ""
+                if self.parent_wargear.is_ranged():
+                    attack_type = "ranged"
+                elif self.parent_wargear.is_melee():
+                    attack_type = "melee"
                 unit = getattr(attacker, "parent_unit", None)
                 get_rule = getattr(unit, "get_closest_eligible_ap_bonus_rule", None) if unit is not None else None
                 if callable(get_rule):
                     rule = get_rule(attacker)
                 else:
                     rule = None
-                if isinstance(rule, dict):
+                if attack_type and isinstance(rule, dict):
                     try:
                         bonus = int(rule.get("ap_bonus", 0) or 0)
                     except Exception:
                         bonus = 0
+                    if bonus > 0:
+                        rule_attack_type = str(rule.get("attack_type", "ranged") or "ranged").strip().lower()
+                        if rule_attack_type not in {"any", attack_type}:
+                            bonus = 0
                     if bonus > 0:
                         max_distance = rule.get("max_distance", None)
                         if max_distance is not None:
@@ -17004,9 +17013,13 @@ class WargearProfile:
                 unit = attacker.parent_unit
                 prey_ids = getattr(unit, "_prey_selection_prey_ids", None)
                 if prey_ids and bool(getattr(unit, "_prey_selection_reroll_hit", False)):
+                    source_model_id = str(getattr(unit, "_prey_selection_source_model_id", "") or "").strip()
+                    attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "").strip()
                     melee_only = bool(getattr(unit, "_prey_selection_melee_only", False))
                     is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-                    if (not melee_only) or is_melee:
+                    if ((not melee_only) or is_melee) and (
+                        not source_model_id or not attacker_model_id or source_model_id == attacker_model_id
+                    ):
                         try:
                             tid = getattr(target, "_id", None)
                             rid = getattr(target.get_attached_unit_root(), "_id", None)
@@ -23659,9 +23672,13 @@ class WargearProfile:
                 unit = attacker.parent_unit
                 prey_ids = getattr(unit, "_prey_selection_prey_ids", None)
                 if prey_ids and bool(getattr(unit, "_prey_selection_reroll_wound", False)):
+                    source_model_id = str(getattr(unit, "_prey_selection_source_model_id", "") or "").strip()
+                    attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "").strip()
                     melee_only = bool(getattr(unit, "_prey_selection_melee_only", False))
                     is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-                    if (not melee_only) or is_melee:
+                    if ((not melee_only) or is_melee) and (
+                        not source_model_id or not attacker_model_id or source_model_id == attacker_model_id
+                    ):
                         try:
                             tid = getattr(target, "_id", None)
                             rid = getattr(target.get_attached_unit_root(), "_id", None)
