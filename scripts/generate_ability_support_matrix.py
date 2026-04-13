@@ -4214,6 +4214,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
         ),
+        ("ADM", "Rod of the War Forge"): (
+            "Supported",
+            "Start of Command phase: Thulia Ghuld selects Fanatical Devotion, Adaptive Tactics, or The Fires of Mars until next Command phase.",
+        ),
+        ("ADM", "Fanatical Devotion"): (
+            "Supported",
+            "When selected via Rod of the War Forge, optionally select one friendly SKITARII or THULIA GHULD unit within 6\"; it can shoot and charge after Advancing until your next Command phase.",
+        ),
+        ("ADM", "Adaptive Tactics"): (
+            "Supported",
+            "When selected via Rod of the War Forge, optionally select one friendly SKITARII or THULIA GHULD unit within 6\"; it can shoot and charge after Falling Back until your next Command phase.",
+        ),
+        ("ADM", "The Fires of Mars"): (
+            "Supported",
+            "When selected via Rod of the War Forge, optionally select one friendly SKITARII or THULIA GHULD unit within 6\"; Protector and Conqueror Imperatives are both active for that unit until your next Command phase.",
+        ),
         ("ADM", "Invocation of Machine Vengeance"): (
             "Supported",
             "When selected via Canticles, choose one enemy unit; friendly ADEPTUS MECHANICUS attacks can re-roll Hit rolls against that Machine Vengeance target until next Command phase.",
@@ -4223,6 +4239,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "When selected via Canticles, bearer gains BATTLELINE and Binharic Courage aura (+1 Objective Control and +1 to Battle-shock/Leadership tests for friendly ADEPTUS MECHANICUS within 6\").",
         ),
         ("ADM", "Mechanicus Bodyguard"): ("Supported", "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS units."),
+        ("ADM", "Cybernetic Augmentation"): (
+            "Supported",
+            "Thulia Ghuld can move through terrain features, can breach RUINS walls, can be set up or end moves on upper RUINS floors, and still cannot overhang a floor.",
+        ),
+        ("ADM", "Secutor of Olympus"): (
+            "Supported",
+            "Start of Shooting phase: select one enemy VEHICLE unit within 12\" of Thulia Ghuld; on 2+ it suffers D3+1 mortal wounds.",
+        ),
         ("ADM", "Shroudpsalm (Aura)"): ("Supported", "When selected via Canticles, friendly ADEPTUS MECHANICUS units within 6\" gain Stealth."),
         ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
         ("AM", "Desert Riders"): (

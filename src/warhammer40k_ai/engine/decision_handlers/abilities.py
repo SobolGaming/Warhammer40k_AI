@@ -10253,6 +10253,21 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode not in ("invocation_of_machine_vengeance", "mantra_of_discipline", "shroudpsalm"):
             return ("Canticles of the Omnissiah choice must be Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm.",)
         return ()
+    if ability == "thulia_ghuld_rod_of_the_war_forge":
+        if is_skip_choice(request, result):
+            return ("Rod of the War Forge selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Rod of the War Forge source unit was not found.",)
+        from ...rules.adeptus_mechanicus_thulia_ghuld import unit_has_rod_of_the_war_forge_ability
+
+        if not bool(unit_has_rod_of_the_war_forge_ability(source_unit)):
+            return ("Rod of the War Forge is not active on the selected source unit.",)
+        mode = str(payload.get("rod_of_the_war_forge_mode", "") or "").strip().lower()
+        if mode not in ("fanatical_devotion", "adaptive_tactics", "the_fires_of_mars"):
+            return ("Rod of the War Forge choice must be Fanatical Devotion, Adaptive Tactics, or The Fires of Mars.",)
+        return ()
     if ability == "space_marines_temple_relics":
         if is_skip_choice(request, result):
             return ("Temple Relics selection cannot be skipped.",)
@@ -10328,6 +10343,102 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
         if source_army is not None and target_army is not None and source_army is target_army:
             return ("Invocation of Machine Vengeance target must belong to an enemy unit.",)
+        return ()
+    if ability == "thulia_ghuld_icon_of_war_target":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Icon of War source unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return ("Icon of War source unit was not found.",)
+        from ...rules.adeptus_mechanicus_thulia_ghuld import (
+            get_active_rod_of_the_war_forge_mode,
+            unit_matches_icon_of_war_target,
+        )
+
+        selected_mode = str(ctx.get("rod_of_the_war_forge_mode", "") or "").strip().lower()
+        if not selected_mode:
+            selected_mode = get_active_rod_of_the_war_forge_mode(source_root)
+        if selected_mode not in ("fanatical_devotion", "adaptive_tactics", "the_fires_of_mars"):
+            return ("No Icon of War mode is active on the selected source unit.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Icon of War selection requires target_unit_id.",)
+        candidate_ids = {str(val) for val in list(ctx.get("candidate_unit_ids", []) or []) if str(val)}
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Icon of War target unit is not an eligible candidate.",)
+        target_unit = resolve_unit(game, target_unit_id)
+        if target_unit is None:
+            return ("Icon of War target unit was not found.",)
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return ("Icon of War target must be a friendly unit.",)
+        if not bool(unit_matches_icon_of_war_target(target_root)):
+            return ("Icon of War target must be a friendly SKITARII or THULIA GHULD unit.",)
+        source_model = resolve_model(game, payload.get("source_model_id") or ctx.get("source_model_id"))
+        if source_model is not None:
+            from ...utility.aura_utils import model_within_range_of_unit
+
+            if not bool(model_within_range_of_unit(source_model, target_root, 6.0, use_attached_aggregate=True)):
+                return ("Icon of War target must be within 6\" of the source model.",)
+        return ()
+    if ability in {"corrupt_machine_spirits", "thulia_ghuld_secutor_of_olympus"}:
+        if is_skip_choice(request, result):
+            return (f"{str(ctx.get('ability_name', '') or 'Vehicle target selection').strip() or 'Vehicle target selection'} cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return ("Vehicle-targeting source unit was not found.",)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Vehicle-targeting ability requires target_unit_id.",)
+        candidate_ids = {str(val) for val in list(ctx.get("candidate_unit_ids", []) or []) if str(val)}
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Selected VEHICLE target is not an eligible candidate.",)
+        target_unit = resolve_unit(game, target_unit_id)
+        if target_unit is None:
+            return ("Selected VEHICLE target was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if source_root is None or target_root is None:
+            return ("Vehicle target resolution failed.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Selected VEHICLE target must belong to an enemy unit.",)
+        has_vehicle = getattr(target_root, "has_any_keyword", None)
+        if callable(has_vehicle):
+            if not bool(has_vehicle("VEHICLE")):
+                return ("Selected target must have the VEHICLE keyword.",)
+        else:
+            return ("Selected VEHICLE target was not found.",)
         return ()
     if ability == "void_mine":
         payload = _option_payload(request, result)
@@ -19813,6 +19924,128 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
                 game.request_decision(request_obj)
         return {"mode": mode, "mode_key": mode_key}
+    if ability == "thulia_ghuld_rod_of_the_war_forge":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("rod_of_the_war_forge_mode", "") or "").strip().lower()
+        from ...rules.adeptus_mechanicus_thulia_ghuld import (
+            get_rod_of_the_war_forge_source_model,
+            mode_name,
+            set_active_rod_of_the_war_forge_mode,
+            unit_matches_icon_of_war_target,
+        )
+        if not bool(set_active_rod_of_the_war_forge_mode(source_root, mode)):
+            return None
+        try:
+            source_army = source_root.get_parent_army()
+        except Exception:
+            source_army = None
+        player = getattr(source_army, "player", None) if source_army is not None else None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Rod of the War Forge").strip() or "Rod of the War Forge"
+        selected_name = str(mode_name(mode) or mode.replace("_", " ").title()).strip()
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {selected_name}.",
+        )
+
+        if hasattr(game, "request_decision") and source_army is not None:
+            from ...utility.aura_utils import model_within_range_of_unit
+            from ..decisions import DecisionOption as _DecisionOption
+            from ..decisions import DecisionRequest as _DecisionRequest
+
+            source_model = resolve_model(game, payload.get("source_model_id") or ctx.get("source_model_id"))
+            if source_model is None:
+                source_model = get_rod_of_the_war_forge_source_model(source_root)
+            source_model_id = str(get_entity_id(source_model) or "") if source_model is not None else ""
+            source_root_id = str(get_entity_id(source_root) or "")
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "").strip()
+            candidate_roots = []
+            seen_roots: set[str] = set()
+            for friendly_unit in list(getattr(source_army, "units", []) or []):
+                if friendly_unit is None:
+                    continue
+                friendly_root = (
+                    friendly_unit.get_attached_unit_root()
+                    if hasattr(friendly_unit, "get_attached_unit_root")
+                    else friendly_unit
+                )
+                if friendly_root is None:
+                    continue
+                friendly_root_id = str(get_entity_id(friendly_root) or "")
+                if not friendly_root_id or friendly_root_id in seen_roots:
+                    continue
+                seen_roots.add(friendly_root_id)
+                if not bool(getattr(friendly_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(friendly_root, "deployed", False)):
+                    continue
+                try:
+                    if friendly_root.is_in_reserves():
+                        continue
+                except Exception:
+                    pass
+                if bool(getattr(friendly_root, "is_embarked", False)) or getattr(friendly_root, "embarked_in", None) is not None:
+                    continue
+                if not bool(unit_matches_icon_of_war_target(friendly_root)):
+                    continue
+                if source_model is not None and not bool(
+                    model_within_range_of_unit(source_model, friendly_root, 6.0, use_attached_aggregate=True)
+                ):
+                    continue
+                candidate_roots.append(friendly_root)
+            candidate_roots = sorted(candidate_roots, key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+            options = [_DecisionOption.create("None", payload={"action": "skip"})]
+            candidate_ids: list[str] = []
+            for target_root in list(candidate_roots or []):
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id:
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    _DecisionOption.create(
+                        str(getattr(target_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": target_id,
+                            "source_unit_id": source_root_id,
+                            "source_member_unit_id": source_member_id,
+                            "source_model_id": source_model_id,
+                        },
+                    )
+                )
+            if len(options) > 1:
+                request_obj = _DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{selected_name}: select one friendly SKITARII or THULIA GHULD unit within 6\" (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "thulia_ghuld_icon_of_war_target",
+                        "ability_name": selected_name,
+                        "phase": "Command phase",
+                        "phase_name": "COMMAND_PHASE",
+                        "source_unit_id": source_root_id,
+                        "source_member_unit_id": source_member_id,
+                        "source_model_id": source_model_id,
+                        "unit_id": source_root_id,
+                        "candidate_unit_ids": list(candidate_ids),
+                        "range": 6,
+                        "rod_of_the_war_forge_mode": mode,
+                        "optional": True,
+                    },
+                )
+                game.request_decision(request_obj)
+        return {"mode": mode, "mode_name": selected_name}
     if ability == "space_marines_temple_relics":
         if is_skip_choice(request, result):
             return None
@@ -19964,6 +20197,82 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {source_name} selected {target_name} as the Machine Vengeance target.",
         )
         return {"target_unit_id": target_root_id}
+    if ability == "thulia_ghuld_icon_of_war_target":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        from ...rules.adeptus_mechanicus_thulia_ghuld import (
+            apply_adaptive_tactics,
+            apply_fanatical_devotion,
+            apply_the_fires_of_mars,
+            get_active_rod_of_the_war_forge_mode,
+            mode_name,
+        )
+
+        selected_mode = str(ctx.get("rod_of_the_war_forge_mode", "") or "").strip().lower()
+        if not selected_mode:
+            selected_mode = get_active_rod_of_the_war_forge_mode(source_root)
+        if not selected_mode:
+            return None
+
+        try:
+            source_army = source_root.get_parent_army()
+        except Exception:
+            source_army = None
+        player = getattr(source_army, "player", None) if source_army is not None else None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        selected_name = str(ctx.get("ability_name", "") or mode_name(selected_mode) or "Icon of War").strip() or "Icon of War"
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{selected_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {"action": "skip", "mode": selected_mode}
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+
+        if selected_mode == "fanatical_devotion":
+            outcome = apply_fanatical_devotion(source_root, target_root)
+            log_text = (
+                f"{selected_name}: {getattr(target_root, 'name', 'Unit')} is eligible to shoot and declare a charge "
+                "in a turn in which it Advanced until your next Command phase."
+            )
+        elif selected_mode == "adaptive_tactics":
+            outcome = apply_adaptive_tactics(source_root, target_root)
+            log_text = (
+                f"{selected_name}: {getattr(target_root, 'name', 'Unit')} is eligible to shoot and declare a charge "
+                "in a turn in which it Fell Back until your next Command phase."
+            )
+        elif selected_mode == "the_fires_of_mars":
+            outcome = apply_the_fires_of_mars(source_root, target_root)
+            log_text = (
+                f"{selected_name}: Protector and Conqueror Imperatives are both active for "
+                f"{getattr(target_root, 'name', 'Unit')} until your next Command phase."
+            )
+        else:
+            return None
+        _log_action_for_players(game, player, log_text)
+        return {
+            **dict(outcome or {}),
+            "mode": selected_mode,
+            "source_unit_name": str(getattr(source_root, "name", "Unit") or "Unit"),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+        }
     if ability == "singular_purpose":
         if is_skip_choice(request, result):
             return None
@@ -25071,7 +25380,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {tname} marked for wound re-rolls of 1.")
         except Exception:
             pass
-    if str(ctx.get("ability", "") or "") == "corrupt_machine_spirits":
+    if str(ctx.get("ability", "") or "") in {"corrupt_machine_spirits", "thulia_ghuld_secutor_of_olympus"}:
         if is_skip_choice(request, result):
             return None
         payload = _option_payload(request, result)
@@ -25108,6 +25417,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             tok = str(token or "").strip().lower()
             if not tok:
                 return 0
+            m = re.fullmatch(r"(?P<roll>\d*d\d+)(?:\+(?P<modifier>\d+))?", tok)
+            if m:
+                roll_expr = str(m.group("roll") or "").strip().upper()
+                try:
+                    modifier = int(m.group("modifier") or 0)
+                except Exception:
+                    modifier = 0
+                return int((get_roll(roll_expr) or 0) if callable(get_roll) else 0) + int(modifier)
             if tok == "d3":
                 return int(get_roll("D3") or 0) if callable(get_roll) else 0
             if tok == "d6":

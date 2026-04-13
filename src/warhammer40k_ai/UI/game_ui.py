@@ -7838,6 +7838,9 @@ class GameView:
                 "battle_protocols",
                 "canticles_of_the_omnissiah",
                 "canticles_machine_vengeance_target",
+                "thulia_ghuld_rod_of_the_war_forge",
+                "thulia_ghuld_icon_of_war_target",
+                "thulia_ghuld_secutor_of_olympus",
                 "author_of_the_codex",
                 "primarch_of_the_first_legion",
                 "post_shoot_shocked",
@@ -16472,6 +16475,18 @@ class GameView:
             title = ability_name or "Invocation of Machine Vengeance"
             subtitle = "Select one enemy unit to be the Machine Vengeance target."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Machine Vengeance target."
+        elif str(ability_key) == "thulia_ghuld_rod_of_the_war_forge":
+            title = ability_name or "Rod of the War Forge"
+            subtitle = "Select one Icon of War ability until your next Command phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an Icon of War ability."
+        elif str(ability_key) == "thulia_ghuld_icon_of_war_target":
+            title = ability_name or "Icon of War"
+            subtitle = "Select one friendly SKITARII or THULIA GHULD unit within 6\", or None."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an Icon of War target."
+        elif str(ability_key) == "thulia_ghuld_secutor_of_olympus":
+            title = ability_name or "Secutor of Olympus"
+            subtitle = "Select one enemy VEHICLE unit within 12\"."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a VEHICLE target."
         elif str(ability_key) == "author_of_the_codex":
             title = ability_name or "Author of the Codex"
             subtitle = "Select exactly two Author of the Codex abilities. The chosen abilities remain active until your next Command phase."

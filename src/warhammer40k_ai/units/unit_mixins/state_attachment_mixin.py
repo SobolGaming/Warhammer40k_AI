@@ -4598,6 +4598,10 @@ class StateAttachmentMixin:
         return self.has_keyword("Belisarius Cawl")
 
     @property
+    def is_thulia_ghuld(self) -> bool:
+        return self.has_keyword("Thulia Ghuld")
+
+    @property
     def is_imperium_primarch(self) -> bool:
         return self.has_keyword("Imperium") and self.has_keyword("Primarch")
 
@@ -4725,13 +4729,15 @@ class StateAttachmentMixin:
     def can_move_through_ruins_walls(self) -> bool:
         """Check if this unit can move through RUINS walls via Breachable-style rules."""
         return (self.counts_as_infantry_for_terrain() or self.is_beast or
-                self.is_imperium_primarch or self.is_belisarius_cawl)
+                self.is_imperium_primarch or self.is_belisarius_cawl or
+                self.is_thulia_ghuld)
     
 
     def can_access_upper_floors(self) -> bool:
         """Check if this unit can be placed on upper floors of RUINS."""
         return (self.counts_as_infantry_for_terrain() or self.is_beast or
                 self.is_imperium_primarch or self.is_belisarius_cawl or
+                self.is_thulia_ghuld or
                 self.is_flying)
     
 

@@ -1620,6 +1620,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         self._on_phase_start_space_marines_temple_relics(player=player, phase=phase)
         self._on_phase_start_canticles_of_the_omnissiah(player=player, phase=phase)
+        self._on_phase_start_thulia_ghuld_rod_of_the_war_forge(player=player, phase=phase)
         self._on_phase_start_battle_protocols(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
@@ -1641,6 +1642,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_adaptive_instincts(player=player, phase=phase)
         self._on_phase_start_orks_squig_mine(player=player, phase=phase)
         self._on_phase_start_shooting_phase_enemy_range_mortal_threshold(player=player, phase=phase)
+        self._on_phase_start_thulia_ghuld_secutor_of_olympus(player=player, phase=phase)
         self._on_phase_start_astra_militarum_warrior_elite(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
@@ -8574,6 +8576,122 @@ class GamePhaseHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_phase_start_thulia_ghuld_rod_of_the_war_forge(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Thulia Ghuld selects one Icon of War ability."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        from ...rules.adeptus_mechanicus_thulia_ghuld import (
+            MODE_ADAPTIVE_TACTICS,
+            MODE_FANATICAL_DEVOTION,
+            MODE_THE_FIRES_OF_MARS,
+            MODE_TO_KEY,
+            clear_command_phase_state,
+            get_rod_of_the_war_forge_source_model,
+            get_rod_of_the_war_forge_source_unit,
+            mode_name,
+            unit_has_rod_of_the_war_forge_ability,
+        )
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u) or "")
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        queue = getattr(self, "decision_queue", None)
+        pending_sources: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "thulia_ghuld_rod_of_the_war_forge":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_sources.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            clear_command_phase_state(root)
+            if root_id in pending_sources:
+                continue
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            in_reserves = False
+            try:
+                in_reserves = bool(root.is_in_reserves())
+            except Exception:
+                in_reserves = False
+            if in_reserves or bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if not bool(unit_has_rod_of_the_war_forge_ability(root)):
+                continue
+
+            source_unit = get_rod_of_the_war_forge_source_unit(root)
+            source_model = get_rod_of_the_war_forge_source_model(root)
+            if source_unit is None or source_model is None:
+                continue
+            source_member_id = str(get_entity_id(source_unit) or "")
+            source_model_id = str(get_entity_id(source_model) or "")
+
+            options = []
+            for mode in (MODE_FANATICAL_DEVOTION, MODE_ADAPTIVE_TACTICS, MODE_THE_FIRES_OF_MARS):
+                options.append(
+                    DecisionOption.create(
+                        mode_name(mode),
+                        payload={
+                            "rod_of_the_war_forge_mode": mode,
+                            "rod_of_the_war_forge_mode_key": str(MODE_TO_KEY.get(mode, "") or ""),
+                            "source_unit_id": root_id,
+                            "source_member_unit_id": source_member_id,
+                            "source_model_id": source_model_id,
+                        },
+                    )
+                )
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Rod of the War Forge: select one Icon of War ability until your next Command phase.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "thulia_ghuld_rod_of_the_war_forge",
+                    "ability_name": "Rod of the War Forge",
+                    "phase": "Command phase",
+                    "phase_name": "COMMAND_PHASE",
+                    "source_unit_id": root_id,
+                    "source_member_unit_id": source_member_id,
+                    "source_model_id": source_model_id,
+                    "unit_id": root_id,
+                    "optional": False,
+                },
+            )
+            self.request_decision(request)
+
     def _on_phase_start_tocsin_of_misery(self, player=None, phase=None, **_kwargs) -> None:
         """Opponent Command phase: below-Starting enemy units in range must take Battle-shock (Tocsin of Misery)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -13139,13 +13257,21 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         range_value = 0
                     max_range = float(range_value) if range_value > 0 else 9999.0
-                    candidates = self._visible_enemy_candidates_for_model(
-                        source_unit=source_unit,
-                        model=model,
-                        enemy_roots=enemy_roots,
-                        range_value=max_range,
-                        game_map=game_map,
-                    )
+                    requires_visibility = bool(spec.get("requires_visibility", True))
+                    if requires_visibility:
+                        candidates = self._visible_enemy_candidates_for_model(
+                            source_unit=source_unit,
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=max_range,
+                            game_map=game_map,
+                        )
+                    else:
+                        candidates = self._enemy_candidates_within_range_of_model(
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=max_range,
+                        )
                     if not candidates:
                         continue
                     vehicle_candidates = []
@@ -13166,10 +13292,12 @@ class GamePhaseHandlersMixin:
                         continue
 
                     options = []
+                    candidate_ids: list[str] = []
                     for cand in sorted(vehicle_candidates, key=_unit_sort_key):
                         target_id = str(get_entity_id(cand) or "")
                         if not target_id:
                             continue
+                        candidate_ids.append(target_id)
                         options.append(
                             DecisionOption.create(
                                 str(getattr(cand, "name", "Unit") or "Unit"),
@@ -13200,6 +13328,8 @@ class GamePhaseHandlersMixin:
                             "threshold": int(spec.get("threshold", 0) or 0),
                             "mortal_on_success": str(spec.get("mortal_on_success", "") or ""),
                             "heal_self_on_success": bool(spec.get("heal_self_on_success", False)),
+                            "requires_visibility": bool(requires_visibility),
+                            "candidate_unit_ids": list(candidate_ids),
                         },
                     )
                     self.request_decision(request)
@@ -13225,6 +13355,15 @@ class GamePhaseHandlersMixin:
             ability_tag="corrupt_machine_spirits",
             spec_method_name="model_start_shooting_phase_corrupt_machine_spirits_specs",
             default_ability_name="Corrupt Machine Spirits",
+        )
+
+    def _on_phase_start_thulia_ghuld_secutor_of_olympus(self, player=None, phase=None, **_kwargs) -> None:
+        self._on_phase_start_model_visible_vehicle_quarry(
+            player=player,
+            phase=phase,
+            ability_tag="thulia_ghuld_secutor_of_olympus",
+            spec_method_name="model_start_shooting_phase_thulia_ghuld_secutor_of_olympus_specs",
+            default_ability_name="Secutor of Olympus",
         )
 
     def _on_phase_end_enrage_machine_spirits(self, player=None, phase=None, **_kwargs) -> None:

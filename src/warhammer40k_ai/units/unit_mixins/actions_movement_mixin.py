@@ -19252,6 +19252,13 @@ class ActionsMovementMixin:
                 if str(source or "").strip()
             )
         )
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        special_rules = getattr(root, "special_rules", None)
+        if isinstance(special_rules, dict) and bool(special_rules.get("thulia_ghuld_fanatical_devotion_active", False)):
+            return True
         cache_key = "advance_and_shoot"
         if excluded_source_keys:
             cache_key = f"advance_and_shoot:{'|'.join(excluded_source_keys)}"
@@ -19329,6 +19336,13 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        special_rules = getattr(root, "special_rules", None)
+        if isinstance(special_rules, dict) and bool(special_rules.get("thulia_ghuld_fanatical_devotion_active", False)):
+            return True
         excluded_source_keys = tuple(
             sorted(
                 self._ability_source_key(source)
@@ -19406,6 +19420,13 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        special_rules = getattr(root, "special_rules", None)
+        if isinstance(special_rules, dict) and bool(special_rules.get("thulia_ghuld_adaptive_tactics_active", False)):
+            return True
         try:
             if self._needgaard_ordered_retreat_active_this_turn():
                 return True
@@ -20940,6 +20961,13 @@ class ActionsMovementMixin:
     def can_charge_after_fall_back(self) -> bool:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
+            return True
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        special_rules = getattr(root, "special_rules", None)
+        if isinstance(special_rules, dict) and bool(special_rules.get("thulia_ghuld_adaptive_tactics_active", False)):
             return True
         try:
             sr = getattr(self, "special_rules", None)

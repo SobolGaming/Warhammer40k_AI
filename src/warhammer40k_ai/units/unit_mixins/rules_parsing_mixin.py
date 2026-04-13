@@ -4032,6 +4032,8 @@ class RulesParsingMixin:
                         move_types = _parse_move_types(sentence_lower)
                         if move_types:
                             phase_move_terrain_only_types.update(move_types)
+                    elif self._MODEL_CAN_MOVE_THROUGH_TERRAIN_RE.search(sentence_lower):
+                        phase_move_terrain_only_types.update({"move", "advance", "fall_back"})
 
                     if self._BEARER_UNIT_PHASE_ENGAGEMENT_RE.search(sentence_lower):
                         move_types = _parse_move_types(sentence_lower)

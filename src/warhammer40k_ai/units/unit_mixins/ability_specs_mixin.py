@@ -11446,6 +11446,64 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_shooting_phase_thulia_ghuld_secutor_of_olympus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select an enemy VEHICLE within range and
+        roll a D6; on a threshold it suffers mortal wounds.
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_thulia_ghuld_secutor_of_olympus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, str]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower().replace("+", " plus ")
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_VEHICLE_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+            if not m:
+                continue
+            source = str(name or "Secutor of Olympus").strip() or "Secutor of Olympus"
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            mw_token = str(m.group("mw") or "").strip().lower().replace(" plus ", "+").replace(" ", "")
+            if range_value <= 0 or threshold <= 0 or not mw_token:
+                continue
+            dedupe_key = (source.lower(), int(range_value), int(threshold), mw_token)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "roll_mode": "single_threshold",
+                    "threshold": int(threshold),
+                    "mortal_on_success": mw_token,
+                    "requires_visibility": False,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_shooting_phase_enemy_range_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, at the start of your Shooting phase, select a visible enemy

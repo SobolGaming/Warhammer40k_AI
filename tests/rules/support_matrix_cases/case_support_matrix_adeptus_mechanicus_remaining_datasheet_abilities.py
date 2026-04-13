@@ -24,6 +24,37 @@ def test_support_matrix_classifies_remaining_admech_datasheet_abilities_as_suppo
             "friendly Adeptus Mechanicus Battleline units, you can re-roll the Hit roll instead.",
         ),
         (
+            "Rod of the War Forge",
+            "In your Command phase, select one of the abilities in the Icon of War section. Until the start of your next "
+            "Command phase, this model has that ability.",
+        ),
+        (
+            "Fanatical Devotion",
+            "You can select one friendly Skitarii or THULIA GHULD unit within 6\" of this model; until the start of your next "
+            "Command phase, that unit is eligible to shoot and declare a charge in a turn in which it Advanced.",
+        ),
+        (
+            "Adaptive Tactics",
+            "You can select one friendly Skitarii or THULIA GHULD unit within 6\" of this model; until the start of your next "
+            "Command phase, that unit is eligible to shoot and declare a charge in a turn in which it Fell Back.",
+        ),
+        (
+            "The Fires of Mars",
+            "You can select one friendly Skitarii or THULIA GHULD unit within 6\" of this model; until the start of your next "
+            "Command phase, the Conqueror Imperative and Protector Imperative are both active for that unit.",
+        ),
+        (
+            "Cybernetic Augmentation",
+            "This model can move through terrain features, but cannot end a move within a wall, a floor, etc. This model can be "
+            "set up or end a move on any floor level of RUINS, but if that level is not the ground floor, it can only do so if its "
+            "base does not overhang the floor at that level.",
+        ),
+        (
+            "Secutor of Olympus",
+            "At the start of your Shooting phase, select one enemy VEHICLE unit within 12\" of this model and roll one D6: "
+            "on a 2+, that enemy unit suffers D3+1 mortal wounds.",
+        ),
+        (
             "Dynamic Efficiency",
             "This unit is eligible to declare a charge in a turn in which it Advanced or Fell Back, and you can re-roll "
             "Desperate Escape tests taken for models in this unit.",

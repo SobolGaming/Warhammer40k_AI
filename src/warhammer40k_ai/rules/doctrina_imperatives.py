@@ -166,6 +166,15 @@ class DoctrinaImperativesManager:
             return False
         return bool(checker(unit, game=game))
 
+    def _thulia_ghuld_fires_of_mars_applies(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            from .adeptus_mechanicus_thulia_ghuld import the_fires_of_mars_applies
+        except ImportError:
+            return False
+        return bool(the_fires_of_mars_applies(unit))
+
     def get_active_imperative_keys_for_unit(self, unit, *, game=None) -> set[str]:
         active_keys: set[str] = set()
         game = self._resolve_game(unit=unit, game=game)
@@ -173,6 +182,7 @@ class DoctrinaImperativesManager:
             self._haloscreed_cognitive_reinforcement_applies(unit)
             or self._skitarii_cantic_thrallnet_applies(unit, game=game)
             or self._transcendent_cogitation_applies(unit, game=game)
+            or self._thulia_ghuld_fires_of_mars_applies(unit)
         ):
             active_keys.add(PROTECTOR_IMPERATIVE.key)
             active_keys.add(CONQUEROR_IMPERATIVE.key)

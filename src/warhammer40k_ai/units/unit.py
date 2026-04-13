@@ -3272,6 +3272,10 @@ class Unit(
         r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+terrain\s+features",
         re.IGNORECASE,
     )
+    _MODEL_CAN_MOVE_THROUGH_TERRAIN_RE = re.compile(
+        r"(?:this\s+(?:model|unit)|the\s+bearer)\s+can\s+move\s+through\s+terrain\s+features",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
         r"(?:models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit|they|it)\s+can\s+move\s+"
         r"within\s+engagement\s+range\s+of\s+(?:enemy|such)\s+models.*?"
@@ -3829,6 +3833,11 @@ class Unit(
     _START_SHOOTING_PHASE_VEHICLE_MORTAL_HEAL_RE = re.compile(
         r"at the start of your shooting phase select one enemy vehicle unit within (?P<range>\d+) of this model and roll (?:one|1) d6 "
         r"on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds? and this model regains up to that many lost wounds?",
+        re.IGNORECASE,
+    )
+    _START_SHOOTING_PHASE_VEHICLE_MORTAL_THRESHOLD_RE = re.compile(
+        r"at the start of your shooting phase select one enemy vehicle unit within (?P<range>\d+) of (?:this model|the bearer) and roll (?:one|1) d6 "
+        r"on a (?P<threshold>\d)(?:\s+plus)? that enemy unit suffers (?P<mw>\d*d\d+(?:\s+plus\s+\d+)?|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _START_SHOOTING_PHASE_ENEMY_RANGE_MORTAL_THRESHOLD_RE = re.compile(
