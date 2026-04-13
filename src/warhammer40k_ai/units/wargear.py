@@ -503,6 +503,23 @@ class WargearProfile:
         game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
 
+    def _attacker_unit_was_set_up_this_turn(self, attacker: 'Model') -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        root = self._unit_root(unit)
+        target_unit = root if root is not None else unit
+        if target_unit is None:
+            return False
+        army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        was_set_up = getattr(target_unit, "_was_set_up_this_turn", None)
+        if callable(was_set_up):
+            return bool(was_set_up(game=game))
+        if bool(getattr(target_unit, "arrived_from_reserves_this_turn", False)):
+            return True
+        if bool(getattr(getattr(target_unit, "round_state", None), "reinforced_this_round", False)):
+            return True
+        return False
+
     def _attacker_is_enhancement_bearer(self, attacker: 'Model', sr: dict) -> bool:
         bearer_id = sr.get("enhancement_fierce_conqueror_bearer_id") or sr.get("enhancement_bearer_model_id")
         if not bearer_id:
@@ -6172,6 +6189,25 @@ class WargearProfile:
                             )
         except Exception:
             pass
+        if (
+            self.parent_wargear
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ):
+            sr = self._unit_special_rules(attacker)
+            bearer_bonus = int(sr.get("enhancement_bearer_ranged_attacks_bonus", 0) or 0)
+            if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_ranged_attacks_bonus_expires_phase",
+                    turn_key="enhancement_bearer_ranged_attacks_bonus_turn",
+                    owner_key="enhancement_bearer_ranged_attacks_bonus_owner",
+                ):
+                    atk_mods.append(
+                        Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_ranged_attacks_add")
+                    )
+                    attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (ranged)")
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus", 0) or 0)
@@ -27448,7 +27484,48 @@ class WargearProfile:
                             )
         except Exception:
             pass
-        if self.parent_wargear and self.parent_wargear.is_melee():
+        if (
+            self.parent_wargear
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ):
+            sr = self._unit_special_rules(attacker)
+            bearer_d_bonus = int(sr.get("enhancement_bearer_ranged_damage_bonus", 0) or 0)
+            if bearer_d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_ranged_damage_bonus_expires_phase",
+                    turn_key="enhancement_bearer_ranged_damage_bonus_turn",
+                    owner_key="enhancement_bearer_ranged_damage_bonus_owner",
+                ):
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_ranged_damage_add")
+                    )
+                    damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (ranged)")
+            tzagulla_damage_bonus = int(sr.get("enhancement_tzagulla_setup_turn_bearer_ranged_damage_bonus", 0) or 0)
+            if (
+                tzagulla_damage_bonus
+                and bool(sr.get("enhancement_tzagulla", False))
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self._attacker_unit_was_set_up_this_turn(attacker)
+            ):
+                source_name = str(sr.get("enhancement_tzagulla_source", "") or "Tzagulla").strip() or "Tzagulla"
+                damage_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(tzagulla_damage_bonus),
+                        source="enhancement:tzagulla_ranged_damage_add",
+                    )
+                )
+                damage_result['special_effects'].append(
+                    f"{source_name} +{int(tzagulla_damage_bonus)}D (set up from Reserves)"
+                )
+        if (
+            self.parent_wargear
+            and callable(getattr(self.parent_wargear, "is_melee", None))
+            and self.parent_wargear.is_melee()
+        ):
             sr = self._unit_special_rules(attacker)
             bearer_d_bonus = int(sr.get("enhancement_bearer_melee_damage_bonus", 0) or 0)
             if bearer_d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
@@ -27479,6 +27556,24 @@ class WargearProfile:
                     damage_result['special_effects'].append(
                         f"{source_name} +{int(temporary_bearer_d_bonus)}D (bearer melee)"
                     )
+            tzagulla_damage_bonus = int(sr.get("enhancement_tzagulla_setup_turn_bearer_melee_damage_bonus", 0) or 0)
+            if (
+                tzagulla_damage_bonus
+                and bool(sr.get("enhancement_tzagulla", False))
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self._attacker_unit_was_set_up_this_turn(attacker)
+            ):
+                source_name = str(sr.get("enhancement_tzagulla_source", "") or "Tzagulla").strip() or "Tzagulla"
+                damage_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(tzagulla_damage_bonus),
+                        source="enhancement:tzagulla_melee_damage_add",
+                    )
+                )
+                damage_result['special_effects'].append(
+                    f"{source_name} +{int(tzagulla_damage_bonus)}D (set up from Reserves)"
+                )
             _mark_attacks_bonus, mark_damage_bonus, mark_source = self._mark_of_devotion_bonuses(attacker, sr)
             if mark_damage_bonus:
                 damage_mods.append(

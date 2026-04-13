@@ -1711,6 +1711,20 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             return False
         return bool(fn(self.game, stratagem_name=stratagem_key))
 
+    def _target_unit_can_use_infernal_fulgurite_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "RAPID INGRESS":
+            return False
+        fn = getattr(target_unit, "can_use_infernal_fulgurite_stratagem_discount", None)
+        if not callable(fn):
+            return False
+        return bool(fn(self.game, stratagem_name=stratagem_key))
+
     def _target_unit_can_use_blackwing_mantle_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -2505,6 +2519,17 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         if name_u != "RAPID INGRESS":
             return 0
         if not self._target_unit_can_use_synaptic_strategy_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_infernal_fulgurite_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "RAPID INGRESS":
+            return 0
+        if not self._target_unit_can_use_infernal_fulgurite_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3716,6 +3741,34 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             }
             if self._should_preview_optional_ability(
                 "SYNAPTIC_STRATEGY_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+                return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
+
+        infernal_fulgurite = self._preview_infernal_fulgurite_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if infernal_fulgurite:
+            ability_name = "Infernal Fulgurite"
+            try:
+                get_rule = getattr(target_unit, "get_infernal_fulgurite_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "INFERNAL_FULGURITE_RAPID_INGRESS",
                 ctx,
                 assume=assume_optional_discounts,
             ):
@@ -5978,6 +6031,66 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                     "increase_reasons": increase_reasons,
                     "synaptic_strategy_use": True,
                     "synaptic_strategy_source": ability_name,
+                }
+
+        infernal_fulgurite = self._preview_infernal_fulgurite_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if infernal_fulgurite and target_unit is not None:
+            ability_name = "Infernal Fulgurite"
+            try:
+                get_rule = getattr(target_unit, "get_infernal_fulgurite_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("INFERNAL_FULGURITE_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_infernal_fulgurite_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "infernal_fulgurite_use": True,
+                    "infernal_fulgurite_source": ability_name,
                 }
 
         grimnars_mark = self._preview_grimnars_mark_discount(

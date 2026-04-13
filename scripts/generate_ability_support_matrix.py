@@ -955,6 +955,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"heretic astartes vehicle lord discordant and vashtorr the arkifane units from your army gain the soul forge keyword",
             r"soul forge units from your army have a 5 invulnerable save",
         ),
+        "Warp Portals": (
+            r"at the end of your opponents turn you can select a number of heretic astartes terminator obliterators and mutilators units from your army excluding units that are within engagement range of one or more enemy units",
+            r"the maximum number of units you can select depends on the battle size as follows(?: battle size number of units incursion up to 1 unit strike force up to 2 units onslaught up to 3 units)?",
+            r"once you have made your selections remove those units from the battlefield and place them into strategic reserves",
+        ),
         "Focus of Hatred": (
             r"at the start of your command phase select one unit from your opponent(?:s| s) army to be your focus of hatred",
             r"until the start of your next command phase each time a heretic astartes model from your army excluding damned models makes an attack that targets your focus of hatred you can reroll the hit roll",
@@ -2896,6 +2901,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Soul Forge Boons": (
             "Supported",
             "Cult of the Arkifane: HERETIC ASTARTES VEHICLE units gain DAEMON and SOUL FORGE, Lord Discordant and Vashtorr the Arkifane units gain SOUL FORGE, and SOUL FORGE units gain a 5+ invulnerable save.",
+        ),
+        "Warp Portals": (
+            "Supported",
+            "Warpstrike Champions: at the end of your opponent's turn, queue a deterministic multiselect decision for eligible HERETIC ASTARTES TERMINATOR, OBLITERATORS, and MUTILATORS units that are on the battlefield and not within Engagement Range; selected units enter Strategic Reserves with battle-size caps of 1/2/3 for Incursion/Strike Force/Onslaught.",
         ),
         "Focus of Hatred": (
             "Supported",
@@ -19731,6 +19740,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010743003": "Cybinfernal Font: models in the bearer's unit gain the SOUL FORGE keyword, which integrates with Soul Forge Boons for the detachment 5+ invulnerable save.",
         "000010743004": "Mark of the Soul Forges: each time the bearer makes an attack, unmodified Hit rolls of 5+ score a Critical Hit.",
         "000010743005": "Crown of Worms: add 3\" to the range of the bearer's Master of Mechanisms and Enrage Machine Spirits ability selections.",
+        "000010739002": "Infernal Fulgurite: once per battle, the bearer's unit can use Rapid Ingress for 0CP, and can do so even if a different unit already used Rapid Ingress that phase.",
+        "000010739003": "Eye of the Warp: while the bearer is alive, the bearer's unit can re-roll Charge rolls in turns in which that unit was set up on the battlefield.",
+        "000010739004": "Akshur's Binding Runes: while the bearer is alive and leading a Deep Strike unit in reserves, that unit treats Strategic Reserves setup timing as one battle round higher, allowing first-turn setup.",
+        "000010739005": "Tzagulla: the bearer's ranged and melee weapons gain +1 Attacks, +1 Strength, and +1 AP, and gain +1 Damage in turns in which the bearer's unit was set up from Reserves.",
         "000010623002": "Spiritus Ferrum: bearer melee weapons gain +1 Attacks; once per battle at start of any phase, optional activation grants +1 Attacks to melee weapons of other models in the bearer's unit until end of phase.",
         "000010623003": "Medusan Roar (Aura): enemy non-MONSTER/non-VEHICLE units within 6\" that fail Battle-shock destroy one model (target owner selects); once per battle choose to destroy D3 models instead.",
         "000010623004": "Iron Laurel: bearer gains +1 Objective Control; once per battle at start of any phase, optional activation grants +1 Objective Control to other models in the bearer's unit until end of phase.",

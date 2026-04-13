@@ -82,6 +82,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_RENEGADE_WARBAND = "Renegade Warband"
     DETACHMENT_SOULFORGED_WARPACK = "Soulforged Warpack"
     DETACHMENT_VETERANS_OF_THE_LONG_WAR = "Veterans of the Long War"
+    DETACHMENT_WARPSTRIKE_CHAMPIONS = "Warpstrike Champions"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
     _DECEPTORS_FALSEHOOD_DECLARE_ABILITY = "deceptors_falsehood_declare_reserves"
@@ -266,6 +267,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id: str = ""
         self._renegade_warband_weaponised_hatred_last_used_battle_round: int = 0
         self.veterans_focus_of_hatred_target_unit_id: str = ""
+        self.warp_portals_last_resolved_phase_key: str = ""
 
     def is_cabal_of_chaos(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -336,6 +338,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_VETERANS_OF_THE_LONG_WAR)
+
+    def is_warpstrike_champions(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_WARPSTRIKE_CHAMPIONS)
 
     @staticmethod
     def _unit_root(unit):
@@ -769,6 +776,114 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._unit_has_keyword(root, "INFANTRY"):
             return False
         return True
+
+    @classmethod
+    def _is_obliterators_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "obliterators"
+
+    @classmethod
+    def _is_mutilators_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "mutilators"
+
+    def _unit_is_warp_portals_unit(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(
+            self._unit_has_keyword(root, "TERMINATOR")
+            or self._unit_has_keyword(root, "OBLITERATORS")
+            or self._unit_has_keyword(root, "MUTILATORS")
+            or self._is_obliterators_unit(root)
+            or self._is_mutilators_unit(root)
+        )
+
+    def warp_portals_end_of_opponent_turn_max_units(self, *, game=None) -> int:
+        if not self.is_warpstrike_champions():
+            return 0
+        size_name = ""
+        if game is not None:
+            size = getattr(getattr(game, "battlefield", None), "size", None)
+            size_name = str(getattr(size, "name", "") or size or "")
+        size_name = size_name.strip().upper().replace(" ", "_")
+        if "INCURSION" in size_name:
+            return 1
+        if "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
+            return 2
+        if "ONSLAUGHT" in size_name:
+            return 3
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 3
+        if points_limit >= 2000:
+            return 2
+        return 1
+
+    def _warp_portals_phase_key(self, *, game=None, turn_ending_player_id: str = "") -> str:
+        turn = self._current_turn(game=game)
+        return f"{int(turn)}:{str(turn_ending_player_id or '').strip()}"
+
+    def warp_portals_phase_already_resolved(self, *, game=None, turn_ending_player_id: str = "") -> bool:
+        key = self._warp_portals_phase_key(game=game, turn_ending_player_id=turn_ending_player_id)
+        return bool(key) and key == str(self.warp_portals_last_resolved_phase_key or "")
+
+    def mark_warp_portals_phase_resolved(self, *, game=None, turn_ending_player_id: str = "") -> None:
+        self.warp_portals_last_resolved_phase_key = self._warp_portals_phase_key(
+            game=game,
+            turn_ending_player_id=turn_ending_player_id,
+        )
+
+    def warp_portals_end_of_opponent_turn_candidates(self, *, game=None, turn_ending_player=None, game_map=None) -> list:
+        if not self.is_warpstrike_champions() or self.army is None:
+            return []
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        if turn_ending_player is not None:
+            turn_ending_id = str(get_entity_id(turn_ending_player) or getattr(turn_ending_player, "id", "") or "")
+            player_id = str(get_entity_id(player) or getattr(player, "id", "") or "")
+            if turn_ending_id and turn_ending_id == player_id:
+                return []
+            if turn_ending_player is player:
+                return []
+
+        candidates: list = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if not self._unit_is_warp_portals_unit(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if game_map is None:
+                candidates.append(root)
+                continue
+
+            engaged = False
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+                if enemy is None:
+                    continue
+                enemy_root = self._unit_root(enemy)
+                if enemy_root is None:
+                    continue
+                enemy_alive = getattr(enemy_root, "is_alive", None)
+                if callable(enemy_alive) and not bool(enemy_alive()):
+                    continue
+                if not self._unit_on_battlefield(enemy_root):
+                    continue
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    engaged = True
+                    break
+            if engaged:
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return candidates
 
     def _tyrannical_motivation_unit_id(self, unit) -> str:
         root = self._unit_root(unit)

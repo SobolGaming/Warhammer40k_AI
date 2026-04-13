@@ -8269,6 +8269,126 @@ class KeywordsDetachmentsMixin:
             sr["synaptic_strategy_rapid_ingress_used_stratagem"] = str(stratagem_name or "").strip()
         root.special_rules = sr
 
+    def get_infernal_fulgurite_stratagem_discount_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "infernal_fulgurite_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_infernal_fulgurite", False))):
+                continue
+            source_name = str(sr.get("enhancement_infernal_fulgurite_source", "") or "Infernal Fulgurite").strip()
+            if not source_name:
+                source_name = "Infernal Fulgurite"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in list(
+                    sr.get("enhancement_infernal_fulgurite_stratagems", ("RAPID INGRESS",))
+                    or ("RAPID INGRESS",)
+                )
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("RAPID INGRESS",)
+            usage_key = str(
+                sr.get("enhancement_infernal_fulgurite_usage_key", "") or "infernal_fulgurite_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "infernal_fulgurite_rapid_ingress"
+            rule = {
+                "source": source_name,
+                "ability_key": "infernal_fulgurite_rapid_ingress",
+                "usage_key": usage_key,
+                "stratagems": configured_stratagems,
+                "limit": "unit_battle",
+                "repeat_bypass": bool(sr.get("enhancement_infernal_fulgurite_repeat_bypass", True)),
+            }
+            break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_infernal_fulgurite_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if not self._attached_unit_has_active_enhancement(
+            "enhancement_infernal_fulgurite",
+            enhancement_id="000010739002",
+            enhancement_name="Infernal Fulgurite",
+            require_bearer_alive=True,
+        ):
+            return False
+        rule = root.get_infernal_fulgurite_stratagem_discount_rule()
+        if not rule:
+            return False
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        if name_u != "RAPID INGRESS":
+            return False
+        try:
+            if not root.is_in_reserves():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def mark_infernal_fulgurite_used(self, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_infernal_fulgurite_stratagem_discount_rule()
+        if not isinstance(rule, dict):
+            return
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if not usage_key:
+            usage_key = "infernal_fulgurite_rapid_ingress"
+        source_name = str(source or rule.get("source", "") or "Infernal Fulgurite").strip() or "Infernal Fulgurite"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["infernal_fulgurite_rapid_ingress_used"] = True
+        if source_name:
+            sr["infernal_fulgurite_rapid_ingress_used_source"] = source_name
+        if stratagem_name:
+            sr["infernal_fulgurite_rapid_ingress_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
     def _unit_is_dire_avengers_or_guardians(self, unit) -> bool:
         if unit is None:
             return False
@@ -12033,6 +12153,54 @@ class KeywordsDetachmentsMixin:
                         total_bonus += int(sr.get("enhancement_transponder_lock_module_round_bonus", 1) or 0)
                     except Exception:
                         pass
+        akshurs_active = False
+        try:
+            akshurs_active = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_akshurs_binding_runes",
+                    enhancement_id="000010739004",
+                    enhancement_name="Akshur's Binding Runes",
+                    require_bearer_alive=True,
+                )
+            )
+        except Exception:
+            akshurs_active = False
+        if akshurs_active:
+            try:
+                started = bool(getattr(root, "_started_in_reserves", False))
+            except Exception:
+                started = False
+            try:
+                in_reserves = bool(getattr(root, "is_in_reserves", lambda: False)())
+            except Exception:
+                in_reserves = False
+            if started and in_reserves:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in list(members or []):
+                    if member is None:
+                        continue
+                    sr_member = getattr(member, "special_rules", None)
+                    if not (isinstance(sr_member, dict) and bool(sr_member.get("enhancement_akshurs_binding_runes", False))):
+                        continue
+                    active = True
+                    if bool(sr_member.get("enhancement_akshurs_binding_runes_requires_deep_strike", True)):
+                        try:
+                            active = bool(getattr(root, "has_deep_strike", lambda: False)())
+                        except Exception:
+                            active = False
+                    if active:
+                        try:
+                            total_bonus += int(
+                                sr_member.get("enhancement_akshurs_binding_runes_round_bonus", 1) or 0
+                            )
+                        except Exception:
+                            pass
+                    break
         if isinstance(sr, dict) and bool(sr.get("high_king_of_fenris_selected", False)):
             active = True
             try:

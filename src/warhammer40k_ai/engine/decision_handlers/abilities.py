@@ -666,6 +666,40 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         resolved_fn = getattr(mgr, "hyperphasing_phase_already_resolved", None)
         if callable(resolved_fn) and bool(resolved_fn(game=game, turn_ending_player_id=turn_ending_player_id)):
             return ("Hyperphasing has already resolved this end-of-turn window.",)
+    if ability_key == "warp_portals_end_of_opponent_turn":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Warp Portals requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Warp Portals requires an army.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not getattr(mgr, "is_warpstrike_champions", lambda: False)():
+            return ("Warp Portals requires the Warpstrike Champions detachment.",)
+        turn_ending_player_id = str(ctx.get("turn_ending_player_id", "") or "")
+        turn_ending_player = resolve_player(game, turn_ending_player_id) if turn_ending_player_id else None
+        candidates_fn = getattr(mgr, "warp_portals_end_of_opponent_turn_candidates", None)
+        if not callable(candidates_fn):
+            return ("Warp Portals candidate resolver is unavailable.",)
+        candidates = list(
+            candidates_fn(
+                game=game,
+                turn_ending_player=turn_ending_player,
+                game_map=getattr(game, "map", None),
+            )
+            or []
+        )
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in list(candidates or []) if unit is not None}
+        for uid in seen:
+            if uid not in candidate_ids:
+                return ("Warp Portals selection contains an ineligible unit.",)
+        max_units_fn = getattr(mgr, "warp_portals_end_of_opponent_turn_max_units", None)
+        max_units_allowed = int(max_units_fn(game=game) or 0) if callable(max_units_fn) else int(max_units or 0)
+        if len(seen) > max(0, int(max_units_allowed)):
+            return ("Too many units selected for Warp Portals.",)
+        resolved_fn = getattr(mgr, "warp_portals_phase_already_resolved", None)
+        if callable(resolved_fn) and bool(resolved_fn(game=game, turn_ending_player_id=turn_ending_player_id)):
+            return ("Warp Portals has already resolved this end-of-turn window.",)
     if ability_key == "cosmic_distortion_phase_surge":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -1287,6 +1321,65 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
                 _log_action_for_players(game, player, f"Hyperphasing: {labels} placed into Strategic Reserves.")
 
         mark_fn = getattr(mgr, "mark_hyperphasing_phase_resolved", None)
+        if callable(mark_fn):
+            mark_fn(game=game, turn_ending_player_id=turn_ending_player_id)
+        return moved_units
+
+    if ability_key == "warp_portals_end_of_opponent_turn":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Warp Portals player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Warp Portals army not found.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Warp Portals detachment manager not found.")
+
+        turn_ending_player_id = str(ctx.get("turn_ending_player_id", "") or "")
+        turn_ending_player = resolve_player(game, turn_ending_player_id) if turn_ending_player_id else None
+
+        moved_units = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted(
+                {
+                    str(uid or "")
+                    for uid in list(result.payload.get("unit_ids") or [])
+                    if str(uid or "").strip()
+                }
+            )
+            candidates_fn = getattr(mgr, "warp_portals_end_of_opponent_turn_candidates", None)
+            candidates = (
+                list(
+                    candidates_fn(
+                        game=game,
+                        turn_ending_player=turn_ending_player,
+                        game_map=getattr(game, "map", None),
+                    )
+                    or []
+                )
+                if callable(candidates_fn)
+                else []
+            )
+            by_id = {str(get_entity_id(unit) or ""): unit for unit in list(candidates or []) if unit is not None}
+            game_map = getattr(game, "map", None)
+            for uid in unit_ids:
+                unit = by_id.get(uid)
+                if unit is None:
+                    continue
+                moved = unit.enter_strategic_reserves_midgame(
+                    game=game,
+                    game_map=game_map,
+                    reason="Warp Portals",
+                )
+                if moved:
+                    moved_units.append(unit)
+
+            if moved_units:
+                labels = ", ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in list(moved_units or []))
+                _log_action_for_players(game, player, f"Warp Portals: {labels} placed into Strategic Reserves.")
+
+        mark_fn = getattr(mgr, "mark_warp_portals_phase_resolved", None)
         if callable(mark_fn):
             mark_fn(game=game, turn_ending_player_id=turn_ending_player_id)
         return moved_units

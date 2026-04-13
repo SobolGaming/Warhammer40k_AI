@@ -13761,6 +13761,42 @@ class ActionsMovementMixin:
             if laurels_enabled and self._was_set_up_this_turn(game=game):
                 return True
         try:
+            has_eye_of_the_warp = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_eye_of_the_warp",
+                    enhancement_id="000010739003",
+                    enhancement_name="Eye of the Warp",
+                    require_bearer_alive=True,
+                )
+            )
+        except Exception:
+            has_eye_of_the_warp = False
+        if has_eye_of_the_warp:
+            conditional_found = True
+            eye_enabled = False
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_eye_of_the_warp", False)):
+                    continue
+                eye_enabled = bool(sr.get("enhancement_eye_of_the_warp_charge_reroll_on_setup_turn", True))
+                break
+            if eye_enabled and self._was_set_up_this_turn(game=game):
+                return True
+        try:
             rule = self.get_selected_to_shoot_charge_reroll_rule()
             if rule:
                 conditional_found = True

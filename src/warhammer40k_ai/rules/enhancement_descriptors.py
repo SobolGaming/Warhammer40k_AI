@@ -2443,6 +2443,71 @@ _CULT_OF_THE_ARKIFANE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CULT_OF_THE_ARKIFANE_DESCRIPTORS.values()
 }
 
+_WARPSTRIKE_CHAMPIONS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010739002": EnhancementToolDescriptor(
+        enhancement_id="000010739002",
+        name="Infernal Fulgurite",
+        timing="while_targeting_rapid_ingress",
+        target="bearer_unit",
+        duration="once_per_battle",
+        effect="rapid_ingress_zero_cp_with_repeat_bypass",
+        once_per_battle=True,
+        effect_params={
+            "stratagem_names": ("RAPID INGRESS",),
+            "usage_key": "infernal_fulgurite_rapid_ingress",
+            "repeat_bypass": True,
+        },
+    ),
+    "000010739003": EnhancementToolDescriptor(
+        enhancement_id="000010739003",
+        name="Eye of the Warp",
+        timing="passive",
+        target="bearer_unit",
+        duration="conditional_on_setup_turn_while_bearer_alive",
+        effect="charge_reroll_on_setup_turn",
+        effect_params={
+            "charge_reroll_on_setup_turn": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010739004": EnhancementToolDescriptor(
+        enhancement_id="000010739004",
+        name="Akshur's Binding Runes",
+        timing="passive_while_in_reserves",
+        target="bearer_unit_with_deep_strike",
+        duration="while_in_reserves",
+        effect="strategic_reserves_setup_round_bonus_for_deep_strike",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010739005": EnhancementToolDescriptor(
+        enhancement_id="000010739005",
+        name="Tzagulla",
+        timing="passive",
+        target="bearer_weapons",
+        duration="constant_while_bearer_alive_with_setup_turn_damage_bonus",
+        effect="bearer_melee_and_ranged_attacks_strength_ap_bonus_with_setup_turn_damage_bonus",
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "bearer_melee_strength_bonus": 1,
+            "bearer_melee_ap_bonus": 1,
+            "bearer_ranged_attacks_bonus": 1,
+            "bearer_ranged_strength_bonus": 1,
+            "bearer_ranged_ap_bonus": 1,
+            "setup_turn_bearer_melee_damage_bonus": 1,
+            "setup_turn_bearer_ranged_damage_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_WARPSTRIKE_CHAMPIONS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPSTRIKE_CHAMPIONS_DESCRIPTORS.values()
+}
+
 _DECEPTORS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008964002": EnhancementToolDescriptor(
         enhancement_id="000008964002",
@@ -9826,6 +9891,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CULT_OF_THE_ARKIFANE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _WARPSTRIKE_CHAMPIONS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10266,6 +10334,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _CULT_OF_THE_ARKIFANE_BY_NAME.get(key)
+        or _WARPSTRIKE_CHAMPIONS_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_BY_NAME.get(key)

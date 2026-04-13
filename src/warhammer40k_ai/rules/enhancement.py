@@ -1976,6 +1976,10 @@ class Enhancement:
         except Exception:
             is_cult_of_the_arkifane = False
         try:
+            is_warpstrike_champions = bool(csm_mgr and csm_mgr.is_warpstrike_champions())
+        except Exception:
+            is_warpstrike_champions = False
+        try:
             is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
         except Exception:
             is_veterans_of_the_long_war = False
@@ -10792,6 +10796,153 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_crown_of_worms_bearer_model_id"] = bearer_id
+
+        if name == "infernal fulgurite" or enh_id == "000010739002":
+            if not is_warpstrike_champions:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Infernal Fulgurite").strip() or "Infernal Fulgurite"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(params.get("stratagem_names", ("RAPID INGRESS",)) or ("RAPID INGRESS",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("RAPID INGRESS",)
+            usage_key = str(
+                params.get("usage_key", "infernal_fulgurite_rapid_ingress") or "infernal_fulgurite_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "infernal_fulgurite_rapid_ingress"
+            unit.special_rules["enhancement_infernal_fulgurite"] = True
+            unit.special_rules["enhancement_infernal_fulgurite_source"] = source
+            unit.special_rules["enhancement_infernal_fulgurite_usage_key"] = usage_key
+            unit.special_rules["enhancement_infernal_fulgurite_stratagems"] = configured_stratagems
+            unit.special_rules["enhancement_infernal_fulgurite_repeat_bypass"] = bool(
+                params.get("repeat_bypass", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_infernal_fulgurite_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "eye of the warp" or enh_id == "000010739003":
+            if not is_warpstrike_champions:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            has_deep_strike = getattr(unit, "has_deep_strike", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            if not callable(has_deep_strike) or not bool(has_deep_strike()):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eye of the Warp").strip() or "Eye of the Warp"
+            unit.special_rules["enhancement_eye_of_the_warp"] = True
+            unit.special_rules["enhancement_eye_of_the_warp_source"] = source
+            unit.special_rules["enhancement_eye_of_the_warp_charge_reroll_on_setup_turn"] = bool(
+                params.get("charge_reroll_on_setup_turn", True)
+            )
+            unit.special_rules["enhancement_eye_of_the_warp_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_the_warp_bearer_model_id"] = bearer_id
+
+        if name in {"akshur's binding runes", "akshur’s binding runes"} or enh_id == "000010739004":
+            if not is_warpstrike_champions:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            has_deep_strike = getattr(unit, "has_deep_strike", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            if not callable(has_deep_strike) or not bool(has_deep_strike()):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Akshur's Binding Runes").strip() or "Akshur's Binding Runes"
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_akshurs_binding_runes"] = True
+            unit.special_rules["enhancement_akshurs_binding_runes_source"] = source
+            unit.special_rules["enhancement_akshurs_binding_runes_round_bonus"] = int(max(0, round_bonus))
+            unit.special_rules["enhancement_akshurs_binding_runes_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            unit.special_rules["enhancement_akshurs_binding_runes_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_akshurs_binding_runes_bearer_model_id"] = bearer_id
+
+        if name == "tzagulla" or enh_id == "000010739005":
+            if not is_warpstrike_champions:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            has_deep_strike = getattr(unit, "has_deep_strike", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            if not callable(has_deep_strike) or not bool(has_deep_strike()):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tzagulla").strip() or "Tzagulla"
+            melee_attacks_bonus = _coerce_int(params.get("bearer_melee_attacks_bonus", 1) or 1, default=1)
+            melee_strength_bonus = _coerce_int(params.get("bearer_melee_strength_bonus", 1) or 1, default=1)
+            melee_ap_bonus = _coerce_int(params.get("bearer_melee_ap_bonus", 1) or 1, default=1)
+            ranged_attacks_bonus = _coerce_int(params.get("bearer_ranged_attacks_bonus", 1) or 1, default=1)
+            ranged_strength_bonus = _coerce_int(params.get("bearer_ranged_strength_bonus", 1) or 1, default=1)
+            ranged_ap_bonus = _coerce_int(params.get("bearer_ranged_ap_bonus", 1) or 1, default=1)
+            melee_damage_bonus = _coerce_int(
+                params.get("setup_turn_bearer_melee_damage_bonus", 1) or 1,
+                default=1,
+            )
+            ranged_damage_bonus = _coerce_int(
+                params.get("setup_turn_bearer_ranged_damage_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_tzagulla"] = True
+            unit.special_rules["enhancement_tzagulla_source"] = source
+            unit.special_rules["enhancement_tzagulla_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, melee_attacks_bonus))
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, melee_strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + int(max(0, melee_ap_bonus))
+            unit.special_rules["enhancement_bearer_ranged_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_attacks_bonus", 0) or 0
+            ) + int(max(0, ranged_attacks_bonus))
+            unit.special_rules["enhancement_bearer_ranged_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_strength_bonus", 0) or 0
+            ) + int(max(0, ranged_strength_bonus))
+            unit.special_rules["enhancement_bearer_ranged_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_ap_bonus", 0) or 0
+            ) + int(max(0, ranged_ap_bonus))
+            unit.special_rules["enhancement_tzagulla_setup_turn_bearer_melee_damage_bonus"] = int(
+                max(0, melee_damage_bonus)
+            )
+            unit.special_rules["enhancement_tzagulla_setup_turn_bearer_ranged_damage_bonus"] = int(
+                max(0, ranged_damage_bonus)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tzagulla_bearer_model_id"] = bearer_id
 
         if name in {"forge's blessing", "forge’s blessing"} or enh_id == "000008985002":
             if not is_soulforged_warpack:
