@@ -714,6 +714,9 @@ class Army:
         )
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(csm_mgr, "apply_cult_of_the_arkifane_keywords", None) if csm_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         ae_mgr = getattr(self, "aeldari_detachments", None)
         apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
         if callable(apply_fn):

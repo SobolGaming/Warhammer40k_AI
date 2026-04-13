@@ -2131,6 +2131,7 @@ class ActionsMovementMixin:
         archons_dynamic = bool(isinstance(sr, dict) and str(sr.get("archons_will_objective_id", "") or "").strip())
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         refrain_dynamic = False
         try:
@@ -2466,6 +2467,14 @@ class ActionsMovementMixin:
                     best_source = str(inv_source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"
         except Exception:
             pass
+
+        inv_fn = getattr(csm_mgr, "cult_of_the_arkifane_invulnerable_save", None) if csm_mgr is not None else None
+        if callable(inv_fn):
+            inv_value, inv_source = inv_fn(model, attack_type=attack_type_key)
+            inv_value = int(inv_value or 0)
+            if inv_value > 0 and (best_value is None or inv_value < best_value):
+                best_value = int(inv_value)
+                best_source = str(inv_source or "Soul Forge Boons").strip() or "Soul Forge Boons"
 
         if warp_field_specs:
             try:

@@ -13453,9 +13453,21 @@ class GamePhaseHandlersMixin:
                 source_unit = getattr(model, "parent_unit", None) or root
                 for spec in list(specs or []):
                     try:
-                        range_value = int(spec.get("range", 0) or 0)
+                        range_value = float(spec.get("range", 0) or 0)
                     except Exception:
-                        range_value = 0
+                        range_value = 0.0
+                    csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
+                    range_bonus_fn = (
+                        getattr(csm_mgr, "cult_of_the_arkifane_crown_of_worms_range_bonus", None)
+                        if csm_mgr is not None
+                        else None
+                    )
+                    if callable(range_bonus_fn):
+                        range_bonus, _range_source = range_bonus_fn(root, source_model=model)
+                        try:
+                            range_value += float(range_bonus or 0.0)
+                        except (TypeError, ValueError):
+                            pass
                     if range_value <= 0:
                         continue
                     candidates = self._enemy_candidates_within_range_of_model(
@@ -13904,6 +13916,18 @@ class GamePhaseHandlersMixin:
             if once_per_battle and once_per_battle_key and once_per_battle_scope == "model":
                 if bool(getattr(bearer, "has_used_once_per_battle", lambda _k: False)(once_per_battle_key)):
                     continue
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
+            range_bonus_fn = (
+                getattr(csm_mgr, "cult_of_the_arkifane_crown_of_worms_range_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(range_bonus_fn):
+                range_bonus, _range_source = range_bonus_fn(root, source_model=bearer)
+                try:
+                    selection_range += float(range_bonus or 0.0)
+                except (TypeError, ValueError):
+                    pass
 
             def _model_is_damaged(model_obj) -> bool:
                 current_wounds = int(getattr(model_obj, "wounds", 0) or 0)

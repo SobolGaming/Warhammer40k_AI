@@ -17677,6 +17677,17 @@ class WargearProfile:
                 crit_threshold = min(int(crit_threshold), int(threshold))
                 source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
                 crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        threshold_fn = (
+            getattr(csm_mgr, "cult_of_the_arkifane_mark_of_the_soul_forges_crit_hit_threshold", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(threshold_fn):
+            threshold, source = threshold_fn(attacker, weapon_profile=self)
+            if int(threshold or 0):
+                crit_threshold = min(int(crit_threshold), int(threshold))
+                source_name = str(source or "Mark of the Soul Forges").strip() or "Mark of the Soul Forges"
+                crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         threshold_fn = getattr(csm_mgr, "fellhammer_pitiless_cannonade_crit_hit_threshold", None) if csm_mgr is not None else None
         if callable(threshold_fn):
             game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None

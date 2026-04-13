@@ -2394,6 +2394,55 @@ _CREATIONS_OF_BILE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CREATIONS_OF_BILE_DESCRIPTORS.values()
 }
 
+_CULT_OF_THE_ARKIFANE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010743002": EnhancementToolDescriptor(
+        enhancement_id="000010743002",
+        name="Wyredjinn",
+        timing="start_of_command_phase",
+        target="army",
+        duration="instant",
+        effect="command_phase_cp_roll_with_controlled_objective_bonus",
+        effect_params={
+            "roll": "D6",
+            "success_on": 4,
+            "cp_gain": 1,
+            "roll_bonus_if_bearer_within_controlled_objective_range": 1,
+            "requires_bearer_on_battlefield_only": True,
+        },
+    ),
+    "000010743003": EnhancementToolDescriptor(
+        enhancement_id="000010743003",
+        name="Cybinfernal Font",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_soul_forge_keyword_to_bearer_unit",
+        effect_params={"keyword": "SOUL FORGE"},
+    ),
+    "000010743004": EnhancementToolDescriptor(
+        enhancement_id="000010743004",
+        name="Mark of the Soul Forges",
+        timing="passive",
+        target="bearer_attacks",
+        duration="constant",
+        effect="critical_hit_threshold_bonus",
+        effect_params={"crit_hit_threshold": 5, "requires_bearer_alive": True},
+    ),
+    "000010743005": EnhancementToolDescriptor(
+        enhancement_id="000010743005",
+        name="Crown of Worms",
+        timing="passive",
+        target="bearer_abilities",
+        duration="constant",
+        effect="increase_warpsmith_ability_range",
+        effect_params={"range_bonus": 3.0, "requires_bearer_alive": True},
+    ),
+}
+
+_CULT_OF_THE_ARKIFANE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CULT_OF_THE_ARKIFANE_DESCRIPTORS.values()
+}
+
 _DECEPTORS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008964002": EnhancementToolDescriptor(
         enhancement_id="000008964002",
@@ -9774,6 +9823,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CREATIONS_OF_BILE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CULT_OF_THE_ARKIFANE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10213,6 +10265,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
+        or _CULT_OF_THE_ARKIFANE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_BY_NAME.get(key)

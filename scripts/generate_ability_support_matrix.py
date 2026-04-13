@@ -950,6 +950,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in that unit makes a ranged attack add \d+ to the wound roll",
             r"add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
         ),
+        "Soul Forge Boons": (
+            r"heretic astartes vehicle units from your army gain the daemon keyword",
+            r"heretic astartes vehicle lord discordant and vashtorr the arkifane units from your army gain the soul forge keyword",
+            r"soul forge units from your army have a 5 invulnerable save",
+        ),
         "Focus of Hatred": (
             r"at the start of your command phase select one unit from your opponent(?:s| s) army to be your focus of hatred",
             r"until the start of your next command phase each time a heretic astartes model from your army excluding damned models makes an attack that targets your focus of hatred you can reroll the hit roll",
@@ -2887,6 +2892,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Debt to the Soul Forge": (
             "Supported",
             "Soulforged Warpack: each time an eligible HERETIC ASTARTES DAEMON VEHICLE unit makes a Dark Pact it can invoke its contract; invoked contracts apply -1 to the resulting Leadership test and, until end of phase, grant +1 to wound for ranged attacks and +2 Attacks to melee weapons for that unit.",
+        ),
+        "Soul Forge Boons": (
+            "Supported",
+            "Cult of the Arkifane: HERETIC ASTARTES VEHICLE units gain DAEMON and SOUL FORGE, Lord Discordant and Vashtorr the Arkifane units gain SOUL FORGE, and SOUL FORGE units gain a 5+ invulnerable save.",
         ),
         "Focus of Hatred": (
             "Supported",
@@ -19718,6 +19727,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010676003": "Hero of the Chapter: while the bearer is leading a unit and alive, the bearer gains the Battleline keyword.",
         "000010676004": "Blades of Valour: improve AP by 1 for melee weapons equipped by the bearer and Battleline models in the bearer's unit.",
         "000010676005": "Bombast Omnivox: each time the bearer's unit is targeted by a Stratagem, roll D6 (+1 if that unit has Battleline); on 4+, gain 1CP.",
+        "000010743002": "Wyredjinn: at the start of your Command phase, while the bearer is on the battlefield, roll D6 and gain 1CP on 4+, adding 1 to the roll while the bearer is within range of an objective marker you control.",
+        "000010743003": "Cybinfernal Font: models in the bearer's unit gain the SOUL FORGE keyword, which integrates with Soul Forge Boons for the detachment 5+ invulnerable save.",
+        "000010743004": "Mark of the Soul Forges: each time the bearer makes an attack, unmodified Hit rolls of 5+ score a Critical Hit.",
+        "000010743005": "Crown of Worms: add 3\" to the range of the bearer's Master of Mechanisms and Enrage Machine Spirits ability selections.",
         "000010623002": "Spiritus Ferrum: bearer melee weapons gain +1 Attacks; once per battle at start of any phase, optional activation grants +1 Attacks to melee weapons of other models in the bearer's unit until end of phase.",
         "000010623003": "Medusan Roar (Aura): enemy non-MONSTER/non-VEHICLE units within 6\" that fail Battle-shock destroy one model (target owner selects); once per battle choose to destroy D3 models instead.",
         "000010623004": "Iron Laurel: bearer gains +1 Objective Control; once per battle at start of any phase, optional activation grants +1 Objective Control to other models in the bearer's unit until end of phase.",

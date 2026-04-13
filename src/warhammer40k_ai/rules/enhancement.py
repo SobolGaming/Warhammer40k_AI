@@ -431,6 +431,37 @@ def _enhancement_cp_gain_unit_has_enemy_within_distance(
     return False
 
 
+def _enhancement_cp_gain_model_within_controlled_objective_range(
+    model,
+    *,
+    player,
+    game=None,
+) -> bool:
+    if model is None or player is None:
+        return False
+    root = _enhancement_cp_gain_model_parent_root(model)
+    if root is None or not _enhancement_cp_gain_unit_is_deployed_on_battlefield(root):
+        return False
+    game_map = getattr(game, "map", None) if game is not None else None
+    if game_map is None:
+        return False
+    objectives = list(getattr(game_map, "objectives", []) or [])
+    if not objectives:
+        return False
+    is_within_objective = getattr(root, "is_model_within_objective_range", None)
+    if not callable(is_within_objective):
+        return False
+    for objective in objectives:
+        location = getattr(objective, "location", None) or objective
+        if location is None:
+            continue
+        if getattr(location, "controlling_player", None) is not player:
+            continue
+        if bool(is_within_objective(model, location)):
+            return True
+    return False
+
+
 def _register_enhancement_command_phase_cp_gain_roll_spec(
     unit,
     *,
@@ -439,8 +470,10 @@ def _register_enhancement_command_phase_cp_gain_roll_spec(
     success_on: int,
     cp_gain: int,
     requires_bearer_on_battlefield_or_embarked_transport: bool,
+    requires_bearer_on_battlefield_only: bool = False,
     enemy_range_max: float | None = None,
     enemy_range_reference: str = "",
+    roll_bonus_if_bearer_within_controlled_objective_range: int = 0,
     roll_bonus_if_effective_model_count_at_least: int = 0,
     effective_model_count_threshold: int = 10,
     effective_model_count_scope: str = "enhancement",
@@ -459,7 +492,11 @@ def _register_enhancement_command_phase_cp_gain_roll_spec(
         "requires_bearer_on_battlefield_or_embarked_transport": bool(
             requires_bearer_on_battlefield_or_embarked_transport
         ),
+        "requires_bearer_on_battlefield_only": bool(requires_bearer_on_battlefield_only),
         "enemy_range_reference": str(enemy_range_reference or "").strip().lower(),
+        "roll_bonus_if_bearer_within_controlled_objective_range": int(
+            roll_bonus_if_bearer_within_controlled_objective_range or 0
+        ),
         "roll_bonus_if_effective_model_count_at_least": int(roll_bonus_if_effective_model_count_at_least or 0),
         "effective_model_count_threshold": int(max(0, int(effective_model_count_threshold or 0))),
         "effective_model_count_scope": normalized_scope,
@@ -472,8 +509,10 @@ def _register_enhancement_command_phase_cp_gain_roll_spec(
         int(spec.get("success_on", 0) or 0),
         int(spec.get("cp_gain", 0) or 0),
         bool(spec.get("requires_bearer_on_battlefield_or_embarked_transport", False)),
+        bool(spec.get("requires_bearer_on_battlefield_only", False)),
         _coerce_float(spec.get("enemy_range_max", -1.0) if "enemy_range_max" in spec else -1.0, default=-1.0),
         str(spec.get("enemy_range_reference", "") or "").strip().lower(),
+        int(spec.get("roll_bonus_if_bearer_within_controlled_objective_range", 0) or 0),
         int(spec.get("roll_bonus_if_effective_model_count_at_least", 0) or 0),
         int(spec.get("effective_model_count_threshold", 0) or 0),
         str(spec.get("effective_model_count_scope", "") or "").strip().lower(),
@@ -489,11 +528,13 @@ def _register_enhancement_command_phase_cp_gain_roll_spec(
             int(existing.get("success_on", 0) or 0),
             int(existing.get("cp_gain", 0) or 0),
             bool(existing.get("requires_bearer_on_battlefield_or_embarked_transport", False)),
+            bool(existing.get("requires_bearer_on_battlefield_only", False)),
             _coerce_float(
                 existing.get("enemy_range_max", -1.0) if "enemy_range_max" in existing else -1.0,
                 default=-1.0,
             ),
             str(existing.get("enemy_range_reference", "") or "").strip().lower(),
+            int(existing.get("roll_bonus_if_bearer_within_controlled_objective_range", 0) or 0),
             int(existing.get("roll_bonus_if_effective_model_count_at_least", 0) or 0),
             int(existing.get("effective_model_count_threshold", 0) or 0),
             str(existing.get("effective_model_count_scope", "") or "").strip().lower(),
@@ -555,7 +596,11 @@ def resolve_enhancement_command_phase_cp_gain_roll_specs(
             source_root = _enhancement_cp_gain_model_parent_root(source_model, fallback_unit=member)
             if source_root is None:
                 continue
-            if requires_bearer_on_battlefield and not _enhancement_cp_gain_unit_is_on_battlefield_or_embarked(source_root):
+            requires_bearer_on_battlefield_only = bool(spec.get("requires_bearer_on_battlefield_only", False))
+            if requires_bearer_on_battlefield_only:
+                if not _enhancement_cp_gain_unit_is_deployed_on_battlefield(source_root):
+                    continue
+            elif requires_bearer_on_battlefield and not _enhancement_cp_gain_unit_is_on_battlefield_or_embarked(source_root):
                 continue
 
             enemy_range_max = spec.get("enemy_range_max", None)
@@ -579,6 +624,15 @@ def resolve_enhancement_command_phase_cp_gain_roll_specs(
             cp_gain = int(max(1, int(spec.get("cp_gain", 1) or 1)))
             roll_bonus = int(spec.get("roll_bonus_if_effective_model_count_at_least", 0) or 0)
             modifier = 0
+            controlled_objective_bonus = int(
+                spec.get("roll_bonus_if_bearer_within_controlled_objective_range", 0) or 0
+            )
+            if controlled_objective_bonus and _enhancement_cp_gain_model_within_controlled_objective_range(
+                source_model,
+                player=player,
+                game=game,
+            ):
+                modifier += int(controlled_objective_bonus)
             if roll_bonus != 0:
                 threshold = int(max(0, int(spec.get("effective_model_count_threshold", 10) or 10)))
                 scope = str(spec.get("effective_model_count_scope", "enhancement") or "enhancement").strip().lower()
@@ -1917,6 +1971,10 @@ class Enhancement:
             is_renegade_warband = bool(csm_mgr and csm_mgr.is_renegade_warband())
         except Exception:
             is_renegade_warband = False
+        try:
+            is_cult_of_the_arkifane = bool(csm_mgr and csm_mgr.is_cult_of_the_arkifane())
+        except Exception:
+            is_cult_of_the_arkifane = False
         try:
             is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
         except Exception:
@@ -10638,6 +10696,102 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "wyredjinn" or enh_id == "000010743002":
+            if not is_cult_of_the_arkifane:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Wyredjinn").strip() or "Wyredjinn"
+            success_on = _coerce_int(params.get("success_on", 4) or 4, default=4)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            objective_bonus = _coerce_int(
+                params.get("roll_bonus_if_bearer_within_controlled_objective_range", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_wyredjinn"] = True
+            unit.special_rules["enhancement_wyredjinn_source"] = source
+            unit.special_rules["enhancement_wyredjinn_success_on"] = int(min(6, max(2, success_on)))
+            unit.special_rules["enhancement_wyredjinn_cp_gain"] = int(max(1, cp_gain))
+            unit.special_rules["enhancement_wyredjinn_controlled_objective_roll_bonus"] = int(max(0, objective_bonus))
+            _register_enhancement_command_phase_cp_gain_roll_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                success_on=int(min(6, max(2, success_on))),
+                cp_gain=int(max(1, cp_gain)),
+                requires_bearer_on_battlefield_or_embarked_transport=False,
+                requires_bearer_on_battlefield_only=bool(
+                    params.get("requires_bearer_on_battlefield_only", True)
+                ),
+                roll_bonus_if_bearer_within_controlled_objective_range=int(max(0, objective_bonus)),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wyredjinn_bearer_model_id"] = bearer_id
+
+        if name == "cybinfernal font" or enh_id == "000010743003":
+            if not is_cult_of_the_arkifane:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Cybinfernal Font").strip() or "Cybinfernal Font"
+            keyword = str(params.get("keyword", "SOUL FORGE") or "SOUL FORGE").strip().upper() or "SOUL FORGE"
+            unit.special_rules["enhancement_cybinfernal_font"] = True
+            unit.special_rules["enhancement_cybinfernal_font_source"] = source
+            unit.special_rules["enhancement_cybinfernal_font_keyword"] = keyword
+            _grant_enhancement_unit_keyword(unit, keyword)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_cybinfernal_font_bearer_model_id"] = bearer_id
+
+        if name == "mark of the soul forges" or enh_id == "000010743004":
+            if not is_cult_of_the_arkifane:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("HERETIC ASTARTES")) or bool(has_any_keyword("DAMNED")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Mark of the Soul Forges").strip() or "Mark of the Soul Forges"
+            threshold = _coerce_int(params.get("crit_hit_threshold", 5) or 5, default=5)
+            unit.special_rules["enhancement_mark_of_the_soul_forges"] = True
+            unit.special_rules["enhancement_mark_of_the_soul_forges_source"] = source
+            unit.special_rules["enhancement_mark_of_the_soul_forges_crit_hit_threshold"] = int(
+                min(6, max(2, threshold))
+            )
+            unit.special_rules["enhancement_mark_of_the_soul_forges_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mark_of_the_soul_forges_bearer_model_id"] = bearer_id
+
+        if name == "crown of worms" or enh_id == "000010743005":
+            if not is_cult_of_the_arkifane:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("WARPSMITH")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Crown of Worms").strip() or "Crown of Worms"
+            range_bonus = _coerce_float(params.get("range_bonus", 3.0) or 3.0, default=3.0)
+            unit.special_rules["enhancement_crown_of_worms"] = True
+            unit.special_rules["enhancement_crown_of_worms_source"] = source
+            unit.special_rules["enhancement_crown_of_worms_range_bonus"] = float(max(0.0, range_bonus))
+            unit.special_rules["enhancement_crown_of_worms_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_crown_of_worms_bearer_model_id"] = bearer_id
 
         if name in {"forge's blessing", "forge’s blessing"} or enh_id == "000008985002":
             if not is_soulforged_warpack:

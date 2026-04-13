@@ -71,6 +71,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_CABAL_OF_CHAOS = "Cabal of Chaos"
     DETACHMENT_CHAOS_CULT = "Chaos Cult"
     DETACHMENT_CREATIONS_OF_BILE = "Creations of Bile"
+    DETACHMENT_CULT_OF_THE_ARKIFANE = "Cult of the Arkifane"
     DETACHMENT_DECEPTORS = "Deceptors"
     DETACHMENT_DREAD_TALONS = "Dread Talons"
     DETACHMENT_FELLHAMMER_SIEGE_HOST = "Fellhammer Siege-host"
@@ -206,6 +207,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY = "soulforged_warpack_tempting_addendum_turn"
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY = "soulforged_warpack_tempting_addendum_turn_owner"
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY = "soulforged_warpack_tempting_addendum_source"
+    _CULT_OF_THE_ARKIFANE_SOUL_FORGE_SOURCE = "Soul Forge Boons"
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _PACTBOUND_EYE_OF_TZEENTCH_SOURCE = "Eye of Tzeentch"
@@ -279,6 +281,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_CREATIONS_OF_BILE)
+
+    def is_cult_of_the_arkifane(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_CULT_OF_THE_ARKIFANE)
 
     def is_deceptors(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -2386,6 +2393,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         require_bearer_on_battlefield: bool = False,
     ):
         if not self.is_pactbound_zealots():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _cult_of_the_arkifane_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_cult_of_the_arkifane():
             return None, None, None
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):
@@ -7220,6 +7258,152 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             root.keywords = keywords
 
     @classmethod
+    def _is_lord_discordant_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) in {
+            "lord discordant",
+            "lord discordant on helstalker",
+        }
+
+    @classmethod
+    def _is_vashtorr_the_arkifane_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "vashtorr the arkifane"
+
+    @classmethod
+    def _is_warpsmith_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "warpsmith"
+
+    def _grant_unit_ability_keywords(self, unit, *, keywords: Iterable[str]) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        existing = [
+            str(value or "").strip()
+            for value in list(updated.get("ability_added_keywords", []) or [])
+            if str(value or "").strip()
+        ]
+        seen = {value.lower() for value in existing}
+        changed = False
+        for keyword in list(keywords or ()):
+            token = str(keyword or "").strip().upper()
+            if not token or token.lower() in seen:
+                continue
+            existing.append(token)
+            seen.add(token.lower())
+            changed = True
+        if not changed:
+            return False
+        updated["ability_added_keywords"] = existing
+        root.special_rules = updated
+        self._clear_unit_ability_cache(root)
+        return True
+
+    def _cult_of_the_arkifane_vehicle_daemon_keyword_eligible(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(self._unit_has_keyword(root, "VEHICLE"))
+
+    def _cult_of_the_arkifane_soul_forge_keyword_eligible(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if self._cult_of_the_arkifane_vehicle_daemon_keyword_eligible(root):
+            return True
+        return bool(
+            self._is_lord_discordant_unit(root)
+            or self._is_vashtorr_the_arkifane_unit(root)
+        )
+
+    def apply_cult_of_the_arkifane_keywords(self, unit=None) -> None:
+        if not self.is_cult_of_the_arkifane():
+            return
+        units = [unit] if unit is not None else list(getattr(self.army, "units", []) or [])
+        for root in self._iter_unique_roots(units):
+            keywords_to_add: list[str] = []
+            if self._cult_of_the_arkifane_vehicle_daemon_keyword_eligible(root):
+                keywords_to_add.append("DAEMON")
+            if self._cult_of_the_arkifane_soul_forge_keyword_eligible(root):
+                keywords_to_add.append("SOUL FORGE")
+            if keywords_to_add:
+                self._grant_unit_ability_keywords(root, keywords=keywords_to_add)
+
+    def cult_of_the_arkifane_invulnerable_save(self, target_model, *, attack_type: str = "") -> tuple[int, str]:
+        _ = attack_type
+        if not self.is_cult_of_the_arkifane():
+            return 0, ""
+        if target_model is None or not self._model_in_army(target_model):
+            return 0, ""
+        root = self._unit_root(getattr(target_model, "parent_unit", None))
+        if root is None or not self._unit_has_keyword(root, "SOUL FORGE"):
+            return 0, ""
+        return 5, self._CULT_OF_THE_ARKIFANE_SOUL_FORGE_SOURCE
+
+    def cult_of_the_arkifane_mark_of_the_soul_forges_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if not self.is_cult_of_the_arkifane():
+            return 0, ""
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return 0, ""
+        _member, source_sr, bearer = self._cult_of_the_arkifane_enhancement_source_member(
+            root,
+            flag_key="enhancement_mark_of_the_soul_forges",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if not isinstance(source_sr, dict) or not self._model_matches_bearer(attacker_model, bearer):
+            return 0, ""
+        try:
+            threshold = int(source_sr.get("enhancement_mark_of_the_soul_forges_crit_hit_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        threshold = int(min(6, max(2, threshold)))
+        source = str(
+            source_sr.get("enhancement_mark_of_the_soul_forges_source", "") or "Mark of the Soul Forges"
+        ).strip() or "Mark of the Soul Forges"
+        return threshold, source
+
+    def cult_of_the_arkifane_crown_of_worms_range_bonus(self, unit, *, source_model=None) -> tuple[float, str]:
+        if not self.is_cult_of_the_arkifane():
+            return 0.0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0.0, ""
+        if not (self._is_warpsmith_unit(root) or self._unit_has_keyword(root, "WARPSMITH")):
+            return 0.0, ""
+        _member, source_sr, bearer = self._cult_of_the_arkifane_enhancement_source_member(
+            root,
+            flag_key="enhancement_crown_of_worms",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if not isinstance(source_sr, dict):
+            return 0.0, ""
+        if source_model is not None and not self._model_matches_bearer(source_model, bearer):
+            return 0.0, ""
+        try:
+            range_bonus = float(source_sr.get("enhancement_crown_of_worms_range_bonus", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            range_bonus = 3.0
+        if range_bonus <= 0.0:
+            return 0.0, ""
+        source = str(source_sr.get("enhancement_crown_of_worms_source", "") or "Crown of Worms").strip()
+        return float(range_bonus), (source or "Crown of Worms")
+
+    @classmethod
     def _is_legionaries_unit(cls, unit) -> bool:
         return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "legionaries"
 
@@ -8964,6 +9148,8 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         errors: list[str] = []
         if self.is_chaos_cult():
             self.apply_chaos_cult_traitor_guardsmen_battleline_keywords()
+        if self.is_cult_of_the_arkifane():
+            self.apply_cult_of_the_arkifane_keywords()
         if self.is_pactbound_zealots():
             errors.extend(self._validate_pactbound_zealots_rules())
         return errors
