@@ -105,6 +105,11 @@ class ChaosKnightsStratagemMixin:
         checker = getattr(mgr, "is_traitoris_lance", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_helhunt_lance_detachment(self) -> bool:
+        mgr = self._chaos_knights_detachment_manager()
+        checker = getattr(mgr, "is_helhunt_lance", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _chaos_knights_current_turn_key(self) -> str:
         if self.game is None:
             return ""
@@ -489,6 +494,159 @@ class ChaosKnightsStratagemMixin:
             else:
                 special_rules.pop(rule_key, None)
         special_rules.pop(added_key, None)
+
+    def _chaos_knights_total_current_wounds(self, unit: Any) -> int:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return 0
+        total = 0
+        for model in list(self._chaos_knights_alive_models(root) or []):
+            try:
+                total += max(0, int(getattr(model, "wounds", 0) or 0))
+            except Exception:
+                continue
+        return int(total)
+
+    def _chaos_knights_candidate_ids(self, candidates: Any) -> set[str]:
+        ids: set[str] = set()
+        for candidate in list(candidates or []):
+            root = self._chaos_knights_root(candidate)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id:
+                ids.add(root_id)
+        return ids
+
+    def _chaos_knights_is_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._chaos_knights_root(source_unit)
+        target_root = self._chaos_knights_root(target_unit)
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if source_root is None or target_root is None or game_map is None:
+            return False
+
+        get_source_models = getattr(source_root, "get_attached_unit_models", None)
+        source_models_raw = (
+            list(get_source_models() or [])
+            if callable(get_source_models)
+            else list(getattr(source_root, "models", []) or [])
+        )
+        source_models = []
+        for model in list(source_models_raw or []):
+            alive_value = getattr(model, "is_alive", False)
+            try:
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+            except Exception:
+                alive = False
+            if alive:
+                source_models.append(model)
+        if not source_models:
+            return False
+
+        can_see_unit = getattr(game, "_model_can_see_unit", None)
+        if callable(can_see_unit):
+            for model in list(source_models or []):
+                try:
+                    if bool(can_see_unit(model, target_root, game_map=game_map)):
+                        return True
+                except TypeError:
+                    if bool(can_see_unit(model, target_root)):
+                        return True
+            return False
+
+        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if callable(has_los):
+            for model in list(source_models or []):
+                try:
+                    if bool(has_los(model, target_root, game_map)):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        can_see_model = getattr(game_map, "can_model_see_model", None)
+        if not callable(can_see_model):
+            return True
+
+        get_target_models = getattr(target_root, "get_attached_unit_models", None)
+        target_models_raw = (
+            list(get_target_models() or [])
+            if callable(get_target_models)
+            else list(getattr(target_root, "models", []) or [])
+        )
+        target_models = []
+        for model in list(target_models_raw or []):
+            alive_value = getattr(model, "is_alive", False)
+            try:
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+            except Exception:
+                alive = False
+            if alive:
+                target_models.append(model)
+        for source_model in list(source_models or []):
+            for target_model in list(target_models or []):
+                try:
+                    if bool(can_see_model(source_model, target_model)):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def _chaos_knights_unit_has_ranged_weapon_in_range(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._chaos_knights_root(source_unit)
+        target_root = self._chaos_knights_root(target_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or target_root is None or game_map is None:
+            return False
+        can_shoot = getattr(source_root, "_can_model_shoot_weapon_at_target", None)
+        get_models = getattr(source_root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(source_root, "models", []) or [])
+        fallback_ranged_weapon_found = False
+        for model in list(models or []):
+            alive_value = getattr(model, "is_alive", False)
+            try:
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+            except Exception:
+                alive = False
+            if not alive:
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                profiles = getattr(wargear, "profiles", None) or {}
+                if not profiles:
+                    fallback_ranged_weapon_found = True
+                    continue
+                for profile in list(profiles.values() or []):
+                    if profile is None:
+                        continue
+                    if callable(can_shoot):
+                        try:
+                            if bool(can_shoot(model, profile, target_root, game_map)):
+                                return True
+                        except Exception:
+                            continue
+        return bool(fallback_ranged_weapon_found)
+
+    def _chaos_knights_unit_can_fight_target(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._chaos_knights_root(source_unit)
+        target_root = self._chaos_knights_root(target_unit)
+        if source_root is None or target_root is None or self.game is None:
+            return False
+        fight_mgr = getattr(self.game, "fight_phase_manager", None)
+        if fight_mgr is None:
+            from ..engine.fight_phase_manager import FightPhaseManager
+
+            fight_mgr = FightPhaseManager(self.game)
+        get_targets = getattr(fight_mgr, "_get_eligible_targets", None)
+        if callable(get_targets):
+            try:
+                return bool(target_root in list(get_targets(source_root) or []))
+            except Exception:
+                return False
+        return bool(self._chaos_knights_in_engagement_range(source_root))
 
     def _chaos_knights_unit_candidates(
         self,
@@ -2901,7 +3059,7 @@ class ChaosKnightsStratagemMixin:
         )
         return True
 
-    def _traitoris_resolve_selected_units(self, values: Any) -> List[Any]:
+    def _chaos_knights_resolve_selected_units(self, values: Any) -> List[Any]:
         selected: List[Any] = []
         seen: set[str] = set()
         for value in list(values or []):
@@ -2919,6 +3077,9 @@ class ChaosKnightsStratagemMixin:
             selected.append(root)
         selected.sort(key=self._chaos_knights_sort_key)
         return selected
+
+    def _traitoris_resolve_selected_units(self, values: Any) -> List[Any]:
+        return self._chaos_knights_resolve_selected_units(values)
 
     def _traitoris_a_long_leash_source_candidates(self) -> List[Any]:
         if not self._is_traitoris_lance_detachment():
@@ -3331,6 +3492,1103 @@ class ChaosKnightsStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _helhunt_flush_the_quarry_source_candidates(self) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        candidates = [
+            root
+            for root in list(self._chaos_knights_unit_candidates() or [])
+            if self._is_chaos_knights_titanic_unit(root)
+        ]
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _helhunt_flush_the_quarry_war_dog_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        source_root = self._chaos_knights_root(source_unit)
+        if source_root is None:
+            return []
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates(require_war_dog=True) or []):
+            if root is source_root:
+                continue
+            distance = self._chaos_knights_distance_between_units(source_root, root)
+            if distance is None or distance > 6.0 + 1e-6:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _helhunt_merciless_fusillade_source_candidates(self, *, phase_name: str) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        candidates = list(
+            self._chaos_knights_unit_candidates(
+                require_not_shot=phase_key == "shooting phase",
+                require_not_fought=phase_key == "fight phase",
+            )
+            or []
+        )
+        candidates = [root for root in candidates if self._is_chaos_knights_titanic_unit(root)]
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _helhunt_merciless_fusillade_war_dog_candidates(self, source_unit: Any, *, phase_name: str) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        source_root = self._chaos_knights_root(source_unit)
+        phase_key = str(phase_name or "").strip().lower()
+        candidates = list(
+            self._chaos_knights_unit_candidates(
+                require_war_dog=True,
+                require_not_shot=phase_key == "shooting phase",
+                require_not_fought=phase_key == "fight phase",
+            )
+            or []
+        )
+        out: List[Any] = []
+        for root in list(candidates or []):
+            if source_root is not None and root is source_root:
+                continue
+            out.append(root)
+        out.sort(key=self._chaos_knights_sort_key)
+        return out
+
+    def _helhunt_merciless_fusillade_enemy_candidates(
+        self,
+        source_unit: Any,
+        selected_units: Any,
+        *,
+        phase_name: str,
+    ) -> List[Any]:
+        source_root = self._chaos_knights_root(source_unit)
+        if source_root is None or not self._is_helhunt_lance_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        selected_roots = [source_root] + list(self._chaos_knights_resolve_selected_units(selected_units) or [])
+        unique_units: List[Any] = []
+        seen_units: set[str] = set()
+        for root in list(selected_roots or []):
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen_units:
+                continue
+            if root_id:
+                seen_units.add(root_id)
+            unique_units.append(root)
+        candidates: List[Any] = []
+        for enemy_root in list(self._chaos_knights_enemy_roots() or []):
+            if phase_key == "shooting phase":
+                if all(self._chaos_knights_unit_has_ranged_weapon_in_range(root, enemy_root) for root in unique_units):
+                    candidates.append(enemy_root)
+                continue
+            if all(self._chaos_knights_unit_can_fight_target(root, enemy_root) for root in unique_units):
+                candidates.append(enemy_root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _helhunt_targeted_chaos_knights_candidates(self, target_units: Any) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        return self._traitoris_targeted_chaos_knights_candidates(target_units)
+
+    def _helhunt_contemptuous_volleys_candidates(self) -> List[Any]:
+        if not self._is_helhunt_lance_detachment():
+            return []
+        return self._chaos_knights_unit_candidates(require_fell_back=True)
+
+    def _helhunt_goaded_beast_wounds_before(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        data = getattr(self, "_helhunt_goaded_beast_wounds_before_by_attacker", None)
+        if not isinstance(data, dict):
+            data = {}
+            self._helhunt_goaded_beast_wounds_before_by_attacker = data
+        return data
+
+    def _capture_helhunt_goaded_beast_shooting_targets(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        stratagem = self.get_by_name("GOADED BEAST")
+        if stratagem is None:
+            return
+        attacking_root = self._chaos_knights_root(attacking_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        attacker_key = self._attacker_unit_key(attacking_root)
+        if not attacker_key:
+            return
+        snapshot = dict(self._helhunt_goaded_beast_wounds_before().get(attacker_key, {}) or {})
+        for root in list(self._helhunt_targeted_chaos_knights_candidates(target_units) or []):
+            root_id = self._chaos_knights_sort_key(root)
+            if not root_id:
+                continue
+            snapshot[root_id] = {
+                "unit": root,
+                "wounds_before": self._chaos_knights_total_current_wounds(root),
+            }
+        if snapshot:
+            self._helhunt_goaded_beast_wounds_before()[attacker_key] = snapshot
+
+    def _queue_helhunt_shooting_resolved_reactions(self, *, attacker_unit: Any) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        stratagem = self.get_by_name("GOADED BEAST")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacking_root = self._chaos_knights_root(attacker_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        attacker_key = self._attacker_unit_key(attacking_root)
+        if not attacker_key:
+            return
+        snapshot = dict(self._helhunt_goaded_beast_wounds_before().pop(attacker_key, {}) or {})
+        if not snapshot:
+            return
+        candidates: List[Any] = []
+        wounds_before_by_unit: Dict[str, int] = {}
+        for unit_id, entry in list(snapshot.items()):
+            if not isinstance(entry, dict):
+                continue
+            root = self._chaos_knights_root(entry.get("unit")) or self._chaos_knights_resolve_unit(unit_id)
+            if root is None:
+                continue
+            if not self._chaos_knights_owned_by_player(root, self.player):
+                continue
+            if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_chaos_knights_unit(root):
+                continue
+            wounds_before = int(entry.get("wounds_before", 0) or 0)
+            wounds_after = self._chaos_knights_total_current_wounds(root)
+            if wounds_after >= wounds_before:
+                continue
+            candidates.append(root)
+            wounds_before_by_unit[self._chaos_knights_sort_key(root)] = int(wounds_before)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            stratagem,
+            target_unit=candidates[0],
+            enemy_unit=attacking_root,
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "unit_shooting_resolved",
+            stratagem.name,
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_root,
+            "attacking_unit": attacking_root,
+            "candidates": candidates,
+            "wounds_before_by_unit": wounds_before_by_unit,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _clear_helhunt_flush_the_quarry_effects(self, *, phase_key: str) -> None:
+        if str(phase_key or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            expires_phase = str(special_rules.get("helhunt_flush_the_quarry_expires_phase", "") or "").strip().upper()
+            if not bool(special_rules.get("helhunt_flush_the_quarry_active")):
+                continue
+            if expires_phase and expires_phase != str(phase_key or "").strip().upper():
+                continue
+            self._chaos_knights_remove_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_types",
+                "helhunt_flush_the_quarry_added_phase_move_types",
+            )
+            self._chaos_knights_remove_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_engagement_types",
+                "helhunt_flush_the_quarry_added_phase_move_engagement_types",
+            )
+            if bool(special_rules.get("helhunt_flush_the_quarry_added_auto_pass_desperate_escape", False)):
+                special_rules.pop("bearer_unit_auto_pass_desperate_escape", None)
+            for key in (
+                "helhunt_flush_the_quarry_active",
+                "helhunt_flush_the_quarry_expires_phase",
+                "helhunt_flush_the_quarry_turn_owner",
+                "helhunt_flush_the_quarry_turn",
+                "helhunt_flush_the_quarry_source",
+                "helhunt_flush_the_quarry_added_auto_pass_desperate_escape",
+            ):
+                special_rules.pop(key, None)
+            root.special_rules = special_rules
+
+    def _clear_helhunt_merciless_fusillade_effects(self, *, phase_key: str) -> None:
+        if str(phase_key or "").strip().upper() not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            expires_phase = str(special_rules.get("helhunt_merciless_fusillade_expires_phase", "") or "").strip().upper()
+            if bool(special_rules.get("helhunt_merciless_fusillade_active")) and (
+                not expires_phase or expires_phase == str(phase_key or "").strip().upper()
+            ):
+                for key in (
+                    "helhunt_merciless_fusillade_active",
+                    "helhunt_merciless_fusillade_target_id",
+                    "helhunt_merciless_fusillade_attack_type",
+                    "helhunt_merciless_fusillade_target_lock",
+                    "helhunt_merciless_fusillade_expires_phase",
+                    "helhunt_merciless_fusillade_turn_owner",
+                    "helhunt_merciless_fusillade_turn",
+                    "helhunt_merciless_fusillade_source",
+                ):
+                    special_rules.pop(key, None)
+                root.special_rules = special_rules
+            for model in list(getattr(root, "models", []) or []) + list(getattr(root, "models_lost", []) or []):
+                effects = getattr(model, "_temporary_effects", None)
+                if not isinstance(effects, dict):
+                    continue
+                for key in list(effects.keys()):
+                    if str(key or "").startswith("helhunt_merciless_fusillade:"):
+                        effects.pop(key, None)
+
+    def _clear_helhunt_contemptuous_volleys_effects(self) -> None:
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if not bool(special_rules.get("helhunt_contemptuous_volleys_active")):
+                continue
+            for key in (
+                "helhunt_contemptuous_volleys_active",
+                "helhunt_contemptuous_volleys_turn_owner",
+                "helhunt_contemptuous_volleys_turn",
+                "helhunt_contemptuous_volleys_source",
+            ):
+                special_rules.pop(key, None)
+            root.special_rules = special_rules
+
+    def _clear_helhunt_feral_arrogance_effects(self, *, phase_key: str) -> None:
+        phase_key = str(phase_key or "").strip().upper()
+        if not phase_key:
+            return
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            entries = list(special_rules.get("defensive_fnp_overrides", []) or [])
+            if not entries:
+                continue
+            kept = []
+            for entry in list(entries or []):
+                source_name = self._chaos_knights_normalize_name(str(entry.get("source", "") or ""))
+                entry_phase = str(entry.get("expires_phase", "") or "").strip().upper()
+                if source_name == "FERAL ARROGANCE" and entry_phase == phase_key:
+                    continue
+                kept.append(entry)
+            if kept:
+                special_rules["defensive_fnp_overrides"] = kept
+            else:
+                special_rules.pop("defensive_fnp_overrides", None)
+            root.special_rules = special_rules
+
+    def _cleanup_helhunt_phase_end_effects(self, *, player: Any, phase: Any) -> None:
+        del player
+        if not self._is_helhunt_lance_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_key:
+            return
+        self._clear_helhunt_feral_arrogance_effects(phase_key=phase_key)
+        if phase_key == "MOVEMENT_PHASE":
+            self._clear_helhunt_flush_the_quarry_effects(phase_key=phase_key)
+        if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            self._clear_helhunt_merciless_fusillade_effects(phase_key=phase_key)
+        if phase_key == "SHOOTING_PHASE":
+            self._helhunt_goaded_beast_wounds_before().clear()
+        if phase_key == "FIGHT_PHASE":
+            self._clear_helhunt_contemptuous_volleys_effects()
+
+    def _queue_helhunt_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        phase_name = self._chaos_knights_phase_label(phase_key)
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player:
+            stratagem = self.get_by_name("FLUSH THE QUARRY")
+            if stratagem is not None and (stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                source_candidates = list(self._helhunt_flush_the_quarry_source_candidates() or [])
+                if source_candidates:
+                    preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=source_candidates[0])
+                    if (
+                        int(getattr(self.player, "command_points", 0) or 0) >= preview_cost
+                        and not self._chaos_knights_reaction_exists("phase_start", stratagem.name)
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase_name": phase_name,
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "source_candidates": source_candidates,
+                            "source_candidate_ids": [
+                                self._chaos_knights_sort_key(candidate) for candidate in list(source_candidates or [])
+                            ],
+                        }
+                        if len(source_candidates) == 1:
+                            payload["unit"] = source_candidates[0]
+                            payload["target_unit"] = source_candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        if phase_key == "SHOOTING_PHASE" and player is not self.player:
+            return
+        stratagem = self.get_by_name("MERCILESS FUSILLADE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        source_candidates = list(self._helhunt_merciless_fusillade_source_candidates(phase_name=phase_name) or [])
+        if not source_candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=source_candidates[0])
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists("phase_start", stratagem.name):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "source_candidates": source_candidates,
+            "source_candidate_ids": [
+                self._chaos_knights_sort_key(candidate) for candidate in list(source_candidates or [])
+            ],
+        }
+        if len(source_candidates) == 1:
+            payload["unit"] = source_candidates[0]
+            payload["target_unit"] = source_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_helhunt_shooting_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        stratagem = self.get_by_name("BEASTHIDE MANIFESTATION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacking_root = self._chaos_knights_root(attacking_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        candidates = self._helhunt_targeted_chaos_knights_candidates(target_units)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            stratagem,
+            target_unit=candidates[0],
+            enemy_unit=attacking_root,
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "shooting_targets_selected",
+            stratagem.name,
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_helhunt_fight_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        stratagem = self.get_by_name("BEASTHIDE MANIFESTATION")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacking_root = self._chaos_knights_root(attacking_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        candidates = self._helhunt_targeted_chaos_knights_candidates(target_units)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            stratagem,
+            target_unit=candidates[0],
+            enemy_unit=attacking_root,
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "fight_targets_selected",
+            stratagem.name,
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_helhunt_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        stratagem = self.get_by_name("CONTEMPTUOUS VOLLEYS")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        root = self._chaos_knights_root(unit)
+        if root is None or not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_chaos_knights_unit(root):
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=root)
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists("unit_move_ended", stratagem.name, unit=root):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": action,
+            },
+            use_timer=False,
+        )
+
+    def _queue_helhunt_mortal_wound_reactions(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any,
+        target_model: Any,
+        phase_name: str,
+    ) -> None:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return
+        stratagem = self.get_by_name("FERAL ARROGANCE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        root = self._chaos_knights_root(target_unit)
+        if root is None or not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_chaos_knights_unit(root):
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=root, enemy_unit=attacker_unit)
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists("mortal_wound_allocated", stratagem.name, unit=root):
+            return
+        self._queue_reaction(
+            {
+                "event": "mortal_wound_allocated",
+                "phase_name": str(phase_name or self._current_phase_name or "").strip() or "Any phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "attacker_unit": attacker_unit,
+                "target_model": target_model,
+            },
+            use_timer=False,
+        )
+
+    def _use_helhunt_beasthide_manifestation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        attacking_root = self._chaos_knights_root(merged.get("attacking_unit") or merged.get("enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: no target unit provided")
+            return False
+        if attacking_root is None:
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: missing attacking enemy unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: target unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: target must be a CHAOS KNIGHTS unit")
+            return False
+        if self._chaos_knights_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: attacking unit must be enemy")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: only usable in your opponent's Shooting phase")
+            return False
+        candidate_ids = self._chaos_knights_candidate_ids(merged.get("candidates") or [])
+        root_id = self._chaos_knights_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: target unit was not selected by the attacker")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(self._apply_armour_of_contempt(root, attacking_root, amount=1)):
+            logger.error("ERROR: BEASTHIDE MANIFESTATION: could not apply AP worsening effect")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: BEASTHIDE MANIFESTATION: %s worsens AP by 1 against attacks from %s until it finishes its attacks.",
+            getattr(root, "name", "Unit"),
+            getattr(attacking_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_helhunt_flush_the_quarry(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FLUSH THE QUARRY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: FLUSH THE QUARRY: only usable in your Movement phase")
+            return False
+        source_root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if source_root is None:
+            source_candidates = list(merged.get("source_candidates", []) or [])
+            source_root = self._chaos_knights_root(source_candidates[0]) if len(source_candidates) == 1 else None
+        if source_root is None:
+            logger.error("ERROR: FLUSH THE QUARRY: no TITANIC source unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(source_root, self.player):
+            logger.error("ERROR: FLUSH THE QUARRY: source unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: FLUSH THE QUARRY: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_titanic_unit(source_root):
+            logger.error("ERROR: FLUSH THE QUARRY: source unit must be TITANIC")
+            return False
+        source_candidate_ids = self._chaos_knights_candidate_ids(merged.get("source_candidates") or [])
+        source_id = self._chaos_knights_sort_key(source_root)
+        if source_candidate_ids and source_id not in source_candidate_ids:
+            logger.error("ERROR: FLUSH THE QUARRY: selected source unit is not currently eligible")
+            return False
+        selected_roots = self._chaos_knights_resolve_selected_units(
+            merged.get("selected_units") or merged.get("selected_unit_ids")
+        )
+        if len(selected_roots) > 3:
+            logger.error("ERROR: FLUSH THE QUARRY: select up to three WAR DOG units")
+            return False
+        candidate_ids = self._chaos_knights_candidate_ids(
+            merged.get("war_dog_candidates") or self._helhunt_flush_the_quarry_war_dog_candidates(source_root)
+        )
+        for root in list(selected_roots or []):
+            root_id = self._chaos_knights_sort_key(root)
+            if candidate_ids and root_id not in candidate_ids:
+                logger.error("ERROR: FLUSH THE QUARRY: selected WAR DOG unit is not currently eligible")
+                return False
+            if not self._chaos_knights_owned_by_player(root, self.player):
+                logger.error("ERROR: FLUSH THE QUARRY: selected unit is not yours")
+                return False
+            if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: FLUSH THE QUARRY: selected unit must be on the battlefield and targetable")
+                return False
+            if not self._is_chaos_knights_war_dog_unit(root):
+                logger.error("ERROR: FLUSH THE QUARRY: selected units must be WAR DOG units")
+                return False
+            distance = self._chaos_knights_distance_between_units(source_root, root)
+            if distance is None or distance > 6.0 + 1e-6:
+                logger.error("ERROR: FLUSH THE QUARRY: selected WAR DOG units must be within 6\" of the TITANIC source")
+                return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=source_root):
+            return False
+        for root in list(selected_roots or []):
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            self._chaos_knights_merge_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_types",
+                "helhunt_flush_the_quarry_added_phase_move_types",
+                {"advance", "fall_back", "move"},
+            )
+            self._chaos_knights_merge_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_engagement_types",
+                "helhunt_flush_the_quarry_added_phase_move_engagement_types",
+                {"advance", "fall_back", "move"},
+            )
+            if not bool(special_rules.get("bearer_unit_auto_pass_desperate_escape", False)):
+                special_rules["helhunt_flush_the_quarry_added_auto_pass_desperate_escape"] = True
+            special_rules["bearer_unit_auto_pass_desperate_escape"] = True
+            special_rules["helhunt_flush_the_quarry_active"] = True
+            special_rules["helhunt_flush_the_quarry_expires_phase"] = "MOVEMENT_PHASE"
+            special_rules["helhunt_flush_the_quarry_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            special_rules["helhunt_flush_the_quarry_turn"] = int(getattr(self.game, "turn", 0) or 0)
+            special_rules["helhunt_flush_the_quarry_source"] = str(
+                getattr(stratagem, "name", "") or "FLUSH THE QUARRY"
+            )
+            root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: FLUSH THE QUARRY: %d WAR DOG unit(s) can move through models and terrain this phase.",
+            len(list(selected_roots or [])),
+        )
+        return True
+
+    def _use_helhunt_merciless_fusillade(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MERCILESS FUSILLADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: MERCILESS FUSILLADE: only usable in your Shooting phase")
+            return False
+        source_root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if source_root is None:
+            source_candidates = list(merged.get("source_candidates", []) or [])
+            source_root = self._chaos_knights_root(source_candidates[0]) if len(source_candidates) == 1 else None
+        if source_root is None:
+            logger.error("ERROR: MERCILESS FUSILLADE: no TITANIC source unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(source_root, self.player):
+            logger.error("ERROR: MERCILESS FUSILLADE: source unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: MERCILESS FUSILLADE: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_titanic_unit(source_root):
+            logger.error("ERROR: MERCILESS FUSILLADE: source unit must be TITANIC")
+            return False
+        source_candidate_ids = self._chaos_knights_candidate_ids(
+            merged.get("source_candidates") or self._helhunt_merciless_fusillade_source_candidates(phase_name=phase_name)
+        )
+        source_id = self._chaos_knights_sort_key(source_root)
+        if source_candidate_ids and source_id not in source_candidate_ids:
+            logger.error("ERROR: MERCILESS FUSILLADE: selected source unit is not currently eligible")
+            return False
+        selected_roots = self._chaos_knights_resolve_selected_units(
+            merged.get("selected_units") or merged.get("selected_unit_ids")
+        )
+        if len(selected_roots) > 2:
+            logger.error("ERROR: MERCILESS FUSILLADE: select up to two WAR DOG units")
+            return False
+        war_dog_candidate_ids = self._chaos_knights_candidate_ids(
+            merged.get("war_dog_candidates") or self._helhunt_merciless_fusillade_war_dog_candidates(source_root, phase_name=phase_name)
+        )
+        for root in list(selected_roots or []):
+            root_id = self._chaos_knights_sort_key(root)
+            if war_dog_candidate_ids and root_id not in war_dog_candidate_ids:
+                logger.error("ERROR: MERCILESS FUSILLADE: selected WAR DOG unit is not currently eligible")
+                return False
+            if not self._chaos_knights_owned_by_player(root, self.player):
+                logger.error("ERROR: MERCILESS FUSILLADE: selected unit is not yours")
+                return False
+            if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: MERCILESS FUSILLADE: selected unit must be on the battlefield and targetable")
+                return False
+            if not self._is_chaos_knights_war_dog_unit(root):
+                logger.error("ERROR: MERCILESS FUSILLADE: selected support units must be WAR DOG units")
+                return False
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit") or merged.get("target_enemy_unit"))
+        enemy_candidates = list(
+            merged.get("enemy_candidates")
+            or self._helhunt_merciless_fusillade_enemy_candidates(
+                source_root,
+                selected_roots,
+                phase_name=phase_name,
+            )
+            or []
+        )
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = enemy_candidates[0]
+        if enemy_root is None:
+            logger.error("ERROR: MERCILESS FUSILLADE: no enemy unit selected")
+            return False
+        enemy_candidate_ids = self._chaos_knights_candidate_ids(enemy_candidates)
+        enemy_id = self._chaos_knights_sort_key(enemy_root)
+        if enemy_candidate_ids and enemy_id not in enemy_candidate_ids:
+            logger.error("ERROR: MERCILESS FUSILLADE: selected enemy is not an eligible target for every chosen unit")
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MERCILESS FUSILLADE: selected enemy must be an enemy unit")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=source_root):
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        active_turn_owner_id = str(getattr(active_player, "id", "") or "").strip() or str(
+            getattr(self.player, "id", "") or ""
+        ).strip()
+        attack_type = "ranged" if phase_name == "shooting phase" else "melee"
+        expires_phase = "SHOOTING_PHASE" if attack_type == "ranged" else "FIGHT_PHASE"
+        affected_units = self._chaos_knights_resolve_selected_units([source_root] + list(selected_roots or []))
+        for root in list(affected_units or []):
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            special_rules["helhunt_merciless_fusillade_active"] = True
+            special_rules["helhunt_merciless_fusillade_target_id"] = str(enemy_id or "")
+            special_rules["helhunt_merciless_fusillade_attack_type"] = attack_type
+            special_rules["helhunt_merciless_fusillade_target_lock"] = True
+            special_rules["helhunt_merciless_fusillade_expires_phase"] = expires_phase
+            special_rules["helhunt_merciless_fusillade_turn_owner"] = active_turn_owner_id
+            special_rules["helhunt_merciless_fusillade_turn"] = int(getattr(self.game, "turn", 0) or 0)
+            special_rules["helhunt_merciless_fusillade_source"] = str(
+                getattr(stratagem, "name", "") or "MERCILESS FUSILLADE"
+            )
+            root.special_rules = special_rules
+            for model in list(self._chaos_knights_alive_models(root) or []):
+                model_id = str(get_entity_id(model) or "")
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if attack_type == "ranged":
+                        is_match = getattr(wargear, "is_ranged", None)
+                    else:
+                        is_match = getattr(wargear, "is_melee", None)
+                    if not callable(is_match) or not bool(is_match()):
+                        continue
+                    for profile in list((getattr(wargear, "profiles", None) or {}).values() or []):
+                        if profile is None:
+                            continue
+                        lookup_name = getattr(profile, "_temporary_weapon_lookup_name", None)
+                        weapon_name = lookup_name() if callable(lookup_name) else str(getattr(profile, "name", "") or "")
+                        if not weapon_name:
+                            continue
+                        model.set_temporary_weapon_keyword_bonuses(
+                            key=(
+                                "helhunt_merciless_fusillade:"
+                                f"{self._chaos_knights_sort_key(root)}:{model_id}:{weapon_name}:{attack_type}"
+                            ),
+                            weapon_name=weapon_name,
+                            keywords=["SUSTAINED HITS 1"],
+                            source=str(getattr(stratagem, "name", "") or "MERCILESS FUSILLADE"),
+                            expires_phase=expires_phase,
+                            attack_type=attack_type,
+                        )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: MERCILESS FUSILLADE: %d unit(s) are locked to %s and gain [SUSTAINED HITS 1] this phase.",
+            len(list(affected_units or [])),
+            getattr(enemy_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_helhunt_goaded_beast(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: GOADED BEAST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: GOADED BEAST: only usable in your opponent's Shooting phase")
+            return False
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        attacking_root = self._chaos_knights_root(merged.get("attacking_unit") or merged.get("enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: GOADED BEAST: no target unit provided")
+            return False
+        if attacking_root is None:
+            logger.error("ERROR: GOADED BEAST: missing attacking enemy unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: GOADED BEAST: target unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: GOADED BEAST: target must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: GOADED BEAST: target must be a CHAOS KNIGHTS unit")
+            return False
+        if self._chaos_knights_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: GOADED BEAST: attacking unit must be enemy")
+            return False
+        candidate_ids = self._chaos_knights_candidate_ids(merged.get("candidates") or [])
+        root_id = self._chaos_knights_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: GOADED BEAST: target unit did not lose wounds from those attacks")
+            return False
+        wounds_before_by_unit = dict(merged.get("wounds_before_by_unit") or {})
+        if wounds_before_by_unit:
+            before = int(wounds_before_by_unit.get(root_id, 0) or 0)
+            after = self._chaos_knights_total_current_wounds(root)
+            if before and after >= before:
+                logger.error("ERROR: GOADED BEAST: target unit did not lose wounds from those attacks")
+                return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        max_distance = kwargs.get("max_distance")
+        if max_distance is None:
+            max_distance = int(get_roll("D6") or 0)
+        try:
+            max_distance = int(max_distance or 0)
+        except Exception:
+            max_distance = 0
+        if max_distance <= 0:
+            logger.error("ERROR: GOADED BEAST: movement distance roll failed")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: GOADED BEAST: reactive movement queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            attacker_unit=attacking_root,
+            max_distance=int(max_distance),
+            kind="helhunt_goaded_beast",
+            movement_type="blood_surge",
+            source=str(getattr(stratagem, "name", "") or "GOADED BEAST"),
+            allow_engagement_range=True,
+        )
+        if request is None:
+            logger.error("ERROR: GOADED BEAST: failed to queue reactive movement decision")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: GOADED BEAST: %s can make a Surge move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_helhunt_contemptuous_volleys(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: only usable in your Movement phase")
+            return False
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates") or self._helhunt_contemptuous_volleys_candidates() or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: target unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: target must be a CHAOS KNIGHTS unit")
+            return False
+        candidate_ids = self._chaos_knights_candidate_ids(
+            merged.get("candidates") or self._helhunt_contemptuous_volleys_candidates()
+        )
+        root_id = self._chaos_knights_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: target unit is not currently eligible")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: CONTEMPTUOUS VOLLEYS: target unit must have Fallen Back")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["helhunt_contemptuous_volleys_active"] = True
+        special_rules["helhunt_contemptuous_volleys_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["helhunt_contemptuous_volleys_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        special_rules["helhunt_contemptuous_volleys_source"] = str(
+            getattr(stratagem, "name", "") or "CONTEMPTUOUS VOLLEYS"
+        )
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: CONTEMPTUOUS VOLLEYS: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_helhunt_feral_arrogance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_helhunt_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: FERAL ARROGANCE: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: FERAL ARROGANCE: target unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FERAL ARROGANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: FERAL ARROGANCE: target must be a CHAOS KNIGHTS unit")
+            return False
+        candidate_ids = self._chaos_knights_candidate_ids(merged.get("candidates") or [])
+        root_id = self._chaos_knights_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: FERAL ARROGANCE: target unit is not currently eligible")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip()
+        phase_key = self._phase_key_from_name(phase_name)
+        if not phase_key:
+            logger.error("ERROR: FERAL ARROGANCE: could not resolve current phase")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        self._append_defensive_effect(
+            root,
+            "defensive_fnp_overrides",
+            {
+                "value": 5,
+                "condition": "against mortal wounds",
+                "attack_type": "any",
+                "expires_phase": phase_key,
+                "source": str(getattr(stratagem, "name", "") or "FERAL ARROGANCE"),
+            },
+        )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: FERAL ARROGANCE: %s gains Feel No Pain 5+ against mortal wounds this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _queue_traitoris_failed_battleshock_reactions(self, *, enemy_unit: Any, passed: bool) -> None:
         if passed or not self._is_traitoris_lance_detachment() or self.game is None:
@@ -3957,4 +5215,16 @@ class ChaosKnightsStratagemMixin:
             return self._use_traitoris_imperious_advance(stratagem, **kwargs)
         if name_key == "STORM OF DARKNESS":
             return self._use_traitoris_storm_of_darkness(stratagem, **kwargs)
+        if name_key == "BEASTHIDE MANIFESTATION":
+            return self._use_helhunt_beasthide_manifestation(stratagem, **kwargs)
+        if name_key == "FLUSH THE QUARRY":
+            return self._use_helhunt_flush_the_quarry(stratagem, **kwargs)
+        if name_key == "MERCILESS FUSILLADE":
+            return self._use_helhunt_merciless_fusillade(stratagem, **kwargs)
+        if name_key == "GOADED BEAST":
+            return self._use_helhunt_goaded_beast(stratagem, **kwargs)
+        if name_key == "CONTEMPTUOUS VOLLEYS":
+            return self._use_helhunt_contemptuous_volleys(stratagem, **kwargs)
+        if name_key == "FERAL ARROGANCE":
+            return self._use_helhunt_feral_arrogance(stratagem, **kwargs)
         return None

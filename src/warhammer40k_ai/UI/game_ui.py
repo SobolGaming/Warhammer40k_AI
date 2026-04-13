@@ -18813,6 +18813,232 @@ class GameView:
             )
             return
 
+        if name_u == "FLUSH THE QUARRY" and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            if not callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_source = context.get("unit") or context.get("target_unit")
+            source_candidates = context.get("source_candidates") or []
+            if not source_candidates and hasattr(manager, "_helhunt_flush_the_quarry_source_candidates"):
+                try:
+                    source_candidates = list(manager._helhunt_flush_the_quarry_source_candidates() or [])
+                except Exception:
+                    source_candidates = []
+
+            def _pick_flush_targets(chosen_source):
+                if chosen_source is None:
+                    logger.info("Flush the Quarry: no TITANIC source unit selected")
+                    return
+                war_dog_candidates = context.get("war_dog_candidates") or []
+                if not war_dog_candidates and hasattr(manager, "_helhunt_flush_the_quarry_war_dog_candidates"):
+                    try:
+                        war_dog_candidates = list(manager._helhunt_flush_the_quarry_war_dog_candidates(chosen_source) or [])
+                    except Exception:
+                        war_dog_candidates = []
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    war_dog_candidates,
+                    lambda units: self._finalize_helhunt_flush_the_quarry(player, name, context, chosen_source, units),
+                    max_units=3,
+                    title="Flush the Quarry",
+                    subtitle="Select up to three friendly WAR DOG units within 6\" of the TITANIC source.",
+                    instruction="Choose the WAR DOG units that can move through models and terrain this phase, then confirm or skip.",
+                    context={
+                        "ability": "helhunt_flush_the_quarry",
+                        "ability_name": "Flush the Quarry",
+                        "source_unit_id": str(get_entity_id(chosen_source) or ""),
+                        "optional": True,
+                    },
+                    prompt="Select up to three WAR DOG units for Flush the Quarry.",
+                )
+
+            if preset_source is not None:
+                _pick_flush_targets(preset_source)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=source_candidates,
+                on_chosen=_pick_flush_targets,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select a TITANIC CHAOS KNIGHTS source unit.",
+                title="Flush the Quarry",
+                subtitle="Choose the TITANIC unit, then select up to three nearby WAR DOG units.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u == "MERCILESS FUSILLADE" and not (
+            ("enemy_unit" in context or "target_enemy_unit" in context)
+            and ("units" in context or "target_units" in context or "selected_units" in context)
+        ):
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            if not callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_source = context.get("unit") or context.get("target_unit")
+            preset_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+            phase_name = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "")
+            source_candidates = context.get("source_candidates") or []
+            if not source_candidates and hasattr(manager, "_helhunt_merciless_fusillade_source_candidates"):
+                try:
+                    source_candidates = list(manager._helhunt_merciless_fusillade_source_candidates(phase_name=phase_name) or [])
+                except Exception:
+                    source_candidates = []
+
+            def _pick_merciless_enemy(chosen_source, chosen_units):
+                selected_units = [unit for unit in list(chosen_units or []) if unit is not None]
+                if preset_enemy is not None:
+                    self._finalize_helhunt_merciless_fusillade(
+                        player,
+                        name,
+                        context,
+                        chosen_source,
+                        selected_units,
+                        preset_enemy,
+                    )
+                    return
+                enemy_candidates = context.get("enemy_candidates") or []
+                if not enemy_candidates and hasattr(manager, "_helhunt_merciless_fusillade_enemy_candidates"):
+                    try:
+                        enemy_candidates = list(
+                            manager._helhunt_merciless_fusillade_enemy_candidates(
+                                chosen_source,
+                                selected_units,
+                                phase_name=phase_name,
+                            )
+                            or []
+                        )
+                    except Exception:
+                        enemy_candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_helhunt_merciless_fusillade(
+                        player,
+                        name,
+                        context,
+                        chosen_source,
+                        selected_units,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an enemy unit eligible for all selected Helhunt units.",
+                    title="Merciless Fusillade",
+                    subtitle="Chosen enemy must be an eligible target for the TITANIC source and every selected WAR DOG.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            def _pick_merciless_support(chosen_source):
+                if chosen_source is None:
+                    logger.info("Merciless Fusillade: no TITANIC source unit selected")
+                    return
+                war_dog_candidates = context.get("war_dog_candidates") or []
+                if not war_dog_candidates and hasattr(manager, "_helhunt_merciless_fusillade_war_dog_candidates"):
+                    try:
+                        war_dog_candidates = list(
+                            manager._helhunt_merciless_fusillade_war_dog_candidates(
+                                chosen_source,
+                                phase_name=phase_name,
+                            )
+                            or []
+                        )
+                    except Exception:
+                        war_dog_candidates = []
+                if not war_dog_candidates:
+                    _pick_merciless_enemy(chosen_source, [])
+                    return
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    war_dog_candidates,
+                    lambda units: _pick_merciless_enemy(chosen_source, units),
+                    max_units=2,
+                    title="Merciless Fusillade",
+                    subtitle="Select up to two friendly WAR DOG units that have not yet acted this phase.",
+                    instruction="Choose the supporting WAR DOG units, then confirm to pick the enemy target or skip.",
+                    context={
+                        "ability": "helhunt_merciless_fusillade",
+                        "ability_name": "Merciless Fusillade",
+                        "source_unit_id": str(get_entity_id(chosen_source) or ""),
+                        "optional": True,
+                    },
+                    prompt="Select up to two WAR DOG units for Merciless Fusillade.",
+                )
+
+            if preset_source is not None:
+                _pick_merciless_support(preset_source)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=source_candidates,
+                on_chosen=_pick_merciless_support,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select a TITANIC CHAOS KNIGHTS source unit.",
+                title="Merciless Fusillade",
+                subtitle="Choose the TITANIC source first, then up to two WAR DOG units and one enemy target.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u in (
+            "BEASTHIDE MANIFESTATION",
+            "CONTEMPTUOUS VOLLEYS",
+            "GOADED BEAST",
+            "FERAL ARROGANCE",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    try:
+                        if name_u == "CONTEMPTUOUS VOLLEYS":
+                            candidates = list(manager._helhunt_contemptuous_volleys_candidates() or [])
+                        elif name_u == "BEASTHIDE MANIFESTATION":
+                            candidates = list(
+                                manager._helhunt_targeted_chaos_knights_candidates(
+                                    context.get("target_units") or []
+                                )
+                                or []
+                            )
+                    except Exception:
+                        candidates = []
+                subtitle = {
+                    "BEASTHIDE MANIFESTATION": "Targeted CHAOS KNIGHTS unit selected by the enemy attacker.",
+                    "CONTEMPTUOUS VOLLEYS": "CHAOS KNIGHTS unit that just Fell Back this Movement phase.",
+                    "GOADED BEAST": "CHAOS KNIGHTS unit that lost one or more wounds from the enemy unit's Shooting attacks.",
+                    "FERAL ARROGANCE": "CHAOS KNIGHTS unit that just had a mortal wound allocated to it.",
+                }.get(name_u, "Choose a valid CHAOS KNIGHTS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} target unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit") or context.get("attacking_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u == "EYESTINGER STORM" and ("objective" not in context and "objective_marker" not in context):
             if not callable(getattr(self, "_request_eyestinger_storm_objective", None)):
                 return
@@ -22100,6 +22326,65 @@ class GameView:
         if len(selected_units) >= 2:
             ctx["secondary_unit"] = selected_units[1]
             ctx["support_unit"] = selected_units[1]
+        ctx["enemy_unit"] = enemy_unit
+        ctx["target_enemy_unit"] = enemy_unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_helhunt_flush_the_quarry(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        source_unit,
+        units,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if source_unit is None:
+            logger.info("Flush the Quarry: no TITANIC source unit selected")
+            return
+        selected_units = [unit for unit in list(units or []) if unit is not None]
+        ctx = dict(context)
+        ctx["unit"] = source_unit
+        ctx["target_unit"] = source_unit
+        ctx["source_unit"] = source_unit
+        ctx["units"] = list(selected_units)
+        ctx["selected_units"] = list(selected_units)
+        ctx["target_units"] = list(selected_units)
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_helhunt_merciless_fusillade(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        source_unit,
+        units,
+        enemy_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if source_unit is None or enemy_unit is None:
+            logger.info("Merciless Fusillade: missing source unit or enemy unit")
+            return
+        selected_units = [unit for unit in list(units or []) if unit is not None]
+        ctx = dict(context)
+        ctx["unit"] = source_unit
+        ctx["target_unit"] = source_unit
+        ctx["source_unit"] = source_unit
+        ctx["units"] = list(selected_units)
+        ctx["selected_units"] = list(selected_units)
+        ctx["target_units"] = list(selected_units)
         ctx["enemy_unit"] = enemy_unit
         ctx["target_enemy_unit"] = enemy_unit
         ok = manager.use(name, **ctx)

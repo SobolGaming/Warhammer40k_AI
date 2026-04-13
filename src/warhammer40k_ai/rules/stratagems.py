@@ -58,6 +58,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BALEFUL HALO",
     "BLAZING ADVANCE",
     "BLAZING IRE",
+    "BEASTHIDE MANIFESTATION",
     "BENEVOLENCE OF THE OMNISSIAH",
     "BINHARIC OFFENCE",
     "BIONIC ENDURANCE",
@@ -87,6 +88,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "CONNOISSEURS OF PAIN",
+    "CONTEMPTUOUS VOLLEYS",
     "COMBAT MANIFESTATION",
     "DUTY UNENDING",
     "GIANTS OF THE BATTLEFIELD",
@@ -97,6 +99,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CONQUERORS WITHOUT MERCY",
     "CORROSIVE VISCERA",
     "DIVINE GUIDANCE",
+    "FERAL ARROGANCE",
     "FINAL HOUR",
     "FOCUSED FIRE",
     "DEATH FRENZY",
@@ -122,6 +125,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ISOLATE AND DESTROY",
     "LITANY OF THE ELECTROMANCER",
     "LUMINESCENT BLESSING",
+    "MERCILESS FUSILLADE",
     "NEURAL OVERLOAD",
     "PUNISHMENT INESCAPABLE",
     "PROGRAMMED WITHDRAWAL",
@@ -146,6 +150,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLAR'S WISDOM",
     "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
     "EVASIVE REPOSITIONING",
+    "FLUSH THE QUARRY",
     "MANTLE OF THE MENTOR",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
@@ -172,6 +177,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
     "GENE-TWISTED MUSCLE",
+    "GOADED BEAST",
     "GUIDED FIRE",
     "HEXWROUGHT REPRISAL",
     "TRUESILVER WILL",
@@ -2491,6 +2497,7 @@ class StratagemManager(
             "BOUNDLESS ZEAL",
             "CRUSHED LIKE VERMIN",
             "CUNNING HUNTER",
+            "CONTEMPTUOUS VOLLEYS",
             "RAPID FEINT",
             "HARRYING HOUNDS",
             "THRONEGHEIST FURY",
@@ -2629,6 +2636,7 @@ class StratagemManager(
             "SHIELD OF FAITH",
             "ARCANE GENETIC ALCHEMY",
             "OMNISSIAH'S GRACE",
+            "FERAL ARROGANCE",
             "THIEVES OF PAIN",
             "TRUESILVER WILL",
         }:
@@ -2658,7 +2666,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
         if "FICKLEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
-        if "WORTHLESS CHATTEL" in names:
+        if names & {"WORTHLESS CHATTEL", "GOADED BEAST"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_chaos_knights)
         if "CALLOUS SACRIFICE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_astra_militarum_siege)
@@ -2829,6 +2837,7 @@ class StratagemManager(
             "TO THE FAVOURED THE SPOILS",
             "SURPRISE ASSAULT",
             "UNSEEN LURKERS",
+            "GOADED BEAST",
             "SHAMBLING WALL",
             "FESTERING MIASMA",
             "CORRUPTED MUNITIONS",
@@ -2840,6 +2849,7 @@ class StratagemManager(
             "DEFT MANOEUVRING",
             "DEVOTED CREW",
             "FIGHTING SHADOWS",
+            "BEASTHIDE MANIFESTATION",
             "PSI SURGE",
             "BIO-HORROR REVELATION",
             "SHINING VEIL",
@@ -2921,6 +2931,7 @@ class StratagemManager(
             "DEVOTED CREW",
             "DOUBLE-CROSS",
             "FIGHTING SHADOWS",
+            "BEASTHIDE MANIFESTATION",
             "FATEFUL ROLE",
             "FLAWLESS CONSTRUCTION",
             "LANCEBREAKER",
@@ -2945,6 +2956,7 @@ class StratagemManager(
 
         needs_attacker_cleanup_shooting = (
             "ARMOUR OF CONTEMPT" in names
+            or "BEASTHIDE MANIFESTATION" in names
             or "LET DUTY BE YOUR SHIELD" in names
             or "REINFORCED HIVE NODE" in names
             or "THE FOE FORESEEN" in names
@@ -2952,6 +2964,7 @@ class StratagemManager(
         )
         needs_attacker_cleanup_fight = (
             "ARMOUR OF CONTEMPT" in names
+            or "BEASTHIDE MANIFESTATION" in names
             or "REINFORCED HIVE NODE" in names
             or "THE FOE FORESEEN" in names
             or ("fight" in defensive_attacker_phases)
@@ -3077,6 +3090,7 @@ class StratagemManager(
             "ANTI-GRAV REPULSION",
             "ANTIÃ¢â‚¬â€˜GRAV REPULSION",
             "CLOUDSTRIKE",
+            "FLUSH THE QUARRY",
             "FULL-THROTTLE ASSAULT",
             "RUN THEM THROUGH!",
             "THUNDERSTOMP",
@@ -3107,6 +3121,7 @@ class StratagemManager(
             "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
             "PITILESS CANNONADE",
+            "MERCILESS FUSILLADE",
             "POINT-BLANK DESTRUCTION",
             "FIRE AND RELOCATE",
             "FIELDS OF FIRE",
@@ -3208,6 +3223,7 @@ class StratagemManager(
             "LAYERED WARDS",
             "LYING IN WAIT",
             "EMISSARIES OF YNNEAD",
+            "FERAL ARROGANCE",
             "DEPTHLESS CRUELTY",
             "FOCUSED HATRED",
             "GAUNTLET OF THE GOD-EMPEROR",
@@ -3253,6 +3269,7 @@ class StratagemManager(
             "VECTORED ENGINES",
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
+            "CONTEMPTUOUS VOLLEYS",
             "TIME TO STRIKE",
             "BATTLE DRILL RECALL",
             "AUGMENTED TARGETING",
@@ -9539,6 +9556,12 @@ class StratagemManager(
             "UNRESTRAINED RAGE": "Target: your CHAOS KNIGHTS unit that just Advanced or Fell Back; it can shoot and charge after that move this turn",
             "WORTHLESS CHATTEL": "Target: your DAMNED unit; it ignores its own Engagement Range for ranged target selection this phase and may destroy its own models after inflicting engaged shooting damage",
             "PRESERVE THE IDOLS": "Target: your DAMNED unit within 6\" of a friendly CHAOS KNIGHTS unit that is within 9\" of the enemy that just moved; make a reactive Normal move up to 6\" ending closer to that enemy",
+            "BEASTHIDE MANIFESTATION": "Target: CHAOS KNIGHTS unit selected by the enemy attacker's targets in the Shooting or Fight phase; worsen incoming AP by 1 against that attacker until it finishes attacking",
+            "FLUSH THE QUARRY": "Target: one TITANIC CHAOS KNIGHTS unit and up to three friendly WAR DOG units within 6\" of it at the start of your Movement phase; selected WAR DOGS can move through models/terrain, move within Engagement Range while moving, and auto-pass Desperate Escape this phase",
+            "MERCILESS FUSILLADE": "Target: one TITANIC CHAOS KNIGHTS unit, up to two friendly WAR DOG units that have not acted, and one enemy unit eligible for all selected units; selected units are target-locked to that enemy while it remains eligible and gain [SUSTAINED HITS 1] this phase",
+            "GOADED BEAST": "Target: CHAOS KNIGHTS unit that lost one or more wounds from an enemy unit's Shooting attacks; it makes a Surge move up to D6\" toward the closest non-AIRCRAFT enemy and may end within Engagement Range",
+            "CONTEMPTUOUS VOLLEYS": "Target: CHAOS KNIGHTS unit that just Fell Back in your Movement phase; it can shoot and declare a charge later this turn",
+            "FERAL ARROGANCE": "Target: CHAOS KNIGHTS unit just after a mortal wound is allocated to it; its models gain Feel No Pain 5+ against mortal wounds until end of phase",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
@@ -10172,6 +10195,10 @@ class StratagemManager(
             raise
         try:
             self._queue_traitoris_lance_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_helhunt_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -11529,6 +11556,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_traitoris_lance_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_helhunt_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         # Queue NEW ORDERS at end of your Command phase
@@ -13876,6 +13907,7 @@ class StratagemManager(
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_vanguard_move_end_reactions(unit=unit, action=action)
         self._queue_houndpack_lance_move_end_reactions(unit=unit, action=action)
+        self._queue_helhunt_move_end_reactions(unit=unit, action=action)
         self._queue_lords_of_dread_move_end_reactions(unit=unit, action=action)
         self._queue_iconoclast_fiefdom_move_end_reactions(unit=unit, action=action)
         self._queue_hammer_blazing_advance_reactions(unit=unit, action=action)
@@ -14685,6 +14717,7 @@ class StratagemManager(
             attacker_unit=attacker_unit,
             damage_by_target_while_engaged=damage_by_target_while_engaged,
         )
+        self._queue_helhunt_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
     def _on_unit_shooting_resolved_astra_militarum_siege(
         self,
@@ -15256,6 +15289,10 @@ class StratagemManager(
                     attacking_unit=attacking_unit,
                     target_units=list(target_units or []),
                 )
+            self._capture_helhunt_goaded_beast_shooting_targets(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
             if owner_player is self.player:
                 return  # only opponent can react
         except Exception:
@@ -15791,6 +15828,13 @@ class StratagemManager(
             raise
         try:
             self._queue_traitoris_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_helhunt_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16676,6 +16720,13 @@ class StratagemManager(
             raise
         try:
             self._queue_traitoris_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_helhunt_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -18977,6 +19028,15 @@ class StratagemManager(
             raise
         try:
             self._queue_data_psalm_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_helhunt_mortal_wound_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,

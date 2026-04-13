@@ -913,6 +913,89 @@ _TRAITORIS_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TRAITORIS_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HELHUNT_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010752002": StratagemToolDescriptor(
+        stratagem_id="000010752002",
+        name="Feral Arrogance",
+        timing="any_phase_on_mortal_wound_allocated",
+        target="chaos_knights_unit_with_mortal_wound_just_allocated",
+        duration="until_end_of_phase",
+        effect="conditional_feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 5, "condition": "against mortal wounds", "attack_type": "any"},
+    ),
+    "000010752003": StratagemToolDescriptor(
+        stratagem_id="000010752003",
+        name="Merciless Fusillade",
+        timing="shooting_or_fight_phase_start",
+        target="one_titanic_chaos_knights_unit_up_to_two_war_dogs_and_one_enemy_unit",
+        duration="until_end_of_phase",
+        effect="phase_target_lock_and_weapon_keyword_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged_or_melee",
+            "max_war_dog_targets": 2,
+            "target_lock": True,
+            "weapon_keywords": ["SUSTAINED HITS 1"],
+            "requires_enemy_eligible_for_all_selected_units": True,
+        },
+    ),
+    "000010752004": StratagemToolDescriptor(
+        stratagem_id="000010752004",
+        name="Beasthide Manifestation",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="chaos_knights_unit_selected_as_attack_target",
+        duration="until_attacker_finishes_attacks",
+        effect="worsen_incoming_ap",
+        cp_cost=1,
+        effect_params={"ap_delta": 1},
+    ),
+    "000010752005": StratagemToolDescriptor(
+        stratagem_id="000010752005",
+        name="Flush the Quarry",
+        timing="movement_phase_start",
+        target="one_titanic_chaos_knights_unit_and_up_to_three_war_dog_units_within_6",
+        duration="until_end_of_phase",
+        effect="phase_move_passthrough_and_desperate_escape_auto_pass",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "movement_types": ["move", "advance", "fall_back"],
+            "max_war_dog_targets": 3,
+            "can_move_within_engagement_range": True,
+            "auto_pass_desperate_escape": True,
+        },
+    ),
+    "000010752006": StratagemToolDescriptor(
+        stratagem_id="000010752006",
+        name="Contemptuous Volleys",
+        timing="movement_phase_after_fall_back",
+        target="chaos_knights_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010752007": StratagemToolDescriptor(
+        stratagem_id="000010752007",
+        name="Goaded Beast",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="chaos_knights_unit_that_lost_wounds_from_attack",
+        duration="immediate",
+        effect="reactive_surge_move",
+        cp_cost=1,
+        effect_params={
+            "move_distance": "D6",
+            "closest_enemy_required": True,
+            "can_end_engagement": True,
+            "exclude_target_keywords_any": ["AIRCRAFT"],
+        },
+    ),
+}
+
+_HELHUNT_LANCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HELHUNT_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008437002": StratagemToolDescriptor(
         stratagem_id="000008437002",
@@ -14828,6 +14911,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _TRAITORIS_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HELHUNT_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15348,6 +15434,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)
         or _TRAITORIS_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _HELHUNT_LANCE_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)

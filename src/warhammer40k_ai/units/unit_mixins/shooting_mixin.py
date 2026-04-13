@@ -1239,7 +1239,16 @@ class ShootingMixin:
         return successful_attacks
     
 
-    def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map, *, origin_unit=None) -> bool:
+    def _can_model_shoot_weapon_at_target(
+        self,
+        model,
+        weapon_profile,
+        target_unit,
+        game_map,
+        *,
+        origin_unit=None,
+        ignore_helhunt_target_lock: bool = False,
+    ) -> bool:
         """Check if a specific model can shoot a weapon at a target
 
         Args:
@@ -1363,6 +1372,13 @@ class ShootingMixin:
             return False
         lock_check = getattr(root, "_gsc_symbiotic_destruction_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
+            return False
+        lock_check = getattr(root, "_helhunt_merciless_fusillade_target_locked_to", None)
+        if (
+            not bool(ignore_helhunt_target_lock)
+            and callable(lock_check)
+            and not bool(lock_check(target_unit, game=game, attack_type="ranged"))
+        ):
             return False
         lock_check = getattr(root, "_space_marines_hunter_marked_for_destruction_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):

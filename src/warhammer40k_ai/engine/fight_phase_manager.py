@@ -475,7 +475,7 @@ class FightPhaseManager:
         ui_callback = getattr(self, 'on_movement_required', None)
         self._execute_fight_sequence_with_declarations(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
     
-    def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
+    def _get_eligible_targets(self, fighting_unit: Unit, *, ignore_helhunt_target_lock: bool = False) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
         eligible_targets = []
 
@@ -587,6 +587,16 @@ class FightPhaseManager:
                     try:
                         lock_check = getattr(fighting_unit, "_houndpack_hungry_for_combat_target_locked_to", None)
                         if callable(lock_check) and not bool(lock_check(enemy_root, game=self.game)):
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        lock_check = getattr(fighting_unit, "_helhunt_merciless_fusillade_target_locked_to", None)
+                        if (
+                            not bool(ignore_helhunt_target_lock)
+                            and callable(lock_check)
+                            and not bool(lock_check(enemy_root, game=self.game, attack_type="melee"))
+                        ):
                             continue
                     except Exception:
                         pass

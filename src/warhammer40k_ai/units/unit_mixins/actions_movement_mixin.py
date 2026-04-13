@@ -8254,6 +8254,175 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _helhunt_merciless_fusillade_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("helhunt_merciless_fusillade_active")):
+            return None
+        target_id = str(sr.get("helhunt_merciless_fusillade_target_id", "") or "")
+        if not target_id:
+            return None
+        attack_type = str(sr.get("helhunt_merciless_fusillade_attack_type", "") or "").strip().lower()
+        context = {
+            "target_id": target_id,
+            "attack_type": attack_type,
+            "target_lock": bool(sr.get("helhunt_merciless_fusillade_target_lock", True)),
+            "source": str(sr.get("helhunt_merciless_fusillade_source", "") or "MERCILESS FUSILLADE").strip()
+            or "MERCILESS FUSILLADE",
+        }
+        if game is None:
+            return context
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("helhunt_merciless_fusillade_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("helhunt_merciless_fusillade_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("helhunt_merciless_fusillade_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return context
+
+    def _helhunt_merciless_fusillade_expected_target_eligible(self, *, game=None, attack_type: str = "") -> bool:
+        context = self._helhunt_merciless_fusillade_context(game=game)
+        if not isinstance(context, dict):
+            return False
+        target_id = str(context.get("target_id", "") or "")
+        if not target_id:
+            return False
+        requested_attack_type = str(attack_type or context.get("attack_type", "") or "").strip().lower()
+        if not requested_attack_type:
+            requested_attack_type = str(context.get("attack_type", "") or "").strip().lower()
+        if game is None:
+            return True
+        expected_target = None
+        registry = getattr(game, "entity_registry", None)
+        if registry is not None and hasattr(registry, "get"):
+            expected_target = registry.get(target_id, kind="unit")
+        if expected_target is None:
+            for unit in list(getattr(getattr(game, "map", None), "units", []) or []):
+                unit_id = str(get_entity_id(unit) or "")
+                if unit_id == target_id:
+                    expected_target = unit
+                    break
+        if expected_target is None:
+            return False
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        if requested_attack_type == "melee":
+            fight_mgr = getattr(game, "fight_phase_manager", None)
+            if fight_mgr is None:
+                from ...engine.fight_phase_manager import FightPhaseManager
+
+                fight_mgr = FightPhaseManager(game)
+            get_targets = getattr(fight_mgr, "_get_eligible_targets", None)
+            if not callable(get_targets):
+                return False
+            return bool(expected_target in list(get_targets(root, ignore_helhunt_target_lock=True) or []))
+        if requested_attack_type == "ranged":
+            game_map = getattr(game, "map", None)
+            if game_map is None:
+                return False
+            can_shoot = getattr(root, "_can_model_shoot_weapon_at_target", None)
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            fallback_ranged_weapon_found = False
+            for model in list(models or []):
+                if not bool(getattr(model, "is_alive", False)):
+                    continue
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    is_ranged = getattr(wargear, "is_ranged", None)
+                    if not callable(is_ranged) or not bool(is_ranged()):
+                        continue
+                    profiles = getattr(wargear, "profiles", None) or {}
+                    if not profiles:
+                        fallback_ranged_weapon_found = True
+                        continue
+                    for profile in list(profiles.values() or []):
+                        if profile is None or not callable(can_shoot):
+                            continue
+                        if bool(
+                            can_shoot(
+                                model,
+                                profile,
+                                expected_target,
+                                game_map,
+                                ignore_helhunt_target_lock=True,
+                            )
+                        ):
+                            return True
+            return bool(fallback_ranged_weapon_found)
+        return True
+
+    def _helhunt_merciless_fusillade_target_locked_to(self, target_unit, *, game=None, attack_type: str = "") -> bool:
+        context = self._helhunt_merciless_fusillade_context(game=game)
+        if not isinstance(context, dict):
+            return True
+        requested_attack_type = str(attack_type or "").strip().lower()
+        effect_attack_type = str(context.get("attack_type", "") or "").strip().lower()
+        if effect_attack_type and requested_attack_type and effect_attack_type != requested_attack_type:
+            return True
+        if not bool(context.get("target_lock", True)):
+            return True
+        expected_target_id = str(context.get("target_id", "") or "")
+        if not expected_target_id:
+            return True
+        eligibility_attack_type = requested_attack_type or effect_attack_type
+        if game is not None and not self._helhunt_merciless_fusillade_expected_target_eligible(
+            game=game,
+            attack_type=eligibility_attack_type,
+        ):
+            return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        if expected_target_id and current_target_id and expected_target_id != current_target_id:
+            return False
+        return True
+
+    def _helhunt_contemptuous_volleys_active(self) -> bool:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("helhunt_contemptuous_volleys_active")):
+            return False
+        army = getattr(root, "get_parent_army", lambda: None)()
+        player = getattr(army, "player", None)
+        game = getattr(player, "game", None) if player is not None else None
+        effect_owner = str(sr.get("helhunt_contemptuous_volleys_turn_owner", "") or "").strip()
+        player_id = str(getattr(player, "id", "") or "").strip() if player is not None else ""
+        if effect_owner and player_id and effect_owner != player_id:
+            return False
+        try:
+            effect_turn = int(sr.get("helhunt_contemptuous_volleys_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
     def _gsc_integrated_tactics_context(self, *, game=None) -> Optional[dict]:
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self
@@ -20099,6 +20268,9 @@ class ActionsMovementMixin:
         """
         if _has_orks_temp_movement_effect_for_unit(self, "shoot_after_fall_back"):
             return True
+        helhunt_fall_back_fn = getattr(self, "_helhunt_contemptuous_volleys_active", None)
+        if callable(helhunt_fall_back_fn) and helhunt_fall_back_fn():
+            return True
         enhancement_fall_back_fn = getattr(self, "_enhancement_unit_can_shoot_after_fall_back", None)
         if callable(enhancement_fall_back_fn) and enhancement_fall_back_fn(profile=profile):
             return True
@@ -20961,6 +21133,9 @@ class ActionsMovementMixin:
     def can_charge_after_fall_back(self) -> bool:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
+            return True
+        helhunt_fall_back_fn = getattr(self, "_helhunt_contemptuous_volleys_active", None)
+        if callable(helhunt_fall_back_fn) and helhunt_fall_back_fn():
             return True
         try:
             root = self.get_attached_unit_root()
