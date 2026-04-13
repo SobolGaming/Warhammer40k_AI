@@ -107,6 +107,62 @@ def test_charge_end_mortal_wounds_per_model(monkeypatch):
     assert applied["target"] is enemy
 
 
+def test_charge_end_mortal_wounds_supports_charge_move_wording_without_target_engagement_clause(monkeypatch):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+
+    ability = (
+        "You can re-roll charge rolls made for this unit, and each time this unit makes a Charge move, select one "
+        "enemy unit and roll one D6 for each model in this unit that is within Engagement Range of that unit: "
+        "for each 4+, that enemy unit suffers D3 mortal wounds."
+    )
+    unit = _make_unit("Mutilators", ability_desc=ability, model_count=3)
+    enemy = _make_unit("Enemy")
+    unit.deployed = True
+    enemy.deployed = True
+
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    unit.set_parent_army(army)
+    enemy.set_parent_army(enemy_army)
+
+    unit._refresh_charge_end_mortal_wounds_flags()
+    specs = list(getattr(unit, "special_rules", {}).get("charge_end_mortal_wounds", []) or [])
+    assert any(str(s.get("kind", "") or "") == "per_model_4plus_d3" for s in specs)
+    spec = next(s for s in specs if str(s.get("kind", "") or "") == "per_model_4plus_d3")
+    assert bool(spec.get("engagement_only", False))
+    assert unit.can_reroll_charge_roll()
+
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.map = _MapStub([enemy])
+
+    applied = {}
+
+    def _apply(self, target, amount, game_map=None):
+        applied["amount"] = applied.get("amount", 0) + int(amount or 0)
+        applied["target"] = target
+        return 0
+
+    unit._apply_mortal_wounds_to_unit = types.MethodType(_apply, unit)
+
+    rolls = {"D6": [4, 5], "D3": [2, 1]}
+
+    def _fake_get_roll(die):
+        return rolls[die].pop(0)
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
+
+    engagement_checks = iter([True, False, True])
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.model_within_engagement_range_of_unit",
+        lambda *_args, **_kwargs: next(engagement_checks),
+    )
+
+    game._on_unit_move_ended_charge_mortal_wounds(unit=unit, action="charge")
+
+    assert applied["amount"] == 3
+    assert applied["target"] is enemy
+
+
 def test_charge_end_mortal_wounds_per_model_flat_one(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 

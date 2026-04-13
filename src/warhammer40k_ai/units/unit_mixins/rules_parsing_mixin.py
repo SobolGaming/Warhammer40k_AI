@@ -2892,7 +2892,7 @@ class RulesParsingMixin:
                 )
                 engagement_only = bool(
                     re.search(
-                        r"for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit)\s+that\s+is\s+within\s+engagement\s+range\s+of\s+that\s+enemy\s+unit",
+                        r"for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit)\s+that\s+is\s+within\s+engagement\s+range\s+of\s+that\s+(?:enemy\s+)?unit",
                         low,
                         flags=re.IGNORECASE,
                     )

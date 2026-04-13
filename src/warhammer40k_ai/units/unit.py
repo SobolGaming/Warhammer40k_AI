@@ -4898,15 +4898,15 @@ class Unit(
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_PER_MODEL_RE = re.compile(
-        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
-        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+(?:ends?|makes?)\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit(?:\s+within\s+engagement\s+range(?:\s+of\s+(?:(?:this|that)\s+unit|this\s+model|it))?)?.*?"
         r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
         r"for\s+each\s+4\+.*?(?P<mw>d3|1)\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_REMAINING_WOUNDS_RE = re.compile(
-        r"each\s+time\s+this\s+model\s+ends?\s+a\s+charge\s+move.*?"
-        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range\s+of\s+it.*?"
+        r"each\s+time\s+this\s+model\s+(?:ends?|makes?)\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit(?:\s+within\s+engagement\s+range\s+of\s+(?:this\s+model|it))?.*?"
         r"roll\s+one\s+d6\s+for\s+each\s+of\s+this\s+model'?s\s+remaining\s+wounds.*?"
         r"for\s+each\s+4\+.*?suffers?\s+1\s+mortal\s+wounds?"
         r"(?:.*?maximum\s+of\s+6\s+mortal\s+wounds?)?",
@@ -4946,16 +4946,16 @@ class Unit(
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_TABLE_RE = re.compile(
-        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
-        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+(?:ends?|makes?)\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit(?:\s+within\s+engagement\s+range(?:\s+of\s+(?:(?:this|that)\s+unit|this\s+model|it))?)?.*?"
         r"roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*3.*?mortal\s+wound.*?"
         r"on\s+a\s+4\s*-\s*5.*?d3\s+mortal\s+wounds?.*?"
         r"on\s+a\s+6.*?d3\s*\+\s*3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_TABLE_2_5_D3_RE = re.compile(
-        r"each\s+time\s+this\s+model\s+ends?\s+a\s+charge\s+move.*?"
-        r"(?:you\s+can\s+)?(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range\s+of\s+(?:this\s+model|it)\s+"
+        r"each\s+time\s+this\s+model\s+(?:ends?|makes?)\s+a\s+charge\s+move.*?"
+        r"(?:you\s+can\s+)?(?:select|choose)\s+one\s+enemy\s+unit(?:\s+within\s+engagement\s+range\s+of\s+(?:this\s+model|it))?\s+"
         r"and\s+roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*5.*?suffers?\s+d3\s+mortal\s+wounds?.*?"
         r"on\s+a\s+6.*?suffers?\s+d3\s*\+\s*3\s+mortal\s+wounds?",
         re.IGNORECASE,

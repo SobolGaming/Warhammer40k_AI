@@ -7024,6 +7024,8 @@ def _classify_ability_base(
         return start_of_battle_keyword_saga_completion_support
     if leading_weapon_keyword_plus_near_target_hit_reroll_support:
         return leading_weapon_keyword_plus_near_target_hit_reroll_support
+    if charge_end_mortal_support:
+        return charge_end_mortal_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -7541,8 +7543,6 @@ def _classify_ability_base(
         return shooting_target_arcing_mortals_support
     if deadly_demise_trigger_threshold_on_destroy_support:
         return deadly_demise_trigger_threshold_on_destroy_support
-    if charge_end_mortal_support:
-        return charge_end_mortal_support
     if start_fight_phase_self_destruction_support:
         return start_fight_phase_self_destruction_support
     if fight_within_3_support:
@@ -11226,96 +11226,120 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     if not norm:
         return None
 
+    reroll_prefix = r"(?:(?:you can )?reroll charge rolls made for this unit and )?"
     battleshock_clause = (
         r"(?: if one or more enemy models are destroyed as a result of these mortal wounds "
         r"that enemy unit must take a battle shock test)?"
     )
     per_model = (
-        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model|it) "
+        rf"{reroll_prefix}"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
-        r"(?: that is within engagement range of that enemy unit)? "
+        r"(?: that is within engagement range of that (?:enemy )?unit)? "
         r"for each 4\+? that enemy unit suffers d3 mortal wounds?"
         rf"{battleshock_clause}"
     )
     per_model_flat = (
-        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model|it) "
+        rf"{reroll_prefix}"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
-        r"(?: that is within engagement range of that enemy unit)?"
+        r"(?: that is within engagement range of that (?:enemy )?unit)?"
         r"(?: adding (?P<bonus>\d+) to the result if this unit started its charge move within (?P<range>\d+) of one or more friendly adeptus mechanicus battleline units)? "
         r"for each 4\+? that enemy unit suffers 1 mortal wounds?"
         rf"{battleshock_clause}"
     )
     table = (
-        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
+        rf"{reroll_prefix}"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
     )
     table_2_5 = (
-        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        rf"{reroll_prefix}"
+        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
     table_2_5_flat3 = (
-        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        rf"{reroll_prefix}"
+        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers 3 mortal wounds?"
     )
     table_d3_flat3 = (
-        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        rf"{reroll_prefix}"
+        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of (?:this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that (?:enemy )?unit suffers d3 mortal wounds? "
         r"on a 4 5 that (?:enemy )?unit suffers 3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
     remaining_wounds = (
-        r"each time this model ends a charge move select one enemy unit within engagement range of it "
+        rf"{reroll_prefix}"
+        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"(?: within engagement range of it)? "
         r"(?:then |and (?:then )?)?roll one d6 for each of this models remaining wounds for each 4 that enemy unit suffers 1 mortal wounds?"
         r"(?: to a maximum of 6 mortal wounds?)?"
     )
     if re.fullmatch(per_model, norm):
-        suffix = ""
-        if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
-            suffix = " If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test."
-        return (
-            "Supported",
-            f"Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.{suffix}",
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append(
+            "Charge end: select a target enemy unit; roll D6 per model in this unit that is within Engagement Range of that target, each 4+ inflicts D3 mortal wounds."
         )
+        if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
+            note_parts.append("If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test.")
+        return ("Supported", " ".join(note_parts))
     m_flat = re.fullmatch(per_model_flat, norm)
     if m_flat:
-        suffix = ""
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
         if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
-            suffix = " If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test."
+            note_parts.append("If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test.")
         bonus = str(m_flat.group("bonus") or "").strip()
         range_value = str(m_flat.group("range") or "").strip()
         if bonus and range_value:
-            return (
-                "Supported",
-                f"Charge end: pick an engaged enemy; roll D6 per engaged model, adding +{bonus} if the charge started within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, each 4+ inflicts 1 mortal wound.{suffix}",
+            note_parts.append(
+                f"Charge end: select a target enemy unit; roll D6 per model in this unit that is within Engagement Range of that target, adding +{bonus} if the charge started within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, each 4+ inflicts 1 mortal wound."
             )
-        return (
-            "Supported",
-            f"Charge end: pick an engaged enemy; roll D6 per engaged model, each 4+ inflicts 1 mortal wound.{suffix}",
+            return ("Supported", " ".join(note_parts))
+        note_parts.append(
+            "Charge end: select a target enemy unit; roll D6 per model in this unit that is within Engagement Range of that target, each 4+ inflicts 1 mortal wound."
         )
+        return ("Supported", " ".join(note_parts))
     if re.fullmatch(table, norm):
-        return (
-            "Supported",
-            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
-        )
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).")
+        return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_2_5, norm):
-        return (
-            "Supported",
-            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=D3+3).",
-        )
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-5=D3, 6=D3+3).")
+        return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_2_5_flat3, norm):
-        return (
-            "Supported",
-            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=3).",
-        )
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-5=D3, 6=3).")
+        return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_d3_flat3, norm):
-        return (
-            "Supported",
-            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).",
-        )
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).")
+        return ("Supported", " ".join(note_parts))
     if re.fullmatch(remaining_wounds, norm):
-        return (
-            "Supported",
-            "Charge end: pick an engaged enemy; D6 per remaining wound, each 4+ inflicts 1 mortal wound (max 6).",
-        )
+        note_parts = []
+        if "reroll charge rolls made for this unit" in norm:
+            note_parts.append("Re-roll Charge rolls.")
+        note_parts.append("Charge end: select a target enemy unit; D6 per remaining wound, each 4+ inflicts 1 mortal wound (max 6).")
+        return ("Supported", " ".join(note_parts))
     return None
 
 
