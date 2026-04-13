@@ -624,10 +624,11 @@ class Game(
             mgr = getattr(army, "harbingers_of_dread", None)
             if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
                 continue
-            if not mgr.is_dread_active(DISMAY.key):
-                continue
-            aura_range = float(mgr.get_aura_range())
-            sources = [u for u in list(army.units) if mgr._unit_is_valid_source(u)]
+            sources = [
+                u
+                for u in list(army.units)
+                if mgr._unit_is_valid_source(u) and mgr.is_dread_active(DISMAY.key, unit=u)
+            ]
             if not sources:
                 continue
 
@@ -645,6 +646,7 @@ class Game(
                     continue
 
                 for source in sources:
+                    aura_range = float(mgr.get_aura_range(unit=source))
                     if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
                         unit.take_battle_shock_test(self.turn)
                         tested_ids.add(uid)
@@ -994,14 +996,16 @@ class Game(
             mgr = getattr(army, "harbingers_of_dread", None)
             if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
                 continue
-            if not mgr.is_dread_active(DELIRIUM.key):
-                continue
-            aura_range = float(mgr.get_aura_range())
-            sources = [u for u in list(getattr(army, "units", []) or []) if mgr._unit_is_valid_source(u)]
+            sources = [
+                u
+                for u in list(getattr(army, "units", []) or [])
+                if mgr._unit_is_valid_source(u) and mgr.is_dread_active(DELIRIUM.key, unit=u)
+            ]
             if not sources:
                 continue
 
             for source in sources:
+                aura_range = float(mgr.get_aura_range(unit=source))
                 if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
                     mortal = int(get_roll("D3") or 0)
                     if mortal > 0:

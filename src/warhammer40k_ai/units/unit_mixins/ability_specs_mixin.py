@@ -173,8 +173,18 @@ class AbilitySpecsMixin:
         has_intoxicating_elixir = bool(
             isinstance(root_sr, dict) and bool(root_sr.get("enhancement_intoxicating_elixir", False))
         )
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        except Exception:
+            army = None
+        ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        octagram_sources_fn = getattr(ck_mgr, "helhunt_octagram_sources_for_unit", None) if ck_mgr is not None else None
+        has_helhunt_octagram = bool(
+            callable(octagram_sources_fn)
+            and bool(list(getattr(ck_mgr, "_helhunt_octagram_sources", lambda: [])() or []))
+        )
         cache_key = f"model_post_shoot_battleshock:{get_entity_id(model)}"
-        if (not has_intoxicating_elixir) and cache_key in getattr(self, "_ability_cache", {}):
+        if (not has_intoxicating_elixir) and (not has_helhunt_octagram) and cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
@@ -473,9 +483,38 @@ class AbilitySpecsMixin:
                             }
                         )
 
+        if callable(octagram_sources_fn):
+            for source_unit in list(octagram_sources_fn(root) or []):
+                if source_unit is None:
+                    continue
+                source_root = (
+                    source_unit.get_attached_unit_root()
+                    if hasattr(source_unit, "get_attached_unit_root")
+                    else source_unit
+                )
+                source_sr = getattr(source_root, "special_rules", None)
+                if not isinstance(source_sr, dict):
+                    source_sr = {}
+                source_id = str(get_entity_id(source_root) or "").strip()
+                source = str(
+                    source_sr.get("enhancement_helhunt_octagram_of_conjuration_source", "")
+                    or "Octagram of Conjuration"
+                ).strip() or "Octagram of Conjuration"
+                key = (source.lower(), "helhunt_octagram_of_conjuration", source_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "infantry_only": False,
+                        "exclude_monster_vehicle": False,
+                        "source": source,
+                    }
+                )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not has_intoxicating_elixir:
+        if (not has_intoxicating_elixir) and (not has_helhunt_octagram):
             self._ability_cache[cache_key] = list(specs)
         return list(specs)
 

@@ -6707,6 +6707,50 @@ _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.values()
 }
 
+_CHAOS_KNIGHTS_HELHUNT_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010751002": EnhancementToolDescriptor(
+        enhancement_id="000010751002",
+        name="Aspect of the Beast",
+        timing="start_of_command_phase",
+        target="bearer",
+        duration="until_start_of_next_command_phase",
+        effect="select_bearer_specific_dread_ability",
+        effect_params={
+            "dread_keys": ("DESPAIR", "DOOM", "DARKNESS", "DISMAY", "DELIRIUM", "DOMINION"),
+        },
+    ),
+    "000010751003": EnhancementToolDescriptor(
+        enhancement_id="000010751003",
+        name="Hunter's Helm",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="reroll_advance_and_charge",
+    ),
+    "000010751004": EnhancementToolDescriptor(
+        enhancement_id="000010751004",
+        name="Octagram of Conjuration",
+        timing="passive_aura",
+        target="friendly_war_dog_models_within_range",
+        duration="constant",
+        effect="post_shoot_battleshock_for_friendly_war_dog_models",
+        range_in=9.0,
+    ),
+    "000010751005": EnhancementToolDescriptor(
+        enhancement_id="000010751005",
+        name="Throne Tyrannicus",
+        timing="command_phase",
+        target="other_friendly_chaos_knights_character_within_range",
+        duration="until_start_of_next_command_phase",
+        effect="selected_character_affected_by_bearer_war_dog_auras",
+        range_in=9.0,
+    ),
+}
+
+_CHAOS_KNIGHTS_HELHUNT_LANCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_HELHUNT_LANCE_DESCRIPTORS.values()
+}
+
 _CHAOS_KNIGHTS_TRAITORIS_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008516002": EnhancementToolDescriptor(
         enhancement_id="000008516002",
@@ -9915,6 +9959,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_KNIGHTS_HELHUNT_LANCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CHAOS_KNIGHTS_TRAITORIS_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10191,6 +10238,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME.get(key)
         or _GREY_KNIGHTS_SANCTIC_SPEARHEAD_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
+        or _CHAOS_KNIGHTS_HELHUNT_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_BY_NAME.get(key)

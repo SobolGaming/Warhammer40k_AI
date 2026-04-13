@@ -2870,14 +2870,51 @@ def _validate_choose_harbinger(game: object, request: DecisionRequest, result: D
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if ability_key == "helhunt_aspect_of_the_beast" and is_skip_choice(request, result):
+        return ("Aspect of the Beast selection cannot be skipped.",)
     if is_skip_choice(request, result):
         return ()
     payload = _option_payload(request, result)
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "harbingers_of_dread", None) is None:
         return ("Harbingers manager not found.",)
-    ctx = dict(getattr(request, "context", {}) or {})
-    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if ability_key == "helhunt_aspect_of_the_beast":
+        ck_mgr = getattr(army, "chaos_knights_detachments", None)
+        if ck_mgr is None or not bool(getattr(ck_mgr, "is_helhunt_lance", lambda: False)()):
+            return ("Aspect of the Beast requires Helhunt Lance detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Aspect of the Beast source unit was not found.",)
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if not choice_key:
+            return ("Aspect of the Beast selection requires choice_key.",)
+        allowed = {
+            str(item or "").strip().upper()
+            for item in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(item or "").strip()
+        }
+        if allowed and choice_key not in allowed:
+            return ("Selected Dread ability is not eligible for Aspect of the Beast.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        validate_choice = getattr(ck_mgr, "helhunt_aspect_choice_is_valid", None)
+        if not callable(validate_choice):
+            return ("Aspect of the Beast validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_unit,
+            choice_key,
+            game=game,
+            player=player,
+        )
+        if not bool(valid):
+            return (str(reason or "Aspect of the Beast selection is invalid."),)
+        return ()
     if ability_key == "traitoris_paragons_of_terror_bonus":
         ck_mgr = getattr(army, "chaos_knights_detachments", None)
         if ck_mgr is None:
@@ -2913,6 +2950,28 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
     ability_key = str(context.get("ability", "") or "").strip().lower()
     battle_round = context.get("battle_round")
     ck_mgr = getattr(army, "chaos_knights_detachments", None)
+    if ability_key == "helhunt_aspect_of_the_beast":
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or context.get("source_unit_id") or payload.get("unit_id") or context.get("unit_id"),
+        )
+        if source_unit is None:
+            raise RuntimeError("Aspect of the Beast source unit was not found.")
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if not choice_key:
+            raise RuntimeError("Aspect of the Beast selection requires choice_key.")
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_choice = getattr(ck_mgr, "apply_helhunt_aspect_choice", None) if ck_mgr is not None else None
+        if not callable(apply_choice):
+            raise RuntimeError("Aspect of the Beast apply handler is unavailable.")
+        outcome = apply_choice(source_unit, choice_key, game=game, player=player)
+        if not bool(outcome.get("ok", False)):
+            raise RuntimeError(str(outcome.get("reason", "") or "Aspect of the Beast selection failed."))
+        choice_name = str(outcome.get("choice_name", choice_key) or choice_key)
+        _log_action_for_players(game, player, f"Aspect of the Beast: {choice_name}.")
+        return outcome
     if is_skip_choice(request, result):
         if ability_key == "traitoris_paragons_of_terror_bonus":
             mark_used = getattr(ck_mgr, "mark_traitoris_paragons_bonus_used", None) if ck_mgr is not None else None
@@ -5429,6 +5488,56 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             return ("Malevolent Heraldry reroll mode is not an eligible option.",)
         if mode not in {"keep", "reroll_first", "reroll_second", "reroll_both"}:
             return ("Malevolent Heraldry reroll mode is invalid.",)
+        return ()
+    if ability == "helhunt_throne_tyrannicus":
+        if is_skip_choice(request, result):
+            return ("Throne Tyrannicus selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Throne Tyrannicus army not found.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_helhunt_lance", lambda: False)()):
+            return ("Throne Tyrannicus requires Helhunt Lance detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Throne Tyrannicus source unit was not found.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Throne Tyrannicus target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Throne Tyrannicus selection contains an ineligible target.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        validate_choice = getattr(mgr, "helhunt_throne_choice_is_valid", None)
+        if not callable(validate_choice):
+            return ("Throne Tyrannicus validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_unit,
+            target_unit,
+            game=game,
+            player=player,
+        )
+        if not bool(valid):
+            return (str(reason or "Throne Tyrannicus selection is invalid."),)
         return ()
     if ability == "traitoris_tyrants_shadow_objective":
         if is_skip_choice(request, result):
@@ -20614,6 +20723,51 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"Tyrant's Shadow: {source_name} selected {objective_name}.",
         )
         return objective
+    if ability == "helhunt_throne_tyrannicus":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+        )
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if source_unit is None or target_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_choice = getattr(mgr, "apply_helhunt_throne_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(source_unit, target_unit, game=game, player=player)
+        if not bool(outcome.get("ok", False)):
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        _log_action_for_players(
+            game,
+            player,
+            f"Throne Tyrannicus: {getattr(source_root, 'name', 'Unit')} selected {getattr(target_root, 'name', 'Unit')}.",
+        )
+        return outcome
     if ability == "archons_will_objective":
         if is_skip_choice(request, result):
             return None

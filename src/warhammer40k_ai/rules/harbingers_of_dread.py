@@ -140,17 +140,42 @@ class HarbingersOfDreadManager:
     def get_available_dread_abilities(self) -> list[DreadAbility]:
         return [d for d in ROLLABLE_DREADS if d.key not in self.active_dread_keys]
 
+    def _extra_dread_keys_for_source_unit(self, unit) -> set[str]:
+        if unit is None or not self._unit_is_chaos_knights(unit):
+            return set()
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+        if unit_army is not self.army:
+            return set()
+        ck_mgr = getattr(unit_army, "chaos_knights_detachments", None) if unit_army is not None else None
+        getter = getattr(ck_mgr, "helhunt_extra_dread_keys_for_unit", None) if ck_mgr is not None else None
+        if not callable(getter):
+            return set()
+        keys: set[str] = set()
+        for value in list(getter(unit) or []):
+            key = str(value or "").strip().upper()
+            if key in DREAD_DEFINITIONS:
+                keys.add(key)
+        return keys
+
     def is_dread_active(self, key: str, *, unit=None) -> bool:
         if not self._army_has_harbingers():
             return False
         if not key:
             return False
+        key_upper = str(key).strip().upper()
         if unit is not None and not self._unit_is_chaos_knights(unit):
             return False
-        return str(key).strip().upper() in {k.upper() for k in self.active_dread_keys}
+        if key_upper in {k.upper() for k in self.active_dread_keys}:
+            return True
+        if unit is None:
+            return False
+        return key_upper in self._extra_dread_keys_for_source_unit(unit)
 
-    def get_aura_range(self) -> float:
-        return 12.0 if self.is_dread_active(DOMINION.key) else 9.0
+    def get_aura_range(self, *, unit=None) -> float:
+        return 12.0 if self.is_dread_active(DOMINION.key, unit=unit) else 9.0
 
     def select_dread_ability(self, ability, *, battle_round: Optional[int] = None) -> bool:
         if not self._army_has_harbingers():
@@ -381,15 +406,15 @@ class HarbingersOfDreadManager:
             if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
                 continue
 
-            aura_range = mgr.get_aura_range()
             for source in list(getattr(enemy_army, "units", []) or []):
                 if not mgr._unit_is_valid_source(source):
                     continue
+                aura_range = mgr.get_aura_range(unit=source)
                 try:
                     if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
-                        if mgr.is_dread_active(DEATHLY_TERROR.key):
+                        if mgr.is_dread_active(DEATHLY_TERROR.key, unit=source):
                             active.add(DEATHLY_TERROR.key)
-                        if mgr.is_dread_active(DESPAIR.key):
+                        if mgr.is_dread_active(DESPAIR.key, unit=source):
                             active.add(DESPAIR.key)
                         break
                 except Exception:
@@ -413,7 +438,7 @@ class HarbingersOfDreadManager:
                     point = (float(getattr(loc, "x", 0.0)), float(getattr(loc, "y", 0.0)))
                 except (TypeError, ValueError):
                     continue
-                if not unit_within_range_of_point_3d(unit, point, aura_range, use_attached_aggregate=True):
+                if not unit_within_range_of_point_3d(unit, point, 9.0, use_attached_aggregate=True):
                     continue
                 if mgr.is_dread_active(DEATHLY_TERROR.key):
                     active.add(DEATHLY_TERROR.key)

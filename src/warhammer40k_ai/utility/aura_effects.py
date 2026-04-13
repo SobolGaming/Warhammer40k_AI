@@ -264,6 +264,41 @@ def _unit_matches_keyword_or_name_phrase(unit, phrase: str) -> bool:
     return _unit_matches_name_phrase(unit, phrase)
 
 
+def _unit_matches_aura_recipient_phrase(
+    unit,
+    phrase: str,
+    *,
+    source_unit=None,
+    ability=None,
+    aura_range: float = 0.0,
+) -> bool:
+    if _unit_matches_keyword_or_name_phrase(unit, phrase):
+        return True
+    phrase_norm = _normalize_keyword_phrase(phrase)
+    if "war dog" not in phrase_norm:
+        return False
+    if unit is None or source_unit is None:
+        return False
+    get_parent_army = getattr(source_unit, "get_parent_army", None)
+    source_army = get_parent_army() if callable(get_parent_army) else getattr(source_unit, "_army", None)
+    ck_mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
+    apply_fn = getattr(ck_mgr, "helhunt_war_dog_aura_recipient_applies", None) if ck_mgr is not None else None
+    if not callable(apply_fn):
+        return False
+    try:
+        range_value = float(aura_range)
+    except (TypeError, ValueError):
+        range_value = 0.0
+    return bool(
+        apply_fn(
+            target_unit=unit,
+            source_unit=source_unit,
+            aura_range=range_value,
+            ability=ability,
+        )
+    )
+
+
 def _iter_possible_abilities(unit) -> Iterable[object]:
     is_active = getattr(unit, "_ability_is_active", None)
     for ab in (getattr(unit, "possible_abilities", []) or []):
@@ -399,6 +434,39 @@ def _deadly_terror_aura_range_bonus(source_unit, ability) -> float:
     return 0.0
 
 
+def _harbingers_dominion_aura_range_bonus(source_unit, ability) -> float:
+    if source_unit is None or ability is None:
+        return 0.0
+    if not _is_aura_ability(ability):
+        return 0.0
+    try:
+        root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+    except Exception:
+        root = source_unit
+    if root is None:
+        return 0.0
+    try:
+        army = root.get_parent_army()
+    except Exception:
+        army = None
+    mgr = getattr(army, "harbingers_of_dread", None) if army is not None else None
+    if mgr is None:
+        return 0.0
+    try:
+        from ..rules.harbingers_of_dread import DOMINION
+    except Exception:
+        return 0.0
+    is_active = getattr(mgr, "is_dread_active", None)
+    if not callable(is_active):
+        return 0.0
+    try:
+        if not bool(is_active(DOMINION.key, unit=root)):
+            return 0.0
+    except Exception:
+        return 0.0
+    return 3.0
+
+
 def _aura_anchor_model_for_ability(source_unit, ability):
     if source_unit is None or ability is None:
         return None
@@ -466,6 +534,14 @@ def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, abil
             and target_source_id == source_id
         ):
             return True
+        target_source_id = str((target_sr or {}).get("helhunt_throne_tyrannicus_source_unit_id", "") or "").strip()
+        if (
+            isinstance(target_sr, dict)
+            and target_sr.get("helhunt_throne_tyrannicus_active") is True
+            and source_id
+            and target_source_id == source_id
+        ):
+            return True
     except Exception:
         pass
     try:
@@ -474,6 +550,7 @@ def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, abil
         return False
     rng += float(_chosen_of_blood_god_aura_range_bonus(source_unit, ability))
     rng += float(_deadly_terror_aura_range_bonus(source_unit, ability))
+    rng += float(_harbingers_dominion_aura_range_bonus(source_unit, ability))
     anchor_model = _aura_anchor_model_for_ability(source_unit, ability)
     if anchor_model is not None:
         try:
@@ -1843,7 +1920,13 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     continue
 
                 # Faction keyword restriction (as a phrase, e.g. "WORLD EATERS")
-                if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+                if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    spec["faction_keyword"],
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(spec["range"]),
+                ):
                     continue
 
                 # Range restriction (source -> attacker)
@@ -1866,15 +1949,14 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             # Generic strict parser: reroll 1s (hit/wound), friendly within X.
             rr = _cached_parse_aura_spec("_parse_reroll_ones_aura", ab, _parse_reroll_ones_aura)
             if rr:
-                if rr["faction_keyword"]:
-                    matches = _unit_matches_keyword_phrase(attacker_unit, rr["faction_keyword"])
-                    if not matches:
-                        try:
-                            matches = bool(attacker_unit.has_any_keyword(rr["faction_keyword"]))
-                        except Exception:
-                            matches = False
-                    if not matches:
-                        continue
+                if rr["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    rr["faction_keyword"],
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(rr["range"]),
+                ):
+                    continue
                 if rr.get("attack_type") == "melee" and not _weapon_is_melee(weapon_profile):
                     continue
                 if rr.get("attack_type") == "ranged" and _weapon_is_melee(weapon_profile):
@@ -1901,15 +1983,14 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             # Generic strict parser: full Hit re-roll aura.
             full_hit = _cached_parse_aura_spec("_parse_full_hit_reroll_aura", ab, _parse_full_hit_reroll_aura)
             if full_hit:
-                if full_hit["faction_keyword"]:
-                    matches = _unit_matches_keyword_phrase(attacker_unit, full_hit["faction_keyword"])
-                    if not matches:
-                        try:
-                            matches = bool(attacker_unit.has_any_keyword(full_hit["faction_keyword"]))
-                        except Exception:
-                            matches = False
-                    if not matches:
-                        continue
+                if full_hit["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    full_hit["faction_keyword"],
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(full_hit["range"]),
+                ):
+                    continue
                 if full_hit.get("excluded_keywords") and _excluded_by_unit_keywords(attacker_unit, full_hit.get("excluded_keywords", ())):
                     continue
                 if not _unit_within_aura_range(source, attacker_unit, float(full_hit["range"]), ability=ab):
@@ -2230,14 +2311,14 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    has_any_keyword = getattr(unit, "has_any_keyword", None)
-                    if callable(has_any_keyword):
-                        matches = bool(has_any_keyword(spec["faction_keyword"]))
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             excluded_keywords = tuple(spec.get("excluded_keywords", ()) or ())
             if excluded_keywords and _excluded_by_unit_keywords(unit, excluded_keywords):
                 continue
@@ -2346,7 +2427,13 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
@@ -2384,7 +2471,13 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
@@ -2471,14 +2564,14 @@ def get_aura_max_acts_of_faith_per_phase(unit, *, game_map=None) -> int:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    has_any_keyword = getattr(unit, "has_any_keyword", None)
-                    if callable(has_any_keyword):
-                        matches = bool(has_any_keyword(spec["faction_keyword"]))
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             try:
@@ -2512,14 +2605,14 @@ def has_aura_charge_reroll(unit, *, game_map=None) -> bool:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    has_any_keyword = getattr(unit, "has_any_keyword", None)
-                    if callable(has_any_keyword):
-                        matches = bool(has_any_keyword(spec["faction_keyword"]))
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
@@ -2554,14 +2647,14 @@ def get_aura_move_characteristic_bonus(unit, *, game_map=None) -> tuple[int, tup
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    has_any_keyword = getattr(unit, "has_any_keyword", None)
-                    if callable(has_any_keyword):
-                        matches = bool(has_any_keyword(spec["faction_keyword"]))
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
@@ -2599,14 +2692,14 @@ def get_aura_fnp_entries(unit, *, game_map=None) -> list[tuple[int, Optional[str
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    has_any_keyword = getattr(unit, "has_any_keyword", None)
-                    if callable(has_any_keyword):
-                        matches = bool(has_any_keyword(spec["faction_keyword"]))
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
@@ -3100,15 +3193,14 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
             spec = _cached_parse_aura_spec("_parse_battleshock_leadership_test_reroll_aura", ab, _parse_battleshock_leadership_test_reroll_aura)
             if not spec:
                 continue
-            if spec.get("faction_keyword"):
-                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
-                if not matches:
-                    try:
-                        matches = bool(unit.has_any_keyword(spec["faction_keyword"]))
-                    except Exception:
-                        matches = False
-                if not matches:
-                    continue
+            if spec.get("faction_keyword") and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
@@ -3332,7 +3424,13 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                attacker_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
@@ -3415,15 +3513,14 @@ def get_aura_weapon_keyword_bonuses(
                         continue
                     applied_aura_names.add(aura_key)
                 faction_keyword = str(melee_keywords.get("faction_keyword", "") or "").strip()
-                if faction_keyword:
-                    matches = _unit_matches_keyword_phrase(attacker_unit, faction_keyword)
-                    if not matches:
-                        try:
-                            matches = bool(attacker_unit.has_any_keyword(faction_keyword))
-                        except Exception:
-                            matches = False
-                    if not matches:
-                        continue
+                if faction_keyword and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    faction_keyword,
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(melee_keywords["range"]),
+                ):
+                    continue
                 excluded_keywords = tuple(melee_keywords.get("excluded_keywords", ()) or ())
                 if excluded_keywords and _excluded_by_unit_keywords(attacker_unit, excluded_keywords):
                     continue
@@ -3469,15 +3566,14 @@ def get_aura_weapon_keyword_bonuses(
                         continue
                     applied_aura_names.add(aura_key)
                 faction_keyword = str(ranged_keywords.get("faction_keyword", "") or "").strip()
-                if faction_keyword:
-                    matches = _unit_matches_keyword_phrase(attacker_unit, faction_keyword)
-                    if not matches:
-                        try:
-                            matches = bool(attacker_unit.has_any_keyword(faction_keyword))
-                        except Exception:
-                            matches = False
-                    if not matches:
-                        continue
+                if faction_keyword and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    faction_keyword,
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(ranged_keywords["range"]),
+                ):
+                    continue
                 excluded_keywords = tuple(ranged_keywords.get("excluded_keywords", ()) or ())
                 if excluded_keywords and _excluded_by_unit_keywords(attacker_unit, excluded_keywords):
                     continue
@@ -3509,15 +3605,14 @@ def get_aura_weapon_keyword_bonuses(
                         continue
                     applied_aura_names.add(aura_key)
                 faction_keyword = str(conditional_sustained.get("faction_keyword", "") or "").strip()
-                if faction_keyword:
-                    matches = _unit_matches_keyword_phrase(attacker_unit, faction_keyword)
-                    if not matches:
-                        try:
-                            matches = bool(attacker_unit.has_any_keyword(faction_keyword))
-                        except Exception:
-                            matches = False
-                    if not matches:
-                        continue
+                if faction_keyword and not _unit_matches_aura_recipient_phrase(
+                    attacker_unit,
+                    faction_keyword,
+                    source_unit=source,
+                    ability=ab,
+                    aura_range=float(conditional_sustained["range"]),
+                ):
+                    continue
                 excluded_keywords = tuple(conditional_sustained.get("excluded_keywords", ()) or ())
                 if excluded_keywords and _excluded_by_unit_keywords(attacker_unit, excluded_keywords):
                     continue
@@ -3533,12 +3628,13 @@ def get_aura_weapon_keyword_bonuses(
                         except Exception:
                             has_model_keyword = False
                     if not has_model_keyword:
-                        has_model_keyword = _unit_matches_keyword_phrase(attacker_unit, model_keyword)
-                    if not has_model_keyword:
-                        try:
-                            has_model_keyword = bool(attacker_unit.has_any_keyword(model_keyword))
-                        except Exception:
-                            has_model_keyword = False
+                        has_model_keyword = _unit_matches_aura_recipient_phrase(
+                            attacker_unit,
+                            model_keyword,
+                            source_unit=source,
+                            ability=ab,
+                            aura_range=float(conditional_sustained["range"]),
+                        )
 
                 target_is_closest = False
                 if target_unit is not None:
@@ -3589,7 +3685,13 @@ def get_aura_weapon_keyword_bonuses(
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not _unit_matches_keyword_phrase(attacker_unit, spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                attacker_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
@@ -3738,7 +3840,13 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not target_unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                target_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             exclude_kw = str(spec.get("exclude_keyword", "") or "").strip()
             if exclude_kw:
@@ -3781,9 +3889,14 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"]:
-                if not _unit_matches_keyword_or_name_phrase(target_unit, spec["faction_keyword"]):
-                    continue
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                target_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
+                continue
             if not _unit_within_aura_range(source, target_unit, float(spec["range"]), ability=ab):
                 continue
             reasons.append(f"Aura: Benefit of Cover from {ab_name}")
@@ -3820,7 +3933,13 @@ def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                attacker_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if spec.get("attack_type") == "melee" and not _weapon_is_melee(weapon_profile):
                 continue
@@ -3863,7 +3982,13 @@ def get_aura_toughness_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ..
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
@@ -3906,7 +4031,13 @@ def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                attacker_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             if spec.get("requires_charge") and not charged:
                 continue
@@ -4027,7 +4158,13 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+            if spec["faction_keyword"] and not _unit_matches_aura_recipient_phrase(
+                attacker_unit,
+                spec["faction_keyword"],
+                source_unit=source,
+                ability=ab,
+                aura_range=float(spec["range"]),
+            ):
                 continue
             atype = spec.get("attack_type") or "any"
             if atype == "melee" and not is_melee:

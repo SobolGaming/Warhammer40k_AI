@@ -2048,6 +2048,10 @@ class Enhancement:
         except Exception:
             is_houndpack_lance = False
         try:
+            is_helhunt_lance = bool(ck_mgr and ck_mgr.is_helhunt_lance())
+        except Exception:
+            is_helhunt_lance = False
+        try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
         except Exception:
             is_infernal_lance = False
@@ -15042,6 +15046,66 @@ class Enhancement:
             unit.special_rules["bearer_unit_assault_ranged"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "aspect of the beast" or enh_id == "000010751002":
+            if not is_helhunt_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Aspect of the Beast").strip() or "Aspect of the Beast"
+            unit.special_rules["enhancement_helhunt_aspect_of_the_beast"] = True
+            unit.special_rules["enhancement_helhunt_aspect_of_the_beast_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helhunt_aspect_of_the_beast_bearer_model_id"] = bearer_id
+
+        if name == "hunter's helm" or enh_id == "000010751003":
+            if not is_helhunt_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Hunter's Helm").strip() or "Hunter's Helm"
+            unit.special_rules["enhancement_helhunt_hunters_helm"] = True
+            unit.special_rules["enhancement_helhunt_hunters_helm_source"] = source
+            unit.special_rules["enhancement_reroll_advance"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helhunt_hunters_helm_bearer_model_id"] = bearer_id
+
+        if name == "octagram of conjuration" or enh_id == "000010751004":
+            if not is_helhunt_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Octagram of Conjuration").strip() or "Octagram of Conjuration"
+            aura_range = _coerce_float(
+                getattr(desc, "range_in", 9.0) if desc is not None else 9.0,
+                default=9.0,
+            )
+            if aura_range <= 0:
+                aura_range = 9.0
+            unit.special_rules["enhancement_helhunt_octagram_of_conjuration"] = True
+            unit.special_rules["enhancement_helhunt_octagram_of_conjuration_source"] = source
+            unit.special_rules["enhancement_helhunt_octagram_of_conjuration_range"] = float(aura_range)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helhunt_octagram_of_conjuration_bearer_model_id"] = bearer_id
+
+        if name == "throne tyrannicus" or enh_id == "000010751005":
+            if not is_helhunt_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Throne Tyrannicus").strip() or "Throne Tyrannicus"
+            range_in = _coerce_float(
+                getattr(desc, "range_in", 9.0) if desc is not None else 9.0,
+                default=9.0,
+            )
+            if range_in <= 0:
+                range_in = 9.0
+            unit.special_rules["enhancement_helhunt_throne_tyrannicus"] = True
+            unit.special_rules["enhancement_helhunt_throne_tyrannicus_source"] = source
+            unit.special_rules["enhancement_helhunt_throne_tyrannicus_range"] = float(range_in)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helhunt_throne_tyrannicus_bearer_model_id"] = bearer_id
 
         if name == "nightmare's master" or enh_id == "000008516002":
             if not is_traitoris_lance:

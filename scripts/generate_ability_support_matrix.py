@@ -817,6 +817,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the end of the battle those units have the character keyword",
             r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
         ),
+        "Masters of the Pack": (
+            r"if a titanic chaos knights unit from your army has an aura ability that affects friendly war dog units while two or more friendly war dog models are within range of that titanic chaos knights units aura ability that titanic chaos knights unit is affected by that aura ability as well",
+            r"two friendly war dog models are within 9 of a knight desecrator when it is selected to shoot",
+            r"as a result the knight desecrator s taskmaster ability also affects itself even though it does not have the war dog keyword so each time that knight desecrator makes a ranged attack hit rolls of 1 are re rolled",
+        ),
         "Dreaded Masters": (
             r"titanic chaos knights units from your army have the following abilities",
             r"while a friendly damned unit is within 9 of this unit each time a model in that unit makes an attack reroll a hit roll of 1 and reroll a wound roll of 1",
@@ -3198,6 +3203,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Marked Prey": (
             "Supported",
             "Houndpack Lance: command-phase enemy-unit selection grants [SUSTAINED HITS 1] to visible WAR DOG attacks against that target until your next Command phase; validates minimum three WAR DOG units, grants BATTLELINE to WAR DOG units, and enforces selection of exactly three WAR DOG units to gain CHARACTER during Muster Armies.",
+        ),
+        "Masters of the Pack": (
+            "Supported",
+            "Helhunt Lance: when a friendly TITANIC CHAOS KNIGHTS unit has a supported aura that affects friendly WAR DOG units, and at least two friendly WAR DOG models are within that aura, the TITANIC unit is treated as an eligible recipient of that aura as well.",
         ),
         "Dreaded Masters": (
             "Supported",
@@ -20205,6 +20214,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010308005": "Putrid Carapace: bearer Save characteristic is 2+; once per battle at the start of either Command phase, optional activation heals the bearer by D6 lost wounds.",
         "000010308006": "Mirror of Fates: once per battle round, optional 0CP Command Re-roll targeting the bearer's unit (including repeat-in-phase exception), and Lord of Deceit aura increases opponent Stratagem cost by 1CP within 12\".",
         "000010308007": "Blessing of the Dark Master: bearer gains Stealth; once per battle after a saving throw for the bearer, optional activation sets that attack's Damage characteristic to 0.",
+        "000010751002": "Aspect of the Beast: start of your Command phase choose one bearer-specific Dread ability until your next Command phase, including source-specific Dominion aura range extension.",
+        "000010751003": "Hunter's Helm: the bearer's unit can re-roll Advance and Charge rolls.",
+        "000010751004": "Octagram of Conjuration: nearby War Dog models gain a post-shoot Battle-shock selection aura, including Masters of the Pack self-recipient support.",
+        "000010751005": "Throne Tyrannicus: in your Command phase select another nearby CHAOS KNIGHTS CHARACTER to be affected by the bearer's supported War Dog aura abilities until your next Command phase.",
         "000008516002": "Nightmare's Master: at the start of the Fight phase, each enemy unit within Engagement Range of the bearer takes a Battle-shock test.",
         "000008516003": "Tyrant's Shadow: at the end of your Command phase, select one objective marker you control and are within range of; it remains under your control until your opponent has greater Level of Control at phase end, and while controlled it projects Deathly Terror as if it were a CHAOS KNIGHTS model.",
         "000008516004": "Malevolent Heraldry: each time random Harbingers of Dread dice are rolled, if the bearer is on the battlefield, a deterministic reroll-choice dialog allows keeping rolls or re-rolling one or both dice before applying results.",

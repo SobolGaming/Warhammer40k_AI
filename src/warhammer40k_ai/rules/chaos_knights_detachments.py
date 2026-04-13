@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.aura_effects import _unit_within_aura_range
 from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
@@ -18,12 +19,15 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     PARAGONS_OF_TERROR_NAME = "Paragons of Terror"
     DETACHMENT_INFERNAL_LANCE = "Infernal Lance"
     DETACHMENT_HOUNDPACK_LANCE = "Houndpack Lance"
+    DETACHMENT_HELHUNT_LANCE = "Helhunt Lance"
     DETACHMENT_ICONOCLAST_FIEFDOM = "Iconoclast Fiefdom"
     DETACHMENT_LORDS_OF_DREAD = "Lords of Dread"
     DETACHMENT_TRAITORIS_LANCE = "Traitoris Lance"
     HOUNDPACK_CHARACTER_SELECTION_ABILITY = "houndpack_lance_character_selection"
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
     ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY = "iconoclast_pave_the_way_selection"
+    HELHUNT_ASPECT_OF_THE_BEAST_ABILITY = "helhunt_aspect_of_the_beast"
+    HELHUNT_THRONE_TYRANNICUS_ABILITY = "helhunt_throne_tyrannicus"
     TRAITORIS_PARAGONS_ABILITY = "traitoris_paragons_of_terror_bonus"
     TRAITORIS_TYRANTS_SHADOW_ABILITY = "traitoris_tyrants_shadow_objective"
     TRAITORIS_MALEVOLENT_HERALDRY_ABILITY = "traitoris_malevolent_heraldry"
@@ -31,6 +35,10 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     HOUNDPACK_FINAL_HOWL_ENHANCEMENT_ID = "000010312003"
     HOUNDPACK_LOPING_PREDATOR_ENHANCEMENT_ID = "000010312004"
     HOUNDPACK_PANOPLY_ENHANCEMENT_ID = "000010312005"
+    HELHUNT_ASPECT_OF_THE_BEAST_ENHANCEMENT_ID = "000010751002"
+    HELHUNT_HUNTERS_HELM_ENHANCEMENT_ID = "000010751003"
+    HELHUNT_OCTAGRAM_OF_CONJURATION_ENHANCEMENT_ID = "000010751004"
+    HELHUNT_THRONE_TYRANNICUS_ENHANCEMENT_ID = "000010751005"
     ICONOCLAST_PROFANE_ALTAR_ENHANCEMENT_ID = "000009765002"
     ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID = "000009765003"
     ICONOCLAST_TYRANTS_BANNER_ENHANCEMENT_ID = "000009765004"
@@ -67,6 +75,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_HOUNDPACK_LANCE)
+
+    def is_helhunt_lance(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_HELHUNT_LANCE)
 
     def is_iconoclast_fiefdom(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -187,6 +200,19 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     def _unit_is_titanic(self, unit) -> bool:
         return self._unit_has_keyword(unit, "TITANIC")
 
+    def _unit_is_character(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "CHARACTER"):
+            return True
+        if bool(getattr(root, "is_character", False)):
+            return True
+        for model in list(getattr(root, "models", []) or []):
+            if bool(getattr(model, "is_character", False)):
+                return True
+        return False
+
     def _iconoclast_damned_points_cap(self) -> int:
         army = self.army
         if army is None:
@@ -287,6 +313,45 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             enhancement_name="Panoply of the Cursed Knight",
         )
 
+    def _helhunt_unit_has_active_enhancement(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        enhancement_id: str,
+        enhancement_name: str,
+    ) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            unit,
+            flag_key=flag_key,
+            enhancement_id=enhancement_id,
+            enhancement_name=enhancement_name,
+        )
+
+    def _helhunt_aspect_of_the_beast_active(self, source_unit) -> bool:
+        return self._helhunt_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_helhunt_aspect_of_the_beast",
+            enhancement_id=self.HELHUNT_ASPECT_OF_THE_BEAST_ENHANCEMENT_ID,
+            enhancement_name="Aspect of the Beast",
+        )
+
+    def _helhunt_octagram_of_conjuration_active(self, source_unit) -> bool:
+        return self._helhunt_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_helhunt_octagram_of_conjuration",
+            enhancement_id=self.HELHUNT_OCTAGRAM_OF_CONJURATION_ENHANCEMENT_ID,
+            enhancement_name="Octagram of Conjuration",
+        )
+
+    def _helhunt_throne_tyrannicus_active(self, source_unit) -> bool:
+        return self._helhunt_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_helhunt_throne_tyrannicus",
+            enhancement_id=self.HELHUNT_THRONE_TYRANNICUS_ENHANCEMENT_ID,
+            enhancement_name="Throne Tyrannicus",
+        )
+
     def _traitoris_unit_has_active_enhancement(
         self,
         unit,
@@ -361,6 +426,52 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return self._model_alive(model)
         return False
 
+    def _iter_helhunt_enhancement_sources(self, active_checker) -> list:
+        if not self.is_helhunt_lance():
+            return []
+        sources = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if not root_id or root_id in seen_ids:
+                continue
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_is_chaos_knights(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not active_checker(root):
+                continue
+            seen_ids.add(root_id)
+            sources.append(root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return sources
+
+    @staticmethod
+    def _iter_unit_abilities(unit) -> list:
+        root = ChaosKnightsDetachmentManager._unit_root(unit)
+        if root is None:
+            return []
+        abilities = list(getattr(root, "possible_abilities", []) or [])
+        enhancement = getattr(root, "enhancement", None)
+        if enhancement is not None:
+            abilities.append(enhancement)
+        active_checker = getattr(root, "_ability_is_active", None)
+        if not callable(active_checker):
+            return list(abilities)
+        filtered = []
+        for ability in abilities:
+            try:
+                if not active_checker(ability):
+                    continue
+            except Exception:
+                continue
+            filtered.append(ability)
+        return filtered
+
     def _iter_traitoris_enhancement_sources(self, active_checker) -> list:
         if not self.is_traitoris_lance():
             return []
@@ -416,6 +527,178 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             )
         )
 
+    def _helhunt_ability_affects_war_dogs(self, ability) -> bool:
+        if ability is None:
+            return False
+        name = self._norm(str(getattr(ability, "name", "") or ""))
+        desc = self._norm(str(getattr(ability, "description", "") or ""))
+        if "aura" not in name and "friendly war dog" not in desc:
+            return False
+        return "friendly war dog" in desc
+
+    def _helhunt_source_has_supported_war_dog_aura(self, source_unit) -> bool:
+        root = self._unit_root(source_unit)
+        if root is None:
+            return False
+        for ability in list(self._iter_unit_abilities(root) or []):
+            if self._helhunt_ability_affects_war_dogs(ability):
+                return True
+        return False
+
+    def _helhunt_octagram_sources(self) -> list:
+        sources = self._iter_helhunt_enhancement_sources(self._helhunt_octagram_of_conjuration_active)
+        return [source for source in sources if self._enhancement_bearer_alive(source)]
+
+    def _helhunt_count_war_dog_models_in_aura(self, source_unit, *, aura_range: float, ability=None) -> int:
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return 0
+        try:
+            range_value = float(aura_range)
+        except (TypeError, ValueError):
+            return 0
+        if range_value <= 0.0:
+            return 0
+        count = 0
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None or root is source_root:
+                continue
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not self._unit_has_war_dog_keyword(root):
+                continue
+            if not _unit_within_aura_range(source_root, root, range_value, ability=ability):
+                continue
+            for model in list(self._iter_alive_models(root) or []):
+                if not self._model_has_war_dog_keyword(model, unit=root):
+                    continue
+                count += 1
+                if count >= 2:
+                    return count
+        return count
+
+    def helhunt_masters_of_pack_applies(
+        self,
+        *,
+        target_unit=None,
+        source_unit=None,
+        aura_range: float = 0.0,
+        ability=None,
+    ) -> bool:
+        if not self.is_helhunt_lance():
+            return False
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if source_root is not target_root:
+            return False
+        if not self._unit_belongs_to_army(source_root):
+            return False
+        if not self._unit_on_battlefield(source_root):
+            return False
+        if not self._unit_is_chaos_knights(source_root):
+            return False
+        if not self._unit_is_titanic(source_root):
+            return False
+        if ability is not None and not self._helhunt_ability_affects_war_dogs(ability):
+            return False
+        return bool(
+            self._helhunt_count_war_dog_models_in_aura(
+                source_root,
+                aura_range=float(aura_range or 0.0),
+                ability=ability,
+            )
+            >= 2
+        )
+
+    def helhunt_throne_tyrannicus_applies(
+        self,
+        *,
+        target_unit=None,
+        source_unit=None,
+        ability=None,
+    ) -> bool:
+        if not self.is_helhunt_lance():
+            return False
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if source_root is target_root:
+            return False
+        if not self._unit_belongs_to_army(source_root) or not self._unit_belongs_to_army(target_root):
+            return False
+        if not self._unit_on_battlefield(source_root) or not self._unit_on_battlefield(target_root):
+            return False
+        if not self._helhunt_throne_tyrannicus_active(source_root):
+            return False
+        if not self._enhancement_bearer_alive(source_root):
+            return False
+        if not self._unit_is_character(target_root):
+            return False
+        if ability is not None and not self._helhunt_ability_affects_war_dogs(ability):
+            return False
+        sr = self._unit_sr(target_root)
+        if not bool(sr.get("helhunt_throne_tyrannicus_active")):
+            return False
+        source_id = self._unit_root_id(source_root)
+        return bool(source_id and str(sr.get("helhunt_throne_tyrannicus_source_unit_id", "") or "") == source_id)
+
+    def helhunt_war_dog_aura_recipient_applies(
+        self,
+        *,
+        target_unit=None,
+        source_unit=None,
+        aura_range: float = 0.0,
+        ability=None,
+    ) -> bool:
+        return bool(
+            self.helhunt_masters_of_pack_applies(
+                target_unit=target_unit,
+                source_unit=source_unit,
+                aura_range=aura_range,
+                ability=ability,
+            )
+            or self.helhunt_throne_tyrannicus_applies(
+                target_unit=target_unit,
+                source_unit=source_unit,
+                ability=ability,
+            )
+        )
+
+    def helhunt_octagram_sources_for_unit(self, target_unit) -> list:
+        if not self.is_helhunt_lance():
+            return []
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return []
+        if not self._unit_belongs_to_army(target_root):
+            return []
+        if not self._unit_on_battlefield(target_root):
+            return []
+        sources = []
+        seen_ids: set[str] = set()
+        for source_root in list(self._helhunt_octagram_sources() or []):
+            source_id = self._unit_root_id(source_root)
+            if not source_id or source_id in seen_ids:
+                continue
+            if not self._unit_has_war_dog_keyword(target_root):
+                if not self.helhunt_war_dog_aura_recipient_applies(
+                    target_unit=target_root,
+                    source_unit=source_root,
+                    aura_range=9.0,
+                ):
+                    continue
+            if not _unit_within_aura_range(source_root, target_root, 9.0, ability=None):
+                continue
+            seen_ids.add(source_id)
+            sources.append(source_root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return sources
+
     def houndpack_panoply_ap_worsen(self, attacker_model, target_unit, *, weapon_profile=None, game=None) -> tuple[int, str]:
         del weapon_profile
         del game
@@ -437,6 +720,383 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if attacker_root is not None and self._unit_belongs_to_army(attacker_root):
             return 0, ""
         return 1, "Panoply of the Cursed Knight"
+
+    def _helhunt_aspect_sources(self) -> list:
+        sources = self._iter_helhunt_enhancement_sources(self._helhunt_aspect_of_the_beast_active)
+        return [source for source in sources if self._enhancement_bearer_alive(source)]
+
+    def clear_helhunt_aspect_of_the_beast(self) -> None:
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            sr = self._unit_sr(root)
+            for key in (
+                "helhunt_aspect_of_the_beast_active",
+                "helhunt_aspect_of_the_beast_selected_dread_key",
+                "helhunt_aspect_of_the_beast_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def helhunt_extra_dread_keys_for_unit(self, unit) -> set[str]:
+        if not self.is_helhunt_lance():
+            return set()
+        root = self._unit_root(unit)
+        if root is None:
+            return set()
+        if not self._helhunt_aspect_of_the_beast_active(root):
+            return set()
+        if not self._unit_on_battlefield(root):
+            return set()
+        if not self._enhancement_bearer_alive(root):
+            return set()
+        sr = self._unit_sr(root)
+        key = str(sr.get("helhunt_aspect_of_the_beast_selected_dread_key", "") or "").strip().upper()
+        if not key:
+            return set()
+        try:
+            from .harbingers_of_dread import DREAD_DEFINITIONS
+        except Exception:
+            return set()
+        if key not in DREAD_DEFINITIONS:
+            return set()
+        return {key}
+
+    def _pending_helhunt_aspect_request(self, game, *, army_id: str, source_unit_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_HARBINGER:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.HELHUNT_ASPECT_OF_THE_BEAST_ABILITY:
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != army_id:
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                continue
+            return True
+        return False
+
+    def queue_helhunt_aspect_of_the_beast_choice(self, *, game=None, player=None) -> list:
+        if not self.is_helhunt_lance():
+            return []
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        try:
+            from .harbingers_of_dread import ROLLABLE_DREADS
+        except Exception:
+            return []
+        from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        queued: list = []
+        for source_unit in list(self._helhunt_aspect_sources() or []):
+            source_unit_id = self._unit_root_id(source_unit)
+            if not source_unit_id:
+                continue
+            if self._pending_helhunt_aspect_request(game, army_id=army_id, source_unit_id=source_unit_id):
+                continue
+            options = []
+            allowed_choice_keys: list[str] = []
+            for dread in list(ROLLABLE_DREADS or ()):
+                dread_key = str(getattr(dread, "key", "") or "").strip().upper()
+                if not dread_key:
+                    continue
+                allowed_choice_keys.append(dread_key)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(dread, "name", dread_key) or dread_key),
+                        payload={
+                            "choice_key": dread_key,
+                            "source_unit_id": source_unit_id,
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_HARBINGER,
+                "Aspect of the Beast: select one Dread ability to be active for the bearer until your next Command phase.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self.HELHUNT_ASPECT_OF_THE_BEAST_ABILITY,
+                    "ability_name": "Aspect of the Beast",
+                    "army_id": army_id,
+                    "source_unit_id": source_unit_id,
+                    "allowed_choice_keys": list(allowed_choice_keys),
+                    "optional": False,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request)
+            queued.append(request)
+        return queued
+
+    def helhunt_aspect_choice_is_valid(self, source_unit, choice_key: str, *, game=None, player=None) -> tuple[bool, str]:
+        del game
+        if not self.is_helhunt_lance():
+            return False, "Aspect of the Beast requires Helhunt Lance."
+        root = self._unit_root(source_unit)
+        if root is None:
+            return False, "Aspect of the Beast source unit was not found."
+        if not self._unit_belongs_to_army(root):
+            return False, "Aspect of the Beast source unit must belong to your army."
+        if not self._helhunt_aspect_of_the_beast_active(root):
+            return False, "Aspect of the Beast is not active for the selected source."
+        if not self._unit_on_battlefield(root):
+            return False, "Aspect of the Beast source unit must be on the battlefield."
+        if not self._enhancement_bearer_alive(root):
+            return False, "Aspect of the Beast bearer must be alive."
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False, "Aspect of the Beast can only be selected by the controlling player."
+        resolved_key = str(choice_key or "").strip().upper()
+        try:
+            from .harbingers_of_dread import ROLLABLE_DREADS
+        except Exception:
+            return False, "Harbingers of Dread definitions are unavailable."
+        allowed = {
+            str(getattr(dread, "key", "") or "").strip().upper()
+            for dread in list(ROLLABLE_DREADS or ())
+            if str(getattr(dread, "key", "") or "").strip()
+        }
+        if resolved_key not in allowed:
+            return False, "Aspect of the Beast choice must be a valid Dread ability."
+        return True, ""
+
+    def apply_helhunt_aspect_choice(self, source_unit, choice_key: str, *, game=None, player=None) -> dict:
+        del game
+        root = self._unit_root(source_unit)
+        valid, reason = self.helhunt_aspect_choice_is_valid(root, choice_key, player=player)
+        if not valid:
+            return {"ok": False, "reason": reason}
+        try:
+            from .harbingers_of_dread import DREAD_DEFINITIONS
+        except Exception:
+            return {"ok": False, "reason": "Harbingers of Dread definitions are unavailable."}
+        resolved_key = str(choice_key or "").strip().upper()
+        dread = DREAD_DEFINITIONS.get(resolved_key)
+        if dread is None:
+            return {"ok": False, "reason": "Aspect of the Beast choice is invalid."}
+        sr = self._unit_sr(root)
+        sr["helhunt_aspect_of_the_beast_active"] = True
+        sr["helhunt_aspect_of_the_beast_selected_dread_key"] = resolved_key
+        sr["helhunt_aspect_of_the_beast_source"] = "Aspect of the Beast"
+        root.special_rules = sr
+        return {
+            "ok": True,
+            "source_unit_id": self._unit_root_id(root),
+            "choice_key": resolved_key,
+            "choice_name": str(getattr(dread, "name", resolved_key) or resolved_key),
+        }
+
+    def _helhunt_throne_sources(self) -> list:
+        sources = self._iter_helhunt_enhancement_sources(self._helhunt_throne_tyrannicus_active)
+        return [
+            source
+            for source in sources
+            if self._enhancement_bearer_alive(source) and self._helhunt_source_has_supported_war_dog_aura(source)
+        ]
+
+    def _clear_helhunt_throne_source_effect(self, source_unit) -> None:
+        source_id = self._unit_root_id(source_unit)
+        if not source_id:
+            return
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            sr = self._unit_sr(root)
+            if str(sr.get("helhunt_throne_tyrannicus_source_unit_id", "") or "") != source_id:
+                continue
+            for key in (
+                "helhunt_throne_tyrannicus_active",
+                "helhunt_throne_tyrannicus_source_unit_id",
+                "helhunt_throne_tyrannicus_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def clear_helhunt_throne_tyrannicus_effects(self) -> None:
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            sr = self._unit_sr(root)
+            for key in (
+                "helhunt_throne_tyrannicus_active",
+                "helhunt_throne_tyrannicus_source_unit_id",
+                "helhunt_throne_tyrannicus_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _helhunt_throne_candidates(self, source_unit) -> list:
+        root = self._unit_root(source_unit)
+        if root is None:
+            return []
+        candidates = []
+        seen_ids: set[str] = set()
+        for other_root in list(self._iter_unique_army_roots() or []):
+            if other_root is None or other_root is root:
+                continue
+            other_id = self._unit_root_id(other_root)
+            if not other_id or other_id in seen_ids:
+                continue
+            if not self._unit_belongs_to_army(other_root):
+                continue
+            if not self._unit_on_battlefield(other_root):
+                continue
+            if not self._unit_is_chaos_knights(other_root):
+                continue
+            if not self._unit_is_character(other_root):
+                continue
+            if not bool(unit_within_range_of_unit(root, other_root, 9.0, use_attached_aggregate=True)):
+                continue
+            seen_ids.add(other_id)
+            candidates.append(other_root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_helhunt_throne_request(self, game, *, army_id: str, source_unit_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.HELHUNT_THRONE_TYRANNICUS_ABILITY:
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != army_id:
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                continue
+            return True
+        return False
+
+    def queue_helhunt_throne_tyrannicus_choice(self, *, game=None, player=None) -> list:
+        if not self.is_helhunt_lance():
+            return []
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        queued: list = []
+        for source_unit in list(self._helhunt_throne_sources() or []):
+            source_unit_id = self._unit_root_id(source_unit)
+            if not source_unit_id:
+                continue
+            if self._pending_helhunt_throne_request(game, army_id=army_id, source_unit_id=source_unit_id):
+                continue
+            candidates = list(self._helhunt_throne_candidates(source_unit) or [])
+            if not candidates:
+                continue
+            options = []
+            candidate_unit_ids: list[str] = []
+            for candidate in candidates:
+                candidate_id = self._unit_root_id(candidate)
+                if not candidate_id:
+                    continue
+                candidate_unit_ids.append(candidate_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(candidate, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": candidate_id,
+                            "source_unit_id": source_unit_id,
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Throne Tyrannicus: select one other friendly CHAOS KNIGHTS CHARACTER model within 9\".",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self.HELHUNT_THRONE_TYRANNICUS_ABILITY,
+                    "ability_name": "Throne Tyrannicus",
+                    "army_id": army_id,
+                    "source_unit_id": source_unit_id,
+                    "candidate_unit_ids": list(candidate_unit_ids),
+                    "optional": False,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request)
+            queued.append(request)
+        return queued
+
+    def helhunt_throne_choice_is_valid(self, source_unit, target_unit, *, game=None, player=None) -> tuple[bool, str]:
+        del game
+        if not self.is_helhunt_lance():
+            return False, "Throne Tyrannicus requires Helhunt Lance."
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None:
+            return False, "Throne Tyrannicus source unit was not found."
+        if target_root is None:
+            return False, "Throne Tyrannicus target unit was not found."
+        if source_root is target_root:
+            return False, "Throne Tyrannicus must target another unit."
+        if not self._unit_belongs_to_army(source_root) or not self._unit_belongs_to_army(target_root):
+            return False, "Throne Tyrannicus target must be a friendly unit."
+        if not self._helhunt_throne_tyrannicus_active(source_root):
+            return False, "Throne Tyrannicus is not active for the selected source."
+        if not self._enhancement_bearer_alive(source_root):
+            return False, "Throne Tyrannicus bearer must be alive."
+        if not self._unit_on_battlefield(source_root) or not self._unit_on_battlefield(target_root):
+            return False, "Throne Tyrannicus source and target must be on the battlefield."
+        if not self._unit_is_chaos_knights(target_root) or not self._unit_is_character(target_root):
+            return False, "Throne Tyrannicus target must be a friendly CHAOS KNIGHTS CHARACTER."
+        if not self._helhunt_source_has_supported_war_dog_aura(source_root):
+            return False, "Throne Tyrannicus bearer has no supported War Dog aura abilities."
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False, "Throne Tyrannicus can only be selected by the controlling player."
+        if not bool(unit_within_range_of_unit(source_root, target_root, 9.0, use_attached_aggregate=True)):
+            return False, "Throne Tyrannicus target must be within 9\"."
+        return True, ""
+
+    def apply_helhunt_throne_choice(self, source_unit, target_unit, *, game=None, player=None) -> dict:
+        del game
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        valid, reason = self.helhunt_throne_choice_is_valid(source_root, target_root, player=player)
+        if not valid:
+            return {"ok": False, "reason": reason}
+        self._clear_helhunt_throne_source_effect(source_root)
+        sr = self._unit_sr(target_root)
+        sr["helhunt_throne_tyrannicus_active"] = True
+        sr["helhunt_throne_tyrannicus_source_unit_id"] = self._unit_root_id(source_root)
+        sr["helhunt_throne_tyrannicus_source"] = "Throne Tyrannicus"
+        target_root.special_rules = sr
+        return {
+            "ok": True,
+            "source_unit_id": self._unit_root_id(source_root),
+            "target_unit_id": self._unit_root_id(target_root),
+            "target_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+        }
 
     @staticmethod
     def _iter_alive_models(unit) -> list:
@@ -2217,6 +2877,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return
         if getattr(self.army, "player", None) is not player:
             return
+        if self.is_helhunt_lance():
+            self.clear_helhunt_aspect_of_the_beast()
+            self.clear_helhunt_throne_tyrannicus_effects()
+            self.queue_helhunt_aspect_of_the_beast_choice(game=game, player=player)
+            self.queue_helhunt_throne_tyrannicus_choice(game=game, player=player)
         if self.is_houndpack_lance():
             self.clear_marked_prey()
             request = self.build_marked_prey_request(game=game, player=player)
