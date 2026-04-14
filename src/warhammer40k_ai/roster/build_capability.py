@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from pathlib import Path
 import re
 from typing import Any, Mapping
 
@@ -22,6 +23,11 @@ _DICE_PATTERN = re.compile(
     r"^\s*(?:(?P<count>\d+)\s*)?[dD](?P<sides>\d+)\s*(?P<offset>[+-]\s*\d+)?\s*$"
 )
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
+_RULES_BUNDLE_DATA_DIR_FIELDS = (
+    "wahapedia_data_dir",
+    "waha_data_dir",
+    "rules_data_dir",
+)
 
 
 def _round_metric(value: float, *, digits: int = 4) -> float:
@@ -200,15 +206,80 @@ def _points_floor_for_entry(datasheet: object, *, model_count: int) -> int:
     return 0
 
 
-def _normalize_rules_bundle_id(value: object) -> str:
+def _normalize_rules_bundle_scope(value: object) -> tuple[str, str | None]:
+    bundle_id = ""
+    bundle_data_dir: str | None = None
     if isinstance(value, str):
-        text = _normalized_text(value)
-        if text:
-            return text
-    bundle_id = _normalized_text(getattr(value, "rules_bundle_id", None))
-    if bundle_id:
-        return bundle_id
-    raise ValueError("rules_bundle_id is required for capability compilation.")
+        bundle_id = _normalized_text(value)
+    elif isinstance(value, Mapping):
+        bundle_id = _normalized_text(value.get("rules_bundle_id"))
+        for field_name in _RULES_BUNDLE_DATA_DIR_FIELDS:
+            candidate = _normalized_text(value.get(field_name))
+            if not candidate:
+                continue
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = Path.cwd() / path
+            resolved = path.resolve()
+            if not resolved.is_dir():
+                raise ValueError(
+                    f"rules bundle field '{field_name}' does not reference an existing directory: "
+                    f"{resolved}"
+                )
+            bundle_data_dir = str(resolved)
+            break
+    else:
+        bundle_id = _normalized_text(getattr(value, "rules_bundle_id", None))
+        for field_name in _RULES_BUNDLE_DATA_DIR_FIELDS:
+            candidate = _normalized_text(getattr(value, field_name, None))
+            if not candidate:
+                continue
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = Path.cwd() / path
+            resolved = path.resolve()
+            if not resolved.is_dir():
+                raise ValueError(
+                    f"rules bundle field '{field_name}' does not reference an existing directory: "
+                    f"{resolved}"
+                )
+            bundle_data_dir = str(resolved)
+            break
+    if not bundle_id:
+        raise ValueError("rules_bundle_id is required for capability compilation.")
+    return bundle_id, bundle_data_dir
+
+
+def _helper_data_dir(helper: WahaHelper) -> str:
+    helper_dir = Path(str(getattr(helper, "data_dir", "") or "wahapedia_data")).expanduser()
+    if not helper_dir.is_absolute():
+        helper_dir = Path.cwd() / helper_dir
+    return str(helper_dir.resolve())
+
+
+def _resolve_capability_waha_helper(
+    *,
+    rules_bundle_id: str,
+    rules_bundle_data_dir: str | None,
+    waha_helper: WahaHelper | None,
+) -> WahaHelper:
+    if waha_helper is not None:
+        if rules_bundle_data_dir is not None:
+            helper_dir = _helper_data_dir(waha_helper)
+            if helper_dir != rules_bundle_data_dir:
+                raise ValueError(
+                    "Supplied waha_helper data_dir does not match the rules bundle snapshot path "
+                    f"for {rules_bundle_id!r}: {helper_dir} != {rules_bundle_data_dir}"
+                )
+        return waha_helper
+    if rules_bundle_data_dir is not None:
+        return WahaHelper(data_dir=rules_bundle_data_dir)
+    raise ValueError(
+        "Build capability compilation requires either a snapshot-scoped waha_helper or a "
+        "rules bundle carrying wahapedia_data_dir, waha_data_dir, or rules_data_dir. "
+        "Passing only rules_bundle_id would resolve datasheets from ambient live data and "
+        "is not replay-safe."
+    )
 
 
 def _deployment_tags(datasheet: object) -> tuple[str, ...]:
@@ -389,10 +460,14 @@ def compile_build_capability_profile(
     waha_helper: WahaHelper | None = None,
 ) -> BuildCapabilityProfile:
     blueprint = ArmyBlueprint.from_dict(blueprint)
-    rules_bundle_text = _normalize_rules_bundle_id(rules_bundle_id)
+    rules_bundle_text, rules_bundle_data_dir = _normalize_rules_bundle_scope(rules_bundle_id)
     faction_id = get_faction_id_from_name(blueprint.faction)
     _assert_supported_faction(blueprint.faction, faction_id)
-    helper = waha_helper or WahaHelper()
+    helper = _resolve_capability_waha_helper(
+        rules_bundle_id=rules_bundle_text,
+        rules_bundle_data_dir=rules_bundle_data_dir,
+        waha_helper=waha_helper,
+    )
 
     entries = sorted(
         [RosterEntry.from_dict(entry) for entry in list(blueprint.unit_entries or [])],

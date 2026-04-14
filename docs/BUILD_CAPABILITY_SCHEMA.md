@@ -19,10 +19,20 @@ Compilation inputs:
 - `ArmyBlueprint`
 - `rules_bundle_id`
 - optional explicit `BuildCapabilitySchema`
+- either a snapshot-scoped `WahaHelper` or a rules-bundle payload carrying one of:
+  `wahapedia_data_dir`, `waha_data_dir`, or `rules_data_dir`
 
 The profile payload is intended to remain portable across heuristic and learned
 evaluators. Feature names therefore stay generic instead of embedding edition-
 preview wording or faction-specific assumptions.
+
+Rules-snapshot selection notes:
+- `rules_bundle_id` is provenance and deterministic identity, but replay-safe
+  compilation also needs a concrete rules snapshot for datasheet resolution.
+- The compiler therefore rejects ambient default-data resolution when no
+  snapshot-scoped helper or bundle-scoped data directory is provided.
+- Supported bundle-side selectors are `wahapedia_data_dir`, `waha_data_dir`, and
+  `rules_data_dir`.
 
 ## Example Build Capability Schema
 

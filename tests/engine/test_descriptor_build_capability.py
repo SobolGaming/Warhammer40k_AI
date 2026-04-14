@@ -68,6 +68,22 @@ def test_build_capability_descriptor_wrapper_is_deterministic(
     assert first.payload["capability_schema_id"] == "capability_schema:build_capability_v1"
 
 
+def test_build_capability_descriptor_wrapper_accepts_rules_bundle_snapshot_scope_without_helper() -> None:
+    army = SimpleNamespace(army_blueprint=_descriptor_blueprint())
+
+    descriptor = compile_build_capability_descriptor_for_army(
+        army,
+        rules_bundle_id={
+            "rules_bundle_id": "rules_bundle:live_snapshot",
+            "wahapedia_data_dir": "wahapedia_data",
+        },
+    )
+
+    assert descriptor is not None
+    assert descriptor.payload["build_capability_profile_id"].startswith("build_capability_profile:")
+    assert descriptor.payload["rules_bundle_id"] == "rules_bundle:live_snapshot"
+
+
 def test_build_capability_descriptor_wrapper_returns_none_without_roster_context() -> None:
     assert (
         compile_build_capability_descriptor_for_army(

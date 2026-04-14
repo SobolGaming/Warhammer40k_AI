@@ -35,8 +35,9 @@ def test_pr_muster_001_docs_exist() -> None:
 
 def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     assert BUILD_CAPABILITY_DOC.is_file()
+    text = _read(BUILD_CAPABILITY_DOC)
 
-    schema = _extract_json_block(_read(BUILD_CAPABILITY_DOC), "Example Build Capability Schema")
+    schema = _extract_json_block(text, "Example Build Capability Schema")
 
     assert schema["capability_schema_id"] == "capability_schema:build_capability_v1"
     assert schema["aggregate_count_names"] == [
@@ -67,7 +68,9 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     assert "mission_action_flex_capacity" in feature_names
     assert "detachment_diversity_index" in feature_names
     assert "towering_exposure_index" in feature_names
-    assert "11e" not in _read(BUILD_CAPABILITY_DOC)
+    assert "wahapedia_data_dir" in text
+    assert "ambient default-data resolution" in text
+    assert "11e" not in text
 
 
 def test_ml_artifact_registry_examples_are_valid_and_complete() -> None:

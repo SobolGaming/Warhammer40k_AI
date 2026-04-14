@@ -161,6 +161,25 @@ def _action_heavy_blueprint() -> ArmyBlueprint:
     )
 
 
+def _archive_sensitive_blueprint() -> ArmyBlueprint:
+    return ArmyBlueprint(
+        faction="Chaos Space Marines",
+        detachments=[
+            DetachmentSelection(
+                selection_id="det_veterans",
+                detachment_type="Veterans of the Long War",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_defiler",
+                name="Defiler",
+                detachment_selection_id="det_veterans",
+            )
+        ],
+    )
+
+
 def _bumped_schema() -> BuildCapabilitySchema:
     return BuildCapabilitySchema(
         capability_schema_id="capability_schema:build_capability_v2",
@@ -231,6 +250,57 @@ def test_build_capability_profile_changes_deterministically_for_rules_bundle_and
     assert bumped_once.build_capability_profile_id != baseline.build_capability_profile_id
     assert bumped_once.build_capability_profile_id == bumped_twice.build_capability_profile_id
     assert bumped_once.army_blueprint_hash == baseline.army_blueprint_hash
+
+
+def test_build_capability_profile_requires_explicit_snapshot_scope_without_helper() -> None:
+    with pytest.raises(ValueError, match="snapshot-scoped waha_helper"):
+        compile_build_capability_profile(
+            _mixed_detachment_blueprint(),
+            rules_bundle_id="rules_bundle:2026-04-14",
+        )
+
+
+def test_build_capability_profile_uses_rules_bundle_snapshot_path_when_provided() -> None:
+    blueprint = _archive_sensitive_blueprint()
+
+    live = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id={
+            "rules_bundle_id": "rules_bundle:live_snapshot",
+            "wahapedia_data_dir": "wahapedia_data",
+        },
+    )
+    archive = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id={
+            "rules_bundle_id": "rules_bundle:archive_snapshot",
+            "wahapedia_data_dir": "wahapedia_data/Archive",
+        },
+    )
+
+    assert live.aggregate_counts == archive.aggregate_counts
+    assert live.build_capability_profile_id != archive.build_capability_profile_id
+    assert live.pressure_profile["ranged_pressure"] > archive.pressure_profile["ranged_pressure"]
+    assert live.pressure_profile["anti_tank_pressure"] > archive.pressure_profile[
+        "anti_tank_pressure"
+    ]
+    assert live.capability_scores["charge_delivery_reliance"] < archive.capability_scores[
+        "charge_delivery_reliance"
+    ]
+
+
+def test_build_capability_profile_rejects_conflicting_helper_and_snapshot_scope(
+    waha_helper: WahaHelper,
+) -> None:
+    with pytest.raises(ValueError, match="does not match the rules bundle snapshot path"):
+        compile_build_capability_profile(
+            _archive_sensitive_blueprint(),
+            rules_bundle_id={
+                "rules_bundle_id": "rules_bundle:archive_snapshot",
+                "wahapedia_data_dir": "wahapedia_data/Archive",
+            },
+            waha_helper=waha_helper,
+        )
 
 
 def test_build_capability_regression_fixtures_capture_expected_roster_semantics(
