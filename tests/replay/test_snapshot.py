@@ -639,6 +639,77 @@ def test_snapshot_roundtrip_preserves_authored_leader_attachment_runtime_state(w
     assert loaded_army.attachment_bindings[0].leader_entry_id == "unit_captain"
 
 
+def test_snapshot_roundtrip_preserves_authored_support_attachment_runtime_state(
+    waha_helper,
+) -> None:
+    support_datasheet = waha_helper.get_full_datasheet_info_by_name(
+        "D-cannon Platform",
+        faction_id="AE",
+    )
+    bodyguard_datasheet = waha_helper.get_full_datasheet_info_by_name(
+        "Guardian Defenders",
+        faction_id="AE",
+    )
+    assert support_datasheet is not None
+    assert bodyguard_datasheet is not None
+
+    support = Unit(support_datasheet)
+    bodyguard = Unit(bodyguard_datasheet)
+
+    army = Army.with_detachment("Aeldari", "Warhost", points_limit=2000)
+    army.faction_id = "AE"
+    army.add_unit(support)
+    army.add_unit(bodyguard)
+    support.set_build_entry_id("unit_support")
+    bodyguard.set_build_entry_id("unit_guardians")
+    apply_validated_muster_to_army(
+        army,
+        ValidatedMuster(
+            blueprint=ArmyBlueprint(
+                faction="Aeldari",
+                points_limit=2000,
+                detachments=[
+                    DetachmentSelection(
+                        selection_id="detachment_alpha",
+                        detachment_type="Warhost",
+                    )
+                ],
+                unit_entries=[
+                    RosterEntry(entry_id="unit_support", name="D-cannon Platform"),
+                    RosterEntry(entry_id="unit_guardians", name="Guardian Defenders"),
+                ],
+                attachment_bindings=[
+                    AttachmentBinding(
+                        binding_id="binding_1",
+                        bodyguard_entry_id="unit_guardians",
+                        support_entry_id="unit_support",
+                    )
+                ],
+            ),
+            faction_id="AE",
+        ),
+    )
+    army.apply_authored_attachment_bindings()
+
+    player = Player("Player One", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.map.units = [bodyguard]
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_army = loaded.players[0].army
+    loaded_units = {
+        str(getattr(unit, "build_entry_id", "") or ""): unit
+        for unit in list(loaded_army.units or [])
+    }
+    loaded_support = loaded_units["unit_support"]
+    loaded_bodyguard = loaded_units["unit_guardians"]
+
+    assert loaded_support.support_joined_to is loaded_bodyguard
+    assert loaded_bodyguard.attached_support_units == [loaded_support]
+    assert loaded_support.has_build_authored_support_attachment() is True
+    assert loaded_army.attachment_bindings[0].support_entry_id == "unit_support"
+
+
 def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_helper):
     game, unit_one, _, player_one, _ = _build_game(waha_helper)
 
