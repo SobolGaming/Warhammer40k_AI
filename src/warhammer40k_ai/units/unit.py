@@ -2229,6 +2229,17 @@ class Unit(
                 if int(bonus or 0):
                     source_name = str(source or "Supracutaneous Chitination").strip() or "Supracutaneous Chitination"
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            arkifane_bonus_fn = (
+                getattr(csm_mgr, "cult_of_the_arkifane_unholy_fortitude_toughness_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(arkifane_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = arkifane_bonus_fn(model=model, unit=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Unholy Fortitude").strip() or "Unholy Fortitude"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
 
         if ckey == "movement":
             if game_map is None:

@@ -15673,7 +15673,24 @@ class ActionsMovementMixin:
         if not self.can_use_dark_pacts():
             return False
         choice_norm = str(choice or "").strip().upper()
-        options = ("LETHAL HITS", "SUSTAINED HITS 1")
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        touch_of_the_arkifane_active = False
+        touch_of_the_arkifane_fn = (
+            getattr(csm_mgr, "cult_of_the_arkifane_touch_of_the_arkifane_allows_both_dark_pact_bonuses", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(touch_of_the_arkifane_fn):
+            touch_of_the_arkifane_active, _touch_source = touch_of_the_arkifane_fn(root, game=game)
+        dark_ascension_active = self._dark_ascension_aura_applies(game_map=getattr(game, "map", None))
+        options = {"LETHAL HITS", "SUSTAINED HITS 1"}
+        if bool(touch_of_the_arkifane_active) or bool(dark_ascension_active):
+            options.add("BOTH")
         if choice_norm not in options:
             return False
         empyric_required = self.dark_pacts_requires_empyric_wellspring_choice()
@@ -15682,10 +15699,6 @@ class ActionsMovementMixin:
             return False
         if not empyric_required:
             empyric_choice_norm = ""
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
         daemonforge_rule = root._daemonforge_dark_pacts_rule()
         daemonforge_source = str(
             (daemonforge_rule or {}).get("source", "") or "Daemonforge"
@@ -15697,8 +15710,6 @@ class ActionsMovementMixin:
             if not root.daemonforge_overcharge_available():
                 return False
             daemonforge_overcharge_active = True
-        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
-        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         can_invoke_contract_fn = (
             getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
         )
@@ -15788,7 +15799,6 @@ class ActionsMovementMixin:
         if not isinstance(sr, dict):
             sr = {}
         phase_key = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
-        dark_ascension_active = self._dark_ascension_aura_applies(game_map=getattr(game, "map", None))
         sr["dark_pacts_active"] = True
         sr["dark_pacts_choice"] = "BOTH" if dark_ascension_active else choice_norm
         sr["dark_pacts_test_passed"] = bool(passed)
@@ -15904,6 +15914,16 @@ class ActionsMovementMixin:
             root = self
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        both_choice_available = False
+        touch_of_the_arkifane_fn = (
+            getattr(csm_mgr, "cult_of_the_arkifane_touch_of_the_arkifane_allows_both_dark_pact_bonuses", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(touch_of_the_arkifane_fn):
+            both_choice_available, _touch_source = touch_of_the_arkifane_fn(root, game=game)
+        if not both_choice_available:
+            both_choice_available = bool(self._dark_ascension_aura_applies(game_map=getattr(game, "map", None)))
         can_invoke_contract_fn = (
             getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
         )
@@ -15963,6 +15983,8 @@ class ActionsMovementMixin:
             ("LETHAL HITS", "Lethal Hits"),
             ("SUSTAINED HITS 1", "Sustained Hits 1"),
         )
+        if both_choice_available:
+            base_choices = base_choices + (("BOTH", "Lethal Hits + Sustained Hits 1"),)
         empyric_required = bool(self.dark_pacts_requires_empyric_wellspring_choice())
         if empyric_required:
             empyric_choices = (
@@ -16036,6 +16058,7 @@ class ActionsMovementMixin:
                 "phase_name": phase_name or "",
                 "trigger": trigger or "",
                 "empyric_wellspring_required": empyric_required,
+                "allow_both_choice": bool(both_choice_available),
             },
         )
         if hasattr(game, "request_decision"):
@@ -20031,6 +20054,16 @@ class ActionsMovementMixin:
                 if bool(warpstrike_apply_fn(self, profile=profile, game=game)):
                     if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                         return True
+            arkifane_apply_fn = (
+                getattr(mgr, "cult_of_the_arkifane_forge_fire_surge_can_shoot_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(arkifane_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(arkifane_apply_fn(self, profile=profile, game=game)):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
             veterans_apply_fn = getattr(mgr, "veterans_black_crusade_can_shoot_after_advance", None) if mgr is not None else None
             if callable(veterans_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -21158,6 +21191,15 @@ class ActionsMovementMixin:
             if callable(warpstrike_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(warpstrike_apply_fn(self, game=game)):
+                    return True
+            arkifane_apply_fn = (
+                getattr(mgr, "cult_of_the_arkifane_forge_fire_surge_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(arkifane_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(arkifane_apply_fn(self, game=game)):
                     return True
             nightmare_apply_fn = (
                 getattr(mgr, "nightmare_hunt_malicious_surge_can_charge_after_advance", None)

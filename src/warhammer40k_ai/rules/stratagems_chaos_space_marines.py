@@ -100,6 +100,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_creations_of_bile", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_cult_of_the_arkifane_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_cult_of_the_arkifane", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_deceptors_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_deceptors", None) if mgr is not None else None
@@ -190,6 +195,10 @@ class ChaosSpaceMarinesStratagemMixin:
         if callable(checker):
             return bool(checker(root))
         return self._csm_has_keyword(root, "DAMNED")
+
+    def _is_soul_forge_unit(self, unit: Any) -> bool:
+        root = self._csm_root(unit)
+        return bool(root is not None and self._csm_has_keyword(root, "SOUL FORGE"))
 
     def _is_creations_eligible_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
@@ -915,6 +924,31 @@ class ChaosSpaceMarinesStratagemMixin:
         out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
         return out
 
+    def _csm_attached_models(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        return list(models or [])
+
+    def _csm_wounded_models(self, unit: Any) -> list[Any]:
+        wounded: list[Any] = []
+        for model in self._csm_attached_models(unit):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            try:
+                base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                current_wounds = int(getattr(model, "wounds", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if base_wounds > current_wounds:
+                wounded.append(model)
+        return sorted(wounded, key=lambda model: str(get_entity_id(model) or ""))
+
     @staticmethod
     def _csm_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
         if root is None:
@@ -930,6 +964,88 @@ class ChaosSpaceMarinesStratagemMixin:
             if candidate_root is root:
                 return True
         return False
+
+    def _arkifane_targetable_units(
+        self,
+        *,
+        exclude_damned: bool = False,
+        require_soul_forge: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_wounded_model: bool = False,
+    ) -> list[Any]:
+        if not self._is_cult_of_the_arkifane_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if require_soul_forge and not self._is_soul_forge_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_wounded_model and not self._csm_wounded_models(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _arkifane_targeted_units(
+        self,
+        *,
+        target_units: list[Any],
+        require_soul_forge: bool = False,
+        exclude_damned: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if require_soul_forge and not self._is_soul_forge_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
 
     def _warpstrike_targetable_units(
         self,
@@ -1956,6 +2072,9 @@ class ChaosSpaceMarinesStratagemMixin:
                 return reaction
             reaction_root = self._csm_root(reaction.get("unit") or reaction.get("target_unit"))
             if reaction_root is expected_root:
+                return reaction
+            reaction_candidates = list(reaction.get("candidates") or reaction.get("target_units") or [])
+            if self._csm_unit_in_candidates(expected_root, reaction_candidates):
                 return reaction
         return None
 
@@ -3293,6 +3412,226 @@ class ChaosSpaceMarinesStratagemMixin:
             },
             use_timer=False,
         )
+
+    def _queue_arkifane_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_cult_of_the_arkifane_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def queue_phase_start_stratagem(
+            stratagem_name: str,
+            *,
+            phase_name: str,
+            candidates: list[Any],
+            extra_payload: Optional[dict[str, Any]] = None,
+        ) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            for key, value in dict(extra_payload or {}).items():
+                payload[str(key)] = value
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+                unit_key = self._csm_sort_key(candidates[0])
+                wounded_by_unit = dict(payload.get("wounded_models_by_unit") or {})
+                wounded_models = list(wounded_by_unit.get(unit_key) or [])
+                if wounded_models:
+                    payload["wounded_models"] = wounded_models
+                    if len(wounded_models) == 1:
+                        payload["model"] = wounded_models[0]
+                        payload["target_model"] = wounded_models[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "COMMAND_PHASE":
+            if player is not self.player:
+                return
+            candidates: list[Any] = []
+            wounded_by_unit: dict[str, list[Any]] = {}
+            for root in list(
+                self._arkifane_targetable_units(
+                    exclude_damned=True,
+                    require_wounded_model=True,
+                )
+                or []
+            ):
+                wounded_models = self._csm_wounded_models(root)
+                if not wounded_models:
+                    continue
+                candidates.append(root)
+                wounded_by_unit[self._csm_sort_key(root)] = list(wounded_models)
+            queue_phase_start_stratagem(
+                "BIOMECHANOID REGENERATION",
+                phase_name="Command phase",
+                candidates=candidates,
+                extra_payload={"wounded_models_by_unit": wounded_by_unit},
+            )
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "TOUCH OF THE ARKIFANE",
+                phase_name="Shooting phase",
+                candidates=self._arkifane_targetable_units(
+                    exclude_damned=True,
+                    require_not_shot=True,
+                ),
+            )
+            queue_phase_start_stratagem(
+                "BALEFIRE BOON",
+                phase_name="Shooting phase",
+                candidates=self._arkifane_targetable_units(
+                    require_soul_forge=True,
+                    require_not_shot=True,
+                ),
+            )
+            queue_phase_start_stratagem(
+                "SOUL-TALLY OFFERING",
+                phase_name="Shooting phase",
+                candidates=self._arkifane_targetable_units(
+                    require_soul_forge=True,
+                    require_not_shot=True,
+                ),
+            )
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        queue_phase_start_stratagem(
+            "TOUCH OF THE ARKIFANE",
+            phase_name="Fight phase",
+            candidates=self._arkifane_targetable_units(
+                exclude_damned=True,
+                require_not_fought=True,
+            ),
+        )
+        if player is not self.player:
+            return
+        queue_phase_start_stratagem(
+            "BALEFIRE BOON",
+            phase_name="Fight phase",
+            candidates=self._arkifane_targetable_units(
+                require_soul_forge=True,
+                require_not_fought=True,
+            ),
+        )
+        queue_phase_start_stratagem(
+            "SOUL-TALLY OFFERING",
+            phase_name="Fight phase",
+            candidates=self._arkifane_targetable_units(
+                require_soul_forge=True,
+                require_not_fought=True,
+            ),
+        )
+
+    def _queue_arkifane_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_cult_of_the_arkifane_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"advance", "advancing", "advance_move"}:
+            return
+        root = self._csm_root(unit)
+        if root is None or not self._csm_owned_by_player(root, self.player):
+            return
+        candidates = self._arkifane_targetable_units()
+        if not self._csm_unit_in_candidates(root, candidates):
+            return
+        stratagem = self.get_by_name("FORGE-FIRE SURGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("FORGE-FIRE SURGE"):
+                continue
+            if self._csm_root(reaction.get("unit") or reaction.get("target_unit")) is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": str(action or ""),
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_arkifane_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_cult_of_the_arkifane_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("UNHOLY FORTITUDE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._arkifane_targeted_units(
+            target_units=list(target_units or []),
+            require_soul_forge=True,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("UNHOLY FORTITUDE"):
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_soulforged_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_soulforged_warpack_detachment():
@@ -10480,6 +10819,484 @@ class ChaosSpaceMarinesStratagemMixin:
             selected_roots.append(root)
         return selected_roots
 
+    def _use_arkifane_touch_of_the_arkifane(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("TOUCH OF THE ARKIFANE", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("TOUCH OF THE ARKIFANE")
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if not phase_name:
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: current phase is unavailable")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target must be HERETIC ASTARTES")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: DAMNED units cannot be targeted")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_cult_of_the_arkifane_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: TOUCH OF THE ARKIFANE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_PREFIX,
+            source=stratagem.name or "TOUCH OF THE ARKIFANE",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TOUCH OF THE ARKIFANE: %s can select both Dark Pact bonuses this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_arkifane_balefire_boon(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("BALEFIRE BOON", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("BALEFIRE BOON")
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BALEFIRE BOON: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: BALEFIRE BOON: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BALEFIRE BOON: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BALEFIRE BOON: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BALEFIRE BOON: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BALEFIRE BOON: target cannot be selected")
+            return False
+        if not self._is_soul_forge_unit(root):
+            logger.error("ERROR: BALEFIRE BOON: target must be a SOUL FORGE unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: BALEFIRE BOON: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: BALEFIRE BOON: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_cult_of_the_arkifane_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: BALEFIRE BOON: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX,
+            source=stratagem.name or "BALEFIRE BOON",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX}_ap_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BALEFIRE BOON: %s improves its AP by 1 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_arkifane_soul_tally_offering(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SOUL-TALLY OFFERING", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("SOUL-TALLY OFFERING")
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SOUL-TALLY OFFERING: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SOUL-TALLY OFFERING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SOUL-TALLY OFFERING: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target cannot be selected")
+            return False
+        if not self._is_soul_forge_unit(root):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target must be a SOUL FORGE unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: SOUL-TALLY OFFERING: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_cult_of_the_arkifane_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: SOUL-TALLY OFFERING: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_PREFIX,
+            source=stratagem.name or "SOUL-TALLY OFFERING",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SOUL-TALLY OFFERING: %s can re-roll Wound rolls against CHARACTER, MONSTER, and VEHICLE units this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_arkifane_biomechanoid_regeneration(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        wounded_models = list(kwargs.get("wounded_models") or [])
+        wounded_models_by_unit = dict(kwargs.get("wounded_models_by_unit") or {})
+        pending = self._csm_find_pending_reaction("BIOMECHANOID REGENERATION", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("BIOMECHANOID REGENERATION")
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not wounded_models_by_unit:
+                wounded_models_by_unit = dict(pending.get("wounded_models_by_unit") or {})
+            if not wounded_models:
+                wounded_models = list(pending.get("wounded_models") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BIOMECHANOID REGENERATION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: BIOMECHANOID REGENERATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BIOMECHANOID REGENERATION: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: target must be HERETIC ASTARTES")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: DAMNED units cannot be targeted")
+            return False
+
+        if not wounded_models and wounded_models_by_unit:
+            wounded_models = list(wounded_models_by_unit.get(self._csm_sort_key(root)) or [])
+        if not wounded_models:
+            wounded_models = self._csm_wounded_models(root)
+        heal_model = kwargs.get("model") or kwargs.get("target_model")
+        if heal_model is None and len(wounded_models) == 1:
+            heal_model = wounded_models[0]
+        if heal_model is None and wounded_models:
+            heal_model = wounded_models[0]
+        if heal_model is None:
+            logger.error("ERROR: BIOMECHANOID REGENERATION: target has no wounded model to heal")
+            return False
+        if heal_model not in self._csm_attached_models(root):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: heal model does not belong to target unit")
+            return False
+        if heal_model not in self._csm_wounded_models(root):
+            logger.error("ERROR: BIOMECHANOID REGENERATION: selected model has no lost wounds")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        heal_amount = 3 if self._is_soul_forge_unit(root) else int(dice_module.get_roll("D3") or 0)
+        try:
+            base_wounds = int(getattr(heal_model, "_base_wounds", getattr(heal_model, "base_wounds", 0)) or 0)
+            current_wounds = int(getattr(heal_model, "wounds", 0) or 0)
+        except (TypeError, ValueError):
+            base_wounds = 0
+            current_wounds = 0
+        missing = max(0, int(base_wounds - current_wounds))
+        healed = min(int(heal_amount), int(missing))
+        if healed > 0:
+            heal_fn = getattr(heal_model, "heal", None)
+            if callable(heal_fn):
+                heal_fn(int(heal_amount))
+            else:
+                heal_model.wounds = min(base_wounds, current_wounds + int(heal_amount))
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BIOMECHANOID REGENERATION: %s heals %d lost wound%s on %s.",
+            getattr(root, "name", "Unit"),
+            int(healed),
+            "" if int(healed) == 1 else "s",
+            getattr(heal_model, "name", "a model"),
+        )
+        return True
+
+    def _use_arkifane_forge_fire_surge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("FORGE-FIRE SURGE", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("FORGE-FIRE SURGE")
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FORGE-FIRE SURGE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FORGE-FIRE SURGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FORGE-FIRE SURGE: not your turn")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FORGE-FIRE SURGE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: FORGE-FIRE SURGE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FORGE-FIRE SURGE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: FORGE-FIRE SURGE: target must be HERETIC ASTARTES")
+            return False
+        last_action = str(
+            kwargs.get("action")
+            or (pending.get("action") if isinstance(pending, dict) else "")
+            or ""
+        ).strip().lower().replace(" ", "_")
+        if last_action not in {"advance", "advancing", "advance_move"}:
+            logger.error("ERROR: FORGE-FIRE SURGE: target must have just Advanced")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_cult_of_the_arkifane_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: FORGE-FIRE SURGE: detachment effect state helper is unavailable")
+            return False
+        prefix = mgr._CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX
+        set_state(
+            root,
+            prefix=prefix,
+            source=stratagem.name or "FORGE-FIRE SURGE",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+            extra_state={
+                f"{prefix}_shoot_after_advance": True,
+                f"{prefix}_charge_after_advance": bool(self._is_soul_forge_unit(root)),
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FORGE-FIRE SURGE: %s can shoot after Advancing%s this turn.",
+            getattr(root, "name", "Unit"),
+            " and charge as well" if self._is_soul_forge_unit(root) else "",
+        )
+        return True
+
+    def _use_arkifane_unholy_fortitude(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        pending = self._csm_find_pending_reaction("UNHOLY FORTITUDE", unit=unit)
+        if pending is None and not candidates:
+            pending = self._csm_find_pending_reaction("UNHOLY FORTITUDE")
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNHOLY FORTITUDE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_cult_of_the_arkifane_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: UNHOLY FORTITUDE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: UNHOLY FORTITUDE: only available in your opponent's Shooting phase")
+            return False
+        if candidates and not self._csm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNHOLY FORTITUDE: target is not currently eligible")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: UNHOLY FORTITUDE: attacking unit must be enemy")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNHOLY FORTITUDE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNHOLY FORTITUDE: target cannot be selected")
+            return False
+        if not self._is_soul_forge_unit(root):
+            logger.error("ERROR: UNHOLY FORTITUDE: target must be a SOUL FORGE unit")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_cult_of_the_arkifane_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: UNHOLY FORTITUDE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX,
+            source=stratagem.name or "UNHOLY FORTITUDE",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX}_toughness_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNHOLY FORTITUDE: %s gains +1 Toughness until end of phase against %s's attack sequence.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
     def _use_warpstrike_empyric_dislocation(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
@@ -11957,6 +12774,10 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
         if name_u == "ARMOUR OF CORRUPTION":
             return self._use_warpstrike_armour_of_corruption(stratagem, **kwargs)
+        if name_u == "BALEFIRE BOON":
+            return self._use_arkifane_balefire_boon(stratagem, **kwargs)
+        if name_u == "BIOMECHANOID REGENERATION":
+            return self._use_arkifane_biomechanoid_regeneration(stratagem, **kwargs)
         if name_u == "BLACK CRUSADE":
             return self._use_veterans_black_crusade(stratagem, **kwargs)
         if name_u == "BLOODY EXAMPLE":
@@ -12013,6 +12834,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_pactbound_eye_of_the_gods(stratagem, **kwargs)
         if name_u == "FESTERING MIASMA":
             return self._use_pactbound_festering_miasma(stratagem, **kwargs)
+        if name_u == "FORGE-FIRE SURGE":
+            return self._use_arkifane_forge_fire_surge(stratagem, **kwargs)
         if name_u == "HORRIFIC INCURSION":
             return self._use_nightmare_hunt_horrific_incursion(stratagem, **kwargs)
         if name_u == "MALICIOUS SURGE":
@@ -12073,6 +12896,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_fellhammer_siegecraft(stratagem, **kwargs)
         if name_u == "SKINSHIFT":
             return self._use_pactbound_skinshift(stratagem, **kwargs)
+        if name_u == "SOUL-TALLY OFFERING":
+            return self._use_arkifane_soul_tally_offering(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         if name_u == "STEADFAST DETERMINATION":
@@ -12081,10 +12906,14 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_nightmare_hunt_talons_sunk_deep(stratagem, **kwargs)
         if name_u == "TO THE FAVOURED THE SPOILS":
             return self._use_hurons_marauders_to_the_favoured_the_spoils(stratagem, **kwargs)
+        if name_u == "TOUCH OF THE ARKIFANE":
+            return self._use_arkifane_touch_of_the_arkifane(stratagem, **kwargs)
         if name_u == "TORPEFYING REFRAIN":
             return self._use_pactbound_torpefying_refrain(stratagem, **kwargs)
         if name_u == "UNDYING HATRED":
             return self._use_renegade_warband_undying_hatred(stratagem, **kwargs)
+        if name_u == "UNHOLY FORTITUDE":
+            return self._use_arkifane_unholy_fortitude(stratagem, **kwargs)
         if name_u == "UNFAILINGLY OBDURATE":
             return self._use_renegade_raiders_unfailingly_obdurate(stratagem, **kwargs)
         if name_u == "UNSTOPPABLE RAMPAGE":

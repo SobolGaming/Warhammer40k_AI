@@ -3919,6 +3919,15 @@ class StratagemManager(
     def _is_custom_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
         if stratagem_id in {
+            "000010744002",
+            "000010744003",
+            "000010744004",
+            "000010744005",
+            "000010744006",
+            "000010744007",
+        }:
+            return bool(self._is_cult_of_the_arkifane_detachment())
+        if stratagem_id in {
             "000010740002",
             "000010740003",
             "000010740004",
@@ -10506,6 +10515,7 @@ class StratagemManager(
             self._queue_dread_talons_phase_start_reactions(player=player, phase=phase)
             self._queue_fellhammer_phase_start_reactions(player=player, phase=phase)
             self._queue_hurons_marauders_phase_start_reactions(player=player, phase=phase)
+            self._queue_arkifane_phase_start_reactions(player=player, phase=phase)
             self._queue_nightmare_hunt_phase_start_reactions(player=player, phase=phase)
             self._queue_pactbound_phase_start_reactions(player=player, phase=phase)
             self._queue_renegade_warband_phase_start_reactions(player=player, phase=phase)
@@ -13966,6 +13976,7 @@ class StratagemManager(
         self._queue_deceptors_move_end_reactions(unit=unit, action=action)
         self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
+        self._queue_arkifane_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
         self._queue_annihilation_legion_move_end_reactions(unit=unit, action=action)
         self._queue_canoptek_court_move_end_reactions(unit=unit, action=action)
@@ -15697,6 +15708,13 @@ class StratagemManager(
             raise
         try:
             self._queue_renegade_raiders_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_arkifane_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

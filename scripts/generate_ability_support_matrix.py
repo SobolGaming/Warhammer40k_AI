@@ -20431,6 +20431,12 @@ def _stratagem_support(
         "000010440007": "Opponent Shooting phase reaction after an enemy unit selects targets: selected LEAGUES OF VOTANN INFANTRY or MOUNTED target gains Stealth and Benefit of Cover against ranged attacks until end of phase.",
         "000010655002": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected EMPEROR'S CHILDREN unit imposes -1 to wound against attacks from that attacker while its Strength is greater than the target's Toughness until end of phase.",
         "000008961003": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
+        "000010744002": "Any phase: selected HERETIC ASTARTES unit excluding DAMNED that has not been selected to shoot or fight this phase can choose both Dark Pact bonuses until end of phase.",
+        "000010744003": "Your Shooting or Fight phase: selected SOUL FORGE unit that has not been selected to shoot or fight improves AP by 1 until end of phase.",
+        "000010744004": "Your Shooting or Fight phase: selected SOUL FORGE unit that has not been selected to shoot or fight re-rolls Wound rolls against CHARACTER, MONSTER, and VEHICLE units until end of phase.",
+        "000010744005": "Your Command phase: selected HERETIC ASTARTES unit excluding DAMNED heals one wounded model for D3 lost wounds, or 3 lost wounds if it has SOUL FORGE.",
+        "000010744006": "Your Movement phase after a friendly HERETIC ASTARTES unit Advances: that unit can shoot after Advancing this turn, and if it has SOUL FORGE it can also charge after Advancing.",
+        "000010744007": "Opponent Shooting phase reaction after an enemy selects targets: selected SOUL FORGE unit targeted by those attacks gains +1 Toughness until end of phase.",
         "000010740002": "Opponent Shooting phase or the Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 against that attacker until it finishes its attacks, and cannot be combined on the same unit in the same phase with Armour of Corruption.",
         "000010740003": "Opponent Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit reduces incoming attack Damage by 1 for the rest of the phase, and cannot be combined on the same unit in the same phase with Empyric Dislocation.",
         "000010740004": "Your Movement phase: selected HERETIC ASTARTES Terminator, Obliterators, or Mutilators unit can shoot and declare a charge after Advancing this turn.",
@@ -22411,6 +22417,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected HERETIC ASTARTES non-MONSTER/non-VEHICLE unit that was hit can make a D6 reactive Normal move.",
+            name_u,
+        )
+    if stratagem_id == "000010744002":
+        return (
+            "Supported",
+            "Any phase: selected HERETIC ASTARTES unit excluding DAMNED that has not been selected to shoot or fight this phase can choose both Dark Pact bonuses until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010744003":
+        return (
+            "Supported",
+            "Your Shooting or Fight phase: selected SOUL FORGE unit that has not been selected to shoot or fight improves AP by 1 until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010744004":
+        return (
+            "Supported",
+            "Your Shooting or Fight phase: selected SOUL FORGE unit that has not been selected to shoot or fight re-rolls Wound rolls against CHARACTER, MONSTER, and VEHICLE units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010744005":
+        return (
+            "Supported",
+            "Your Command phase: selected HERETIC ASTARTES unit excluding DAMNED heals one wounded model for D3 lost wounds, or 3 lost wounds if it has SOUL FORGE.",
+            name_u,
+        )
+    if stratagem_id == "000010744006":
+        return (
+            "Supported",
+            "Your Movement phase after a friendly HERETIC ASTARTES unit Advances: that unit can shoot after Advancing this turn, and if it has SOUL FORGE it can also charge after Advancing.",
+            name_u,
+        )
+    if stratagem_id == "000010744007":
+        return (
+            "Supported",
+            "Opponent Shooting phase reaction after an enemy selects targets: selected SOUL FORGE unit targeted by those attacks gains +1 Toughness until end of phase.",
             name_u,
         )
     if stratagem_id == "000010740002":

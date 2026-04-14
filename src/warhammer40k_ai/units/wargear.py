@@ -4466,6 +4466,26 @@ class WargearProfile:
             army = unit.get_parent_army() if unit is not None else None
             csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
             ap_bonus_fn = (
+                getattr(csm_mgr, "cult_of_the_arkifane_balefire_boon_ap_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(ap_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = ap_bonus_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            ap_bonus_fn = (
                 getattr(csm_mgr, "soulforged_warpack_desperate_pledge_ap_bonus", None)
                 if csm_mgr is not None
                 else None
@@ -22520,6 +22540,28 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Chosen for Glory").strip() or "Chosen for Glory"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "cult_of_the_arkifane_soul_tally_offering_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Soul-Tally Offering").strip() or "Soul-Tally Offering"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass

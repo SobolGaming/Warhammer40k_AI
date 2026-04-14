@@ -219,6 +219,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY = "soulforged_warpack_tempting_addendum_turn_owner"
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY = "soulforged_warpack_tempting_addendum_source"
     _CULT_OF_THE_ARKIFANE_SOUL_FORGE_SOURCE = "Soul Forge Boons"
+    _CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_PREFIX = "cult_of_the_arkifane_touch_of_the_arkifane"
+    _CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_SOURCE = "Touch of the Arkifane"
+    _CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX = "cult_of_the_arkifane_balefire_boon"
+    _CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_SOURCE = "Balefire Boon"
+    _CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_PREFIX = "cult_of_the_arkifane_soul_tally_offering"
+    _CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_SOURCE = "Soul-Tally Offering"
+    _CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX = "cult_of_the_arkifane_forge_fire_surge"
+    _CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_SOURCE = "Forge-Fire Surge"
+    _CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX = "cult_of_the_arkifane_unholy_fortitude"
+    _CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_SOURCE = "Unholy Fortitude"
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _PACTBOUND_EYE_OF_TZEENTCH_SOURCE = "Eye of Tzeentch"
@@ -7734,6 +7744,222 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0.0, ""
         source = str(source_sr.get("enhancement_crown_of_worms_source", "") or "Crown of Worms").strip()
         return float(range_bonus), (source or "Crown of Worms")
+
+    @staticmethod
+    def _cult_of_the_arkifane_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _cult_of_the_arkifane_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_cult_of_the_arkifane():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_cult_of_the_arkifane_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    def cult_of_the_arkifane_touch_of_the_arkifane_allows_both_dark_pact_bonuses(
+        self,
+        unit,
+        *,
+        game=None,
+    ) -> tuple[bool, str]:
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            unit,
+            prefix=self._CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root) or self._unit_is_damned(root):
+            return False, ""
+        if not self._unit_has_dark_pacts(root):
+            return False, ""
+        return True, self._cult_of_the_arkifane_effect_source(
+            sr,
+            prefix=self._CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_PREFIX,
+            default=self._CULT_OF_THE_ARKIFANE_TOUCH_OF_THE_ARKIFANE_SOURCE,
+        )
+
+    def cult_of_the_arkifane_balefire_boon_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_has_keyword(root, "SOUL FORGE"):
+            return 0, ""
+        phase_name = self._current_phase_name(game=game) or str(
+            sr.get(f"{self._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX}_phase", "") or ""
+        ).strip().upper()
+        if phase_name == "SHOOTING_PHASE" and not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        if phase_name == "FIGHT_PHASE" and not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX}_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._cult_of_the_arkifane_effect_source(
+            sr,
+            prefix=self._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_PREFIX,
+            default=self._CULT_OF_THE_ARKIFANE_BALEFIRE_BOON_SOURCE,
+        )
+
+    def cult_of_the_arkifane_soul_tally_offering_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None or not any(
+            self._unit_has_keyword(target_root, keyword) for keyword in ("CHARACTER", "MONSTER", "VEHICLE")
+        ):
+            return False, ""
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_has_keyword(root, "SOUL FORGE"):
+            return False, ""
+        phase_name = self._current_phase_name(game=game) or str(
+            sr.get(f"{self._CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_PREFIX}_phase", "") or ""
+        ).strip().upper()
+        if phase_name == "SHOOTING_PHASE" and not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        if phase_name == "FIGHT_PHASE" and not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return False, ""
+        return True, self._cult_of_the_arkifane_effect_source(
+            sr,
+            prefix=self._CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_PREFIX,
+            default=self._CULT_OF_THE_ARKIFANE_SOUL_TALLY_OFFERING_SOURCE,
+        )
+
+    def cult_of_the_arkifane_forge_fire_surge_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            unit,
+            prefix=self._CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(sr.get(f"{self._CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX}_shoot_after_advance", True))
+
+    def cult_of_the_arkifane_forge_fire_surge_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            unit,
+            prefix=self._CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(sr.get(f"{self._CULT_OF_THE_ARKIFANE_FORGE_FIRE_SURGE_PREFIX}_charge_after_advance", False))
+
+    def cult_of_the_arkifane_unholy_fortitude_toughness_bonus(
+        self,
+        model=None,
+        unit=None,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if model is not None and not self._model_in_army(model):
+            return 0, ""
+        target_unit = getattr(model, "parent_unit", None) if model is not None else unit
+        root, sr = self._cult_of_the_arkifane_effect_state(
+            target_unit,
+            prefix=self._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_has_keyword(root, "SOUL FORGE"):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX}_toughness_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._cult_of_the_arkifane_effect_source(
+            sr,
+            prefix=self._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_PREFIX,
+            default=self._CULT_OF_THE_ARKIFANE_UNHOLY_FORTITUDE_SOURCE,
+        )
 
     @classmethod
     def _is_legionaries_unit(cls, unit) -> bool:

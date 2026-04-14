@@ -5862,6 +5862,94 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CULT_OF_THE_ARKIFANE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010744002": StratagemToolDescriptor(
+        stratagem_id="000010744002",
+        name="Touch of the Arkifane",
+        timing="any_phase",
+        target="heretic_astartes_unit_excluding_damned_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="dark_pacts_may_select_both_bonuses",
+        cp_cost=1,
+        effect_params={
+            "required_ability": "DARK PACTS",
+            "excluded_keywords_any": ["DAMNED"],
+            "choice": "BOTH",
+        },
+    ),
+    "000010744003": StratagemToolDescriptor(
+        stratagem_id="000010744003",
+        name="Balefire Boon",
+        timing="your_shooting_or_fight_phase",
+        target="soul_forge_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="phase_weapon_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "ap_bonus": 1,
+            "required_keywords_any": ["SOUL FORGE"],
+        },
+    ),
+    "000010744004": StratagemToolDescriptor(
+        stratagem_id="000010744004",
+        name="Soul-Tally Offering",
+        timing="your_shooting_or_fight_phase",
+        target="soul_forge_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="wound_reroll_vs_character_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "reroll_wound_full": True,
+            "required_keywords_any": ["SOUL FORGE"],
+            "target_keywords_any": ["CHARACTER", "MONSTER", "VEHICLE"],
+        },
+    ),
+    "000010744005": StratagemToolDescriptor(
+        stratagem_id="000010744005",
+        name="Biomechanoid Regeneration",
+        timing="your_command_phase",
+        target="heretic_astartes_unit_excluding_damned_with_wounded_model",
+        duration="immediate",
+        effect="heal_wounded_model_in_unit",
+        cp_cost=1,
+        effect_params={
+            "heal_roll": "D3",
+            "heal_amount_if_keywords_any": {"SOUL FORGE": 3},
+            "excluded_keywords_any": ["DAMNED"],
+        },
+    ),
+    "000010744006": StratagemToolDescriptor(
+        stratagem_id="000010744006",
+        name="Forge-Fire Surge",
+        timing="your_movement_phase_after_friendly_advance",
+        target="heretic_astartes_unit_that_just_advanced",
+        duration="until_end_of_turn",
+        effect="shoot_after_advance_and_conditional_charge_after_advance_if_soul_forge",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "charge_after_advance_if_keywords_any": ["SOUL FORGE"],
+        },
+    ),
+    "000010744007": StratagemToolDescriptor(
+        stratagem_id="000010744007",
+        name="Unholy Fortitude",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="soul_forge_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="defensive_toughness_bonus",
+        cp_cost=1,
+        effect_params={
+            "toughness_bonus": 1,
+            "required_keywords_any": ["SOUL FORGE"],
+        },
+    ),
+}
+
+_CULT_OF_THE_ARKIFANE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CULT_OF_THE_ARKIFANE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPSTRIKE_CHAMPIONS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010740002": StratagemToolDescriptor(
         stratagem_id="000010740002",
@@ -15259,6 +15347,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CULT_OF_THE_ARKIFANE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPSTRIKE_CHAMPIONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15675,6 +15766,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _CULT_OF_THE_ARKIFANE_STRATAGEM_BY_NAME.get(key)
         or _WARPSTRIKE_CHAMPIONS_STRATAGEM_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
