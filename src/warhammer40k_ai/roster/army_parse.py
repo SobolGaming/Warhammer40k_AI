@@ -16,6 +16,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from .army import Army, _assert_supported_faction, get_faction_id_from_name
 from .army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
 from .army_runtime import apply_validated_muster_to_army
+from .unit_materialization import add_materialized_unit_to_army
 
 logger = logging.getLogger(__name__)
 
@@ -377,108 +378,13 @@ def add_unit_to_army(
     *,
     build_entry_id: str | None = None,
 ) -> None:
-    def _normalize_gear_name(text: str) -> str:
-        return (
-            str(text or "")
-            .replace("\u2019", "'")
-            .replace("\u2018", "'")
-            .replace("\u00e2\u0080\u0099", "'")
-            .lower()
-        )
-
-    unit.configure_models(model_count, [])
-
-    for model_name, wargear_list in wargear_dict.items():
-        for wargear_name, quantity in wargear_list:
-            gear_name = _normalize_gear_name(wargear_name)
-            matching_gear = next(
-                (
-                    gear
-                    for gear in unit.possible_wargear
-                    if _normalize_gear_name(gear.name) == gear_name
-                ),
-                None,
-            )
-            if matching_gear:
-                if model_name and model_name != unit.name:
-                    target_models = [
-                        model
-                        for model in unit.models
-                        if model.name.lower() == model_name.lower()
-                    ]
-                else:
-                    target_models = unit.models
-
-                if target_models:
-                    if quantity == len(target_models):
-                        for model in target_models:
-                            model.wargear.append(matching_gear)
-                    elif quantity < len(target_models):
-                        for index in range(quantity):
-                            target_models[index].wargear.append(matching_gear)
-                    else:
-                        items_per_model = quantity // len(target_models)
-                        remainder = quantity % len(target_models)
-                        for index, model in enumerate(target_models):
-                            for _ in range(items_per_model):
-                                model.wargear.append(matching_gear)
-                            if index < remainder:
-                                model.wargear.append(matching_gear)
-                else:
-                    raise ValueError(
-                        f"Invalid wargear assignment for '{unit.name}': no models named '{model_name}' "
-                        f"to receive '{gear_name}'."
-                    )
-                continue
-
-            matching_gear = None
-            for gear in unit.wargear_options:
-                for choice in gear.wargear_to or []:
-                    for _quantity, name in choice or []:
-                        if name and _normalize_gear_name(name) == gear_name:
-                            matching_gear = gear
-                            break
-                    if matching_gear:
-                        break
-                if matching_gear:
-                    break
-            if matching_gear:
-                unit.apply_wargear_options_strict(gear_name)
-                continue
-
-            matching_ability = next(
-                (
-                    ability
-                    for ability in unit.possible_abilities
-                    if _normalize_gear_name(ability.name) == gear_name
-                    and ability.type == "Wargear"
-                ),
-                None,
-            )
-            if matching_ability:
-                unit.add_ability(matching_ability, model_name)
-                continue
-
-            logger.warning(
-                "Warning: %s not found in %s's possible wargear or abilities.",
-                gear_name,
-                unit.name,
-            )
-            for gear in unit.possible_wargear:
-                logger.info("  - %s", gear.name)
-            for ability in unit.possible_abilities:
-                logger.info("  - %s (Ability Wargear)", ability.name)
-
-    unit.apply_daemonic_allegiance_selection()
-    unit.validate_wargear_selection()
-    if build_entry_id:
-        set_entry_id = getattr(unit, "set_build_entry_id", None)
-        if callable(set_entry_id):
-            set_entry_id(build_entry_id)
-        else:
-            unit.build_entry_id = str(build_entry_id)
-    if enhancement:
-        army.add_enhancement(enhancement, unit)
-    army.add_unit(unit)
-    if is_warlord:
-        army.select_warlord(unit)
+    add_materialized_unit_to_army(
+        army,
+        unit,
+        model_count,
+        wargear_dict,
+        enhancement,
+        waha_helper,
+        is_warlord,
+        build_entry_id=build_entry_id,
+    )

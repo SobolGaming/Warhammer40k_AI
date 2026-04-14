@@ -112,6 +112,7 @@ def test_descriptor_compiler_emits_army_build_descriptor_from_validated_muster()
 
     assert bundle.army_build_descriptor.family == "ArmyBuildDescriptor"
     assert bundle.descriptor_ids()["army_build_descriptor_id"].startswith("army_build_descriptor:")
+    assert payload["players"][0]["army_blueprint_hash"].startswith("sha256:")
     assert payload["players"][0]["primary_detachment_type"] == "Gladius Task Force"
     assert payload["players"][0]["detachment_points_summary"] == {
         "budget": 5,

@@ -89,6 +89,8 @@ def _validate_army_build_state(value: Any, *, label: str) -> list[str]:
             continue
         if not bool(entry.get("army_present", False)):
             continue
+        if not isinstance(entry.get("army_blueprint_hash"), str):
+            errors.append(f"{label}.players[{idx}].army_blueprint_hash must be a string")
         if not isinstance(entry.get("detachments"), list):
             errors.append(f"{label}.players[{idx}].detachments must be a list")
         else:

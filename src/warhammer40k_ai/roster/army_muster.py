@@ -6,9 +6,10 @@ from typing import Any
 
 from .army import Army
 from .army_attachments import AttachmentBinding
-from .army_build import DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from .army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
 from .army_runtime import apply_validated_muster_to_army
 from .army_validation import validate_army_muster_request
+from .unit_materialization import materialize_validated_muster_units
 from ..waha_helper import WahaHelper
 
 
@@ -182,10 +183,19 @@ class ArmyMusterer:
     def __init__(self, waha_helper: WahaHelper) -> None:
         self._waha = waha_helper
 
-    def validate_request(self, request: ArmyMusterRequest | Mapping[str, Any]) -> ValidatedMuster:
+    def validate_request(
+        self,
+        request: ArmyMusterRequest | ArmyBlueprint | Mapping[str, Any],
+    ) -> ValidatedMuster:
         return validate_army_muster_request(request)
 
-    def muster_army(self, request: ArmyMusterRequest | Mapping[str, Any]) -> Army:
+    def muster_blueprint(self, blueprint: ArmyBlueprint | Mapping[str, Any]) -> Army:
+        return self.muster_army(ArmyBlueprint.from_dict(blueprint))
+
+    def muster_army(
+        self,
+        request: ArmyMusterRequest | ArmyBlueprint | Mapping[str, Any],
+    ) -> Army:
         validated_muster = self.validate_request(request)
         army = Army(
             faction=validated_muster.blueprint.faction,
@@ -194,8 +204,9 @@ class ArmyMusterer:
         army.faction_id = validated_muster.faction_id
         apply_validated_muster_to_army(army, validated_muster)
         if validated_muster.blueprint.unit_entries:
-            raise NotImplementedError(
-                "Validated mustering can now represent unit entries, but runtime unit "
-                "materialization is not implemented yet."
+            materialize_validated_muster_units(
+                army,
+                validated_muster,
+                waha_helper=self._waha,
             )
         return army

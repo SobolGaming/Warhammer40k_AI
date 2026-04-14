@@ -444,6 +444,8 @@ Add the minimal ML-facing runtime interfaces without introducing framework coupl
 
 ### PR-MUSTER-003 — Finish runtime mustering for validated `unit_entries`
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Close the current `ArmyMusterer` gap so validated build-time rosters become playable runtime armies.

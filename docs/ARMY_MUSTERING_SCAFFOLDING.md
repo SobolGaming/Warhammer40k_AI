@@ -13,7 +13,8 @@ Army mustering exists today primarily to:
   11th-edition list-building seams.
 
 Runtime unit materialization from those requests is still pending. Parsed list files remain
-the only path that builds full runtime units today.
+available, but validated `ArmyBlueprint` requests can now also materialize full runtime
+units directly.
 
 ### Current scaffolding components
 
@@ -56,8 +57,10 @@ the only path that builds full runtime units today.
 
 - `ArmyMusterer.muster_army()` (`src/warhammer40k_ai/roster/army_muster.py`)
   - Normalizes and validates requests through `ValidatedMuster`.
-  - Builds a runtime `Army` façade without pre-seeding a detachment and attaches:
+  - Builds a runtime `Army` façade without pre-seeding a detachment, materializes
+    validated `unit_entries`, and attaches:
     - `army.army_blueprint`
+    - `army.army_blueprint_hash`
     - `army.validated_muster`
     - `army.detachments`
     - `army.detachment_points_summary`
@@ -65,9 +68,11 @@ the only path that builds full runtime units today.
     - build-side detachments / unit entries / enhancement assignments / attachment bindings
     - detachment-point budget/spend metadata
     - Force Disposition metadata
-  - Keeps the explicit runtime boundary that unit entries are representable but not yet
-    materialized from in-engine requests; if `unit_entries` are present,
-    `NotImplementedError` is raised.
+  - Uses `src/warhammer40k_ai/roster/unit_materialization.py` to resolve datasheets,
+    apply serialized wargear selections, assign enhancements, preserve deterministic
+    `build_entry_id` values, and select the authored warlord.
+  - `ArmyMusterer.muster_blueprint()` exposes the same runtime mustering path directly
+    from an `ArmyBlueprint`.
   - Single-detachment parse/snapshot helpers that still begin from a known primary detachment now
     use `Army.with_detachment(...)` instead of constructor seeding.
 
@@ -143,17 +148,20 @@ the only path that builds full runtime units today.
   session manifests now expose `primary_detachment_type` plus `detachment_types`.
 - Runtime units can now carry `build_entry_id` linkage to their build-side entries so
   authored attachment bindings round-trip cleanly through setup/replay state.
+- Runtime armies now also carry a deterministic `army_blueprint_hash` so build-side
+  provenance survives descriptor compilation, save/load, and future evaluation records.
 - This remains the placeholder path for future network-safe mustering inputs.
   See `docs/NETWORK_SAVELOAD_DESIGN.md` for serialization requirements.
 
 ### Current limitations
 
-- In-engine unit materialization from `RosterEntry` is not implemented yet.
 - Attachment bindings can now optionally pre-seed runtime leader/support joins during
   `DECLARE_BATTLE_FORMATIONS` when the runtime army already has materialized units and
   matching `build_entry_id` values.
 - The current live declaration flow is still supported and remains the fallback
   path for rosters that do not provide authored attachment bindings.
+- Build-side unit entries still rely on resolvable datasheet and enhancement names plus
+  the existing serialized wargear string / `wargear_by_model` representations.
 - The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine
   other than existing Daemonic Allegiance prompts when applicable.
@@ -165,7 +173,6 @@ When full UI mustering is implemented, this scaffolding is expected to grow into
   `docs/NETWORK_SAVELOAD_DESIGN.md`,
 - explicit decision requests for faction, detachment, unit picks, wargear,
   enhancements, and warlord selection,
-- runtime unit materialization from `ValidatedMuster`,
 - validation of points limits, mustering restrictions, and spawn-only units,
 - stable IDs for unit selections so networked clients can replay the same choices,
 - runtime attachment and enhancement assignment application consuming the build-side model directly.

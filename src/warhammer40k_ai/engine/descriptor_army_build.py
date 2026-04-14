@@ -340,6 +340,11 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
         or (get_primary_detachment_type() if callable(get_primary_detachment_type) else "")
         or ""
     )
+    army_blueprint_hash = str(
+        getattr(army, "army_blueprint_hash", None)
+        or (blueprint.army_blueprint_hash if blueprint is not None else "")
+        or ""
+    )
     build_metadata = dict(getattr(army, "build_metadata", {}) or {})
     if validated_muster is not None:
         build_metadata.setdefault("warnings", list(validated_muster.warnings or []))
@@ -352,6 +357,7 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
             "faction_id": str(getattr(army, "faction_id", "") or ""),
             "points_limit": safe_int(getattr(army, "points_limit", 0), 0),
             "battle_size": str(getattr(blueprint, "battle_size", "") or "") if blueprint is not None else "",
+            "army_blueprint_hash": army_blueprint_hash,
             "primary_detachment_type": primary_detachment_type,
             "detachments": [item.to_dict() for item in detachments],
             "unit_entries": [item.to_dict() for item in unit_entries],

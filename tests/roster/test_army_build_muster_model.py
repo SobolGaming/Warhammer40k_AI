@@ -2,13 +2,104 @@ import pytest
 
 from warhammer40k_ai.roster.army import ArmyValidationError
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
-from warhammer40k_ai.roster.army_build import DetachmentSelection, EnhancementAssignment, RosterEntry
+from warhammer40k_ai.roster.army_build import (
+    ArmyBlueprint,
+    DetachmentSelection,
+    EnhancementAssignment,
+    RosterEntry,
+)
 from warhammer40k_ai.roster.army_muster import ArmyMusterRequest, ArmyMusterer, UnitSelection
 from warhammer40k_ai.roster.army_validation import (
     build_army_blueprint_from_request,
     validate_army_muster_request,
 )
 from warhammer40k_ai.waha_helper import WahaHelper
+
+
+@pytest.fixture(scope="module")
+def waha_helper() -> WahaHelper:
+    return WahaHelper()
+
+
+def _materialized_space_marines_request() -> ArmyMusterRequest:
+    return ArmyMusterRequest(
+        faction="Space Marines",
+        points_limit=2000,
+        battle_size="Strike Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Gladius Task Force",
+                detachment_points_cost=2,
+            ),
+            DetachmentSelection(
+                selection_id="detachment_beta",
+                detachment_type="1st Company Task Force",
+                detachment_points_cost=3,
+            ),
+        ],
+        detachment_points_budget=5,
+        units=[
+            RosterEntry(
+                entry_id="unit_captain",
+                name="Captain",
+                count=1,
+                detachment_selection_id="detachment_alpha",
+                enhancement_names=["Artificer Armour"],
+                is_warlord=True,
+            ),
+            RosterEntry(
+                entry_id="unit_bladeguard",
+                name="Bladeguard Veteran Squad",
+                count=3,
+                detachment_selection_id="detachment_beta",
+            ),
+        ],
+        attachment_bindings=[
+            AttachmentBinding(
+                binding_id="binding_1",
+                bodyguard_entry_id="unit_bladeguard",
+                leader_entry_id="unit_captain",
+            )
+        ],
+        force_disposition="Assault",
+        allowed_force_dispositions=["Assault", "Siege"],
+    )
+
+
+def _aeldari_support_blueprint() -> ArmyBlueprint:
+    return ArmyBlueprint(
+        faction="Aeldari",
+        points_limit=2000,
+        battle_size="Strike Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Warhost",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_support",
+                name="D-cannon Platform",
+                count=1,
+                detachment_selection_id="detachment_alpha",
+            ),
+            RosterEntry(
+                entry_id="unit_guardians",
+                name="Guardian Defenders",
+                count=10,
+                detachment_selection_id="detachment_alpha",
+            ),
+        ],
+        attachment_bindings=[
+            AttachmentBinding(
+                binding_id="binding_support",
+                bodyguard_entry_id="unit_guardians",
+                support_entry_id="unit_support",
+            )
+        ],
+    )
 
 
 def test_army_muster_request_round_trip_preserves_multi_detachment_shape() -> None:
@@ -200,7 +291,9 @@ def test_validate_request_preserves_explicit_single_detachment_and_unit_selectio
     assert "legacy_single_detachment_adapter_used" not in validated.to_dict()
 
 
-def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_muster() -> None:
+def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_muster(
+    waha_helper: WahaHelper,
+) -> None:
     request = ArmyMusterRequest(
         faction="Space Marines",
         detachments=[
@@ -211,10 +304,61 @@ def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_mu
         ],
     )
 
-    army = ArmyMusterer(WahaHelper()).muster_army(request.to_dict())
+    army = ArmyMusterer(waha_helper).muster_army(request.to_dict())
 
     assert army.detachment_type == "Gladius Task Force"
     assert army.get_detachment_types() == ["Gladius Task Force"]
     assert army.army_blueprint.primary_detachment_type == "Gladius Task Force"
     assert "legacy_single_detachment_adapter_used" not in army.validated_muster.to_dict()
     assert army.build_detachments[0].selection_id == "detachment_alpha"
+
+
+def test_muster_army_materializes_runtime_units_and_stable_blueprint_hash(
+    waha_helper: WahaHelper,
+) -> None:
+    request = _materialized_space_marines_request()
+
+    army = ArmyMusterer(waha_helper).muster_army(request)
+    units_by_entry_id = {
+        str(getattr(unit, "get_build_entry_id", lambda: "")() or ""): unit
+        for unit in list(army.units or [])
+    }
+    captain = units_by_entry_id["unit_captain"]
+    bladeguard = units_by_entry_id["unit_bladeguard"]
+
+    assert len(army.units) == 2
+    assert army.get_detachment_types() == ["Gladius Task Force", "1st Company Task Force"]
+    assert army.detachment_points_summary == {"budget": 5, "spent": 5, "remaining": 0}
+    assert army.army_blueprint_hash == request.to_blueprint().army_blueprint_hash
+    assert army.warlord is captain
+    assert captain.enhancement is not None
+    assert captain.enhancement.name == "Artificer Armour"
+    assert bladeguard.name == "Bladeguard Veteran Squad"
+
+    result = army.apply_authored_attachment_bindings()
+
+    assert result == {"leader_bindings_applied": 1, "support_bindings_applied": 0}
+    assert captain.attached_to is bladeguard
+    assert bladeguard.attached_leaders == [captain]
+
+
+def test_muster_blueprint_materializes_authored_support_binding(
+    waha_helper: WahaHelper,
+) -> None:
+    blueprint = _aeldari_support_blueprint()
+
+    army = ArmyMusterer(waha_helper).muster_blueprint(blueprint)
+    units_by_entry_id = {
+        str(getattr(unit, "get_build_entry_id", lambda: "")() or ""): unit
+        for unit in list(army.units or [])
+    }
+    support = units_by_entry_id["unit_support"]
+    guardians = units_by_entry_id["unit_guardians"]
+
+    result = army.apply_authored_attachment_bindings()
+
+    assert len(army.units) == 2
+    assert army.army_blueprint_hash == blueprint.army_blueprint_hash
+    assert result == {"leader_bindings_applied": 0, "support_bindings_applied": 1}
+    assert support.support_joined_to is guardians
+    assert guardians.attached_support_units == [support]

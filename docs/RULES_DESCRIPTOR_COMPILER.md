@@ -45,7 +45,7 @@ Tool descriptor sources:
 - active stratagem descriptors on player stratagem managers (`stratagem_descriptors.py`)
 
 Army-build descriptor source:
-- per-player roster build state attached to runtime armies (`army_blueprint`, validated muster metadata, runtime detachment summary, attachment bindings, and force disposition state)
+- per-player roster build state attached to runtime armies (`army_blueprint`, `army_blueprint_hash`, validated muster metadata, runtime detachment summary, attachment bindings, and force disposition state)
 
 Design goal:
 - learned policy inputs stay patchable by recompiling descriptors under the active rules bundle instead of hard-coding mission/objective/terrain semantics in model weights.

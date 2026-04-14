@@ -119,6 +119,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
 
     assert str(omniscient.get("state_blob_version", "") or "") == "1.4.0"
     assert army_build["army_build_descriptor_id"].startswith("army_build_descriptor:")
+    assert army_build["players"][0]["army_blueprint_hash"].startswith("sha256:")
     assert army_build["players"][0]["primary_detachment_type"] == "Gladius Task Force"
     assert army_build["players"][0]["detachment_points_summary"] == {
         "budget": 3,

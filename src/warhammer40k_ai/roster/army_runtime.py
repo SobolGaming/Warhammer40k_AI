@@ -127,6 +127,7 @@ def apply_validated_muster_to_army(army: Army, validated_muster: ValidatedMuster
         )
 
     army.army_blueprint = blueprint
+    army.army_blueprint_hash = blueprint.army_blueprint_hash
     army.validated_muster = validated_muster
     army.build_detachments = list(blueprint.detachments or [])
     army.detachments = runtime_detachments

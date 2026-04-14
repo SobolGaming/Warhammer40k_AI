@@ -18,8 +18,10 @@ from warhammer40k_ai.engine.state_blob import canonical_omniscient_state
 from warhammer40k_ai.roster.army import Army, parse_army_list
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from warhammer40k_ai.roster.army_muster import ArmyMusterRequest, ArmyMusterer
 from warhammer40k_ai.roster.army_runtime import apply_validated_muster_to_army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.roster.unit_materialization import materialize_validated_muster_units
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit, UnitRoundState
 from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
@@ -58,6 +60,63 @@ def _build_game(waha_helper):
     game = Game(Battlefield(width=60, height=44), players=[player_one, player_two])
     game.map.units = [unit_one, unit_two]
     return game, unit_one, unit_two, player_one, player_two
+
+
+def _build_materialized_muster_army(waha_helper: WahaHelper) -> Army:
+    request = ArmyMusterRequest(
+        faction="Space Marines",
+        points_limit=2000,
+        battle_size="Strike Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Gladius Task Force",
+                detachment_points_cost=2,
+            ),
+            DetachmentSelection(
+                selection_id="detachment_beta",
+                detachment_type="1st Company Task Force",
+                detachment_points_cost=3,
+            ),
+        ],
+        detachment_points_budget=5,
+        units=[
+            RosterEntry(
+                entry_id="unit_captain",
+                name="Captain",
+                count=1,
+                detachment_selection_id="detachment_alpha",
+                enhancement_names=["Artificer Armour"],
+                is_warlord=True,
+            ),
+            RosterEntry(
+                entry_id="unit_bladeguard",
+                name="Bladeguard Veteran Squad",
+                count=3,
+                detachment_selection_id="detachment_beta",
+            ),
+        ],
+        attachment_bindings=[
+            AttachmentBinding(
+                binding_id="binding_1",
+                bodyguard_entry_id="unit_bladeguard",
+                leader_entry_id="unit_captain",
+            )
+        ],
+        force_disposition="Assault",
+        allowed_force_dispositions=["Assault", "Siege"],
+    )
+    muster = ArmyMusterer(waha_helper)
+    validated = muster.validate_request(request)
+    validated.warnings.append("manual_review: support slot assumptions")
+    army = Army(
+        faction=validated.blueprint.faction,
+        points_limit=validated.blueprint.points_limit,
+    )
+    army.faction_id = validated.faction_id
+    apply_validated_muster_to_army(army, validated)
+    materialize_validated_muster_units(army, validated, waha_helper=waha_helper)
+    return army
 
 
 def test_snapshot_roundtrip_core_state(waha_helper):
@@ -473,6 +532,36 @@ def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
     assert loaded_army.army_blueprint.primary_detachment_type == "Gladius Task Force"
     assert loaded_army.validated_muster.detachment_points_spent == 2
     assert loaded_army.detachment_points_summary == {"budget": 4, "spent": 2, "remaining": 2}
+
+
+def test_snapshot_roundtrip_preserves_materialized_muster_units_and_warnings(
+    waha_helper: WahaHelper,
+) -> None:
+    army = _build_materialized_muster_army(waha_helper)
+    army.apply_authored_attachment_bindings()
+    player = Player("Player One", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.turn = 1
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_army = loaded.players[0].army
+    loaded_units = {
+        str(getattr(unit, "get_build_entry_id", lambda: "")() or ""): unit
+        for unit in list(loaded_army.units or [])
+    }
+    loaded_captain = loaded_units["unit_captain"]
+    loaded_bladeguard = loaded_units["unit_bladeguard"]
+
+    assert [item.detachment_type for item in loaded_army.detachments] == [
+        "Gladius Task Force",
+        "1st Company Task Force",
+    ]
+    assert loaded_army.army_blueprint_hash == army.army_blueprint_hash
+    assert loaded_army.build_enhancement_assignments[0].enhancement_name == "Artificer Armour"
+    assert loaded_army.build_metadata["warnings"] == ["manual_review: support slot assumptions"]
+    assert loaded_army.validated_muster.warnings == ["manual_review: support slot assumptions"]
+    assert loaded_captain.attached_to is loaded_bladeguard
+    assert loaded_bladeguard.attached_leaders == [loaded_captain]
 
 
 def test_snapshot_serializes_primary_detachment_type_surface() -> None:

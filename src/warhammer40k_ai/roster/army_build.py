@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 from typing import Any, Mapping
 
 from .army_attachments import AttachmentBinding
@@ -38,6 +40,26 @@ def _positive_int(value: object, *, field_name: str) -> int:
 
 def _string_list(values: object) -> list[str]:
     return [str(value or "").strip() for value in list(values or []) if str(value or "").strip()]
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe(inner)
+            for key, inner in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(inner) for inner in value]
+    if isinstance(value, set):
+        values = [_json_safe(inner) for inner in value]
+        return sorted(values, key=lambda item: str(item))
+    return str(value)
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 @dataclass
@@ -234,6 +256,11 @@ class ArmyBlueprint:
         if not self.detachments:
             return None
         return self.detachments[0].detachment_type
+
+    @property
+    def army_blueprint_hash(self) -> str:
+        digest = hashlib.sha256(_canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+        return f"sha256:{digest}"
 
     def to_dict(self) -> dict[str, Any]:
         return {
