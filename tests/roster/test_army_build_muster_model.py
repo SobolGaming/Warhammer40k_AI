@@ -342,6 +342,82 @@ def test_muster_army_materializes_runtime_units_and_stable_blueprint_hash(
     assert bladeguard.attached_leaders == [captain]
 
 
+@pytest.mark.parametrize(
+    ("bodyguard_name", "bodyguard_count"),
+    [
+        ("Bloodcrushers", 3),
+        ("Flesh Hounds", 5),
+    ],
+)
+def test_validate_runtime_legality_accepts_disciple_of_khorne_attachment_override(
+    waha_helper: WahaHelper,
+    bodyguard_name: str,
+    bodyguard_count: int,
+) -> None:
+    blueprint = ArmyBlueprint(
+        faction="World Eaters",
+        points_limit=2000,
+        battle_size="Strike Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_khorne_daemonkin",
+                detachment_type="Khorne Daemonkin",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_lord_juggernaut",
+                name="Lord on Juggernaut",
+                count=1,
+                detachment_selection_id="detachment_khorne_daemonkin",
+            ),
+            RosterEntry(
+                entry_id="unit_bodyguard",
+                name=bodyguard_name,
+                count=bodyguard_count,
+                detachment_selection_id="detachment_khorne_daemonkin",
+            ),
+            RosterEntry(
+                entry_id="unit_master_of_executions",
+                name="Master of Executions",
+                count=1,
+                detachment_selection_id="detachment_khorne_daemonkin",
+                is_warlord=True,
+            ),
+        ],
+        enhancement_assignments=[
+            EnhancementAssignment(
+                assignment_id="enhancement_disciple",
+                enhancement_name="Disciple of Khorne",
+                target_entry_id="unit_lord_juggernaut",
+                detachment_selection_id="detachment_khorne_daemonkin",
+            )
+        ],
+        attachment_bindings=[
+            AttachmentBinding(
+                binding_id="binding_disciple_override",
+                bodyguard_entry_id="unit_bodyguard",
+                leader_entry_id="unit_lord_juggernaut",
+            )
+        ],
+    )
+
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(blueprint)
+    units_by_entry_id = {
+        str(getattr(unit, "get_build_entry_id", lambda: "")() or ""): unit
+        for unit in list(army.units or [])
+    }
+    lord = units_by_entry_id["unit_lord_juggernaut"]
+    bodyguard = units_by_entry_id["unit_bodyguard"]
+
+    assert lord.has_disciple_of_khorne() is True
+    assert lord.attached_to is bodyguard
+    assert bodyguard.attached_leaders == [lord]
+    assert lord.has_deep_strike() is True
+    assert "blood legions" in {str(value).lower() for value in bodyguard.get_effective_faction_keywords()}
+    assert "world eaters" not in {str(value).lower() for value in bodyguard.get_effective_faction_keywords()}
+
+
 def test_muster_blueprint_materializes_authored_support_binding(
     waha_helper: WahaHelper,
 ) -> None:

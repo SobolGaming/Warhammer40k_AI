@@ -1527,6 +1527,8 @@ class Army:
         *,
         assignment_metadata: Optional[dict[str, Any]] = None,
     ):
+        invalidate_cache = getattr(character_unit, "_invalidate_ability_cache", None)
+
         # Assign an Enhancement to a Character unit or an explicitly tagged upgrade target.
         allows_non_character = self._enhancement_allows_non_character_unit(
             character_unit,
@@ -1576,6 +1578,8 @@ class Army:
                 f"Enhancement '{enhancement.name}' has model-only eligibility requirements that '{character_unit.name}' does not meet."
             )
         character_unit.enhancement = enhancement
+        if callable(invalidate_cache):
+            invalidate_cache()
         metadata = self._enhancement_assignment_metadata(character_unit, assignment_metadata)
         if metadata:
             sr = getattr(character_unit, "special_rules", None)
@@ -1589,6 +1593,8 @@ class Army:
         apply_fn = getattr(enhancement, "apply_to_unit", None)
         if callable(apply_fn):
             apply_fn(character_unit)
+        if callable(invalidate_cache):
+            invalidate_cache()
         self.enhancements.append(enhancement)
 
     def select_warlord(self, unit: Unit):

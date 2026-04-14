@@ -254,13 +254,13 @@ def add_materialized_unit_to_army(
     unit.apply_daemonic_allegiance_selection()
     unit.validate_wargear_selection()
     _set_build_entry_id(unit, build_entry_id)
+    army.add_unit(unit)
     if enhancement is not None:
         army.add_enhancement(
             enhancement,
             unit,
             assignment_metadata=dict(assignment_metadata or {}),
         )
-    army.add_unit(unit)
     if is_warlord:
         army.select_warlord(unit)
 
