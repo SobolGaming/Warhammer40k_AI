@@ -552,6 +552,8 @@ Avoid hard-wiring preview-era 11e wording into schema names.
 
 ### PR-MUSTER-005 — `TournamentFieldDistribution` and `EventPolicyDescriptor`
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Represent opponent fields and tournament constraints as first-class data.

@@ -10,6 +10,7 @@ REGISTRY_DOC = DOCS_DIR / "ML_ARTIFACT_REGISTRY.md"
 ARCHITECTURE_DOC = DOCS_DIR / "AI_MUSTERING_TOURNAMENT_ARCHITECTURE.md"
 OBJECTIVE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_OBJECTIVE.md"
 BUILD_CAPABILITY_DOC = DOCS_DIR / "BUILD_CAPABILITY_SCHEMA.md"
+TOURNAMENT_FIELD_DOC = DOCS_DIR / "TOURNAMENT_FIELD_SCHEMA.md"
 
 
 def _read(path: Path) -> str:
@@ -71,6 +72,48 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     assert "wahapedia_data_dir" in text
     assert "ambient default-data resolution" in text
     assert "11e" not in text
+
+
+def test_tournament_field_schema_doc_exists_and_locks_event_policy_examples() -> None:
+    assert TOURNAMENT_FIELD_DOC.is_file()
+    text = _read(TOURNAMENT_FIELD_DOC)
+
+    field_distribution = _extract_json_block(text, "Example Tournament Field Distribution")
+    current_policy = _extract_json_block(text, "Example 10th-Style Event Policy")
+    preview_policy = _extract_json_block(text, "Example Preview 11e Event Policy")
+
+    assert field_distribution["field_distribution_schema_id"] == "field_distribution_schema:tournament_field_v1"
+    assert field_distribution["event_policy_id"] == "event_policy:chapter_approved_10e_singles_v1"
+    assert field_distribution["round_count"] == 5
+    assert len(field_distribution["opponent_slices"]) == 3
+    assert field_distribution["pairing_metadata"]["intended_mode"] == "random_first_then_swiss"
+
+    assert current_policy["event_policy_schema_id"] == "event_policy_schema:tournament_event_policy_v1"
+    assert current_policy["event_policy_id"] == "event_policy:chapter_approved_10e_singles_v1"
+    assert current_policy["force_disposition_lock_mode"] == "flexible"
+    assert current_policy["pairing_mode"] == "swiss"
+    assert current_policy["army_points_limit"] == 2000
+    assert current_policy["max_rounds"] == 5
+    assert current_policy["pairing_tiebreakers"] == ["record", "win_path", "random_within_record"]
+    assert current_policy["ranking_tiebreakers"] == [
+        "record",
+        "opponent_win_record",
+        "total_victory_points",
+    ]
+    assert current_policy["clock_policy"]["round_time_minutes"] == 165
+    assert current_policy["clock_policy"]["chess_clock_policy"] == "not_used"
+    assert current_policy["mission_policy"]["challenge_mode"] == "not_used"
+
+    assert preview_policy["event_policy_schema_id"] == "event_policy_schema:tournament_event_policy_v1"
+    assert preview_policy["event_policy_id"] == "event_policy:preview_new40k_locked_force_disposition_v1"
+    assert preview_policy["force_disposition_lock_mode"] == "event_locked"
+    assert preview_policy["pairing_mode"] == "swiss"
+    assert preview_policy["pairing_tiebreakers"] == ["record", "win_path", "random_within_record"]
+    assert preview_policy["mission_policy"]["terrain_layout_count_per_pairing"] == 3
+    assert preview_policy["metadata"]["preview_status"] == "inferred_until_official_event_pack"
+    assert "Swiss" in text or "swiss" in text
+    assert "Battle Ready" in text
+    assert "WTC 2025 clock rules" in text
 
 
 def test_ml_artifact_registry_examples_are_valid_and_complete() -> None:
