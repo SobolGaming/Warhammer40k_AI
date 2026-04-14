@@ -1264,11 +1264,13 @@ This initiative is successful when the repo can:
 
 - `docs/implementation/11e_port_pr_plan.md`
 - `docs/AI_REINTRODUCTION_PLAN.md`
+- `docs/AI_MUSTERING_TOURNAMENT_ARCHITECTURE.md`
 - `docs/HEADLESS_SELF_PLAY_RUNBOOK.md`
+- `docs/ML_ARTIFACT_REGISTRY.md`
+- `docs/TOURNAMENT_EVALUATION_OBJECTIVE.md`
 - `docs/TRAINING_DATA_SPEC.md`
 - `docs/ML_DEPENDENCY_BOUNDARY.md`
 - `src/warhammer40k_ai/roster/army_build.py`
 - `src/warhammer40k_ai/roster/army_muster.py`
 - `src/warhammer40k_ai/engine/descriptor_army_build.py`
 - `src/warhammer40k_ai/ml/dependency_boundary.py`
-
