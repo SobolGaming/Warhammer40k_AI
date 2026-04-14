@@ -215,6 +215,23 @@ def test_policy_bundle_loader_resolves_heuristic_components_from_json(tmp_path: 
     assert isinstance(fallback_chain[0], PlaybookSelector)
 
 
+def test_policy_bundle_loader_uses_builtin_heuristics_by_default(tmp_path: Path) -> None:
+    models_root = tmp_path / "models"
+    bundle_id = "policy_bundle:heuristic_headless_default_v1"
+    bundle_path = models_root / "bundles" / f"{bundle_id}.json"
+    _write_json(bundle_path, _base_bundle_payload(bundle_id))
+
+    loader = JSONPolicyBundleLoader(
+        manifest_store=ArtifactManifestStore(models_root),
+    )
+
+    bundle = loader.load_bundle(bundle_id)
+
+    assert isinstance(bundle.resolve_component("candidate_ranker"), CandidateRanker)
+    assert isinstance(bundle.resolve_component("matchup_evaluator"), MatchupEvaluator)
+    assert isinstance(bundle.resolve_component("playbook_selector"), PlaybookSelector)
+
+
 def test_policy_bundle_loader_accepts_documented_example_fallback_shape(tmp_path: Path) -> None:
     text = REGISTRY_DOC.read_text(encoding="utf-8")
     artifact_payload = _extract_json_block(text, "Example Artifact Manifest")

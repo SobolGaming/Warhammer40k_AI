@@ -11,6 +11,12 @@ from .dependency_boundary import (
     normalize_dependency_name,
     require_ml_dependencies,
 )
+from .default_heuristics import (
+    CapabilityMatchupHeuristic,
+    GreedyCandidateRanker,
+    IdentityPlaybookSelector,
+    default_heuristic_registry,
+)
 from .interfaces import (
     ArtifactResolver,
     BundleSource,
@@ -46,10 +52,13 @@ __all__ = [
     "ArtifactManifestStore",
     "ArtifactResolver",
     "BundleSource",
+    "CapabilityMatchupHeuristic",
     "CandidateRanker",
     "ComponentResolverRecord",
     "FORBIDDEN_CORE_DEPENDENCIES",
+    "GreedyCandidateRanker",
     "HeuristicRegistry",
+    "IdentityPlaybookSelector",
     "JSONPolicyBundleLoader",
     "MLDependencyBoundaryError",
     "MLDependencyStatus",
@@ -68,6 +77,7 @@ __all__ = [
     "ScopeSpec",
     "UnknownArtifactError",
     "UnknownHeuristicError",
+    "default_heuristic_registry",
     "detect_ml_dependency_status",
     "find_forbidden_core_dependencies",
     "normalize_dependency_name",

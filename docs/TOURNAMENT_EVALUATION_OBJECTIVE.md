@@ -4,6 +4,7 @@ This document defines what the roster optimizer is trying to maximize.
 
 Related docs:
 - `docs/AI_MUSTERING_TOURNAMENT_ARCHITECTURE.md`
+- `docs/TOURNAMENT_EVALUATION_PIPELINE.md`
 - `docs/ML_ARTIFACT_REGISTRY.md`
 - `docs/ARMY_MUSTERING_SCAFFOLDING.md`
 

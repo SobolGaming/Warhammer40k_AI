@@ -598,6 +598,8 @@ Represent opponent fields and tournament constraints as first-class data.
 
 ### PR-MUSTER-006 — Unified evaluation pipeline for bundles and rosters
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Add a single evaluation path that defines “headless fixed” and “training-grade” for controllers and rosters.

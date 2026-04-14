@@ -268,6 +268,11 @@ def _parse_args() -> argparse.Namespace:
             f"(default: {DEFAULT_KEYFRAME_INTERVAL})."
         ),
     )
+    parser.add_argument(
+        "--report-output",
+        default="",
+        help="Optional JSON report path with per-game outcomes and aggregate self-play metadata.",
+    )
     return parser.parse_args()
 
 
@@ -553,36 +558,51 @@ def _run_single_game_job(
     }
 
 
-def main() -> int:
-    args = _parse_args()
-    _setup_logging(str(args.log_level))
-    games = max(1, int(args.games or 1))
-    workers = max(1, int(args.workers or 1))
-    max_phase_steps = max(1, int(args.max_phase_steps or 1))
-
+def run_headless_self_play(
+    *,
+    player1_army: str,
+    player2_army: str,
+    games: int,
+    workers: int,
+    max_phase_steps: int,
+    log_level: str = "WARNING",
+    log_phase_transitions: bool = False,
+    seed_base: int | None = None,
+    reserve_policy: str = "forced_only",
+    max_reserves_arrival_seconds: float = 10.0,
+    deployment_ranker_model: str = "",
+    output: str = "data/headless_self_play_decision_records.json",
+    reward_profile: str = "dense_vp_delta_v1",
+    no_reward_annotation: bool = False,
+    replay_dir: str = "",
+    replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+    report_output: str = "",
+) -> dict[str, Any]:
+    _setup_logging(str(log_level))
+    games = max(1, int(games or 1))
+    workers = max(1, int(workers or 1))
+    max_phase_steps = max(1, int(max_phase_steps or 1))
     all_records: list[dict[str, Any]] = []
     total_phase_steps = 0
     decision_type_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
 
-    seed_base = int(args.seed_base) if args.seed_base is not None else None
-
     if workers == 1 or games == 1:
         for game_index in range(games):
             payload = _run_single_game_job(
                 game_index,
-                player1_army_file=str(args.player1_army),
-                player2_army_file=str(args.player2_army),
+                player1_army_file=str(player1_army),
+                player2_army_file=str(player2_army),
                 max_phase_steps=max_phase_steps,
                 seed_base=seed_base,
-                reserve_policy=str(args.reserve_policy),
-                max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
-                deployment_ranker_model=str(args.deployment_ranker_model),
-                log_level=str(args.log_level),
-                log_phase_transitions=bool(args.log_phase_transitions),
-                replay_dir=str(args.replay_dir),
-                replay_keyframe_interval=int(args.replay_keyframe_interval),
+                reserve_policy=str(reserve_policy),
+                max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+                deployment_ranker_model=str(deployment_ranker_model),
+                log_level=str(log_level),
+                log_phase_transitions=bool(log_phase_transitions),
+                replay_dir=str(replay_dir),
+                replay_keyframe_interval=int(replay_keyframe_interval),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
@@ -600,17 +620,17 @@ def main() -> int:
                 executor.submit(
                     _run_single_game_job,
                     game_index,
-                    player1_army_file=str(args.player1_army),
-                    player2_army_file=str(args.player2_army),
+                    player1_army_file=str(player1_army),
+                    player2_army_file=str(player2_army),
                     max_phase_steps=max_phase_steps,
                     seed_base=seed_base,
-                    reserve_policy=str(args.reserve_policy),
-                    max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
-                    deployment_ranker_model=str(args.deployment_ranker_model),
-                    log_level=str(args.log_level),
-                    log_phase_transitions=bool(args.log_phase_transitions),
-                    replay_dir=str(args.replay_dir),
-                    replay_keyframe_interval=int(args.replay_keyframe_interval),
+                    reserve_policy=str(reserve_policy),
+                    max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+                    deployment_ranker_model=str(deployment_ranker_model),
+                    log_level=str(log_level),
+                    log_phase_transitions=bool(log_phase_transitions),
+                    replay_dir=str(replay_dir),
+                    replay_keyframe_interval=int(replay_keyframe_interval),
                 )
                 for game_index in range(games)
             ]
@@ -649,14 +669,14 @@ def main() -> int:
                 decision_type_counts[decision_type] += 1
 
     exported_records = all_records
-    if not bool(args.no_reward_annotation):
+    if not bool(no_reward_annotation):
         exported_records = annotate_decision_records_with_rewards(
             exported_records,
-            profile_id=str(args.reward_profile),
+            profile_id=str(reward_profile),
         )
     exported_records = _json_safe(exported_records)
 
-    output_path = Path(str(args.output))
+    output_path = Path(str(output))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(exported_records, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -664,8 +684,8 @@ def main() -> int:
     print(f"Workers: {workers}")
     print(f"Phase steps: {total_phase_steps}")
     print(f"Decision records: {len(exported_records)}")
-    if not bool(args.no_reward_annotation):
-        print(f"Reward profile: {args.reward_profile}")
+    if not bool(no_reward_annotation):
+        print(f"Reward profile: {reward_profile}")
     if games == 1 and game_outcomes:
         only_game_id = next(iter(sorted(game_outcomes)))
         outcome = dict(game_outcomes.get(only_game_id, {}) or {})
@@ -680,9 +700,73 @@ def main() -> int:
         print(f"Game outcomes: {game_outcomes}")
     print(f"Top decision types: {dict(decision_type_counts.most_common(10))}")
     print(f"Wrote: {output_path}")
-    replay_root = _resolved_replay_base_dir(str(args.replay_dir))
+    replay_root = _resolved_replay_base_dir(str(replay_dir))
     if replay_root is not None:
         print(f"Replay sessions: {replay_root}")
+    report_games: list[dict[str, Any]] = []
+    for payload in per_game_outputs:
+        game_payload = dict(payload or {})
+        result = dict(game_payload.get("result", {}) or {})
+        sanitized_result = dict(result)
+        sanitized_result.pop("records", None)
+        report_games.append(
+            {
+                "game_index": int(game_payload.get("game_index", 0) or 0),
+                "elapsed_seconds": float(game_payload.get("elapsed_seconds", 0.0) or 0.0),
+                "result": sanitized_result,
+            }
+        )
+    report = {
+        "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "games_requested": int(games),
+        "games_completed": int(len(report_games)),
+        "games_failed": int(max(0, int(games) - len(report_games))),
+        "completion_rate": float(len(report_games) / games) if games > 0 else 0.0,
+        "workers": int(workers),
+        "seed_base": seed_base,
+        "player1_army": str(player1_army),
+        "player2_army": str(player2_army),
+        "reward_profile": None if bool(no_reward_annotation) else str(reward_profile),
+        "phase_steps": int(total_phase_steps),
+        "decision_record_count": int(len(exported_records)),
+        "decision_type_counts": dict(decision_type_counts),
+        "game_outcomes": game_outcomes,
+        "records_output_path": str(output_path.resolve()),
+        "replay_dir": "" if replay_root is None else str(replay_root),
+        "games": report_games,
+    }
+    report_output_text = str(report_output or "").strip()
+    if report_output_text:
+        report_path = Path(report_output_text)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True),
+            encoding="utf-8",
+        )
+    return report
+
+
+def main() -> int:
+    args = _parse_args()
+    run_headless_self_play(
+        player1_army=str(args.player1_army),
+        player2_army=str(args.player2_army),
+        games=int(args.games),
+        workers=int(args.workers),
+        max_phase_steps=int(args.max_phase_steps),
+        log_level=str(args.log_level),
+        log_phase_transitions=bool(args.log_phase_transitions),
+        seed_base=(int(args.seed_base) if args.seed_base is not None else None),
+        reserve_policy=str(args.reserve_policy),
+        max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
+        deployment_ranker_model=str(args.deployment_ranker_model),
+        output=str(args.output),
+        reward_profile=str(args.reward_profile),
+        no_reward_annotation=bool(args.no_reward_annotation),
+        replay_dir=str(args.replay_dir),
+        replay_keyframe_interval=int(args.replay_keyframe_interval),
+        report_output=str(args.report_output),
+    )
     return 0
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from .default_heuristics import default_heuristic_registry
 from .interfaces import ArtifactResolver, BundleSource, PolicyBundleHandle, PolicyBundleLoader
 from .registry import (
     ArtifactManifest,
@@ -97,7 +98,7 @@ class JSONPolicyBundleLoader(PolicyBundleLoader):
         manifest_store: ArtifactManifestStore | None = None,
         artifact_resolver: ArtifactResolver | None = None,
     ) -> None:
-        self._heuristic_registry = heuristic_registry or HeuristicRegistry()
+        self._heuristic_registry = heuristic_registry or default_heuristic_registry()
         self._manifest_store = manifest_store
         self._artifact_resolver = artifact_resolver
 

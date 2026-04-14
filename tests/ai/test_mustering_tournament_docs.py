@@ -17,6 +17,7 @@ ARCHITECTURE_DOC = DOCS_DIR / "AI_MUSTERING_TOURNAMENT_ARCHITECTURE.md"
 OBJECTIVE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_OBJECTIVE.md"
 BUILD_CAPABILITY_DOC = DOCS_DIR / "BUILD_CAPABILITY_SCHEMA.md"
 TOURNAMENT_FIELD_DOC = DOCS_DIR / "TOURNAMENT_FIELD_SCHEMA.md"
+EVALUATION_PIPELINE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_PIPELINE.md"
 
 
 def _read(path: Path) -> str:
@@ -38,6 +39,7 @@ def test_pr_muster_001_docs_exist() -> None:
     assert REGISTRY_DOC.is_file()
     assert ARCHITECTURE_DOC.is_file()
     assert OBJECTIVE_DOC.is_file()
+    assert EVALUATION_PIPELINE_DOC.is_file()
 
 
 def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
@@ -175,3 +177,25 @@ def test_architecture_and_objective_docs_define_core_abi_terms() -> None:
     assert "MusterRecord" in architecture
     assert "Direct end-to-end list generation is not the first learned target." in architecture
     assert "Direct end-to-end list generation is not the first learned target." in objective
+    assert "TOURNAMENT_EVALUATION_PIPELINE.md" in architecture
+    assert "TOURNAMENT_EVALUATION_PIPELINE.md" in objective
+
+
+def test_evaluation_pipeline_doc_locks_scripts_modes_and_report_contract() -> None:
+    text = _read(EVALUATION_PIPELINE_DOC)
+
+    assert "scripts/evaluate_policy_bundle.py" in text
+    assert "scripts/evaluate_tournament_roster.py" in text
+    assert "scripts/run_headless_self_play.py" in text
+    assert "ReplayStoreReader.reconstruct_game_at_decision(..., strict=True)" in text
+    assert "headless_fixed" in text
+    assert "training_grade" in text
+    assert "headless_fixed_v1" in text
+    assert "pre_ml_baseline_v1" in text
+    assert "summary.json" in text
+    assert "per_match.csv" in text
+    assert "roster_context.json" in text
+    assert "The scripts return exit code `1` when replay audit fails" in text
+    assert "warhammer40k_ai[ml]" in text
+    assert "runtime army files" in text
+    assert "actual self-play match execution" in text
