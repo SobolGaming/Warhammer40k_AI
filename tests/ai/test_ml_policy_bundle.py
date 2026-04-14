@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 import pytest
 
@@ -17,6 +18,10 @@ from warhammer40k_ai.ml import (
     PlaybookSelector,
     UnknownArtifactError,
 )
+
+
+DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
+REGISTRY_DOC = DOCS_DIR / "ML_ARTIFACT_REGISTRY.md"
 
 
 class _GreedyCandidateRanker:
@@ -54,6 +59,17 @@ class _StaticMatchupEvaluator:
         }
 
 
+def _extract_json_block(markdown: str, heading: str) -> dict[str, object]:
+    pattern = re.compile(
+        rf"## {re.escape(heading)}\s+```json\n(.*?)\n```",
+        re.DOTALL,
+    )
+    match = pattern.search(markdown)
+    if match is None:
+        raise AssertionError(f"Missing JSON example for heading: {heading}")
+    return json.loads(match.group(1))
+
+
 def _base_bundle_payload(policy_bundle_id: str) -> dict[str, object]:
     return {
         "policy_bundle_schema_id": "policy_bundle_schema:v1",
@@ -86,12 +102,7 @@ def _base_bundle_payload(policy_bundle_id: str) -> dict[str, object]:
             },
         },
         "fallbacks": {
-            "playbook_selector": [
-                {
-                    "resolver_kind": "heuristic",
-                    "resolver_ref": "heuristic:identity_playbook_fallback:v1",
-                }
-            ]
+            "playbook_selector": ["heuristic:identity_playbook_fallback:v1"]
         },
         "required_feature_schema_ids": ["feature_schema:roster_matchup_v1"],
         "required_capability_schema_ids": ["capability_schema:build_capability_v1"],
@@ -202,6 +213,50 @@ def test_policy_bundle_loader_resolves_heuristic_components_from_json(tmp_path: 
     fallback_chain = bundle.resolve_fallbacks("playbook_selector")
     assert len(fallback_chain) == 1
     assert isinstance(fallback_chain[0], PlaybookSelector)
+
+
+def test_policy_bundle_loader_accepts_documented_example_fallback_shape(tmp_path: Path) -> None:
+    text = REGISTRY_DOC.read_text(encoding="utf-8")
+    artifact_payload = _extract_json_block(text, "Example Artifact Manifest")
+    bundle_payload = _extract_json_block(text, "Example Bundle Manifest")
+    models_root = tmp_path / "models"
+    artifact_id = str(artifact_payload["artifact_id"])
+
+    _write_json(
+        models_root / "artifacts" / artifact_id / "manifest.json",
+        artifact_payload,
+    )
+
+    registry = HeuristicRegistry(
+        {
+            "heuristic:capability_matchup:v1": _StaticMatchupEvaluator(),
+            "heuristic:identity_playbook:v1": _FirstPlaybookSelector(),
+            "heuristic:roster_edit_search:v1": _GreedyCandidateRanker(),
+        }
+    )
+    loader = JSONPolicyBundleLoader(
+        heuristic_registry=registry,
+        manifest_store=ArtifactManifestStore(models_root),
+    )
+
+    bundle = loader.load_bundle(bundle_payload)
+
+    primary = bundle.resolve_component("matchup_evaluator")
+    assert isinstance(primary, ArtifactManifestReference)
+    assert primary.artifact_id == artifact_id
+
+    matchup_fallback = bundle.resolve_fallbacks("matchup_evaluator")
+    assert len(matchup_fallback) == 1
+    assert isinstance(matchup_fallback[0], MatchupEvaluator)
+    assert matchup_fallback[0].evaluate_matchup({"pressure": 1.25})["utility"] == 1.25
+
+    playbook_fallback = bundle.resolve_fallbacks("playbook_selector")
+    assert len(playbook_fallback) == 1
+    assert isinstance(playbook_fallback[0], PlaybookSelector)
+
+    ranker_fallback = bundle.resolve_fallbacks("roster_edit_ranker")
+    assert len(ranker_fallback) == 1
+    assert isinstance(ranker_fallback[0], CandidateRanker)
 
 
 def test_policy_bundle_loader_resolves_manifest_backed_artifacts_without_ml_extras(tmp_path: Path) -> None:

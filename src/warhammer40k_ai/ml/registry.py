@@ -130,6 +130,22 @@ class ComponentResolverRecord:
     resolver_ref: str
 
     @classmethod
+    def from_ref(cls, resolver_ref: object, *, field_name: str) -> "ComponentResolverRecord":
+        normalized_ref = _require_identifier(
+            resolver_ref,
+            field_name=field_name,
+        )
+        if normalized_ref.startswith("artifact:"):
+            resolver_kind = "artifact"
+        elif normalized_ref.startswith("heuristic:"):
+            resolver_kind = "heuristic"
+        else:
+            raise RegistryValidationError(
+                f"{field_name} must start with 'artifact:' or 'heuristic:'."
+            )
+        return cls(resolver_kind=resolver_kind, resolver_ref=normalized_ref)
+
+    @classmethod
     def from_dict(cls, payload: Mapping[str, Any], *, field_name: str) -> "ComponentResolverRecord":
         data = _require_json_object(payload, field_name=field_name)
         resolver_kind = _require_non_empty_text(data.get("resolver_kind"), field_name=f"{field_name}.resolver_kind")
@@ -309,7 +325,7 @@ class PolicyBundleManifest:
                     f"policy bundle manifest.fallbacks.{component_name} must be a JSON array."
                 )
             records = tuple(
-                ComponentResolverRecord.from_dict(
+                ComponentResolverRecord.from_ref(
                     item,
                     field_name=f"policy bundle manifest.fallbacks.{component_name}[{index}]",
                 )

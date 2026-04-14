@@ -80,6 +80,9 @@ def test_ml_artifact_registry_examples_are_valid_and_complete() -> None:
     assert bundle["rules_bundle_scope"]["match_mode"] == "exact"
     assert bundle["descriptor_bundle_scope"]["match_mode"] == "exact"
     assert bundle["event_policy_scope"]["match_mode"] == "exact"
+    assert bundle["fallbacks"]["matchup_evaluator"] == ["heuristic:capability_matchup:v1"]
+    assert bundle["fallbacks"]["playbook_selector"] == ["heuristic:identity_playbook:v1"]
+    assert bundle["fallbacks"]["roster_edit_ranker"] == ["heuristic:roster_edit_search:v1"]
 
 
 def test_registry_doc_locks_no_ml_extras_and_patch_scope_rules() -> None:
@@ -106,4 +109,3 @@ def test_architecture_and_objective_docs_define_core_abi_terms() -> None:
     assert "MusterRecord" in architecture
     assert "Direct end-to-end list generation is not the first learned target." in architecture
     assert "Direct end-to-end list generation is not the first learned target." in objective
-
