@@ -72,6 +72,9 @@ Practical implications for the ABI:
 - Preview-era examples must be labeled as preview or inferred until an official
   event packet exists for that edition frame.
 
+The JSON examples below are intended to match canonical runtime `to_dict()`
+output, not just an illustrative shape.
+
 ## Example Tournament Field Distribution
 
 ```json
@@ -83,14 +86,14 @@ Practical implications for the ABI:
   "terrain_layout_pack_id": "terrain_pack:chapter_approved_2025_26",
   "opponent_slices": [
     {
-      "slice_id": "slice:pressure_marines",
-      "weight": 3.0,
-      "label": "Pressure Marines",
-      "faction": "Space Marines",
-      "detachment_type": "Gladius Task Force",
-      "archetype_tags": ["combined_arms", "mid_board"],
+      "slice_id": "slice:durable_necrons",
+      "weight": 1.0,
+      "label": "Durable Necrons",
+      "faction": "Necrons",
+      "detachment_type": null,
+      "archetype_tags": ["attrition", "durable"],
       "army_blueprint": null,
-      "build_capability_profile_id": "build_capability_profile:pressure_marines_v1",
+      "build_capability_profile_id": "build_capability_profile:durable_necrons_v1",
       "metadata": {
         "source_kind": "archetype_slice"
       }
@@ -109,14 +112,14 @@ Practical implications for the ABI:
       }
     },
     {
-      "slice_id": "slice:durable_necrons",
-      "weight": 1.0,
-      "label": "Durable Necrons",
-      "faction": "Necrons",
-      "detachment_type": null,
-      "archetype_tags": ["durable", "attrition"],
+      "slice_id": "slice:pressure_marines",
+      "weight": 3.0,
+      "label": "Pressure Marines",
+      "faction": "Space Marines",
+      "detachment_type": "Gladius Task Force",
+      "archetype_tags": ["combined_arms", "mid_board"],
       "army_blueprint": null,
-      "build_capability_profile_id": "build_capability_profile:durable_necrons_v1",
+      "build_capability_profile_id": "build_capability_profile:pressure_marines_v1",
       "metadata": {
         "source_kind": "archetype_slice"
       }
@@ -124,15 +127,15 @@ Practical implications for the ABI:
   ],
   "mission_distribution": [
     {
-      "choice_id": "mission:take_and_hold",
-      "weight": 2.0,
-      "label": "Take and Hold",
-      "metadata": {}
-    },
-    {
       "choice_id": "mission:purge_the_foe",
       "weight": 1.0,
       "label": "Purge the Foe",
+      "metadata": {}
+    },
+    {
+      "choice_id": "mission:take_and_hold",
+      "weight": 2.0,
+      "label": "Take and Hold",
       "metadata": {}
     }
   ],
@@ -231,7 +234,7 @@ Practical implications for the ABI:
         "label": "judge_permission_for_new_round"
       }
     ],
-    "notes": "Uses the concrete Warhammer World GT schedule as an official large-event example.",
+    "notes": "Round duration and milestones match the February 2025 Warhammer World Grand Tournament player pack.",
     "metadata": {}
   },
   "pairing_mode": "swiss",
@@ -251,14 +254,14 @@ Practical implications for the ABI:
     "objective_marker_mode": "flat_40mm_passable",
     "terrain_layout_mode": "recommended_pack_layout",
     "terrain_layout_count_per_pairing": null,
-    "notes": "Follows the current Tournament Companion v1.4 packet rather than the May 23, 2025 preview article.",
+    "notes": "Current official Tournament Companion v1.4 excludes Asymmetric War, Twists, and Challenger cards from the tournament packet.",
     "metadata": {}
   },
   "evaluation_budget": {
     "time_budget_ms": 25000,
     "opponent_sample_cap": 64,
     "pairing_sample_cap": 128,
-    "notes": "Default deterministic offline roster-evaluation budget.",
+    "notes": "Deterministic headless-evaluation default for offline roster assessment.",
     "metadata": {}
   },
   "format_name": "Current official 10th-style singles",
@@ -279,7 +282,7 @@ Practical implications for the ABI:
       "note": "Used for a concrete five-round, 165-minute singles event example."
     }
   ],
-  "notes": "Represents a concrete current 10th-style singles event shape with Swiss-style pairings, Battle Ready scoring, and no chess clocks.",
+  "notes": "Represents a concrete current 10th-style singles event shape with Swiss-style pairings, 2,000-point Strike Force rosters, Battle Ready scoring, and the official Chapter Approved tournament mission packet.",
   "metadata": {}
 }
 ```
@@ -300,7 +303,7 @@ Practical implications for the ABI:
     "pregame_minutes": 15,
     "per_player_time_minutes": null,
     "milestones": [],
-    "notes": "No official preview event pack exists as of April 14, 2026, so the round shape is inherited from current GT norms.",
+    "notes": "No official preview event pack has been published as of April 14, 2026, so the round clock shape inherits a current five-round GT example.",
     "metadata": {}
   },
   "pairing_mode": "swiss",
@@ -320,14 +323,14 @@ Practical implications for the ABI:
     "objective_marker_mode": null,
     "terrain_layout_mode": "mission_pairing_recommended_layouts",
     "terrain_layout_count_per_pairing": 3,
-    "notes": "Preview articles describe event-locked Force Dispositions and three recommended layouts for each mission pairing.",
+    "notes": "Preview articles describe five Force Dispositions, tournament-side event locking at list submission, and three recommended terrain layouts per mission pairing.",
     "metadata": {}
   },
   "evaluation_budget": {
     "time_budget_ms": 25000,
     "opponent_sample_cap": 64,
     "pairing_sample_cap": 128,
-    "notes": "Temporary default until a final event packet defines the released structure.",
+    "notes": "Matches the default offline roster-evaluation budget until a final event pack exists.",
     "metadata": {}
   },
   "format_name": "Preview new40k singles",
@@ -339,7 +342,7 @@ Practical implications for the ABI:
       "label": "#New40k – How your army affects your mission",
       "url": "https://www.warhammer-community.com/en-gb/articles/oefzq9fg/new40k-how-your-army-affects-your-mission/",
       "published_on": "2026-04-03",
-      "note": "Preview source for Force Dispositions, tournament-side disposition locking, and mission-pairing logic."
+      "note": "Preview source for Force Dispositions, tournament-side disposition locking, secondary cadence, and paired mission/deployment logic."
     },
     {
       "label": "#New40k – Take cover with updated terrain rules",
@@ -348,7 +351,7 @@ Practical implications for the ABI:
       "note": "Preview source for terrain-layout recommendations by mission pairing."
     }
   ],
-  "notes": "Preview-labeled example only. Event lock semantics are sourced; 2,000 points, five rounds, and the shared-round clock are inferred from current tournament norms until an official event pack exists.",
+  "notes": "This is a preview-labeled example, not a claim about a final released event packet. Force-disposition locking and mission-pairing semantics are sourced from April 2026 preview articles; round count and general GT frame are inferred from current official singles norms.",
   "metadata": {
     "preview_status": "inferred_until_official_event_pack"
   }
