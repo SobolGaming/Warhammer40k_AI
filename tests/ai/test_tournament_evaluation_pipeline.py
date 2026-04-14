@@ -175,6 +175,44 @@ def _fake_self_play_stage(records: list[dict[str, object]]):
     return _run
 
 
+def _fake_partial_timeout_self_play_stage(records: list[dict[str, object]], *, stderr_path: Path):
+    def _run(**_kwargs):
+        return {
+            "returncode": 1,
+            "stdout_path": "",
+            "stderr_path": str(stderr_path),
+            "records_path": "",
+            "report_path": "",
+            "report": {
+                "games_requested": 4,
+                "games_completed": 1,
+                "games_failed": 3,
+                "completion_rate": 0.25,
+                "decision_record_count": len(records),
+                "games": [
+                    {
+                        "game_index": 0,
+                        "elapsed_seconds": 0.25,
+                        "result": {
+                            "game_id": "game:test:0",
+                            "phase_steps": 12,
+                            "winner_army_label": "chaos_test",
+                            "winner_score_line": "<SCORE: 12 vs 8>",
+                            "scoreboard": {"chaos_test": 12, "aeldari_test": 8},
+                            "replay_session_id": "game:test:0",
+                            "replay_path": "/tmp/replay.sqlite3",
+                            "snapshot_path": "/tmp/snapshot.json",
+                        },
+                    }
+                ],
+            },
+            "records": records,
+            "replay_dir": "",
+        }
+
+    return _run
+
+
 def _fake_replay_pass(_report):
     return {
         "games_audited": 1,
@@ -301,6 +339,39 @@ def test_policy_bundle_training_grade_fails_pre_ml_baseline_gate(tmp_path: Path,
     assert result["success"] is False
     assert result["gate_report"]["gate_profile_id"] == "pre_ml_baseline_v1"
     assert any("manifest_gate_failed:pre_ml_baseline_v1" == item for item in result["summary"]["failure_reasons"])
+
+
+def test_policy_bundle_evaluation_reports_timeout_ratio_across_requested_games(tmp_path: Path, monkeypatch) -> None:
+    records = [_record("d1", game_id="game:test:0", player_score=4, opponent_score=4)]
+    models_root = tmp_path / "models"
+    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
+    stderr_path = tmp_path / "self_play_stderr.txt"
+    stderr_path.write_text("Worker timed out after max phase steps on remaining games.", encoding="utf-8")
+
+    import warhammer40k_ai.ml.evaluation_pipeline as pipeline
+
+    monkeypatch.setattr(
+        pipeline,
+        "run_headless_self_play_stage",
+        _fake_partial_timeout_self_play_stage(records, stderr_path=stderr_path),
+    )
+    monkeypatch.setattr(pipeline, "audit_replay_sessions", _fake_replay_pass)
+
+    result = run_policy_bundle_evaluation(
+        policy_bundle_source=str(bundle_path),
+        models_root=models_root,
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        report_dir=tmp_path / "report",
+        games=4,
+        evaluation_mode=HEADLESS_FIXED_EVALUATION_MODE,
+    )
+
+    assert result["success"] is False
+    assert result["summary"]["utility_decomposition"]["timeout_or_max_phase_step_exit_ratio"] == 0.75
+    assert "timeout_exit" in result["summary"]["failure_reasons"]
+    assert "max_phase_steps_exit" in result["summary"]["failure_reasons"]
 
 
 def test_tournament_roster_evaluation_adds_roster_context(tmp_path: Path, monkeypatch) -> None:

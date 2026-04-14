@@ -96,7 +96,8 @@ Tournament-roster evaluation also writes:
 - manifest gate status
 - VP / win metrics
 - no-progress ratio
-- timeout or max-phase-step exit ratio
+- timeout or max-phase-step exit ratio across requested games when failure counts
+  are observable
 - controller complexity metrics
 
 ## Exit Semantics

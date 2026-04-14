@@ -449,10 +449,18 @@ def _failure_reasons(
     replay_report: Mapping[str, Any],
     gate_report: Mapping[str, Any],
 ) -> list[str]:
+    def _stderr_text() -> str:
+        stderr_path = str(self_play_stage.get("stderr_path", "") or "")
+        if not stderr_path:
+            return ""
+        path = Path(stderr_path)
+        if not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8")
+
     reasons: list[str] = []
     if int(self_play_stage.get("returncode", 0) or 0) != 0:
-        stderr_path = str(self_play_stage.get("stderr_path", "") or "")
-        stderr_text = Path(stderr_path).read_text(encoding="utf-8") if stderr_path and Path(stderr_path).is_file() else ""
+        stderr_text = _stderr_text()
         reasons.append(f"self_play_failed: returncode={int(self_play_stage.get('returncode', 0) or 0)}")
         if "max phase steps" in stderr_text.lower():
             reasons.append("max_phase_steps_exit")
@@ -463,6 +471,44 @@ def _failure_reasons(
     if not bool(gate_report.get("passed", False)):
         reasons.append(f"manifest_gate_failed:{gate_report.get('gate_profile_id', '')}")
     return reasons
+
+
+def _timeout_or_max_phase_step_exit_ratio(self_play_stage: Mapping[str, Any]) -> float:
+    self_play_report = dict(self_play_stage.get("report", {}) or {})
+    requested_games = max(0, int(self_play_report.get("games_requested", 0) or 0))
+    if requested_games <= 0:
+        return 0.0
+
+    timeout_like_completed_games = 0
+    for payload in list(self_play_report.get("games", []) or []):
+        game_payload = dict(payload or {})
+        result = dict(game_payload.get("result", {}) or {})
+        for candidate_text in (
+            str(game_payload.get("error", "") or ""),
+            str(result.get("error", "") or ""),
+            str(game_payload.get("termination_reason", "") or ""),
+            str(result.get("termination_reason", "") or ""),
+        ):
+            lowered = candidate_text.lower()
+            if "timeout" in lowered or "timed out" in lowered or "max phase steps" in lowered:
+                timeout_like_completed_games += 1
+                break
+
+    if timeout_like_completed_games > 0:
+        return round(min(requested_games, timeout_like_completed_games) / requested_games, 6)
+
+    failed_games = max(0, int(self_play_report.get("games_failed", 0) or 0))
+    failure_reasons = _failure_reasons(
+        self_play_stage=self_play_stage,
+        replay_report={},
+        gate_report={},
+    )
+    if failed_games > 0 and any(
+        reason in {"timeout_exit", "max_phase_steps_exit"}
+        for reason in failure_reasons
+    ):
+        return round(min(requested_games, failed_games) / requested_games, 6)
+    return 0.0
 
 
 def _write_per_match_csv(
@@ -543,13 +589,7 @@ def _summary_payload(
         "opponent_win_rate": score_metrics["opponent_win_rate"],
         "tie_rate": score_metrics["tie_rate"],
         "no_progress_ratio": float(gameplay_quality.get("no_progress_game_ratio", 0.0) or 0.0),
-        "timeout_or_max_phase_step_exit_ratio": float(
-            1.0 if any(reason in {"timeout_exit", "max_phase_steps_exit"} for reason in _failure_reasons(
-                self_play_stage=self_play_stage,
-                replay_report=replay_report,
-                gate_report=gate_report,
-            )) else 0.0
-        ),
+        "timeout_or_max_phase_step_exit_ratio": _timeout_or_max_phase_step_exit_ratio(self_play_stage),
         "controller_complexity_metrics": {
             "mean_tactical_decisions_per_game": float(
                 gameplay_quality.get("mean_tactical_decisions_per_game", 0.0) or 0.0
