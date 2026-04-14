@@ -652,6 +652,8 @@ Add a single evaluation path that defines “headless fixed” and “training-g
 
 ### PR-MUSTER-007 — Deterministic roster edit DSL and non-learned search
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Create the offline optimizer that searches legal roster space without any learned model requirement.

@@ -71,6 +71,10 @@ units directly.
   - Uses `src/warhammer40k_ai/roster/unit_materialization.py` to resolve datasheets,
     apply serialized wargear selections, assign enhancements, preserve deterministic
     `build_entry_id` values, and select the authored warlord.
+  - `ArmyMusterer.validate_runtime_legality()` reuses the same materialization path,
+    then applies authored attachment bindings, validates support-artillery joins,
+    and runs `Army.validate()` so build-side callers can enforce real runtime
+    muster legality without going through army-list text parsing.
   - `ArmyMusterer.muster_blueprint()` exposes the same runtime mustering path directly
     from an `ArmyBlueprint`.
   - Single-detachment parse/snapshot helpers that still begin from a known primary detachment now
@@ -97,6 +101,8 @@ units directly.
   - validates detachment-point budget spend
   - validates references from unit entries, enhancement assignments, and attachment bindings
   - validates chosen Force Disposition against any allowed set
+  - leaves deep roster legality to runtime validation so build-side search and
+    authored muster requests can share the same `Army.validate()` rules
 
 #### Runtime/list validation
 
@@ -113,6 +119,9 @@ units directly.
   - the rest of the established roster validation currently housed in `army.py`
 - Enhancement assignment validation now also supports upgrade-tag representations for
   eligible non-Character units.
+- Search and repair flows can now validate `ArmyBlueprint` candidates through the
+  same runtime legality path, which is where warlord, enhancement, duplicate
+  datasheet, attachment, and optional-wargear rules are ultimately enforced.
 
 #### UI touchpoints
 
@@ -162,6 +171,10 @@ units directly.
   path for rosters that do not provide authored attachment bindings.
 - Build-side unit entries still rely on resolvable datasheet and enhancement names plus
   the existing serialized wargear string / `wargear_by_model` representations.
+- Optional wargear is already addressed in the current mustering seam: build-side
+  wargear changes are translated into runtime option application through
+  `wargear_dict_for_entry(...)`, `Unit.apply_wargear_options_strict(...)`, and
+  `unit.validate_wargear_selection()`.
 - The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine
   other than existing Daemonic Allegiance prompts when applicable.

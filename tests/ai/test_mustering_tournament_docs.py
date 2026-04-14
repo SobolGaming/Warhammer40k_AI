@@ -18,6 +18,7 @@ OBJECTIVE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_OBJECTIVE.md"
 BUILD_CAPABILITY_DOC = DOCS_DIR / "BUILD_CAPABILITY_SCHEMA.md"
 TOURNAMENT_FIELD_DOC = DOCS_DIR / "TOURNAMENT_FIELD_SCHEMA.md"
 EVALUATION_PIPELINE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_PIPELINE.md"
+ROSTER_SEARCH_DOC = DOCS_DIR / "ROSTER_SEARCH.md"
 
 
 def _read(path: Path) -> str:
@@ -40,6 +41,7 @@ def test_pr_muster_001_docs_exist() -> None:
     assert ARCHITECTURE_DOC.is_file()
     assert OBJECTIVE_DOC.is_file()
     assert EVALUATION_PIPELINE_DOC.is_file()
+    assert ROSTER_SEARCH_DOC.is_file()
 
 
 def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
@@ -179,6 +181,7 @@ def test_architecture_and_objective_docs_define_core_abi_terms() -> None:
     assert "Direct end-to-end list generation is not the first learned target." in objective
     assert "TOURNAMENT_EVALUATION_PIPELINE.md" in architecture
     assert "TOURNAMENT_EVALUATION_PIPELINE.md" in objective
+    assert "ROSTER_SEARCH.md" in architecture
 
 
 def test_evaluation_pipeline_doc_locks_scripts_modes_and_report_contract() -> None:
@@ -199,3 +202,22 @@ def test_evaluation_pipeline_doc_locks_scripts_modes_and_report_contract() -> No
     assert "warhammer40k_ai[ml]" in text
     assert "runtime army files" in text
     assert "actual self-play match execution" in text
+
+
+def test_roster_search_doc_locks_validator_backed_search_contract() -> None:
+    text = _read(ROSTER_SEARCH_DOC)
+
+    assert "roster_edit_actions.py" in text
+    assert "roster_repair.py" in text
+    assert "roster_search.py" in text
+    assert "roster_search_report.py" in text
+    assert "ArmyMusterer.validate_runtime_legality()" in text
+    assert "select warlord" in text
+    assert "change wargear choice" in text
+    assert "enhancement count limits" in text
+    assert "duplicate datasheet caps" in text
+    assert "Unit.apply_wargear_options_strict(...)" in text
+    assert "unit.validate_wargear_selection()" in text
+    assert "`beam`" in text
+    assert "`local`" in text
+    assert "`evolutionary`" in text

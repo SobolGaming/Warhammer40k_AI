@@ -195,6 +195,8 @@ class ArmyMusterer:
     def muster_army(
         self,
         request: ArmyMusterRequest | ArmyBlueprint | Mapping[str, Any],
+        *,
+        strict_unknown_wargear: bool = False,
     ) -> Army:
         validated_muster = self.validate_request(request)
         army = Army(
@@ -208,5 +210,16 @@ class ArmyMusterer:
                 army,
                 validated_muster,
                 waha_helper=self._waha,
+                strict_unknown_wargear=bool(strict_unknown_wargear),
             )
+        return army
+
+    def validate_runtime_legality(
+        self,
+        request: ArmyMusterRequest | ArmyBlueprint | Mapping[str, Any],
+    ) -> Army:
+        army = self.muster_army(request, strict_unknown_wargear=True)
+        army.apply_authored_attachment_bindings()
+        army.validate_support_artillery()
+        army.validate()
         return army

@@ -160,6 +160,7 @@ def add_materialized_unit_to_army(
     *,
     build_entry_id: str | None = None,
     assignment_metadata: dict[str, object] | None = None,
+    strict_unknown_wargear: bool = False,
 ) -> None:
     """Apply loadout choices to a runtime unit and add it to the army."""
 
@@ -235,6 +236,11 @@ def add_materialized_unit_to_army(
                 unit.add_ability(matching_ability, model_name)
                 continue
 
+            if strict_unknown_wargear:
+                raise ArmyValidationError(
+                    f"Could not resolve wargear option '{wargear_name}' for unit '{unit.name}'."
+                )
+
             logger.warning(
                 "Warning: %s not found in %s's possible wargear or abilities.",
                 gear_name,
@@ -280,6 +286,7 @@ def materialize_roster_entry(
     faction_id: str,
     waha_helper: WahaHelper,
     enhancement_assignments: list[EnhancementAssignment] | None = None,
+    strict_unknown_wargear: bool = False,
 ) -> Unit:
     datasheet = resolve_roster_entry_datasheet(
         entry,
@@ -303,6 +310,7 @@ def materialize_roster_entry(
         entry.is_warlord,
         build_entry_id=entry.entry_id,
         assignment_metadata=assignment_metadata,
+        strict_unknown_wargear=strict_unknown_wargear,
     )
     return unit
 
@@ -312,6 +320,7 @@ def materialize_validated_muster_units(
     validated_muster: ValidatedMuster,
     *,
     waha_helper: WahaHelper,
+    strict_unknown_wargear: bool = False,
 ) -> list[Unit]:
     blueprint = validated_muster.blueprint
     assignments_by_entry_id: dict[str, list[EnhancementAssignment]] = {}
@@ -327,6 +336,7 @@ def materialize_validated_muster_units(
                 faction_id=validated_muster.faction_id,
                 waha_helper=waha_helper,
                 enhancement_assignments=assignments_by_entry_id.get(entry.entry_id, []),
+                strict_unknown_wargear=strict_unknown_wargear,
             )
         )
     return units

@@ -7,6 +7,7 @@ Related docs:
 - `docs/ARMY_MUSTERING_SCAFFOLDING.md`
 - `docs/BUILD_CAPABILITY_SCHEMA.md`
 - `docs/ML_ARTIFACT_REGISTRY.md`
+- `docs/ROSTER_SEARCH.md`
 - `docs/TOURNAMENT_FIELD_SCHEMA.md`
 - `docs/TOURNAMENT_EVALUATION_PIPELINE.md`
 - `docs/TOURNAMENT_EVALUATION_OBJECTIVE.md`
@@ -167,6 +168,10 @@ Expected evaluation content:
 6. Emit a `MusterRecord` with full provenance and decomposed utility output.
 7. Feed search or comparison code from those records. Search never bypasses
    validation, mustering, or compatibility checks.
+
+Roster search is intentionally edit-driven. The optimizer mutates
+`ArmyBlueprint`, routes each candidate through runtime mustering legality, and
+then ranks only validator-approved rosters.
 
 ## Determinism and Portability
 
