@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import runpy
+import subprocess
 import setuptools
+import sys
 
 import warhammer40k_ai.ml.dependency_boundary as dependency_boundary
 from warhammer40k_ai.ml.dependency_boundary import (
@@ -80,3 +82,32 @@ def test_setup_exposes_ml_extra_and_keeps_core_install_requires_ml_free(monkeypa
 def test_engine_and_replay_import_without_ml_stack() -> None:
     from warhammer40k_ai.engine.game import Game  # noqa: F401
     from warhammer40k_ai.engine.replay import replay_decision_records  # noqa: F401
+    from warhammer40k_ai.ml import JSONPolicyBundleLoader  # noqa: F401
+    from warhammer40k_ai.ml import HeuristicRegistry  # noqa: F401
+
+
+def test_engine_and_replay_imports_do_not_load_forbidden_ml_modules() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = """
+import sys
+
+from warhammer40k_ai.engine.game import Game  # noqa: F401
+from warhammer40k_ai.engine.replay import replay_decision_records  # noqa: F401
+from warhammer40k_ai.ml import HeuristicRegistry  # noqa: F401
+from warhammer40k_ai.ml import JSONPolicyBundleLoader  # noqa: F401
+
+forbidden = {"torch", "torchrl", "torch_geometric", "ray", "wandb"}
+loaded = sorted(name for name in sys.modules if name.split(".", 1)[0] in forbidden)
+if loaded:
+    raise SystemExit(",".join(loaded))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == ""

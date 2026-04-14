@@ -54,6 +54,18 @@ Storage rules:
   the authoritative compatibility records.
 - Report outputs are reproducibility artifacts, not compatibility declarations.
 
+Current framework-free runtime implementation:
+- `src/warhammer40k_ai/ml/interfaces.py`
+- `src/warhammer40k_ai/ml/registry.py`
+- `src/warhammer40k_ai/ml/policy_bundle.py`
+
+Runtime rules:
+- bundle loading must be able to read manifest JSON and resolve heuristic
+  components with base project dependencies only
+- artifact components may resolve to manifest-backed references before checkpoint
+  runtime plumbing exists, but unknown artifact ids must fail with clear
+  diagnostics
+
 ## Identifier Rules
 
 - All ids must be lower-case ASCII strings using only letters, digits, `:`, `_`,

@@ -5,8 +5,12 @@ This document defines the dedicated ML onboarding boundary for the engine.
 Primary artifacts:
 - `src/warhammer40k_ai/ml/dependency_boundary.py`
 - `src/warhammer40k_ai/ml/__init__.py`
+- `src/warhammer40k_ai/ml/interfaces.py`
+- `src/warhammer40k_ai/ml/registry.py`
+- `src/warhammer40k_ai/ml/policy_bundle.py`
 - `setup.py` (`extras_require["ml"]`)
-- `tests/test_ml_dependency_boundary.py`
+- `tests/rules/test_ml_dependency_boundary.py`
+- `tests/ai/test_ml_policy_bundle.py`
 
 ## Core Policy
 
@@ -69,11 +73,27 @@ Healthy environment expectation:
 - `missing_packages`
 - `available_packages`
 
+Framework-free registry and bundle behavior now lives alongside the dependency
+boundary:
+- `interfaces.py` defines protocol-only runtime contracts for candidate ranking,
+  matchup evaluation, playbook selection, artifact resolution, and bundle loading.
+- `registry.py` loads and validates manifest JSON without importing ML extras.
+- `policy_bundle.py` resolves heuristic-only bundles directly and resolves
+  artifact components to manifest-backed references until backend-specific
+  runtimes land.
+
 ## Regression Coverage
 
-`tests/test_ml_dependency_boundary.py` validates:
+`tests/rules/test_ml_dependency_boundary.py` validates:
 - dependency name normalization and forbidden-core scanning
 - deterministic dependency status shape
 - actionable runtime error text when ML extras are missing
 - `setup.py` exposes `ml` extras while core `install_requires` remains ML-free
 - engine/replay imports stay functional without ML stack
+- engine/replay import paths do not load forbidden ML modules as a side effect
+
+`tests/ai/test_ml_policy_bundle.py` validates:
+- heuristic-only bundle manifests load from JSON with zero ML extras installed
+- bundle components resolve to concrete heuristic handlers through the registry
+- manifest-backed artifact references resolve without checkpoint loading
+- unknown artifact ids fail with clear diagnostics

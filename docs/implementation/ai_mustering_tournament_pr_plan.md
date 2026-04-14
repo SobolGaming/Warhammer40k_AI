@@ -395,6 +395,8 @@ Create the normative docs that define the stable ABI for roster evaluation, arti
 
 ### PR-MUSTER-002 — Framework-free ML interfaces, registry, and bundle loader
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Add the minimal ML-facing runtime interfaces without introducing framework coupling into the engine.
