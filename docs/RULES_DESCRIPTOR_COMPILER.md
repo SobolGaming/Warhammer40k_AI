@@ -49,3 +49,11 @@ Army-build descriptor source:
 
 Design goal:
 - learned policy inputs stay patchable by recompiling descriptors under the active rules bundle instead of hard-coding mission/objective/terrain semantics in model weights.
+
+Build-side companion compiler:
+- `src/warhammer40k_ai/engine/descriptor_build_capability.py`
+
+`BuildCapabilityDescriptor` is compiled from `ArmyBlueprint` plus an explicit
+`rules_bundle_id`. It is intentionally kept outside the runtime
+`compile_descriptor_bundle(...)` contract because it summarizes authored roster
+capabilities rather than per-game mission or terrain state.

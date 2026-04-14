@@ -5,6 +5,7 @@ tournament roster evaluation, and future roster optimization.
 
 Related docs:
 - `docs/ARMY_MUSTERING_SCAFFOLDING.md`
+- `docs/BUILD_CAPABILITY_SCHEMA.md`
 - `docs/ML_ARTIFACT_REGISTRY.md`
 - `docs/TOURNAMENT_EVALUATION_OBJECTIVE.md`
 - `docs/ML_DEPENDENCY_BOUNDARY.md`
@@ -68,9 +69,11 @@ Inputs:
 
 Requirements:
 - schema-versioned
+- deterministic `build_capability_profile_id`
 - recomputed from rules and descriptors
 - never hand-maintained by faction label alone
 - suitable for both heuristic and learned evaluators
+- portable feature names documented in `docs/BUILD_CAPABILITY_SCHEMA.md`
 
 ### `TournamentFieldDistribution`
 

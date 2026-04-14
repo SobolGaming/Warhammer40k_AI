@@ -51,7 +51,7 @@ def _set_build_entry_id(unit: object, entry_id: str | None) -> None:
     setattr(unit, "build_entry_id", str(entry_id))
 
 
-def _resolve_datasheet_for_entry(
+def resolve_roster_entry_datasheet(
     entry: RosterEntry,
     *,
     faction_id: str,
@@ -281,7 +281,7 @@ def materialize_roster_entry(
     waha_helper: WahaHelper,
     enhancement_assignments: list[EnhancementAssignment] | None = None,
 ) -> Unit:
-    datasheet = _resolve_datasheet_for_entry(
+    datasheet = resolve_roster_entry_datasheet(
         entry,
         faction_id=faction_id,
         waha_helper=waha_helper,
@@ -336,5 +336,6 @@ __all__ = [
     "add_materialized_unit_to_army",
     "materialize_roster_entry",
     "materialize_validated_muster_units",
+    "resolve_roster_entry_datasheet",
     "wargear_dict_for_entry",
 ]

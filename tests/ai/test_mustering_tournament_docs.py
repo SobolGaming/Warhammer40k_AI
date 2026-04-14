@@ -9,6 +9,7 @@ DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
 REGISTRY_DOC = DOCS_DIR / "ML_ARTIFACT_REGISTRY.md"
 ARCHITECTURE_DOC = DOCS_DIR / "AI_MUSTERING_TOURNAMENT_ARCHITECTURE.md"
 OBJECTIVE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_OBJECTIVE.md"
+BUILD_CAPABILITY_DOC = DOCS_DIR / "BUILD_CAPABILITY_SCHEMA.md"
 
 
 def _read(path: Path) -> str:
@@ -30,6 +31,43 @@ def test_pr_muster_001_docs_exist() -> None:
     assert REGISTRY_DOC.is_file()
     assert ARCHITECTURE_DOC.is_file()
     assert OBJECTIVE_DOC.is_file()
+
+
+def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
+    assert BUILD_CAPABILITY_DOC.is_file()
+
+    schema = _extract_json_block(_read(BUILD_CAPABILITY_DOC), "Example Build Capability Schema")
+
+    assert schema["capability_schema_id"] == "capability_schema:build_capability_v1"
+    assert schema["aggregate_count_names"] == [
+        "unit_count",
+        "detachment_count",
+        "enhancement_count",
+        "attachment_binding_count",
+        "leader_binding_count",
+        "support_binding_count",
+        "battleline_unit_count",
+        "character_unit_count",
+        "vehicle_or_monster_unit_count",
+        "towering_unit_count",
+        "titanic_unit_count",
+        "deep_strike_unit_count",
+        "infiltrator_unit_count",
+        "scout_unit_count",
+        "attachment_capable_unit_count",
+    ]
+    feature_names = [feature["name"] for feature in schema["feature_definitions"]]
+    assert "terrain_occlusion_reliance" in feature_names
+    assert "elevated_fire_affinity" in feature_names
+    assert "deployment_reveal_pressure" in feature_names
+    assert "charge_delivery_reliance" in feature_names
+    assert "objective_spread_tolerance" in feature_names
+    assert "attachment_dependency_risk" in feature_names
+    assert "controller_complexity_index" in feature_names
+    assert "mission_action_flex_capacity" in feature_names
+    assert "detachment_diversity_index" in feature_names
+    assert "towering_exposure_index" in feature_names
+    assert "11e" not in _read(BUILD_CAPABILITY_DOC)
 
 
 def test_ml_artifact_registry_examples_are_valid_and_complete() -> None:

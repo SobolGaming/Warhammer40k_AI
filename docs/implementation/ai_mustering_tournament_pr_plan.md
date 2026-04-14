@@ -492,6 +492,8 @@ Close the current `ArmyMusterer` gap so validated build-time rosters become play
 
 ### PR-MUSTER-004 — Deterministic `BuildCapabilityProfile` compiler
 
+**Status:** Completed on April 14, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite is green.
+
 **Goal**
 
 Create the deterministic semantic layer that explains what a roster can do in gameplay terms.
