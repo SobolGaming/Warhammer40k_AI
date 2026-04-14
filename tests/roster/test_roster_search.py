@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry
-from warhammer40k_ai.roster.event_policy import chapter_approved_10e_event_policy
+from warhammer40k_ai.roster.event_policy import (
+    chapter_approved_10e_event_policy,
+    preview_new40k_event_policy,
+)
 from warhammer40k_ai.roster.roster_edit_actions import (
     AddUnitEntryAction,
     AssignEnhancementAction,
@@ -70,6 +73,28 @@ def _scoring_evaluator(blueprint: ArmyBlueprint) -> dict[str, object]:
         },
         "evaluation_summary": {
             "primary_detachment_type": blueprint.primary_detachment_type,
+        },
+    }
+
+
+def _local_path_scoring_evaluator(blueprint: ArmyBlueprint) -> dict[str, object]:
+    force_disposition_bonus = 10.0 if blueprint.force_disposition == "Siege" else 0.0
+    bladeguard_bonus = 1.0 if any(entry.entry_id == "entry_bladeguard" for entry in blueprint.unit_entries) else 0.0
+    grenade_launcher_bonus = 0.1 if any(
+        entry.entry_id == "entry_intercessors" and "Astartes grenade launcher" in set(entry.wargear)
+        for entry in blueprint.unit_entries
+    ) else 0.0
+    score = force_disposition_bonus + bladeguard_bonus + grenade_launcher_bonus
+    return {
+        "score": score,
+        "utility_decomposition": {
+            "score": score,
+            "force_disposition_bonus": force_disposition_bonus,
+            "bladeguard_bonus": bladeguard_bonus,
+            "grenade_launcher_bonus": grenade_launcher_bonus,
+        },
+        "evaluation_summary": {
+            "force_disposition": blueprint.force_disposition,
         },
     }
 
@@ -233,6 +258,92 @@ def test_search_is_reproducible_under_fixed_seed_for_evolutionary_strategy(
     )
 
     assert first.to_dict() == second.to_dict()
+
+
+def test_search_local_strategy_keeps_single_parent_frontier(
+    waha_helper: WahaHelper,
+) -> None:
+    actions = [
+        MutateForceDispositionAction(
+            force_disposition="Siege",
+            allowed_force_dispositions=("Assault", "Siege"),
+        ),
+        AddUnitEntryAction(
+            RosterEntry(
+                entry_id="entry_bladeguard",
+                name="Bladeguard Veteran Squad",
+                count=3,
+                detachment_selection_id="det_gladius",
+            )
+        ),
+        ChangeWargearChoiceAction(
+            entry_id="entry_intercessors",
+            wargear=("Astartes grenade launcher",),
+        ),
+    ]
+
+    report = search_rosters(
+        _seed_blueprint(),
+        waha_helper=waha_helper,
+        evaluator=_local_path_scoring_evaluator,
+        action_provider=actions,
+        config=RosterSearchConfig(
+            strategy="local",
+            max_iterations=2,
+            top_k=4,
+            random_seed=23,
+        ),
+    )
+
+    assert report.strategy == "local"
+    assert [iteration.frontier_size for iteration in report.iterations] == [1, 1]
+    assert report.iterations[0].candidate_count == 3
+    assert report.iterations[1].candidate_count == 2
+    assert [step["kind"] for step in report.top_candidates[0].edit_trace] == [
+        "mutate_force_disposition",
+        "add_unit_entry",
+    ]
+    assert report.top_candidates[0].army_blueprint.force_disposition == "Siege"
+    assert any(
+        entry.entry_id == "entry_bladeguard"
+        for entry in report.top_candidates[0].army_blueprint.unit_entries
+    )
+
+
+def test_search_force_disposition_repair_respects_event_policy_lock_mode(
+    waha_helper: WahaHelper,
+) -> None:
+    seed = _seed_blueprint()
+    seed.force_disposition = None
+    seed.allowed_force_dispositions = ["Siege", "Assault"]
+    actions = [
+        MutateForceDispositionAction(
+            force_disposition=None,
+            allowed_force_dispositions=("Siege", "Assault"),
+        )
+    ]
+
+    flexible_report = search_rosters(
+        seed,
+        waha_helper=waha_helper,
+        evaluator=_local_path_scoring_evaluator,
+        action_provider=actions,
+        config=RosterSearchConfig(strategy="local", max_iterations=1, top_k=2, random_seed=31),
+        event_policy=chapter_approved_10e_event_policy(),
+    )
+    locked_report = search_rosters(
+        seed,
+        waha_helper=waha_helper,
+        evaluator=_local_path_scoring_evaluator,
+        action_provider=actions,
+        config=RosterSearchConfig(strategy="local", max_iterations=1, top_k=2, random_seed=31),
+        event_policy=preview_new40k_event_policy(),
+    )
+
+    assert flexible_report.seed_blueprint.force_disposition is None
+    assert locked_report.seed_blueprint.force_disposition == "Siege"
+    assert all(candidate.army_blueprint.force_disposition is None for candidate in flexible_report.top_candidates)
+    assert all(candidate.army_blueprint.force_disposition == "Siege" for candidate in locked_report.top_candidates)
 
 
 def test_heuristic_roster_evaluator_works_with_framework_free_policy_bundle(
