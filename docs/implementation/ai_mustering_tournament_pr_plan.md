@@ -348,6 +348,8 @@ These PRs are safe to implement immediately.
 
 ### PR-MUSTER-001 — Normative docs and ABI for roster optimization
 
+**Status:** Completed and pushed to `dev` on April 14, 2026 as commit `84bedca8` (`Add PR-MUSTER-001 mustering tournament ABI docs`).
+
 **Goal**
 
 Create the normative docs that define the stable ABI for roster evaluation, artifact storage, and tournament policy.
