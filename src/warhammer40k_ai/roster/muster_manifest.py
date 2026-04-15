@@ -46,6 +46,10 @@ def _normalize_str_tuple(values: Iterable[Any] | None) -> tuple[str, ...]:
     return tuple(sorted({str(item or "").strip() for item in list(values or []) if str(item or "").strip()}))
 
 
+def _normalize_record_id_tuple(values: Iterable[Any] | None) -> tuple[str, ...]:
+    return tuple(str(item or "").strip() for item in list(values or []) if str(item or "").strip())
+
+
 @dataclass(frozen=True)
 class MusteringManifestSlice:
     rules_bundle_ids: tuple[str, ...] = ()
@@ -140,8 +144,8 @@ class MusteringManifest:
         object.__setattr__(self, "total_records", int(self.total_records))
         if self.total_records < 0:
             raise ValueError("total_records cannot be negative.")
+        object.__setattr__(self, "record_ids", _normalize_record_id_tuple(self.record_ids))
         for field_name in (
-            "record_ids",
             "rules_bundle_ids",
             "capability_schema_ids",
             "build_capability_profile_ids",
@@ -432,7 +436,7 @@ def build_mustering_manifest(
         corpus_id=corpus_id,
         source_tag=source_tag,
         total_records=len(filtered_records),
-        record_ids=_unique(filtered_records, "record_id"),
+        record_ids=tuple(record.record_id for record in filtered_records),
         record_kind_counts=record_kinds,
         rules_bundle_ids=_unique(filtered_records, "rules_bundle_id"),
         capability_schema_ids=_unique(filtered_records, "capability_schema_id"),

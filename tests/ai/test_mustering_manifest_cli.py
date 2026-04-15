@@ -147,6 +147,53 @@ def test_build_mustering_manifest_cli_filters_and_summarizes_corpus(tmp_path: Pa
     assert manifest["slice_filters"]["faction_tags"] == ["Space Marines"]
 
 
+def test_build_mustering_manifest_cli_preserves_repeated_rows(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    input_path = tmp_path / "record.json"
+    output_path = tmp_path / "mustering_manifest.json"
+    record = _record(
+        rules_bundle_id="rules_bundle:test",
+        field_distribution_id="field_distribution:test",
+        event_policy_id="event_policy:test",
+        policy_bundle_id="policy_bundle:test",
+        controller_bundle_id="policy_bundle:test",
+        army_blueprint_hash="army_blueprint:test",
+        build_capability_profile_id="build_capability_profile:test",
+        faction="Space Marines",
+        detachment_type="Gladius Task Force",
+    )
+    input_path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
+
+    script_path = repo_root / "scripts" / "build_mustering_manifest.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--input",
+            str(input_path),
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+            "--corpus-id",
+            "mustering_corpus:test",
+            "--source-tag",
+            "mixed",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+
+    assert completed.returncode == 0
+    assert "Total records: 2" in completed.stdout
+    manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert manifest["total_records"] == 2
+    assert manifest["record_ids"] == [record["record_id"], record["record_id"]]
+    assert manifest["utility_term_summary"]["score"]["count"] == 2
+
+
 def test_build_mustering_manifest_cli_rejects_unknown_record_schema(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     input_path = tmp_path / "records.json"

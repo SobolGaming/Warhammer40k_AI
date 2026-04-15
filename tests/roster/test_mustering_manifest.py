@@ -135,6 +135,24 @@ def test_build_mustering_manifest_filters_and_summarizes_slice() -> None:
     assert manifest["slice_filters"]["faction_tags"] == ["Imperium"]
 
 
+def test_build_mustering_manifest_preserves_duplicate_record_id_cardinality() -> None:
+    first = _muster_record()
+    second = _muster_record()
+    assert first.record_id == second.record_id
+
+    manifest = build_mustering_manifest(
+        [first, second],
+        corpus_id="mustering_corpus:test",
+        source_tag="mixed",
+    ).to_dict()
+
+    assert validate_mustering_manifest(manifest) == []
+    assert manifest["total_records"] == 2
+    assert manifest["record_ids"] == [first.record_id, second.record_id]
+    assert manifest["record_kind_counts"] == {"evaluation": 2}
+    assert manifest["utility_term_summary"]["score"]["count"] == 2
+
+
 def test_mustering_manifest_validation_rejects_schema_changes() -> None:
     manifest = build_mustering_manifest(
         [_muster_record()],
@@ -155,6 +173,11 @@ def test_search_report_candidates_convert_to_muster_records_with_edit_trace() ->
             DetachmentSelection(
                 selection_id="det_gladius",
                 detachment_type="Gladius Task Force",
+            ),
+            DetachmentSelection(
+                selection_id="det_anvil",
+                detachment_type="Anvil Siege Force",
+                metadata={"detachment_tags": ["Heavy Infantry"]},
             ),
         ),
         unit_entries=(
@@ -209,3 +232,8 @@ def test_search_report_candidates_convert_to_muster_records_with_edit_trace() ->
     assert record["utility_terms"] == {"score": 4.25}
     assert record["search_edit_sequence"][0]["action_type"] == "select_warlord"
     assert record["provenance"]["strategy"] == "local"
+    assert record["detachment_tags"] == [
+        "Anvil Siege Force",
+        "Gladius Task Force",
+        "Heavy Infantry",
+    ]

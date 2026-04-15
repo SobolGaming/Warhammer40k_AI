@@ -68,6 +68,28 @@ def _primary_detachment_type(blueprint_payload: Mapping[str, Any]) -> str | None
     return _optional_text(first.get("detachment_type"))
 
 
+def _blueprint_faction_tags(blueprint_payload: Mapping[str, Any]) -> tuple[str, ...]:
+    metadata = dict(blueprint_payload.get("metadata", {}) or {})
+    values: list[object] = []
+    faction = blueprint_payload.get("faction")
+    if faction:
+        values.append(faction)
+    values.extend(list(metadata.get("faction_tags", []) or []))
+    return _sorted_unique_texts(values)
+
+
+def _blueprint_detachment_tags(blueprint_payload: Mapping[str, Any]) -> tuple[str, ...]:
+    metadata = dict(blueprint_payload.get("metadata", {}) or {})
+    values: list[object] = []
+    for detachment in list(blueprint_payload.get("detachments", []) or []):
+        if isinstance(detachment, Mapping):
+            values.append(detachment.get("detachment_type"))
+            detachment_metadata = dict(detachment.get("metadata", {}) or {})
+            values.extend(list(detachment_metadata.get("detachment_tags", []) or []))
+    values.extend(list(metadata.get("detachment_tags", []) or []))
+    return _sorted_unique_texts(values)
+
+
 @dataclass(frozen=True)
 class MusterRecord:
     record_kind: str
@@ -363,9 +385,12 @@ def muster_record_from_evaluation_summary(
             matchup_payload.get("primary_detachment_type")
             or _primary_detachment_type(blueprint_payload)
         ),
-        faction_tags=tuple([blueprint_payload.get("faction")] if blueprint_payload.get("faction") else ()),
-        detachment_tags=tuple(
-            [matchup_payload.get("primary_detachment_type") or _primary_detachment_type(blueprint_payload)]
+        faction_tags=_blueprint_faction_tags(blueprint_payload),
+        detachment_tags=_sorted_unique_texts(
+            (
+                matchup_payload.get("primary_detachment_type"),
+                *_blueprint_detachment_tags(blueprint_payload),
+            )
         ),
         utility_terms=dict(summary_payload.get("utility_decomposition", {}) or {}),
         replay_gate_outcomes={
@@ -429,8 +454,8 @@ def muster_records_from_search_report(
                 controller_bundle_id=policy_bundle_id,
                 faction=blueprint.faction,
                 detachment_type=blueprint.primary_detachment_type,
-                faction_tags=(blueprint.faction,),
-                detachment_tags=tuple([blueprint.primary_detachment_type] if blueprint.primary_detachment_type else ()),
+                faction_tags=_blueprint_faction_tags(blueprint.to_dict()),
+                detachment_tags=_blueprint_detachment_tags(blueprint.to_dict()),
                 utility_terms=dict(candidate_payload.get("utility_decomposition", {}) or {}),
                 replay_gate_outcomes={
                     "validation_summary": dict(candidate_payload.get("validation_summary", {}) or {}),

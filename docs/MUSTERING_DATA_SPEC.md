@@ -62,6 +62,9 @@ rows. It is the file used to audit and reuse experiment corpora.
 
 It records:
 - total rows and record kind counts
+- `record_ids` in row order, preserving duplicates when a corpus intentionally
+  contains repeated experiments or the same input file is supplied more than
+  once
 - all rules, capability, build profile, field, event-policy, policy-bundle, and
   controller-bundle ids represented in the slice
 - faction and detachment tags represented in the slice

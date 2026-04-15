@@ -703,7 +703,7 @@ Create the offline optimizer that searches legal roster space without any learne
 
 ### PR-MUSTER-008 — Mustering telemetry, manifests, and experiment corpus
 
-**Status:** Completed on April 15, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite passed with 7210 tests.
+**Status:** Completed on April 15, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite passed with 7212 tests.
 
 **Goal**
 
