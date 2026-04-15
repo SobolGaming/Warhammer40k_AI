@@ -2318,21 +2318,26 @@ class Army:
             return str(name or "").strip().lower() == "mission tactics"
 
         def _toggle_mission_tactics(unit, *, enabled: bool) -> None:
-            abilities = list(getattr(unit, "possible_abilities", []) or [])
-            if not abilities:
-                return
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
             if enabled:
                 stored = getattr(unit, "_mission_tactics_original_abilities", None)
                 if stored is not None:
                     unit.possible_abilities = list(stored)
                     if hasattr(unit, "_mission_tactics_original_abilities"):
                         delattr(unit, "_mission_tactics_original_abilities")
+                    if callable(invalidate):
+                        invalidate()
+                return
+            abilities = list(getattr(unit, "possible_abilities", []) or [])
+            if not abilities:
                 return
             if not any(_is_mission_tactics_ability(ab) for ab in abilities):
                 return
             if getattr(unit, "_mission_tactics_original_abilities", None) is None:
                 unit._mission_tactics_original_abilities = list(abilities)
             unit.possible_abilities = [ab for ab in abilities if not _is_mission_tactics_ability(ab)]
+            if callable(invalidate):
+                invalidate()
 
         chapter_present = set()
 
@@ -2628,6 +2633,9 @@ class Army:
             if _norm_name(getattr(unit, "name", "")) == "plague marines":
                 sr["infused_blessings_of_nurgle_disabled"] = True
             unit.special_rules = sr
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
 
         cap = self._cult_of_dark_gods_points_cap()
         total = 0

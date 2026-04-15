@@ -117,6 +117,37 @@ def test_daemonic_allegiance_applies_keyword_and_wargear():
     assert any(wg.name == "Torrent of burning blood" for wg in unit.models[0].wargear)
 
 
+def test_daemonic_allegiance_invalidates_cached_wargear_rule_answers():
+    ability_desc = (
+        "When you select this model to include in your army, you must select one of the keywords below. "
+        "Until the end of the battle, this model has that keyword and the additional wargear stated for that keyword below: "
+        "KHORNE - This model is additionally equipped with: brass standard "
+        "TZEENTCH - This model is additionally equipped with: changeling sigil "
+        "NURGLE - This model is additionally equipped with: rot icon "
+        "SLAANESH - This model is additionally equipped with: swift icon"
+    )
+    datasheet = _MockDatasheet("Soul Grinder", ability_desc=ability_desc)
+    datasheet.datasheets_unit_composition = [{"description": "2 Test Models"}]
+    datasheet.datasheets_models_cost = [{"description": "2 models", "cost": 100}]
+    datasheet.datasheets_abilities.append(
+        {
+            "name": "Swift Icon",
+            "description": 'The bearer has a Move characteristic of 12".',
+            "type": "Wargear",
+            "parameter": "",
+        }
+    )
+    unit = Unit(datasheet)
+    model = unit.models[0]
+
+    assert unit.get_model_move_characteristic_override(model) == (None, None)
+
+    unit.daemonic_allegiance = "SLAANESH"
+    assert unit.apply_daemonic_allegiance_selection() is True
+
+    assert unit.get_model_move_characteristic_override(model) == (12, "Swift Icon")
+
+
 def test_daemonic_allegiance_requires_selection():
     unit = _make_unit()
     army = Army.with_detachment("Chaos Daemons", "Daemonic Incursion", points_limit=2000)

@@ -1,6 +1,7 @@
 import pytest
 
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
+from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 
 
@@ -76,6 +77,31 @@ def test_cult_of_dark_gods_disables_plague_marines_infusion():
 
     army.validate_cult_of_dark_gods()
 
+    assert cult.special_rules.get("infused_blessings_of_nurgle_disabled") is True
+
+
+def test_cult_of_dark_gods_invalidates_cached_afflicted_specs():
+    army = setup_csm_army(points_limit=2000)
+    cult = make_unit("Plague Marines", faction_keywords=["Death Guard"], cost=200)
+    cult.possible_abilities = [
+        Ability(
+            "Infused with the Blessings of Nurgle",
+            "CSM",
+            (
+                "In your Shooting phase, each time this unit is selected to shoot, after this unit has shot, "
+                "select one enemy unit hit by one or more of those attacks. Until the start of your next turn, "
+                "that enemy unit is Afflicted."
+            ),
+            "",
+        )
+    ]
+    army.add_unit(cult)
+
+    assert cult.unit_post_shoot_afflicted_specs() == [{"source": "Infused with the Blessings of Nurgle"}]
+
+    army.validate_cult_of_dark_gods()
+
+    assert cult.unit_post_shoot_afflicted_specs() == []
     assert cult.special_rules.get("infused_blessings_of_nurgle_disabled") is True
 
 

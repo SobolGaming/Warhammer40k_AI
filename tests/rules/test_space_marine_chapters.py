@@ -1,6 +1,7 @@
 import unittest
 
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
+from warhammer40k_ai.units.unit import Unit
 
 
 class StubUnit:
@@ -23,6 +24,41 @@ class StubUnit:
     @property
     def is_psyker(self):
         return self._psyker
+
+
+class _MissionTacticsDatasheet:
+    def __init__(self):
+        self.name = "Deathwatch Kill Team"
+        self.faction_data = {"name": "Space Marines"}
+        self.keywords = ["INFANTRY"]
+        self.faction_keywords = ["ADEPTUS ASTARTES", "DEATHWATCH"]
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": "6",
+                "T": "4",
+                "Sv": "3",
+                "W": "2",
+                "Ld": "7",
+                "OC": "1",
+                "base_size": "32mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "none",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = [
+            {
+                "name": "Mission Tactics",
+                "description": "Models in this unit have Deep Strike.",
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ]
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
 
 
 class TestSpaceMarineChapters(unittest.TestCase):
@@ -136,6 +172,19 @@ class TestSpaceMarineChapters(unittest.TestCase):
         )
 
         army.validate_space_marine_chapters()
+
+    def test_deathwatch_mission_tactics_toggle_invalidates_cached_trait_queries(self):
+        army = Army.with_detachment(faction="Space Marines", detachment_type="Gladius Task Force")
+        army.faction_id = "SM"
+        unit = Unit(_MissionTacticsDatasheet())
+        army.units = [unit]
+
+        self.assertTrue(unit.has_deep_strike())
+
+        army.validate_space_marine_chapters()
+
+        self.assertFalse(unit.has_deep_strike())
+        self.assertEqual([], list(getattr(unit, "possible_abilities", []) or []))
 
 
 if __name__ == "__main__":

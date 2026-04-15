@@ -302,6 +302,11 @@ class RulesParsingMixin:
         self.special_rules = sr
 
     def apply_daemonic_allegiance_selection(self, selection: Optional[str] = None) -> bool:
+        def _invalidate_cache() -> None:
+            invalidate = getattr(self, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
         options = list(self.get_daemonic_allegiance_options() or [])
         if not options:
             return False
@@ -313,6 +318,7 @@ class RulesParsingMixin:
                 sr = {}
             sr["daemonic_allegiance_pending"] = True
             self.special_rules = sr
+            _invalidate_cache()
             return False
         matched = None
         for kw, wargear_name in options:
@@ -327,6 +333,7 @@ class RulesParsingMixin:
             sr = {}
         if sr.get("daemonic_allegiance_applied") and sr.get("daemonic_allegiance") == kw:
             self._apply_daemonic_allegiance_effects(kw)
+            _invalidate_cache()
             return True
         self.daemonic_allegiance = kw
         sr["daemonic_allegiance"] = kw
@@ -371,6 +378,7 @@ class RulesParsingMixin:
         sr["daemonic_allegiance_applied"] = True
         self.special_rules = sr
         self._apply_daemonic_allegiance_effects(kw)
+        _invalidate_cache()
         return True
 
     def _command_phase_sticky_objective_scan_result(self) -> dict[str, object]:
