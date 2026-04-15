@@ -22,6 +22,12 @@ from ..roster.army_build import ArmyBlueprint
 from ..roster.build_capability import BuildCapabilityProfile, compile_build_capability_profile
 from ..roster.event_policy import EventPolicyDescriptor
 from ..roster.matchup_context import MatchupContext, compile_matchup_context
+from ..roster.muster_manifest import (
+    build_mustering_manifest,
+    save_mustering_manifest,
+    validate_mustering_manifest,
+)
+from ..roster.muster_record import muster_record_from_evaluation_summary
 from ..roster.tournament_field import TournamentFieldDistribution
 from ..waha_helper import WahaHelper
 from .interfaces import MatchupEvaluator
@@ -47,6 +53,8 @@ _REPORT_FILENAMES = {
     "replay_report": "replay_report.json",
     "bundle_resolution": "bundle_resolution.json",
     "roster_context": "roster_context.json",
+    "muster_record": "muster_record.json",
+    "mustering_manifest": "mustering_manifest.json",
     "self_play_stdout": "self_play_stdout.txt",
     "self_play_stderr": "self_play_stderr.txt",
 }
@@ -62,6 +70,19 @@ def _scripts_dir() -> Path:
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _current_git_commit() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=_repo_root(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return str(completed.stdout or "").strip()
+    return ""
 
 
 def _json_safe(value: Any) -> Any:
@@ -198,6 +219,12 @@ def _bundle_resolution_report(bundle: ResolvedPolicyBundle) -> dict[str, Any]:
     return {
         "policy_bundle_id": bundle.policy_bundle_id,
         "controller_type": bundle.controller_type,
+        "rules_bundle_scope": bundle.manifest.rules_bundle_scope.to_dict(),
+        "descriptor_bundle_scope": bundle.manifest.descriptor_bundle_scope.to_dict(),
+        "event_policy_scope": bundle.manifest.event_policy_scope.to_dict(),
+        "required_feature_schema_ids": list(bundle.manifest.required_feature_schema_ids),
+        "required_capability_schema_ids": list(bundle.manifest.required_capability_schema_ids),
+        "created_from_commit": bundle.manifest.created_from_commit,
         "components": components,
         "fallbacks": fallbacks,
     }
@@ -607,6 +634,16 @@ def _summary_payload(
         "evaluation_mode": _normalize_evaluation_mode(evaluation_mode),
         "policy_bundle_id": bundle.policy_bundle_id,
         "controller_type": bundle.controller_type,
+        "policy_bundle_lineage": {
+            "policy_bundle_id": bundle.policy_bundle_id,
+            "controller_type": bundle.controller_type,
+            "rules_bundle_scope": bundle.manifest.rules_bundle_scope.to_dict(),
+            "descriptor_bundle_scope": bundle.manifest.descriptor_bundle_scope.to_dict(),
+            "event_policy_scope": bundle.manifest.event_policy_scope.to_dict(),
+            "required_feature_schema_ids": list(bundle.manifest.required_feature_schema_ids),
+            "required_capability_schema_ids": list(bundle.manifest.required_capability_schema_ids),
+            "created_from_commit": bundle.manifest.created_from_commit,
+        },
         "candidate_roster_label": candidate_label,
         "opponent_roster_label": opponent_label,
         "self_play": {
@@ -865,8 +902,42 @@ def run_tournament_roster_evaluation(
         "roster_context_path": str(paths["roster_context"]),
         "heuristic_matchup_evaluation": _json_safe(heuristic_matchup),
     }
+    summary["roster_evaluation"]["lineage"] = {
+        "army_blueprint_hash": capability_profile.army_blueprint_hash,
+        "rules_bundle_id": matchup_context.rules_bundle_id,
+        "capability_schema_id": capability_profile.capability_schema_id,
+        "build_capability_profile_id": capability_profile.build_capability_profile_id,
+        "matchup_context_id": matchup_context.matchup_context_id,
+        "field_distribution_id": matchup_context.field_distribution_id,
+        "event_policy_id": matchup_context.event_policy_id,
+        "policy_bundle_id": str(summary.get("policy_bundle_id", "") or ""),
+        "policy_bundle_lineage": dict(summary.get("policy_bundle_lineage", {}) or {}),
+    }
+    muster_record = muster_record_from_evaluation_summary(
+        summary,
+        roster_context=roster_context,
+        provenance={
+            "git_commit": _current_git_commit(),
+            "report_dir": str(resolved_report_dir),
+        },
+    ).to_dict()
+    _write_json(paths["muster_record"], muster_record)
+    mustering_manifest = build_mustering_manifest(
+        [muster_record],
+        corpus_id=f"{summary['evaluation_run_id']}:mustering",
+        source_tag="tournament_roster_evaluation",
+    ).to_dict()
+    manifest_errors = validate_mustering_manifest(mustering_manifest)
+    if manifest_errors:
+        raise ValueError(f"Mustering manifest validation failed: {'; '.join(manifest_errors)}")
+    save_mustering_manifest(mustering_manifest, paths["mustering_manifest"])
+    summary["roster_evaluation"]["muster_record_path"] = str(paths["muster_record"])
+    summary["roster_evaluation"]["mustering_manifest_path"] = str(paths["mustering_manifest"])
+    summary["roster_evaluation"]["muster_record_id"] = str(muster_record.get("record_id", "") or "")
     _write_json(paths["summary"], summary)
     base["summary"] = summary
+    base["muster_record"] = muster_record
+    base["mustering_manifest"] = mustering_manifest
     return base
 
 

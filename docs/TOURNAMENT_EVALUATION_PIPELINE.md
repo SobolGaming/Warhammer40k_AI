@@ -10,6 +10,7 @@ Related docs:
 - `docs/ML_DEPENDENCY_BOUNDARY.md`
 - `docs/BUILD_CAPABILITY_SCHEMA.md`
 - `docs/TOURNAMENT_FIELD_SCHEMA.md`
+- `docs/MUSTERING_DATA_SPEC.md`
 
 ## Purpose
 
@@ -89,6 +90,15 @@ The report directory contains:
 
 Tournament-roster evaluation also writes:
 - `roster_context.json`
+- `muster_record.json`
+- `mustering_manifest.json`
+
+`summary.json` links these mustering artifacts through
+`roster_evaluation.muster_record_path`,
+`roster_evaluation.mustering_manifest_path`, and
+`roster_evaluation.lineage`. That lineage captures the rules bundle,
+build-capability profile, capability schema, field distribution, event policy,
+policy bundle, and descriptor-bundle scope used for the run.
 
 `summary.json` exposes the required utility decomposition:
 - completion rate

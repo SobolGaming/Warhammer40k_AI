@@ -140,6 +140,9 @@ Non-responsibilities:
 `MusterRecord` is the telemetry object for roster-evaluation and roster-search
 experiments.
 
+The normative schema and CLI contract live in
+`docs/MUSTERING_DATA_SPEC.md`.
+
 Required provenance families:
 - `army_blueprint_hash`
 - `rules_bundle_id`

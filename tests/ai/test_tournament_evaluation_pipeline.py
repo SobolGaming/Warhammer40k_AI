@@ -14,6 +14,8 @@ from warhammer40k_ai.ml.evaluation_pipeline import (
 )
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, RosterEntry
 from warhammer40k_ai.roster.event_policy import chapter_approved_10e_event_policy
+from warhammer40k_ai.roster.muster_manifest import validate_mustering_manifest
+from warhammer40k_ai.roster.muster_record import validate_muster_record
 from warhammer40k_ai.roster.tournament_field import OpponentSlice, TournamentFieldDistribution, WeightedChoice
 
 
@@ -479,6 +481,29 @@ def test_tournament_roster_evaluation_adds_roster_context(tmp_path: Path, monkey
     assert roster_evaluation["build_capability_profile_id"] == "build_capability_profile:test"
     assert roster_evaluation["matchup_context_id"] == "matchup_context:test"
     assert Path(roster_evaluation["roster_context_path"]).is_file()
+    assert Path(roster_evaluation["muster_record_path"]).is_file()
+    assert Path(roster_evaluation["mustering_manifest_path"]).is_file()
+    assert roster_evaluation["lineage"]["rules_bundle_id"] == "rules_bundle:test_bundle"
+    assert roster_evaluation["lineage"]["policy_bundle_id"] == "policy_bundle:heuristic_eval_v1"
+
+    muster_record = json.loads(Path(roster_evaluation["muster_record_path"]).read_text(encoding="utf-8"))
+    mustering_manifest = json.loads(
+        Path(roster_evaluation["mustering_manifest_path"]).read_text(encoding="utf-8")
+    )
+    assert validate_muster_record(muster_record) == []
+    assert validate_mustering_manifest(mustering_manifest) == []
+    assert muster_record["record_id"] == roster_evaluation["muster_record_id"]
+    assert muster_record["rules_bundle_id"] == "rules_bundle:test_bundle"
+    assert muster_record["policy_bundle_id"] == "policy_bundle:heuristic_eval_v1"
+    assert muster_record["capability_schema_id"] == "capability_schema:build_capability_v1"
+    assert muster_record["build_capability_profile_id"] == "build_capability_profile:test"
+    assert muster_record["descriptor_bundle_id"] == "descriptor_bundle:test_bundle"
+    assert muster_record["descriptor_provenance"]["policy_bundle_lineage"]["descriptor_bundle_scope"]["ids"] == [
+        "descriptor_bundle:test_bundle"
+    ]
+    assert mustering_manifest["total_records"] == 1
+    assert mustering_manifest["record_ids"] == [muster_record["record_id"]]
+    assert mustering_manifest["rules_bundle_ids"] == ["rules_bundle:test_bundle"]
 
 
 def test_evaluate_policy_bundle_cli_returns_nonzero_on_failed_evaluation(monkeypatch, tmp_path: Path) -> None:

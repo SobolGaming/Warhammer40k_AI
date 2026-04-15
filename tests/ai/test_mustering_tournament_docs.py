@@ -8,6 +8,8 @@ from warhammer40k_ai.roster.event_policy import (
     chapter_approved_10e_event_policy,
     preview_new40k_event_policy,
 )
+from warhammer40k_ai.roster.muster_manifest import validate_mustering_manifest
+from warhammer40k_ai.roster.muster_record import MusterRecord, validate_muster_record
 from warhammer40k_ai.roster.tournament_field import TournamentFieldDistribution
 
 
@@ -19,6 +21,7 @@ BUILD_CAPABILITY_DOC = DOCS_DIR / "BUILD_CAPABILITY_SCHEMA.md"
 TOURNAMENT_FIELD_DOC = DOCS_DIR / "TOURNAMENT_FIELD_SCHEMA.md"
 EVALUATION_PIPELINE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_PIPELINE.md"
 ROSTER_SEARCH_DOC = DOCS_DIR / "ROSTER_SEARCH.md"
+MUSTERING_DATA_DOC = DOCS_DIR / "MUSTERING_DATA_SPEC.md"
 
 
 def _read(path: Path) -> str:
@@ -42,6 +45,7 @@ def test_pr_muster_001_docs_exist() -> None:
     assert OBJECTIVE_DOC.is_file()
     assert EVALUATION_PIPELINE_DOC.is_file()
     assert ROSTER_SEARCH_DOC.is_file()
+    assert MUSTERING_DATA_DOC.is_file()
 
 
 def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
@@ -198,10 +202,34 @@ def test_evaluation_pipeline_doc_locks_scripts_modes_and_report_contract() -> No
     assert "summary.json" in text
     assert "per_match.csv" in text
     assert "roster_context.json" in text
+    assert "muster_record.json" in text
+    assert "mustering_manifest.json" in text
+    assert "MUSTERING_DATA_SPEC.md" in text
     assert "The scripts return exit code `1` when replay audit fails" in text
     assert "warhammer40k_ai[ml]" in text
     assert "runtime army files" in text
     assert "actual self-play match execution" in text
+
+
+def test_mustering_data_spec_examples_are_valid_and_sliceable() -> None:
+    text = _read(MUSTERING_DATA_DOC)
+    record = _extract_json_block(text, "Example Muster Record")
+    manifest = _extract_json_block(text, "Example Mustering Manifest")
+
+    assert validate_muster_record(record) == []
+    assert MusterRecord.from_dict(record).to_dict()["record_id"] == "muster_record:example"
+    assert validate_mustering_manifest(manifest) == []
+    assert manifest["record_schema"]["muster_record_schema_id"] == "muster_record_schema:v1"
+    assert manifest["mustering_manifest_schema_id"] == "mustering_manifest_schema:v1"
+    assert "scripts/build_mustering_manifest.py" in text
+    assert "rules_bundle_id" in text
+    assert "capability_schema_id" in text
+    assert "field_distribution_id" in text
+    assert "event_policy_id" in text
+    assert "policy_bundle_id" in text
+    assert "controller_bundle_id" in text
+    assert "search_edit_sequence" in text
+    assert "descriptor_provenance" in text
 
 
 def test_roster_search_doc_locks_validator_backed_search_contract() -> None:
