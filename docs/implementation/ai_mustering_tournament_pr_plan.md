@@ -758,6 +758,80 @@ Create a dedicated experiment/data layer for roster evaluation and future learne
 
 ---
 
+### PR-MUSTER-008A — 10th Edition seeded roster synthesizer
+
+**Status:** Completed on April 15, 2026. Acceptance checks passed and the full `python3 -m pytest tests/` suite passed with 7224 tests.
+
+**Goal**
+
+Add a deterministic 10th-edition bridge synthesizer that can generate legal,
+playable `ArmyBlueprint`s from seed constraints before the later 11th-edition
+mustering PRs begin.
+
+**Start condition**
+
+- PR-MUSTER-008 merged
+- PR-MUSTER-009 through PR-MUSTER-018 remain unrenumbered and future-scoped
+
+**Main changes**
+
+- add `src/warhammer40k_ai/roster/roster_synthesis.py`
+- add `scripts/synthesize_roster.py`
+- add `docs/ROSTER_SYNTHESIS.md`
+- add `RosterSynthesisSeed` with:
+  - required `max_points`
+  - optional `max_under_cap_allowance`
+  - optional faction, Space Marines chapter, and detachment constraints
+  - optional style tags and free-text description
+  - hard include/exclude unit constraints with clear diagnostics
+- add a local 10th-edition catalog layer over `WahaHelper`
+- generate deterministic constructive candidates and validate them through
+  `ArmyMusterer.validate_runtime_legality()`
+- score legal candidates by point fit, required-unit satisfaction, and
+  `BuildCapabilityProfile` style alignment
+- carry deterministic default wargear selections into generated `RosterEntry`
+  metadata and exported army-list text
+- opportunistically assign legal detachment enhancements when points allow
+- export app-style army-list text and reject candidates that do not round-trip
+  through `parse_army_list_text()`
+- write report artifacts compatible with later mustering telemetry consumption
+  and per-candidate `MusterRecord` files in the PR-MUSTER-008 schema
+
+**End condition**
+
+- a caller can request a 10th-edition roster by point cap, faction/chapter,
+  detachment, and style seed, then receive ranked legal blueprints and
+  parseable army-list text
+
+**Acceptance checks**
+
+- seed validation rejects invalid point caps, unknown factions, unknown
+  detachments, unknown chapters, and invalid include/exclude unit names
+- catalog enumeration uses local Wahapedia data and excludes out-of-scope
+  source scopes
+- 2000-point World Eaters Khorne Daemonkin synthesis returns legal candidates
+  under cap and within requested under-cap allowance
+- Space Marines chapter-constrained synthesis returns a legal chapter roster
+- omitted-faction synthesis performs deterministic multi-faction breadth search
+- exported army-list text round-trips through `parse_army_list_text()`
+- exported army-list text includes selected wargear and enhancement selections
+- style regressions cover melee/offensive pressure, vehicle-heavy pressure, and
+  required named-unit persistence
+
+**Non-goals**
+
+- learned generation
+- Torch or ML dependency introduction
+- 11th-edition rule assumptions
+- exact-point search mode
+- tournament-meta optimization quality
+
+**Dependencies**
+
+- PR-MUSTER-008
+
+---
+
 ### PR-MUSTER-009 — Baseline heuristic matchup evaluator and tournament utility model
 
 **Goal**
@@ -1256,6 +1330,7 @@ If only a few PRs can be done soon, do them in this order:
 6. `PR-MUSTER-006` unified evaluation pipeline
 7. `PR-MUSTER-007` non-learned search
 8. `PR-MUSTER-008` mustering telemetry and manifests
+8a. `PR-MUSTER-008A` 10th Edition seeded roster synthesizer
 9. `PR-MUSTER-009` heuristic matchup evaluator
 
 That sequence creates a complete non-learned tournament roster lab first, which is the safest foundation for future experimentation.

@@ -77,6 +77,10 @@ units directly.
     muster legality without going through army-list text parsing.
   - `ArmyMusterer.muster_blueprint()` exposes the same runtime mustering path directly
     from an `ArmyBlueprint`.
+  - `src/warhammer40k_ai/roster/roster_synthesis.py` builds deterministic
+    10th-edition seeded `ArmyBlueprint` candidates and accepts only candidates
+    that pass `ArmyMusterer.validate_runtime_legality()` and army-list export
+    round-trip validation.
   - Single-detachment parse/snapshot helpers that still begin from a known primary detachment now
     use `Army.with_detachment(...)` instead of constructor seeding.
 
@@ -142,6 +146,8 @@ units directly.
   - `add_unit_to_army()`
 - Parsed list files now also attach a build-side `ArmyBlueprint` / `ValidatedMuster`
   summary to the runtime `Army` so parsed rosters participate in the same new build model.
+- Synthesized roster exports are app-style text files and must parse through
+  `parse_army_list_text()` to be accepted into a `RosterSynthesisReport`.
 - Parsed list units now also receive deterministic `build_entry_id` values aligned with
   the parsed `RosterEntry` records so authored attachment bindings can be projected into
   runtime setup when present.

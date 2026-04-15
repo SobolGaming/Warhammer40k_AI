@@ -22,6 +22,7 @@ TOURNAMENT_FIELD_DOC = DOCS_DIR / "TOURNAMENT_FIELD_SCHEMA.md"
 EVALUATION_PIPELINE_DOC = DOCS_DIR / "TOURNAMENT_EVALUATION_PIPELINE.md"
 ROSTER_SEARCH_DOC = DOCS_DIR / "ROSTER_SEARCH.md"
 MUSTERING_DATA_DOC = DOCS_DIR / "MUSTERING_DATA_SPEC.md"
+ROSTER_SYNTHESIS_DOC = DOCS_DIR / "ROSTER_SYNTHESIS.md"
 
 
 def _read(path: Path) -> str:
@@ -46,6 +47,7 @@ def test_pr_muster_001_docs_exist() -> None:
     assert EVALUATION_PIPELINE_DOC.is_file()
     assert ROSTER_SEARCH_DOC.is_file()
     assert MUSTERING_DATA_DOC.is_file()
+    assert ROSTER_SYNTHESIS_DOC.is_file()
 
 
 def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
@@ -249,3 +251,17 @@ def test_roster_search_doc_locks_validator_backed_search_contract() -> None:
     assert "`beam`" in text
     assert "`local`" in text
     assert "`evolutionary`" in text
+
+
+def test_roster_synthesis_doc_locks_seeded_10e_bridge_contract() -> None:
+    text = _read(ROSTER_SYNTHESIS_DOC)
+
+    assert "PR-MUSTER-008A" in text
+    assert "RosterSynthesisSeed" in text
+    assert "synthesize_rosters()" in text
+    assert "scripts/synthesize_roster.py" in text
+    assert "ArmyMusterer.validate_runtime_legality()" in text
+    assert "parse_army_list_text()" in text
+    assert "10th-edition" in text
+    assert "Torch" in text
+    assert "Omitted-faction mode" in text
