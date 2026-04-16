@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.combat_timing import (
     CombatEngagementState,
@@ -13,6 +14,7 @@ from warhammer40k_ai.engine.combat_timing import (
     fight_phase_starting_player,
 )
 from warhammer40k_ai.engine.ruleset import RulesetBundle
+from warhammer40k_ai.engine import fight_move
 
 
 class _BaseStub:
@@ -84,6 +86,34 @@ def test_build_combat_timing_profile_detects_preview_bundle_context() -> None:
     assert profile.pile_in_batch_mode == "player_batch"
     assert profile.consolidate_batch_mode == "end_batch"
     assert profile.overrun_enabled is True
+
+
+def test_build_combat_timing_profile_prefers_explicit_profile_marker_over_token_fallback() -> None:
+    profile = build_combat_timing_profile(
+        context={
+            "rules_bundle_id": "rules_bundle:live_release",
+            "version_adapter_boundary": {
+                "combat_profile_family": "11e_preview",
+            },
+        }
+    )
+
+    assert profile.edition_family == "11e_preview"
+    assert profile.geometry.engagement_range_horizontal == 2.0
+
+
+def test_build_combat_timing_profile_can_explicitly_force_current_profile() -> None:
+    profile = build_combat_timing_profile(
+        context={
+            "rules_bundle_id": "preview-11e-core",
+            "version_adapter_boundary": {
+                "combat_profile_family": "10e_current",
+            },
+        }
+    )
+
+    assert profile.edition_family == "10e_current"
+    assert profile.geometry.engagement_range_horizontal == 1.0
 
 
 def test_fight_phase_helpers_use_stage_specific_priority() -> None:
@@ -161,3 +191,21 @@ def test_bind_charge_move_targets_can_record_declined_charge_choice() -> None:
     assert bound == []
     assert charging_unit.round_state.charge_resolution_choice["choice_kind"] == "decline_charge"
     assert charging_unit.round_state.charge_resolution_outcome["chosen_target_ids"] == []
+
+
+def test_fight_move_base_contact_helper_does_not_pass_map_as_game_context() -> None:
+    model = _ModelStub("model-1", _BaseStub(x=10.0, y=10.0))
+    model.parent_unit = SimpleNamespace()
+    enemy_model = _ModelStub("enemy-model-1", _BaseStub(x=11.0, y=10.0))
+    game_map = SimpleNamespace(units=[])
+
+    with patch.object(fight_move, "_enemy_models_for_unit", return_value=[enemy_model]):
+        with patch.object(
+            fight_move,
+            "engagement_state_for_models",
+            return_value=CombatEngagementState.BASE_CONTACT,
+        ) as patched:
+            assert fight_move._model_in_base_contact(model, unit=model.parent_unit, game_map=game_map) is True
+
+    _args, kwargs = patched.call_args
+    assert "game" not in kwargs

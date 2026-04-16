@@ -11,6 +11,17 @@ _PREVIEW_11E_TOKENS = ("11e", "11th", "preview")
 _DEFAULT_ENGAGEMENT_RANGE_HORIZONTAL = 1.0
 _DEFAULT_ENGAGEMENT_RANGE_VERTICAL = 5.0
 _DEFAULT_BASE_CONTACT_EPSILON = 0.05
+_EXPLICIT_PREVIEW_PROFILE_VALUES = {
+    "11e_preview",
+    "11th_preview",
+    "preview_11e",
+    "combat_preview_11e",
+}
+_EXPLICIT_CURRENT_PROFILE_VALUES = {
+    "10e_current",
+    "10th_current",
+    "current_10e",
+}
 
 
 class CombatEngagementState(str, Enum):
@@ -57,7 +68,46 @@ def _bundle_signature(bundle: RulesetBundle, *, context: dict[str, Any] | None) 
     return str(boundary.get("rules_bundle_id", "") or payload.get("rules_bundle_id", "") or bundle.rules_bundle_id)
 
 
-def _is_11e_preview_bundle(bundle: RulesetBundle, *, signature: str) -> bool:
+def _normalized_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    text = _normalized_text(value).lower()
+    if text in {"true", "1", "yes", "on"}:
+        return True
+    if text in {"false", "0", "no", "off"}:
+        return False
+    return None
+
+
+def _explicit_preview_gate(context: dict[str, Any] | None) -> bool | None:
+    payload = dict(context or {})
+    boundary = dict(payload.get("version_adapter_boundary", {}) or {})
+    for source in (boundary, payload):
+        for field_name in (
+            "enable_11e_preview_combat",
+            "is_11e_preview_bundle",
+            "use_11e_preview_combat",
+        ):
+            normalized = _normalized_bool(source.get(field_name))
+            if normalized is not None:
+                return normalized
+        for field_name in (
+            "combat_profile_family",
+            "combat_profile_id",
+            "edition_family",
+        ):
+            normalized = _normalized_text(source.get(field_name)).lower()
+            if normalized in _EXPLICIT_PREVIEW_PROFILE_VALUES:
+                return True
+            if normalized in _EXPLICIT_CURRENT_PROFILE_VALUES:
+                return False
+    return None
+
+
+def _is_11e_preview_bundle(bundle: RulesetBundle, *, signature: str, context: dict[str, Any] | None = None) -> bool:
+    explicit = _explicit_preview_gate(context)
+    if explicit is not None:
+        return explicit
     parts = [
         signature,
         bundle.core_rules_id,
@@ -289,7 +339,7 @@ def build_combat_geometry_profile(
 ) -> CombatGeometryProfile:
     bundle = ruleset_bundle if ruleset_bundle is not None else _bundle_from_context(context)
     signature = _bundle_signature(bundle, context=context)
-    if _is_11e_preview_bundle(bundle, signature=signature):
+    if _is_11e_preview_bundle(bundle, signature=signature, context=context):
         return CombatGeometryProfile(
             rules_bundle_id=str(signature or bundle.rules_bundle_id),
             edition_family="11e_preview",
@@ -320,7 +370,7 @@ def build_combat_timing_profile(
     bundle = ruleset_bundle if ruleset_bundle is not None else _bundle_from_context(context)
     signature = _bundle_signature(bundle, context=context)
     geometry = build_combat_geometry_profile(ruleset_bundle=bundle, context=context)
-    if _is_11e_preview_bundle(bundle, signature=signature):
+    if _is_11e_preview_bundle(bundle, signature=signature, context=context):
         return CombatRulesProfile(
             rules_bundle_id=str(signature or bundle.rules_bundle_id),
             edition_family="11e_preview",

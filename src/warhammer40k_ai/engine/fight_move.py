@@ -401,7 +401,7 @@ def _model_in_base_contact(model: object, *, unit: object, game_map: object) -> 
     if game_map is None:
         return False
     for enemy_model in _enemy_models_for_unit(unit=getattr(model, "parent_unit", None), game=game_map):
-        if engagement_state_for_models(model, enemy_model, game=game_map) is CombatEngagementState.BASE_CONTACT:
+        if engagement_state_for_models(model, enemy_model) is CombatEngagementState.BASE_CONTACT:
             return True
     return False
 
