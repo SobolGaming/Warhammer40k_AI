@@ -6,7 +6,7 @@ from typing import Iterable, Optional
 
 from shapely.ops import unary_union
 from shapely.geometry import Point as ShapelyPoint
-from .constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+from ..engine.combat_timing import CombatEngagementState, engagement_state_for_models
 
 
 @dataclass(frozen=True)
@@ -325,9 +325,7 @@ def model_within_engagement_range_of_unit(model, target_unit) -> bool:
     for t_model in t_models:
         if not getattr(t_model, "is_alive", False):
             continue
-        horizontal = float(horizontal_distance_between_bases_2d(model.model_base, t_model.model_base))
-        vertical = float(vertical_distance_between_bases(model.model_base, t_model.model_base))
-        if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
+        if engagement_state_for_models(model, t_model) is not CombatEngagementState.UNENGAGED:
             return True
     return False
 

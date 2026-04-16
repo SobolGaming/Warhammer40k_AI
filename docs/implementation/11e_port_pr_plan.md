@@ -253,7 +253,7 @@ shows what is done versus what remains.
 | PR-012 | Completed | Implemented terrain-area runtime, serialization, and objective/layout identifier scaffolding on April 8, 2026. |
 | PR-013 | Completed | Implemented terrain visibility, cover, and elevation service scaffolding on April 8, 2026. |
 | PR-014 | Completed | Implemented mission-authored terrain layout recipes, pairing-owned preview layout recommendations, explicit preview visibility gating, and terrain/module splits on April 8, 2026. |
-| PR-014A | Pending | Combat rules profiles, combat geometry extraction, and charge-resolution state scaffolding. |
+| PR-014A | Completed | Implemented combat rules/geometry profiles, preview-aware engagement hooks, and charge-resolution state scaffolding on April 16, 2026. |
 | PR-014B | Pending | Fight scheduler and fight-entitlement snapshot scaffolding for batch combat flow. |
 | PR-014C | Pending | Reserve-entry rules/geometry extraction ahead of the previewed >8" ingress change. |
 | PR-014D | Pending | `build_capability_v2` and combat-preview golden tests. |
@@ -1026,7 +1026,7 @@ The April 3 mission preview says each mission pairing recommends three terrain l
 
 ## PR-014A — Combat rules profiles, combat geometry, and charge-resolution state
 
-**Status:** Pending.
+**Status:** Completed on April 16, 2026.
 
 ### Goal
 Replace the current coarse combat timing/profile seam with rules-pack-driven combat rules and geometry services so PR-015 can swap exact 11th values without another combat rewrite.

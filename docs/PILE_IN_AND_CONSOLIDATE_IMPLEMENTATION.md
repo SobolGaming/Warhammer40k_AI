@@ -17,7 +17,7 @@ Cross-links:
 - Fight-phase `MOVE_UNIT` sequencing facade: `src/warhammer40k_ai/engine/fight_phase_manager.py`
 - Fight ordering / engagement / resolution helpers: `src/warhammer40k_ai/engine/fight_order.py`,
   `src/warhammer40k_ai/engine/fight_engagement.py`, `src/warhammer40k_ai/engine/fight_resolution.py`
-- Edition-aware fight timing profile: `src/warhammer40k_ai/engine/combat_timing.py`
+- Edition-aware combat rules / geometry profiles: `src/warhammer40k_ai/engine/combat_timing.py`
 
 ## Pile-In rules enforced
 - Models already in base-to-base contact cannot pile in.
@@ -40,16 +40,19 @@ Cross-links:
 
 ## Performance optimization
 Pile-in/consolidate validation only considers enemies within:
-`ENGAGEMENT_RANGE_HORIZONTAL + move_distance` (pile-in or consolidate distance).
+`CombatGeometryProfile.engagement_range_horizontal + move_distance` (pile-in or consolidate distance).
 
 This reduces the candidate set while keeping validation correct for pile-in legality.
 
-## Timing profile hook
+## Rules/geometry profile hook
 - Fight-stage starting-player selection and enabled move steps are read through
-  `engine/combat_timing.py`.
-- The current runtime keeps the standard non-active-player-first flow with both
-  pile-in and consolidate enabled, but that policy is now centralized behind the
-  combat timing profile rather than buried directly in `fight_phase_manager.py`.
+  `engine/combat_timing.py::CombatRulesProfile`.
+- Engagement range, base-contact epsilon, and fight-move candidate radii are read through
+  `engine/combat_timing.py::CombatGeometryProfile` instead of raw constants in
+  `fight_move.py`.
+- The current runtime still uses the coarse fight scheduler until `PR-014B`, but the
+  stage-priority policy is now stored per stage (`fight_first` vs `remaining_combatants`)
+  rather than as one flat starting-player flag.
 
 ## UI behavior
 - `IndividualModelMovementDialog` lists all models and disables those already in base

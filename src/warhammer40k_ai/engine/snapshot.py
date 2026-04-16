@@ -149,6 +149,8 @@ _UNIT_ROUND_FIELDS = [
     "engaged_enemies_at_turn_start",
     "charge_target_ids",
     "charge_move_target_ids",
+    "charge_resolution_choice",
+    "charge_resolution_outcome",
 ]
 
 
@@ -507,7 +509,11 @@ def _apply_round_state(unit: Unit, data: dict, registry: EntityRegistry) -> None
     for key in _UNIT_ROUND_FIELDS:
         if key in decoded:
             value = decoded[key]
-            if key in {"engaged_enemies_at_turn_start", "charge_target_ids", "charge_move_target_ids"}:
+            if key in {
+                "engaged_enemies_at_turn_start",
+                "charge_target_ids",
+                "charge_move_target_ids",
+            }:
                 if isinstance(value, list):
                     value = set(value)
             setattr(rs, key, value)

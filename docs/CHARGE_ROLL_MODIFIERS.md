@@ -29,6 +29,10 @@ and non-additive dice mechanics (e.g., 3D6 drop lowest).
   - `round_state.charge_target_ids` tracks the original declaration payload.
   - `round_state.charge_move_target_ids` stores the post-roll legal target set chosen by
     `engine/combat_timing.py::bind_charge_move_targets(...)`.
+  - `round_state.charge_resolution_choice` stores the serialized `ChargeResolutionChoice`
+    scaffold for replay/network parity.
+  - `round_state.charge_resolution_outcome` stores the serialized `ChargeOutcome` record,
+    including declared/reachable/chosen target ids plus end-state legality flags.
   - Charge movement requests use the post-roll bound target ids so later legality checks can
     vary by rules bundle without rewriting charge declaration flow.
 

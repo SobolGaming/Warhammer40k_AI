@@ -6,10 +6,15 @@ from typing import Any
 
 from ..pathing.api import PathQuery, plan_model_path
 from ..pathing.types import MovementType as PathMovementType
-from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
 from ..utility.calcs import validate_unit_coherency_after_movement
-from ..utility.constants import BASE_CONTACT_EPSILON, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
+from .combat_timing import (
+    CombatEngagementState,
+    base_contact_center_distance,
+    engagement_center_distance,
+    engagement_state_for_models,
+    geometry_profile_for_game,
+)
 
 _MOVEMENT_TYPE_BY_TAG = {
     "pile_in": PathMovementType.PILE_IN,
@@ -258,6 +263,7 @@ def _candidate_destinations(
     movement_type: str,
     max_distance: float,
 ) -> list[tuple[float, float, float]]:
+    geometry = geometry_profile_for_game(game)
     pose = _model_pose_entry(model)
     position = list(pose.get("position") or [0.0, 0.0, 0.0])
     current_x = float(position[0] if len(position) > 0 else 0.0)
@@ -280,8 +286,16 @@ def _candidate_destinations(
             continue
         own_radius = float(getattr(own_base, "get_longest_radius", lambda: getattr(own_base, "get_radius", lambda: 0.0)())())
         enemy_radius = float(getattr(enemy_base, "get_longest_radius", lambda: getattr(enemy_base, "get_radius", lambda: 0.0)())())
-        contact_radius = max(0.0, own_radius + enemy_radius + (BASE_CONTACT_EPSILON * 0.5))
-        engagement_radius = max(contact_radius, own_radius + enemy_radius + 0.5)
+        contact_radius = base_contact_center_distance(
+            own_radius,
+            enemy_radius,
+            geometry_profile=geometry,
+        )
+        engagement_radius = engagement_center_distance(
+            own_radius,
+            enemy_radius,
+            geometry_profile=geometry,
+        )
         base_angle = math.atan2(current_y - float(enemy_base.y), current_x - float(enemy_base.x))
         angle_offsets = (
             0.0,
@@ -386,16 +400,8 @@ def _model_in_base_contact(model: object, *, unit: object, game_map: object) -> 
     del unit
     if game_map is None:
         return False
-    own_base = getattr(model, "model_base", None)
-    if own_base is None:
-        return False
     for enemy_model in _enemy_models_for_unit(unit=getattr(model, "parent_unit", None), game=game_map):
-        enemy_base = getattr(enemy_model, "model_base", None)
-        if enemy_base is None:
-            continue
-        horizontal = float(horizontal_distance_between_bases_2d(own_base, enemy_base))
-        vertical = float(vertical_distance_between_bases(own_base, enemy_base))
-        if horizontal <= BASE_CONTACT_EPSILON and vertical <= ENGAGEMENT_RANGE_VERTICAL:
+        if engagement_state_for_models(model, enemy_model, game=game_map) is CombatEngagementState.BASE_CONTACT:
             return True
     return False
 

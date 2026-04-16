@@ -2,12 +2,11 @@ from typing import List, Optional, Tuple, Dict, Any
 from ..units.unit import Unit
 from ..units.model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level, get_pivot_cost
-from ..utility.constants import (
-    ENGAGEMENT_RANGE_HORIZONTAL,
-    ENGAGEMENT_RANGE_VERTICAL,
-    RUINS_FLOOR_HEIGHT,
-    RUINS_FLOOR_THICKNESS,
-    RUINS_WALL_THICKNESS,
+from ..utility.constants import RUINS_FLOOR_HEIGHT, RUINS_FLOOR_THICKNESS, RUINS_WALL_THICKNESS
+from ..engine.combat_timing import (
+    CombatEngagementState,
+    engagement_state_for_models,
+    geometry_profile_for_context,
 )
 from shapely.geometry import Polygon, Point, LineString, box
 from shapely.errors import GEOSException
@@ -210,10 +209,6 @@ class Map:
         """
         Check if any model in the source unit is within engagement range of any model in the target unit.
 
-        Engagement Range in 10th Edition:
-        - Within 1" horizontally (measured base-to-base)
-        - Within 5" vertically
-
         Args:
             source_unit: The source unit to check from
             target_unit: The target unit to check against
@@ -224,6 +219,7 @@ class Map:
         # Attached units are treated as aggregates for rules purposes.
         source_models = source_unit.get_models_for_collision()
         target_models = target_unit.get_models_for_collision()
+        geometry = geometry_profile_for_context(source_unit=source_unit, target_unit=target_unit)
 
         for source_model in source_models:
             if not source_model.is_alive:
@@ -231,23 +227,21 @@ class Map:
             for target_model in target_models:
                 if not target_model.is_alive:
                     continue
-                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
-                # Engagement Range is special-case:
-                # - horizontal base-to-base in 2D
-                # - vertical base-to-base separation (no model height)
-                horizontal_distance = float(horizontal_distance_between_bases_2d(source_model.model_base, target_model.model_base))
-                vertical_distance = float(vertical_distance_between_bases(source_model.model_base, target_model.model_base))
-
-                # Check if within engagement range with debug output
-                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
-                    vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                state = engagement_state_for_models(
+                    source_model,
+                    target_model,
+                )
+                if state is not CombatEngagementState.UNENGAGED:
                     source_pos = source_model.get_location()
                     target_pos = target_model.get_location()
                     logger.debug(f"DEBUG: ENGAGEMENT DETECTED!")
                     logger.debug(f"DEBUG: {source_unit.name} model at {source_pos}")
                     logger.debug(f"DEBUG: {target_unit.name} model at {target_pos}")
-                    logger.debug(f"DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
-                    logger.debug(f"DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
+                    logger.debug(
+                        "DEBUG: Engagement profile: horizontal %.2f\" / vertical %.2f\"",
+                        float(geometry.engagement_range_horizontal or 0.0),
+                        float(geometry.engagement_range_vertical or 0.0),
+                    )
                     return True
         return False
 

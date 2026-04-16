@@ -75,7 +75,12 @@ class FightPhaseManager:
         self._pending_fight_sequence = None
         self._reset_fight_phase_eligibility_flags(current_player, opponent_player)
         
-        self.active_player = fight_phase_starting_player(self.game, current_player, opponent_player)
+        self.active_player = fight_phase_starting_player(
+            self.game,
+            current_player,
+            opponent_player,
+            stage_name="fight_first",
+        )
         
         # Start with Fight First stage
         self._start_fight_first_stage(current_player, opponent_player)
@@ -112,7 +117,12 @@ class FightPhaseManager:
             self._start_remaining_combatants_stage(current_player, opponent_player)
             return
 
-        self.active_player = fight_phase_starting_player(self.game, current_player, opponent_player)
+        self.active_player = fight_phase_starting_player(
+            self.game,
+            current_player,
+            opponent_player,
+            stage_name="fight_first",
+        )
         self._request_unit_selection(current_player, opponent_player)
     
     def _start_remaining_combatants_stage(self, current_player: Player, opponent_player: Player) -> None:
@@ -139,7 +149,12 @@ class FightPhaseManager:
             self._complete_fight_phase()
             return
 
-        self.active_player = fight_phase_starting_player(self.game, current_player, opponent_player)
+        self.active_player = fight_phase_starting_player(
+            self.game,
+            current_player,
+            opponent_player,
+            stage_name="remaining_combatants",
+        )
         self._request_unit_selection(current_player, opponent_player)
     
     def _request_unit_selection(self, current_player: Player, opponent_player: Player) -> None:
