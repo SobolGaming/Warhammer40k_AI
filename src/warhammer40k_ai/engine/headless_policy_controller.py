@@ -18,6 +18,7 @@ from .decision_kinds import (
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .decisions import CandidateAction, DecisionRequest
+from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id
 
@@ -634,37 +635,15 @@ class HeadlessPolicyDecisionController(DecisionController):
         return float(max(0.5, min(4.0, largest_model_radius + 0.25)))
 
     def _build_model_positions_from_anchor(self, game: object, unit: object, *, x: float, y: float) -> list[dict]:
-        game_map = getattr(game, "map", None)
-        if game_map is None:
-            return []
-        boundary_repulsors = None
-        repulsor_fn = getattr(game, "get_boundary_repulsors", None)
-        if callable(repulsor_fn):
-            boundary_repulsors = repulsor_fn(unit, context="reserves_arrival")
-        model_positions = unit.calculate_model_positions(
-            float(x),
-            float(y),
-            game_map,
-            avoid_friendly_units=False,
-            boundary_repulsors=boundary_repulsors,
-        )
-        models = list(getattr(unit, "models", []) or [])
-        if not model_positions or len(model_positions) != len(models):
-            return []
-        payload: list[dict] = []
-        for model, pos in zip(models, model_positions):
-            model_id = str(get_entity_id(model) or "")
-            if not model_id:
-                return []
-            model_x, model_y, model_z, model_facing = pos
-            payload.append(
-                {
-                    "model_id": model_id,
-                    "position": [float(model_x), float(model_y), float(model_z)],
-                    "facing": float(model_facing),
-                }
+        return list(
+            _build_reserves_model_positions_from_anchor(
+                game,
+                unit,
+                x=float(x),
+                y=float(y),
+                avoid_friendly_units=False,
             )
-        return payload
+        )
 
     def _rank_legal_candidates(self, request: DecisionRequest) -> list[CandidateAction]:
         candidates = list(getattr(request, "candidates", []) or [])

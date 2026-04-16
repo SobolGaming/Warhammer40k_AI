@@ -52,6 +52,9 @@ This document describes deterministic headless placement behavior for deployment
   - Non-strategic reserves arrival:
     - Adaptive coarse-to-fine board scans with staggered lattices.
 - A cheap prefilter rejects clearly impossible strategic anchors (deep interior points) before expensive placement synthesis.
+- Exact reserve model-position synthesis now delegates to the shared `reserve_entry_geometry.py`
+  helper so headless reserve landing generation stays aligned with the authoritative reserve-entry
+  validation seam.
 - Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`.
 
 ## Pregame Decision Surfaces

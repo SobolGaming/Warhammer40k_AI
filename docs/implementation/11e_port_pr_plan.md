@@ -255,7 +255,7 @@ shows what is done versus what remains.
 | PR-014 | Completed | Implemented mission-authored terrain layout recipes, pairing-owned preview layout recommendations, explicit preview visibility gating, and terrain/module splits on April 8, 2026. |
 | PR-014A | Completed | Implemented combat rules/geometry profiles, preview-aware engagement hooks, and charge-resolution state scaffolding on April 16, 2026. |
 | PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
-| PR-014C | Pending | Reserve-entry rules/geometry extraction ahead of the previewed >8" ingress change. |
+| PR-014C | Completed | Implemented reserve-entry rules/geometry extraction, shared reserve legality helpers, and preview-gated ingress regression coverage on April 16, 2026. |
 | PR-014D | Pending | `build_capability_v2` and combat-preview golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
 
@@ -1095,7 +1095,7 @@ The April 15, 2026 combat preview changes the shape of the fight step itself: al
 
 ## PR-014C — Reserve-entry rules and geometry extraction
 
-**Status:** Pending.
+**Status:** Completed.
 
 ### Goal
 Extract reserve-entry legality and landing geometry from the current monolithic setup mixin so the previewed >8" ingress exclusion can land as a profile/data change instead of another deep monolith edit.
@@ -1117,6 +1117,21 @@ Extract reserve-entry legality and landing geometry from the current monolithic 
 ### Non-goals
 - No final release-day reserve/deep-strike wording audit yet.
 - No codex- or mission-specific reserve exception sweep beyond what the extraction requires.
+
+### Implemented notes
+- Added `src/warhammer40k_ai/engine/reserve_entry_rules.py` and
+  `src/warhammer40k_ai/engine/reserve_entry_geometry.py` as the shared reserve-entry
+  legality / geometry seam.
+- Routed `engine/decision_handlers/movement.py` through the shared reserve evaluator so the
+  authoritative `MOVE_UNIT` reserve-arrival path no longer hard-codes ingress geometry inline.
+- Reduced `engine/game_mixins/setup_deployment_reserves_mixin.py` to façade-style wrappers for
+  reserve placement legality, strategic-reserve edge checks, and battlefield-edge distance.
+- Reused the shared reserve geometry placement builder from
+  `engine/headless_policy_controller.py` so headless reserve synthesis and authoritative
+  validation stay aligned.
+- Added targeted regression coverage in `tests/engine/test_reserve_entry_rules.py` for current
+  versus preview-gated ingress exclusion and for reserve validation remaining separate from
+  charge-resolution state.
 
 ---
 

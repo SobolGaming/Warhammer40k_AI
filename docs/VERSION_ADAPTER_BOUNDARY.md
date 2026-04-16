@@ -36,4 +36,5 @@ Persistence guarantees:
 Edition-invariant consumers:
 - `src/warhammer40k_ai/engine/combat_timing.py` derives `CombatRulesProfile` and `CombatGeometryProfile` from the active `rules_bundle_id` / version-adapter context.
 - Combat timing currently centralizes charge-target binding timing, stage-specific fight-order priorities, pile-in/consolidate step enablement, engagement geometry, ingress exclusion distance, and disembark charge policy selection behind those profiles.
+- `src/warhammer40k_ai/engine/reserve_entry_rules.py` and `src/warhammer40k_ai/engine/reserve_entry_geometry.py` now consume that same combat-geometry ingress seam for reserve-entry validation, while keeping reserve landing legality separate from charge-resolution state.
 - Preview-derived behavior remains provisional until PR-015, but the adapter boundary is now the stable seam the combat runtime reads when edition-level invariants differ.
