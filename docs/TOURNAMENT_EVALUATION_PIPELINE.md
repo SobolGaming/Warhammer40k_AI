@@ -134,6 +134,11 @@ This keeps evaluation usable for:
 - replay and gate regression checks
 - local tournament-evaluation experiments that do not ship learned artifacts
 
+Schema-selection note:
+- evaluation bundles may intentionally request `capability_schema:build_capability_v2`
+  for preview combat studies while leaving `build_capability_v1` as the default
+  portable descriptor schema.
+
 ## Roster Context Note
 
 `scripts/evaluate_tournament_roster.py` currently uses runtime army files for

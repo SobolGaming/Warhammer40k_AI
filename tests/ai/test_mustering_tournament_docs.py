@@ -55,6 +55,7 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     text = _read(BUILD_CAPABILITY_DOC)
 
     schema = _extract_json_block(text, "Example Build Capability Schema")
+    preview_schema = _extract_json_block(text, "Example Preview Combat Capability Schema")
 
     assert schema["capability_schema_id"] == "capability_schema:build_capability_v1"
     assert schema["aggregate_count_names"] == [
@@ -87,6 +88,17 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     assert "towering_exposure_index" in feature_names
     assert "wahapedia_data_dir" in text
     assert "ambient default-data resolution" in text
+    assert preview_schema["capability_schema_id"] == "capability_schema:build_capability_v2"
+    preview_feature_names = [feature["name"] for feature in preview_schema["feature_definitions"]]
+    assert "charge_option_flexibility" in preview_feature_names
+    assert "ingress_charge_conversion" in preview_feature_names
+    assert "fight_order_resilience" in preview_feature_names
+    assert "overrun_chain_potential" in preview_feature_names
+    assert "consolidate_objective_swing" in preview_feature_names
+    assert "engagement_footprint_pressure" in preview_feature_names
+    assert "transport_pop_punish_index" in preview_feature_names
+    assert "preview combat bundles" in text.lower()
+    assert "build_capability_v2" in text
     assert "11e" not in text
 
 

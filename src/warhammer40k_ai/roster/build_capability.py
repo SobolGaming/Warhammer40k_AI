@@ -11,12 +11,14 @@ from typing import Any, Mapping
 from .army import _assert_supported_faction, get_faction_id_from_name
 from .army_build import ArmyBlueprint, RosterEntry
 from .build_capability_schema import (
+    BUILD_CAPABILITY_SCHEMA_V2,
     BuildCapabilitySchema,
     DEFAULT_BUILD_CAPABILITY_SCHEMA,
     canonical_json,
     json_safe,
 )
 from .unit_materialization import resolve_roster_entry_datasheet
+from ..engine.combat_timing import build_combat_timing_profile
 from ..waha_helper import WahaHelper
 
 _DICE_PATTERN = re.compile(
@@ -282,6 +284,42 @@ def _resolve_capability_waha_helper(
     )
 
 
+def _combat_profile_context(rules_bundle_scope: object, *, rules_bundle_id: str) -> dict[str, Any]:
+    if isinstance(rules_bundle_scope, Mapping):
+        payload = {str(key or ""): value for key, value in rules_bundle_scope.items()}
+        if not _normalized_text(payload.get("rules_bundle_id")):
+            payload["rules_bundle_id"] = rules_bundle_id
+        return payload
+    return {"rules_bundle_id": str(rules_bundle_id or "")}
+
+
+def _preview_capability_feature_names(schema: BuildCapabilitySchema) -> set[str]:
+    if str(schema.capability_schema_id or "") == str(BUILD_CAPABILITY_SCHEMA_V2.capability_schema_id):
+        return {
+            "charge_option_flexibility",
+            "ingress_charge_conversion",
+            "fight_order_resilience",
+            "overrun_chain_potential",
+            "consolidate_objective_swing",
+            "engagement_footprint_pressure",
+            "transport_pop_punish_index",
+        }
+    return {
+        name
+        for name in tuple(schema.feature_names or ())
+        if name
+        in {
+            "charge_option_flexibility",
+            "ingress_charge_conversion",
+            "fight_order_resilience",
+            "overrun_chain_potential",
+            "consolidate_objective_swing",
+            "engagement_footprint_pressure",
+            "transport_pop_punish_index",
+        }
+    }
+
+
 def _deployment_tags(datasheet: object) -> tuple[str, ...]:
     tags: set[str] = set()
     for ability in list(getattr(datasheet, "datasheets_abilities", []) or []):
@@ -515,6 +553,8 @@ def compile_build_capability_profile(
     indirect_firepower = 0.0
     anti_tank_pressure = 0.0
     action_capacity_total = 0.0
+    melee_focused_unit_count = 0
+    short_range_unit_count = 0
 
     for unit in unit_breakdown:
         keyword_set = {keyword.lower() for keyword in unit.keywords}
@@ -543,6 +583,10 @@ def compile_build_capability_profile(
         indirect_firepower += unit.indirect_firepower
         anti_tank_pressure += unit.anti_tank_pressure
         action_capacity_total += unit.action_value
+        if float(unit.melee_pressure or 0.0) >= float(unit.ranged_pressure or 0.0):
+            melee_focused_unit_count += 1
+        if float(unit.short_range_pressure or 0.0) > float(unit.long_range_firepower or 0.0):
+            short_range_unit_count += 1
 
     unit_count = len(unit_breakdown)
     detachment_count = len(list(blueprint.detachments or []))
@@ -631,6 +675,124 @@ def compile_build_capability_profile(
             )
         ),
     }
+    preview_feature_names = _preview_capability_feature_names(schema)
+    if preview_feature_names:
+        combat_profile = build_combat_timing_profile(
+            context=_combat_profile_context(rules_bundle_id, rules_bundle_id=rules_bundle_text)
+        )
+        geometry = combat_profile.geometry
+        deep_strike_share = _safe_ratio(deep_strike_unit_count, max(unit_count, 1))
+        scouting_share = _safe_ratio(infiltrator_unit_count + scout_unit_count, max(unit_count, 1))
+        melee_unit_share = _safe_ratio(melee_focused_unit_count, max(unit_count, 1))
+        short_range_share = _safe_ratio(short_range_pressure, max(total_pressure, 1.0))
+        short_range_unit_share = _safe_ratio(short_range_unit_count, max(unit_count, 1))
+        vehicle_monster_share = _safe_ratio(vehicle_or_monster_unit_count, max(unit_count, 1))
+        attachment_resilience = 1.0 - float(capability_scores["attachment_dependency_risk"])
+        controller_headroom = 1.0 - float(capability_scores["controller_complexity_index"])
+        ingress_bonus = min(1.0, max(0.0, 9.0 - float(geometry.ingress_exclusion_distance or 9.0)))
+        engagement_bonus = min(1.0, max(0.0, float(geometry.engagement_range_horizontal or 1.0) - 1.0))
+        pass_through_bonus = 1.0 if bool(geometry.can_pass_through_enemy_engagement_range) else 0.0
+        charge_binding_bonus = 1.0 if bool(combat_profile.bind_charge_targets_post_roll) else 0.0
+        fight_first_bonus = (
+            1.0 if combat_profile.fight_order_priority_for_stage("fight_first") == "active_player" else 0.0
+        )
+        overrun_bonus = 1.0 if bool(combat_profile.overrun_enabled) else 0.0
+        consolidate_batch_bonus = (
+            1.0 if str(combat_profile.consolidate_batch_mode or "").strip().lower() == "end_batch" else 0.0
+        )
+        capability_scores.update(
+            {
+                "charge_option_flexibility": _round_metric(
+                    min(
+                        1.0,
+                        (0.24 * float(capability_scores["charge_delivery_reliance"]))
+                        + (0.16 * deep_strike_share)
+                        + (0.14 * scouting_share)
+                        + (0.12 * float(capability_scores["detachment_diversity_index"]))
+                        + (0.11 * float(capability_scores["mission_action_flex_capacity"]))
+                        + (0.11 * charge_binding_bonus)
+                        + (0.07 * pass_through_bonus)
+                        + (0.05 * engagement_bonus),
+                    )
+                ),
+                "ingress_charge_conversion": _round_metric(
+                    min(
+                        1.0,
+                        (0.34 * float(capability_scores["charge_delivery_reliance"]))
+                        + (0.24 * deep_strike_share)
+                        + (0.14 * melee_share)
+                        + (0.12 * ingress_bonus)
+                        + (0.08 * pass_through_bonus)
+                        + (0.08 * melee_unit_share),
+                    )
+                ),
+                "fight_order_resilience": _round_metric(
+                    min(
+                        1.0,
+                        (0.22 * float(capability_scores["objective_spread_tolerance"]))
+                        + (0.18 * float(capability_scores["mission_action_flex_capacity"]))
+                        + (0.14 * float(capability_scores["detachment_diversity_index"]))
+                        + (0.14 * attachment_resilience)
+                        + (0.14 * controller_headroom)
+                        + (0.10 * fight_first_bonus)
+                        + (0.08 * melee_unit_share),
+                    )
+                ),
+                "overrun_chain_potential": _round_metric(
+                    min(
+                        1.0,
+                        overrun_bonus
+                        * (
+                            (0.34 * melee_share)
+                            + (0.22 * float(capability_scores["charge_delivery_reliance"]))
+                            + (0.14 * min(1.0, float(unit_count) / 6.0))
+                            + (0.12 * short_range_share)
+                            + (0.10 * deep_strike_share)
+                            + (0.08 * engagement_bonus)
+                        ),
+                    )
+                ),
+                "consolidate_objective_swing": _round_metric(
+                    min(
+                        1.0,
+                        (0.28 * float(capability_scores["objective_spread_tolerance"]))
+                        + (0.20 * float(capability_scores["mission_action_flex_capacity"]))
+                        + (0.18 * melee_share)
+                        + (0.14 * consolidate_batch_bonus)
+                        + (0.10 * min(1.0, float(unit_count) / 8.0))
+                        + (0.10 * engagement_bonus),
+                    )
+                ),
+                "engagement_footprint_pressure": _round_metric(
+                    min(
+                        1.0,
+                        (
+                            (0.32 * melee_share)
+                            + (0.16 * float(capability_scores["charge_delivery_reliance"]))
+                            + (0.14 * deep_strike_share)
+                            + (0.12 * melee_unit_share)
+                            + (0.10 * vehicle_monster_share)
+                            + (0.08 * min(1.0, float(unit_count) / 8.0))
+                            + (0.04 * pass_through_bonus)
+                            + (0.04 * engagement_bonus)
+                        )
+                        * (1.0 + (0.18 * engagement_bonus)),
+                    )
+                ),
+                "transport_pop_punish_index": _round_metric(
+                    min(
+                        1.0,
+                        (0.26 * melee_share)
+                        + (0.20 * short_range_share)
+                        + (0.16 * short_range_unit_share)
+                        + (0.16 * float(capability_scores["charge_delivery_reliance"]))
+                        + (0.12 * overrun_bonus)
+                        + (0.05 * consolidate_batch_bonus)
+                        + (0.05 * fight_first_bonus),
+                    )
+                ),
+            }
+        )
 
     aggregate_counts = _schema_mapping(
         schema.aggregate_count_names,

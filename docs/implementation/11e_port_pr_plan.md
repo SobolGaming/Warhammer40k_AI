@@ -256,7 +256,7 @@ shows what is done versus what remains.
 | PR-014A | Completed | Implemented combat rules/geometry profiles, preview-aware engagement hooks, and charge-resolution state scaffolding on April 16, 2026. |
 | PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
 | PR-014C | Completed | Implemented reserve-entry rules/geometry extraction, shared reserve legality helpers, and preview-gated ingress regression coverage on April 16, 2026. |
-| PR-014D | Pending | `build_capability_v2` and combat-preview golden tests. |
+| PR-014D | Completed | Implemented `build_capability_v2`, explicit descriptor targeting, and deterministic combat-preview golden coverage on April 16, 2026. |
 | PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
@@ -1137,7 +1137,7 @@ Extract reserve-entry legality and landing geometry from the current monolithic 
 
 ## PR-014D — `build_capability_v2` and combat-preview golden tests
 
-**Status:** Pending.
+**Status:** Completed.
 
 ### Goal
 Upgrade AI-facing build-capability semantics and lock the new combat/reserve seams down with deterministic golden tests before release-day exactness.
@@ -1172,6 +1172,19 @@ The repo already has a deterministic build-capability compiler, but the current 
 ### Non-goals
 - No broad model training or heuristic retuning.
 - No attempt to infer final point values, datasheet changes, or codex-level melee behavior from the preview article alone.
+
+### Implemented notes
+- Added `BUILD_CAPABILITY_SCHEMA_V2` in `src/warhammer40k_ai/roster/build_capability_schema.py`
+  with seven preview-combat-aware capability fields while leaving v1 as the default portable schema.
+- Extended `src/warhammer40k_ai/roster/build_capability.py` so deterministic compilation can
+  derive preview-combat semantics from the active combat rules/geometry profile when a v2-capable schema is requested.
+- Verified `src/warhammer40k_ai/engine/descriptor_build_capability.py` can intentionally target
+  v2 without changing the default descriptor contract.
+- Added `tests/engine/test_combat_preview_golden.py` plus fixture-backed snapshot coverage for
+  2" engagement, post-roll charge target choice, active-player-first Fights First ordering,
+  overrun after a transport pop, consolidate-to-objective, and preview reserve-entry geometry.
+- Updated build-capability, evaluation-pipeline, artifact-registry, and implementation-plan docs
+  so schema intent and preview-only scope are explicit ahead of PR-015.
 
 ---
 

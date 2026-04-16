@@ -1,0 +1,44 @@
+{
+  "engagement": {
+    "current_state": "unengaged",
+    "preview_state": "engaged",
+    "preview_center_distance": 3.0
+  },
+  "charge_resolution": {
+    "selection_window": "post_roll",
+    "choice_kind": "selected_targets",
+    "reachable_target_ids": [
+      "enemy-1"
+    ],
+    "chosen_target_ids": [
+      "enemy-1"
+    ],
+    "must_end_engaged_with_all_targets": true,
+    "cannot_end_engaged_with_non_targets": true
+  },
+  "fight_first_order": {
+    "active_player_id": "player-1",
+    "selected_unit_ids": [
+      "unit-current"
+    ]
+  },
+  "overrun_transport_pop": {
+    "engaged_at_step_start": true,
+    "overrun_available": true,
+    "queued_move_type": "pile_in",
+    "pending_mode": "overrun"
+  },
+  "consolidate_objective": {
+    "valid": true,
+    "reason": "Valid path found"
+  },
+  "reserve_entry": {
+    "current_errors": [
+      "Reserves arrival must be more than 9\" from enemy models."
+    ],
+    "preview_errors": [],
+    "preview_min_enemy_distance": 8.0,
+    "current_legal": false,
+    "preview_legal": true
+  }
+}

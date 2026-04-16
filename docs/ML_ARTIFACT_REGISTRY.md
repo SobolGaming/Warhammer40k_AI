@@ -189,6 +189,12 @@ Promotion requirements:
 - provenance fields are complete
 - schema compatibility checks passed
 
+Capability-schema note:
+- preview-combat evaluation artifacts may intentionally target
+  `capability_schema:build_capability_v2`, but that remains an explicit
+  compatibility split. Existing v1 artifacts and bundles must not broaden their
+  required capability-schema ids in place.
+
 ## Patch Scope and Retraining Scope
 
 The registry ABI must support patch-local iteration instead of full resets.

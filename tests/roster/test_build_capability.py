@@ -11,7 +11,7 @@ from warhammer40k_ai.roster.army_build import (
 )
 from warhammer40k_ai.roster.build_capability import compile_build_capability_profile
 from warhammer40k_ai.roster.build_capability_schema import (
-    BuildCapabilitySchema,
+    BUILD_CAPABILITY_SCHEMA_V2,
     DEFAULT_BUILD_CAPABILITY_SCHEMA,
 )
 from warhammer40k_ai.waha_helper import WahaHelper
@@ -180,13 +180,13 @@ def _archive_sensitive_blueprint() -> ArmyBlueprint:
     )
 
 
-def _bumped_schema() -> BuildCapabilitySchema:
-    return BuildCapabilitySchema(
-        capability_schema_id="capability_schema:build_capability_v2",
-        aggregate_count_names=DEFAULT_BUILD_CAPABILITY_SCHEMA.aggregate_count_names,
-        pressure_metric_names=DEFAULT_BUILD_CAPABILITY_SCHEMA.pressure_metric_names,
-        feature_definitions=DEFAULT_BUILD_CAPABILITY_SCHEMA.feature_definitions,
-    )
+def _preview_combat_scope() -> dict[str, object]:
+    return {
+        "rules_bundle_id": "rules_bundle:2026-04-15-preview-combat",
+        "version_adapter_boundary": {
+            "combat_profile_family": "11e_preview",
+        },
+    }
 
 
 def test_build_capability_profile_is_deterministic_for_same_blueprint_and_rules_bundle(
@@ -231,17 +231,16 @@ def test_build_capability_profile_changes_deterministically_for_rules_bundle_and
         rules_bundle_id="rules_bundle:2026-04-15",
         waha_helper=waha_helper,
     )
-    bumped_schema = _bumped_schema()
     bumped_once = compile_build_capability_profile(
         blueprint,
         rules_bundle_id="rules_bundle:2026-04-14",
-        schema=bumped_schema,
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
         waha_helper=waha_helper,
     )
     bumped_twice = compile_build_capability_profile(
         blueprint,
         rules_bundle_id="rules_bundle:2026-04-14",
-        schema=bumped_schema,
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
         waha_helper=waha_helper,
     )
 
@@ -250,6 +249,50 @@ def test_build_capability_profile_changes_deterministically_for_rules_bundle_and
     assert bumped_once.build_capability_profile_id != baseline.build_capability_profile_id
     assert bumped_once.build_capability_profile_id == bumped_twice.build_capability_profile_id
     assert bumped_once.army_blueprint_hash == baseline.army_blueprint_hash
+
+
+def test_build_capability_v2_surfaces_preview_combat_semantics(
+    waha_helper: WahaHelper,
+) -> None:
+    blueprint = _melee_heavy_blueprint()
+
+    current = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id="rules_bundle:2026-04-14",
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        waha_helper=waha_helper,
+    )
+    preview = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        waha_helper=waha_helper,
+    )
+
+    preview_feature_names = {
+        "charge_option_flexibility",
+        "ingress_charge_conversion",
+        "fight_order_resilience",
+        "overrun_chain_potential",
+        "consolidate_objective_swing",
+        "engagement_footprint_pressure",
+        "transport_pop_punish_index",
+    }
+
+    assert preview.capability_schema_id == "capability_schema:build_capability_v2"
+    assert preview.rules_bundle_id == "rules_bundle:2026-04-15-preview-combat"
+    assert preview_feature_names.issubset(preview.capability_scores)
+    assert preview.capability_scores["charge_option_flexibility"] > current.capability_scores["charge_option_flexibility"]
+    assert preview.capability_scores["ingress_charge_conversion"] > current.capability_scores["ingress_charge_conversion"]
+    assert preview.capability_scores["fight_order_resilience"] > current.capability_scores["fight_order_resilience"]
+    assert current.capability_scores["overrun_chain_potential"] == 0.0
+    assert preview.capability_scores["overrun_chain_potential"] > 0.0
+    assert preview.capability_scores["consolidate_objective_swing"] > current.capability_scores["consolidate_objective_swing"]
+    assert (
+        preview.capability_scores["engagement_footprint_pressure"]
+        > current.capability_scores["engagement_footprint_pressure"]
+    )
+    assert preview.capability_scores["transport_pop_punish_index"] > current.capability_scores["transport_pop_punish_index"]
 
 
 def test_build_capability_profile_requires_explicit_snapshot_scope_without_helper() -> None:
