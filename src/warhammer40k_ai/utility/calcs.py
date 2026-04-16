@@ -14,6 +14,8 @@ from shapely.affinity import translate, rotate
 from shapely.ops import unary_union
 from shapely import STRtree
 
+from ..battlefield.control_queries import control_region_centroid, control_region_shape
+from ..battlefield.objective_sites import resolve_objective_id, resolve_objective_site
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..pathing.sweep import swept_footprint
 from ..pathing.types import MovementProfile, MovementType, Pose
@@ -3323,53 +3325,60 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 objs = [
                     obj
                     for obj in list(objs or [])
-                    if str(get_entity_id(obj) or "").strip() in allowed_objective_ids
+                    if str(resolve_objective_id(obj) or "").strip() in allowed_objective_ids
                 ]
             if not objs:
                 return False
-            best_obj = None
+            best_surface = None
             best_dist = None
+            current_point = Point(float(current_base.x or 0.0), float(current_base.y or 0.0))
             for obj in objs:
-                if getattr(obj, "removed", False):
+                site = resolve_objective_site(obj)
+                if site is None or bool(getattr(site, "removed", False)):
                     continue
-                site = getattr(obj, "location", None) or obj
-                try:
-                    ox = float(getattr(site, "x", 0.0))
-                    oy = float(getattr(site, "y", 0.0))
-                except Exception:
-                    continue
-                dx = current_base.x - ox
-                dy = current_base.y - oy
-                d_cur = sqrt((dx * dx) + (dy * dy))
+                control_region = getattr(site, "control_region", None)
+                shape = control_region_shape(control_region, game_state=getattr(game_map, "game", None)) if control_region is not None else None
+                centroid = (
+                    control_region_centroid(control_region, game_state=getattr(game_map, "game", None))
+                    if control_region is not None
+                    else (
+                        float(getattr(site, "x", 0.0) or 0.0),
+                        float(getattr(site, "y", 0.0) or 0.0),
+                        float(getattr(site, "z", 0.0) or 0.0),
+                    )
+                )
+                if shape is not None:
+                    d_cur = float(shape.distance(current_point))
+                else:
+                    dx = float(current_base.x or 0.0) - float(centroid[0] if len(centroid) > 0 else 0.0)
+                    dy = float(current_base.y or 0.0) - float(centroid[1] if len(centroid) > 1 else 0.0)
+                    d_cur = sqrt((dx * dx) + (dy * dy))
                 if best_dist is None or d_cur < best_dist:
                     best_dist = d_cur
-                    best_obj = obj
-            if best_obj is None or best_dist is None:
+                    best_surface = (site, shape, centroid)
+            if best_surface is None or best_dist is None:
                 return False
-            best_site = getattr(best_obj, "location", None) or best_obj
-            try:
-                ox = float(getattr(best_site, "x", 0.0))
-                oy = float(getattr(best_site, "y", 0.0))
-            except Exception:
-                return False
-            try:
-                radius = float(getattr(best_site, "control_radius", 3.0) or 0.0)
-            except Exception:
-                radius = 3.0
-            dx = new_base.x - ox
-            dy = new_base.y - oy
-            d_new = sqrt((dx * dx) + (dy * dy))
-            try:
-                base_r = float(new_base.get_longest_radius())
-            except Exception:
+            _best_site, best_shape, best_centroid = best_surface
+            new_shape_getter = getattr(new_base, "get_base_shape", None)
+            new_shape = new_shape_getter() if callable(new_shape_getter) else None
+            if best_shape is not None and new_shape is not None:
+                within = bool(new_shape.intersects(best_shape))
+                d_new = float(best_shape.distance(Point(float(new_base.x or 0.0), float(new_base.y or 0.0))))
+            else:
+                ox = float(best_centroid[0] if len(best_centroid) > 0 else 0.0)
+                oy = float(best_centroid[1] if len(best_centroid) > 1 else 0.0)
+                radius = float(getattr(resolve_objective_site(_best_site), "control_radius", 3.0) or 0.0)
+                dx = float(new_base.x or 0.0) - ox
+                dy = float(new_base.y or 0.0) - oy
+                d_new = sqrt((dx * dx) + (dy * dy))
                 try:
-                    base_r = float(new_base.get_radius())
+                    base_r = float(new_base.get_longest_radius())
                 except Exception:
                     try:
-                        base_r = float(getattr(new_base, "radius", 0.0) or 0.0)
+                        base_r = float(new_base.get_radius())
                     except Exception:
-                        base_r = 0.0
-            within = d_new <= (radius + base_r + 1e-6)
+                        base_r = float(getattr(new_base, "radius", 0.0) or 0.0)
+                within = d_new <= (radius + base_r + 1e-6)
             closer = d_new < (best_dist - 1e-6)
             return within and closer
 

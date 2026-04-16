@@ -254,7 +254,7 @@ shows what is done versus what remains.
 | PR-013 | Completed | Implemented terrain visibility, cover, and elevation service scaffolding on April 8, 2026. |
 | PR-014 | Completed | Implemented mission-authored terrain layout recipes, pairing-owned preview layout recommendations, explicit preview visibility gating, and terrain/module splits on April 8, 2026. |
 | PR-014A | Completed | Implemented combat rules/geometry profiles, preview-aware engagement hooks, and charge-resolution state scaffolding on April 16, 2026. |
-| PR-014B | Pending | Fight scheduler and fight-entitlement snapshot scaffolding for batch combat flow. |
+| PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
 | PR-014C | Pending | Reserve-entry rules/geometry extraction ahead of the previewed >8" ingress change. |
 | PR-014D | Pending | `build_capability_v2` and combat-preview golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
@@ -1054,7 +1054,7 @@ The April 15, 2026 combat preview splits several concepts that the current `Comb
 
 ## PR-014B — Fight scheduler and fight-entitlement snapshot
 
-**Status:** Pending.
+**Status:** Completed on April 16, 2026.
 
 ### Goal
 Add a deterministic batch-oriented fight-step scheduler so pile-ins, attacks, overrun fights, and consolidates can be modeled as stage-level flow instead of as incidental side effects inside a per-unit fight loop.
@@ -1078,6 +1078,18 @@ The April 15, 2026 combat preview changes the shape of the fight step itself: al
 ### Non-goals
 - No broad rewrite of attack resolution outside the scheduler/entitlement boundary.
 - No local-only UI shortcuts; all choices still route through deterministic decision/action surfaces.
+
+### Implemented notes
+- Added `src/warhammer40k_ai/engine/fight_scheduler.py` and `src/warhammer40k_ai/engine/fight_entitlements.py`.
+- Routed `fight_phase_manager.py` and `fight_order.py` through preview-aware stage snapshots so
+  Fights First ordering and overrun eligibility no longer depend on one flat stage-start flag.
+- Added preview overrun pile-in handoff for units that were eligible at step start but became
+  unengaged before target declaration.
+- Added end-batch consolidate staging and objective-site/control-region consolidate fallback
+  routing in `fight_move.py` and `utility/calcs.py`.
+- Added targeted regression coverage in:
+  - `tests/engine/test_fight_scheduler.py`
+  - `tests/rules/test_fight_phase_pile_in_consolidate_rules.py`
 
 ---
 

@@ -4,6 +4,11 @@ import math
 import time
 from typing import Any
 
+from shapely.geometry import Point
+from shapely.ops import nearest_points
+
+from ..battlefield.control_queries import control_region_centroid, control_region_shape
+from ..battlefield.objective_sites import resolve_objective_site
 from ..pathing.api import PathQuery, plan_model_path
 from ..pathing.types import MovementType as PathMovementType
 from ..utility.calcs import validate_unit_coherency_after_movement
@@ -331,11 +336,18 @@ def _candidate_destinations(
             _add(current_x + (nx * travel), current_y + (ny * travel), current_z)
 
     if movement_type == "consolidate":
-        for objective in _objectives_for_game_map(getattr(game, "map", None)):
-            ox = float(getattr(objective, "x", 0.0) or 0.0)
-            oy = float(getattr(objective, "y", 0.0) or 0.0)
-            dx = ox - current_x
-            dy = oy - current_y
+        current_point = Point(current_x, current_y)
+        for surface in _objective_control_surfaces_for_game_map(getattr(game, "map", None)):
+            shape = surface.get("shape")
+            centroid = tuple(surface.get("centroid") or (0.0, 0.0, current_z))
+            target_x = float(centroid[0] if len(centroid) > 0 else 0.0)
+            target_y = float(centroid[1] if len(centroid) > 1 else 0.0)
+            if shape is not None:
+                nearest = nearest_points(current_point, shape)[1]
+                target_x = float(getattr(nearest, "x", target_x) or target_x)
+                target_y = float(getattr(nearest, "y", target_y) or target_y)
+            dx = target_x - current_x
+            dy = target_y - current_y
             distance = math.hypot(dx, dy)
             if distance <= 1e-6:
                 continue
@@ -419,6 +431,40 @@ def _objectives_for_game_map(game_map: object) -> list[object]:
         location = getattr(objective, "location", None)
         normalized.append(location if location is not None else objective)
     return normalized
+
+
+def _objective_control_surfaces_for_game_map(game_map: object) -> list[dict[str, Any]]:
+    surfaces: list[dict[str, Any]] = []
+    for objective in list(getattr(game_map, "objectives", []) or []):
+        site = resolve_objective_site(objective)
+        if site is None or bool(getattr(site, "removed", False)):
+            continue
+        control_region = getattr(site, "control_region", None)
+        shape = control_region_shape(control_region, game_state=getattr(game_map, "game", None)) if control_region is not None else None
+        centroid = (
+            control_region_centroid(control_region, game_state=getattr(game_map, "game", None))
+            if control_region is not None
+            else (
+                float(getattr(site, "x", 0.0) or 0.0),
+                float(getattr(site, "y", 0.0) or 0.0),
+                float(getattr(site, "z", 0.0) or 0.0),
+            )
+        )
+        surfaces.append(
+            {
+                "objective": objective,
+                "site": site,
+                "shape": shape,
+                "centroid": centroid,
+            }
+        )
+    surfaces.sort(
+        key=lambda entry: (
+            float(tuple(entry.get("centroid") or (0.0, 0.0, 0.0))[0]),
+            float(tuple(entry.get("centroid") or (0.0, 0.0, 0.0))[1]),
+        )
+    )
+    return surfaces
 
 
 def _restore_positions(unit: object, snapshot: list[dict[str, Any]]) -> None:

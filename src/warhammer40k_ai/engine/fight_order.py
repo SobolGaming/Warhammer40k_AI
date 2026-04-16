@@ -52,6 +52,12 @@ def _mark_units_eligible_to_fight_this_phase(manager, units) -> None:
 
 
 def _get_eligible_units_for_player(manager, player):
+    scheduler = getattr(manager, "scheduler", None)
+    if scheduler is not None:
+        roots = list(scheduler.eligible_units_for_player(player, fought_units=manager.fought_units) or [])
+        manager._mark_units_eligible_to_fight_this_phase(roots)
+        return roots
+
     if manager.current_stage.name == "FIGHT_FIRST":
         all_units = manager.game.get_fight_first_units(player)
     elif manager.current_stage.name == "REMAINING_COMBATANTS":

@@ -15,6 +15,8 @@ Cross-links:
   `src/warhammer40k_ai/units/unit.py`
 - Fight move planning/validation helpers: `src/warhammer40k_ai/engine/fight_move.py`
 - Fight-phase `MOVE_UNIT` sequencing facade: `src/warhammer40k_ai/engine/fight_phase_manager.py`
+- Fight-step scheduler / entitlement snapshot: `src/warhammer40k_ai/engine/fight_scheduler.py`,
+  `src/warhammer40k_ai/engine/fight_entitlements.py`
 - Fight ordering / engagement / resolution helpers: `src/warhammer40k_ai/engine/fight_order.py`,
   `src/warhammer40k_ai/engine/fight_engagement.py`, `src/warhammer40k_ai/engine/fight_resolution.py`
 - Edition-aware combat rules / geometry profiles: `src/warhammer40k_ai/engine/combat_timing.py`
@@ -33,7 +35,7 @@ Cross-links:
   `closest_enemy_unit` rule flag is active).
 - If it is possible to end within Engagement Range of an enemy unit, the model must do so.
 - If ending in Engagement Range is not possible, the model may instead end closer to the
-  closest objective marker and within that marker’s control radius (objective fallback).
+  closest objective site/control region (objective fallback).
 - If base contact is achievable within the consolidate distance, the move must end in
   base-to-base contact.
 - Consolidate distance is capped by `CONSOLIDATE_DISTANCE` (3.0") unless overridden.
@@ -50,9 +52,24 @@ This reduces the candidate set while keeping validation correct for pile-in lega
 - Engagement range, base-contact epsilon, and fight-move candidate radii are read through
   `engine/combat_timing.py::CombatGeometryProfile` instead of raw constants in
   `fight_move.py`.
-- The current runtime still uses the coarse fight scheduler until `PR-014B`, but the
-  stage-priority policy is now stored per stage (`fight_first` vs `remaining_combatants`)
+- Fight-phase staging now routes through `fight_scheduler.py`, which introduces preview-aware
+  stage sequencing (`PILE_IN_ACTIVE`, `PILE_IN_REACTIVE`, `FIGHTS_FIRST`,
+  `REMAINING_COMBATANTS`, `CONSOLIDATE_BATCH`) while keeping `fight_phase_manager.py`
+  as the public façade.
+- Start-of-stage fight eligibility now snapshots through `fight_entitlements.py`, so preview
+  overrun handling can preserve deterministic eligibility even after live engagement state
+  changes mid-step.
+- Stage-priority policy remains stored per stage (`fight_first` vs `remaining_combatants`)
   rather than as one flat starting-player flag.
+
+## Batch fight flow
+- Current 10e profiles still use per-unit pile-in/attack/consolidate sequencing.
+- Preview combat profiles can now:
+  - keep a deterministic entitlement snapshot for an attack stage
+  - queue an overrun pile-in for units that were eligible at step start but became unengaged
+  - defer consolidate into a dedicated end-batch stage
+- End-batch consolidate planning and legality now target objective-site control regions rather
+  than only ad hoc `(x, y, control_radius)` marker coordinates.
 
 ## UI behavior
 - `IndividualModelMovementDialog` lists all models and disables those already in base
@@ -100,7 +117,8 @@ in `utility.calcs.get_validation_rules(...)`.
 
 ## Tests
 Relevant tests include:
-- `tests/test_fight_phase_pile_in_consolidate_rules.py`
+- `tests/engine/test_fight_scheduler.py`
+- `tests/rules/test_fight_phase_pile_in_consolidate_rules.py`
 - `tests/test_pile_in_simple.py`
 - `tests/test_pile_in_visualization.py`
 - `tests/test_collision_detection.py`

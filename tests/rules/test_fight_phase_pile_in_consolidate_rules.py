@@ -2,11 +2,14 @@ import os
 import sys
 import unittest
 
+from shapely.geometry import Polygon
+
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.battlefield.map import Map, ObjectivePoint
+from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.pathing.api import PathQuery, plan_model_path
 from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules, clear_enemy_model_cache, clear_collision_caches
 from warhammer40k_ai.utility.constants import BASE_CONTACT_EPSILON
@@ -237,6 +240,27 @@ class TestPileInAndConsolidateRules(unittest.TestCase):
         model = friendly.models[0]
 
         # Move 2" toward objective: should end within objective range and be valid
+        res_obj = unified_pathfinding(
+            model=model,
+            target=(12.0, 10.0, 0.0),
+            movement_type=MovementType.CONSOLIDATE,
+            max_distance=3.0,
+            game_map=self.game_map,
+        )
+        self.assertTrue(res_obj["valid"], res_obj.get("reason"))
+
+    def test_consolidate_objective_fallback_uses_control_region_geometry(self):
+        friendly = _make_single_model_unit("Friendly", "A", 10.0, 10.0)
+        enemy = _place_enemy_at_edge_distance(friendly, "Enemy", "B", edge_dist=6.0)
+        self.game_map.units = [friendly, enemy]
+        self.game_map.objectives = [
+            ObjectiveSite.terrain_footprint(
+                footprint=Polygon([(12.5, 8.0), (16.5, 8.0), (16.5, 12.0), (12.5, 12.0)])
+            )
+        ]
+
+        model = friendly.models[0]
+
         res_obj = unified_pathfinding(
             model=model,
             target=(12.0, 10.0, 0.0),
