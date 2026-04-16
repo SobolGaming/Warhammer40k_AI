@@ -4,7 +4,7 @@
 
 This document is an execution plan for GPT-5.4 to prepare the `SobolGaming/Warhammer40k_AI` codebase for a clean one-way transition from 10th Edition assumptions to an 11th Edition-first architecture.
 
-**Execution contract:** PR-001 through PR-014 prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-015 is the release-day exactness pass.
+**Execution contract:** PR-001 through PR-014, plus the compatibility addendum PRs `PR-014A` through `PR-014D`, prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-015 is the release-day exactness pass.
 
 This plan is **preview-driven**, not release-day finalization. It is based on the currently announced 11th Edition changes around:
 
@@ -45,6 +45,8 @@ Use these as the authoritative context while implementing:
   - `https://www.warhammer-community.com/en-gb/articles/oefzq9fg/new40k-how-your-army-affects-your-mission/`
 - Terrain:
   - `https://www.warhammer-community.com/en-gb/articles/xlppkx5s/new40k-take-cover-with-updated-terrain-rules/`
+- Combat:
+  - `https://www.warhammer-community.com/en-gb/articles/m3son4il/new40k-combat-changes-shake-up-fighting-in-the-new-edition/` (published April 15, 2026)
 - Army building:
   - `https://www.warhammer-community.com/en-gb/articles/95fucn12/building-an-army-in-the-new-edition-of-warhammer-40000/`
 
@@ -59,7 +61,7 @@ Use these as the authoritative context while implementing:
 7. **Keep PRs reviewable.** If a PR would exceed roughly 1,500 changed lines excluding pure moves/renames, split it.
 8. **No broad neural-network training in this plan.** Only add the plumbing and stable interfaces required to make later training portable.
 9. **Every PR must end with passing tests** for the touched area, updated docs for changed public interfaces, and no broken replay serialization.
-10. **PR-001 through PR-014 are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
+10. **PR-001 through PR-014 and `PR-014A` through `PR-014D` are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
 11. **PR-015 is the first PR allowed to ingest and activate exact 11th Edition release behavior/data.** Before PR-015, any preview-derived runtime behavior must be clearly marked provisional and limited to scaffolding, stubs, feature-gated validation, or placeholder data needed to keep the architecture coherent.
 
 ## Global design decisions
@@ -159,6 +161,7 @@ The tests directory is also too flat and too large; it needs package-aligned reo
 | `src/warhammer40k_ai/battlefield/map.py` | 3,232 lines / 139 KB | Mixes geometry, terrain, occupancy, objective logic, control queries | Split into `map_geometry.py`, `terrain_runtime.py`, `objective_sites.py`, `control_queries.py` | PR-007 |
 | `src/warhammer40k_ai/units/model.py` | 2,781 lines / 108 KB | Mixes model state, base geometry, damage/wound interactions, movement helpers | Split into `model_state.py`, `model_geometry.py`, `model_damage.py` | PR-008 or PR-009 if needed |
 | `src/warhammer40k_ai/engine/attack_resolution.py` | 2,656 lines / 131 KB | Mixes sequencing, modifiers, damage allocation, reporting, side effects | Split into `attack_sequence.py`, `attack_modifiers.py`, `damage_allocation.py`, `attack_reporting.py` | PR-009 |
+| `src/warhammer40k_ai/engine/game_mixins/setup_deployment_reserves_mixin.py` | 4,698 lines / 218 KB | Concentrates reserve-entry eligibility, reinforcement sequencing, and landing-geometry validation in one mixin, which makes ingress-distance and reserve-arrival timing changes risky to isolate | Split into `reserve_entry_rules.py`, `reserve_entry_geometry.py`, and a thin mixin/orchestrator façade | PR-014C |
 | `src/warhammer40k_ai/engine/deployment.py` | 1,522 lines / 69.5 KB | Mixes flow, validation, data definitions, runtime choices | Split into `deployment_flow.py`, `deployment_validation.py`, `deployment_types.py` | PR-005, PR-006 |
 | `src/warhammer40k_ai/engine/deployment_solver.py` | 1,494 lines / 66.7 KB | Mixes candidate generation, heuristics, ranking, solver orchestration | Split into `deployment_candidates.py`, `deployment_heuristics.py`, `deployment_ranker_adapter.py` | PR-005, PR-010 |
 | `src/warhammer40k_ai/engine/fight_phase_manager.py` | 1,299 lines / 60.5 KB | Mixes eligibility, order, pile-in/consolidate movement, fight resolution hooks | Split into `fight_order.py`, `fight_engagement.py`, `fight_resolution.py` | PR-009 |
@@ -191,6 +194,29 @@ PR-007 established the battlefield/objective split, but the April 8, 2026 terrai
 - mission-authored terrain layouts and standard area templates
 
 These should land as additive scaffolding PRs before the final release-day exactness pass.
+
+## Combat preview addendum
+
+The April 15, 2026 combat preview adds concrete pre-release surfaces that justify one more compatibility-only tranche before PR-015:
+
+- engagement range expands to 2"
+- movement can pass through enemy engagement range so long as it does not finish there
+- charge targets are selected after the roll
+- ingress-style reserve arrivals become more than 8" away
+- all pile-ins batch before attacks
+- the active player picks first among Fights First units
+- eligible units that become unengaged can make an overrun fight
+- all consolidates batch at the end and can reach new enemies or nearby objectives
+
+The current repo already has promising seams (`combat_timing.py`, `fight_move.py`, `fight_order.py`, `descriptor_build_capability.py`), but they are still too coarse for release-day exactness. Today:
+
+- `CombatTimingProfile` only carries a small set of booleans plus a single `fight_stage_start_player`
+- engagement range still leaks through raw constants and low-level fight-move heuristics
+- `fight_phase_manager.py` still assumes a per-unit fight sequence instead of a batch scheduler
+- reserve-entry legality is still concentrated in `setup_deployment_reserves_mixin.py`
+- build capability semantics are still versioned as `build_capability_v1`
+
+To keep PR-015 focused on final corpus ingestion rather than structural rewrites, slot the following additive PRs in before it.
 
 ## File-size / focus guardrails after refactor
 
@@ -227,6 +253,10 @@ shows what is done versus what remains.
 | PR-012 | Completed | Implemented terrain-area runtime, serialization, and objective/layout identifier scaffolding on April 8, 2026. |
 | PR-013 | Completed | Implemented terrain visibility, cover, and elevation service scaffolding on April 8, 2026. |
 | PR-014 | Completed | Implemented mission-authored terrain layout recipes, pairing-owned preview layout recommendations, explicit preview visibility gating, and terrain/module splits on April 8, 2026. |
+| PR-014A | Pending | Combat rules profiles, combat geometry extraction, and charge-resolution state scaffolding. |
+| PR-014B | Pending | Fight scheduler and fight-entitlement snapshot scaffolding for batch combat flow. |
+| PR-014C | Pending | Reserve-entry rules/geometry extraction ahead of the previewed >8" ingress change. |
+| PR-014D | Pending | `build_capability_v2` and combat-preview golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
@@ -994,6 +1024,130 @@ The April 3 mission preview says each mission pairing recommends three terrain l
 
 ---
 
+## PR-014A — Combat rules profiles, combat geometry, and charge-resolution state
+
+**Status:** Pending.
+
+### Goal
+Replace the current coarse combat timing/profile seam with rules-pack-driven combat rules and geometry services so PR-015 can swap exact 11th values without another combat rewrite.
+
+### Why now
+The April 15, 2026 combat preview splits several concepts that the current `CombatTimingProfile` still collapses together: engagement geometry, charge target timing, stage-specific fight ordering, move batching, and end-state legality.
+
+### Main changes
+1. Replace `CombatTimingProfile` with richer `CombatRulesProfile` and `CombatGeometryProfile` structures keyed by the rules bundle / adapter boundary.
+2. Move engagement range, pass-through-enemy-engagement policy, ingress exclusion distance, charge target selection window, charge end-state constraints, pile-in batching mode, consolidate batching mode, overrun enablement, and stage-specific fight-order priority into those profiles.
+3. Extract combat-geometry queries from raw constants and fight-move heuristics so charge / pile-in / consolidate validation ask a shared service for states such as `BASE_CONTACT`, `ENGAGED`, and `UNENGAGED`.
+4. Introduce `ChargeResolutionChoice` and `ChargeOutcome` records that can represent post-roll target choice, a deliberate decline-to-charge path, reachable targets, chosen targets, and deterministic end-state legality.
+5. Keep live runtime behavior preview-gated or adapter-selected; do not treat preview values as final canonical wording before PR-015.
+
+### Acceptance checks
+- Tests cover profile-driven 2" engagement evaluation, including an across-wall case where engagement is legal without base contact.
+- Charge-resolution tests cover post-roll target choice plumbing and deterministic serialization of reachable/chosen target sets.
+- Low-level fight-move and charge validation code read engagement geometry from the new profile/service boundary instead of hard-coded horizontal-distance assumptions.
+
+### Non-goals
+- No final release-day combat wording lock-in.
+- No codex-specific combat exception audit yet.
+
+---
+
+## PR-014B — Fight scheduler and fight-entitlement snapshot
+
+**Status:** Pending.
+
+### Goal
+Add a deterministic batch-oriented fight-step scheduler so pile-ins, attacks, overrun fights, and consolidates can be modeled as stage-level flow instead of as incidental side effects inside a per-unit fight loop.
+
+### Why now
+The April 15, 2026 combat preview changes the shape of the fight step itself: all pile-ins happen before attacks, Fights First selection has its own priority rule, overrun fights depend on start-of-step entitlement, and all consolidates happen at the end.
+
+### Main changes
+1. Add `fight_scheduler.py` with explicit stages such as `PILE_IN_ACTIVE`, `PILE_IN_REACTIVE`, `FIGHTS_FIRST`, `REMAINING_COMBATANTS`, and `CONSOLIDATE_BATCH`.
+2. Add `fight_entitlements.py` to snapshot `engaged_at_step_start`, `charged_this_turn`, `eligible_due_to_prior_engagement`, `overrun_available`, and `consolidate_entitled`.
+3. Route `fight_phase_manager.py` through the scheduler while keeping it as a façade/orchestrator entrypoint.
+4. Separate Fights First ordering from the ordering of remaining combatants so the active player can be first among Fights First units without overloading one `fight_stage_start_player` field.
+5. Redirect consolidate objective-seeking heuristics from raw `game_map.objectives` access to the newer objective-site / control-region surfaces.
+
+### Acceptance checks
+- Tests cover active-player-first ordering among Fights First units.
+- Tests cover an overrun fight after a transport-destruction disembark sequence.
+- Tests cover consolidate-to-objective behavior using objective-site / control-region geometry rather than ad hoc objective coordinates.
+- Replay/decision traces remain deterministic across the staged fight flow.
+
+### Non-goals
+- No broad rewrite of attack resolution outside the scheduler/entitlement boundary.
+- No local-only UI shortcuts; all choices still route through deterministic decision/action surfaces.
+
+---
+
+## PR-014C — Reserve-entry rules and geometry extraction
+
+**Status:** Pending.
+
+### Goal
+Extract reserve-entry legality and landing geometry from the current monolithic setup mixin so the previewed >8" ingress exclusion can land as a profile/data change instead of another deep monolith edit.
+
+### Why now
+`setup_deployment_reserves_mixin.py` is still 4,698 lines, and the April 15, 2026 combat preview materially changes ingress geometry even though the downstream charge math stays separate.
+
+### Main changes
+1. Split reserve-entry legality into focused `reserve_entry_rules.py` and `reserve_entry_geometry.py` modules, leaving `setup_deployment_reserves_mixin.py` as a thin orchestration façade.
+2. Move enemy-proximity exclusion checks, landing-envelope generation, and reserve-entry-kind-specific legality into rules-pack-driven helpers.
+3. Preserve current live distances unless the preview bundle is explicitly selected; do not globally activate the >8" rule before PR-015.
+4. Keep reserve landing geometry and charge-resolution math as separate services so future release-day wording can adjust one without entangling the other.
+
+### Acceptance checks
+- Tests cover current and preview-gated reserve-entry exclusion distances through the extracted helper layer.
+- Tests confirm the preview >8" rule creates a larger landing envelope while leaving charge-success math independent.
+- The setup mixin shrinks materially and delegates reserve legality to focused modules.
+
+### Non-goals
+- No final release-day reserve/deep-strike wording audit yet.
+- No codex- or mission-specific reserve exception sweep beyond what the extraction requires.
+
+---
+
+## PR-014D — `build_capability_v2` and combat-preview golden tests
+
+**Status:** Pending.
+
+### Goal
+Upgrade AI-facing build-capability semantics and lock the new combat/reserve seams down with deterministic golden tests before release-day exactness.
+
+### Why now
+The repo already has a deterministic build-capability compiler, but the current `build_capability_v1` schema cannot express several preview-driven combat traits that will matter for mustering heuristics and matchup evaluation once PR-015 swaps in final values.
+
+### Main changes
+1. Add a versioned `build_capability_v2` schema and descriptor path for combat-preview-aware semantics.
+2. Introduce capability fields such as:
+   - `charge_option_flexibility`
+   - `ingress_charge_conversion`
+   - `fight_order_resilience`
+   - `overrun_chain_potential`
+   - `consolidate_objective_swing`
+   - `engagement_footprint_pressure`
+   - `transport_pop_punish_index`
+3. Add deterministic combat golden tests for:
+   - 2" across-wall engagement
+   - post-roll charge target choice
+   - active-player-first among Fights First
+   - overrun after a transport pop
+   - consolidate-to-objective
+   - preview >8" ingress landing-envelope expansion with charge math kept separate
+4. Update the relevant build-capability and AI artifact docs so schema selection and feature intent are explicit.
+
+### Acceptance checks
+- Descriptor compilation can intentionally target `build_capability_v2` without breaking deterministic descriptor IDs for a fixed schema/version selection.
+- Golden tests pass under deterministic replay conditions and clearly separate preview scaffolding from release-day exactness.
+- Docs describe the new schema fields and their intended preview-only role ahead of PR-015.
+
+### Non-goals
+- No broad model training or heuristic retuning.
+- No attempt to infer final point values, datasheet changes, or codex-level melee behavior from the preview article alone.
+
+---
+
 ## PR-015 — Release-day alignment PR (required when final 11th rules are in hand)
 
 **Status:** Pending.
@@ -1007,14 +1161,15 @@ The previous PRs build the right seams, but preview articles are not a substitut
 ### Main changes
 1. Ingest final 11th mission pack / army construction / deployment / twist / objective wording.
 2. Ingest final terrain-area / Hidden / detection-range / Obscuring / cover / Plunging / layout wording and data.
-3. Replace preview TODOs / placeholder assumptions with exact implementations.
-4. Re-run semantic-diff / replay migration / descriptor compilation checks.
-5. Rebaseline fixtures where the final wording differs from the preview.
-6. Perform a final audit of detachment-point handling, attachment rules, secondaries, terrain/layout semantics, and edition invariants.
+3. Ingest final combat, charge, reserve-arrival, and fight-step wording/data.
+4. Replace preview TODOs / placeholder assumptions with exact implementations.
+5. Re-run semantic-diff / replay migration / descriptor compilation checks.
+6. Rebaseline fixtures where the final wording differs from the preview.
+7. Perform a final audit of detachment-point handling, attachment rules, secondaries, terrain/layout semantics, reserve-entry semantics, build-capability schema alignment, and edition invariants.
 
 ### Start condition
 - Official 11th rules data is available to the team.
-- PR-014 merged.
+- PR-014D merged.
 
 ### End condition
 - Preview assumptions are either confirmed and retained or replaced with final release behavior.
@@ -1029,6 +1184,8 @@ The previous PRs build the right seams, but preview articles are not a substitut
   - terrain areas / layouts / visibility
   - objective/control/scoring
   - attachments
+  - reserve entry / ingress
+  - build capability descriptor compilation
   - core combat timing invariants
 
 ### Non-goals
@@ -1054,7 +1211,11 @@ Use this dependency order unless a smaller split is obviously safer:
 12. PR-012 → terrain-area runtime / objective-layout identifiers
 13. PR-013 → visibility / cover / plunging scaffolding
 14. PR-014 → terrain layouts / preview pack alignment
-15. PR-015 → release-day exactness pass
+15. PR-014A → combat rules profiles / geometry / charge state
+16. PR-014B → fight scheduler / entitlements
+17. PR-014C → reserve-entry rules / geometry extraction
+18. PR-014D → build capability v2 / combat golden tests
+19. PR-015 → release-day exactness pass
 
 If a PR is too large, split it at module boundaries, not at arbitrary halfway points.
 
@@ -1069,7 +1230,7 @@ If a PR is too large, split it at module boundaries, not at arbitrary halfway po
 - Avoid a giant “move everything everywhere” PR.
 
 ## How to handle adapters
-- Temporary adapters are acceptable in PR-002 through PR-014.
+- Temporary adapters are acceptable in PR-002 through PR-014D.
 - They should be clearly marked with:
   - `TODO(11e-cleanup)` or equivalent
   - a reference to PR-015 as the deletion point
@@ -1089,6 +1250,8 @@ Every PR must update the docs that define the changed subsystem. At minimum:
 - PR-011: README and top-level architecture docs
 - PR-012 / PR-013: battlefield / terrain runtime / state schema docs
 - PR-014: mission/deployment and battlefield layout docs
+- PR-014A / PR-014B / PR-014C: combat, charge, reserve-entry, and decision/replay docs
+- PR-014D: build-capability schema, AI artifact, and combat golden-test docs
 - PR-015: final release-day rules-ingestion docs and any preview clean-up notes
 
 ---
