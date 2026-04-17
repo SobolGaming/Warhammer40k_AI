@@ -80,7 +80,16 @@ class _StubUnit:
     def get_parent_army(self):
         return self._army
 
-    def calculate_model_positions(self, x, y, game_map, avoid_friendly_units=False, boundary_repulsors=None):
+    def calculate_model_positions(
+        self,
+        x,
+        y,
+        game_map,
+        avoid_friendly_units=False,
+        boundary_repulsors=None,
+        search_context=None,
+    ):
+        del search_context
         use_map = self._map if self._map is not None else game_map
         z = float(use_map.get_height_at_point(float(x), float(y))) if use_map is not None else 0.0
         return [(float(x), float(y), z, 0.0)]
@@ -427,9 +436,18 @@ def test_headless_deployment_candidate_probe_restores_unit_state(monkeypatch: py
             super().__init__(unit_id, must_start_in_reserves=False, map_obj=_FlatMap())
             self.models = [_StubModel(f"{unit_id}:model:0"), _StubModel(f"{unit_id}:model:1")]
             self.reserve_status = "deployed"
+            self.reserve_status = "deployed"
 
-        def calculate_model_positions(self, x, y, game_map, avoid_friendly_units=False, boundary_repulsors=None):
-            del game_map, avoid_friendly_units, boundary_repulsors
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
             positions = [
                 (float(x), float(y), 0.0, 0.0),
                 (float(x) + 1.0, float(y), 0.0, 0.0),
@@ -635,3 +653,158 @@ def test_deployment_headless_falls_back_to_rollout_metadata_when_ranker_missing(
 
     option_id = maker.choose_deployment_move_option(request, object(), {}, [])
     assert str(option_id or "") == str(request.options[1].option_id)
+
+
+def test_packability_first_deployment_order_prefers_large_units_over_teacher_tiebreak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+
+    def _make_unit(unit_id: str, *, radius: float, models: int, scout: bool = False, vehicle: bool = False):
+        unit = _StubUnit(unit_id, must_start_in_reserves=False)
+        unit.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(models)]
+        for model in list(unit.models):
+            model.model_base = _StubBase(radius=radius)
+        unit.is_vehicle = bool(vehicle)
+        if scout:
+            unit.has_scout = lambda: True  # type: ignore[attr-defined]
+        return unit
+
+    large = _make_unit("unit:large", radius=1.5, models=5, vehicle=True)
+    small = _make_unit("unit:small", radius=0.5, models=1, scout=True)
+    army = _StubArmy([large, small])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    large._army = army
+    small._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]))
+    monkeypatch.setattr(
+        maker._pregame_agent,  # type: ignore[arg-type]
+        "ordered_deploy_units",
+        lambda **_kwargs: [small, large],
+    )
+
+    chosen = maker.choose_next_deploy_unit(
+        [small, large],
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        [],
+    )
+    assert chosen is large
+
+
+def test_fast_packer_candidate_cap_stops_after_small_candidate_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlatMap:
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str) -> bool:
+            return True
+
+    unit = _StubUnit("unit:cap", must_start_in_reserves=False, map_obj=_FlatMap())
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]), placement_candidate_limit=2)
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=8,
+    )
+
+    assert len(candidates) == 2
+    metric = maker.get_deployment_search_metrics()[-1]
+    assert int(metric.get("candidate_limit", 0) or 0) == 2
+    assert int(metric.get("returned_candidate_count", 0) or 0) == 2
+    assert int(metric.get("anchor_attempts", 0) or 0) < 6
+    assert int(metric.get("full_validation_calls", 0) or 0) <= 2
+
+
+def test_cached_search_context_matches_uncached_deployment_validation() -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _ProbeUnit(_StubUnit):
+        def __init__(self, unit_id: str) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=_FlatMap())
+            self.models = [_StubModel(f"{unit_id}:model:0"), _StubModel(f"{unit_id}:model:1")]
+            self.reserve_status = "deployed"
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            return [
+                (float(x), float(y), 0.0, 0.0),
+                (float(x) + 1.0, float(y), 0.0, 0.0),
+            ]
+
+    class _ProbeGame(GameSetupDeploymentReservesMixin):
+        def __init__(self) -> None:
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def get_boundary_repulsors(self, unit, context="deployment"):
+            del unit, context
+            return []
+
+        def is_position_wholly_in_deployment_zone(self, x: float, y: float, base: object, player_id: str) -> bool:
+            del x, y, base, player_id
+            return True
+
+        def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
+            del x, y, player_id
+            return False
+
+        def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+        def get_distance_to_enemy_models(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+    game = _ProbeGame()
+    unit = _ProbeUnit("unit:cached")
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=game)
+
+    boundary_repulsors = maker._deployment_boundary_repulsors(unit)
+    search_context = maker._build_deployment_search_context(unit, boundary_repulsors=boundary_repulsors)
+    uncached = game.is_valid_deployment_position(unit, 5.0, 5.0, player.id)
+    cached = game.is_valid_deployment_position(
+        unit,
+        5.0,
+        5.0,
+        player.id,
+        boundary_repulsors=boundary_repulsors,
+        search_context=search_context,
+    )
+    assert cached is uncached

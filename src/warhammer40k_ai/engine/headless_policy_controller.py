@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from .combat_timing import geometry_profile_for_game
 from .decision_controller import DecisionController
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
@@ -19,8 +20,14 @@ from .decision_kinds import (
 )
 from .decisions import CandidateAction, DecisionRequest
 from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
+from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id
+from ..utility.placement_search import (
+    build_placement_search_context,
+    deployed_unit_bounds,
+    estimate_unit_pack_footprint,
+)
 
 _DEFAULT_SKIPPED_DECISION_TYPES = {
     DECISION_REQUEST_DICE_ROLL,
@@ -62,7 +69,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         semantic_score_weights: SemanticScoreWeights | None = None,
         exploration_epsilon: float = 0.0,
         tie_break_salt: str = "headless_policy_v1",
-        max_reserves_anchor_points: int = 20000,
+        max_reserves_anchor_points: int = 4096,
         max_reserves_arrival_seconds: float = 10.0,
         require_authoritative: bool = True,
         auto_attach: bool = True,
@@ -79,9 +86,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._exploration_epsilon = float(max(0.0, min(1.0, exploration_epsilon)))
         self._tie_break_salt = str(tie_break_salt or "headless_policy_v1")
         self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
+        self._reserves_exhaustive_anchor_limit = int(max(32, min(self._max_reserves_anchor_points, 512)))
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
         self._require_authoritative = bool(require_authoritative)
         self._attached = False
+        self._reserves_arrival_search_metrics: list[dict[str, object]] = []
         if auto_attach and self._game is not None:
             self.attach()
 
@@ -135,14 +144,14 @@ class HeadlessPolicyDecisionController(DecisionController):
                 result_payload["skipped"] = True
             if str(option_payload.get("action", "") or "").strip().lower() == "skip":
                 result_payload["skipped"] = True
-            apply_result = resolve_decision_command(
+            apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
                 option_id,
                 result_payload=result_payload,
                 player_id=getattr(request, "player_id", None),
             )
-            if bool(getattr(apply_result, "ok", False)):
+            if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                 return
 
     def _try_resolve_candidate(self, game: object, request: DecisionRequest, candidate: CandidateAction) -> bool:
@@ -154,14 +163,40 @@ class HeadlessPolicyDecisionController(DecisionController):
             payload["skipped"] = True
         if str(payload.get("action", "") or "").strip().lower() == "skip":
             payload["skipped"] = True
-        apply_result = resolve_decision_command(
+        apply_result = self._safe_resolve_decision_command(
             game,
             request,
             option_id,
             result_payload=payload,
             player_id=getattr(request, "player_id", None),
         )
-        return bool(getattr(apply_result, "ok", False))
+        return bool(apply_result is not None and getattr(apply_result, "ok", False))
+
+    def _safe_resolve_decision_command(
+        self,
+        game: object,
+        request: DecisionRequest,
+        option_id: str,
+        *,
+        result_payload: dict[str, Any],
+        player_id: str | None,
+    ):
+        try:
+            return resolve_decision_command(
+                game,
+                request,
+                option_id,
+                result_payload=result_payload,
+                player_id=player_id,
+            )
+        except (RuntimeError, ValueError) as exc:
+            logger.debug(
+                "Headless controller rejected candidate for %s (%s): %s",
+                str(getattr(request, "decision_type", "") or ""),
+                str(option_id or ""),
+                str(exc),
+            )
+            return None
 
     @staticmethod
     def _normalized_result_payload(request: DecisionRequest, payload: dict[str, Any]) -> dict[str, Any]:
@@ -218,32 +253,72 @@ class HeadlessPolicyDecisionController(DecisionController):
         if unit is None:
             return False
 
+        boundary_repulsors = self._reserve_boundary_repulsors(game, unit)
+        search_context = self._build_reserves_search_context(
+            game,
+            unit,
+            boundary_repulsors=boundary_repulsors,
+        )
         started = time.perf_counter()
         deadline = started + float(self._max_reserves_arrival_seconds)
+        metric = self._new_reserves_metric(game, unit, context=context)
         attempted = 0
         try:
-            anchors = self._reserves_arrival_anchor_points(game, unit, context=context)
+            anchor_groups = self._reserves_arrival_anchor_candidate_groups(game, unit, context=context)
         except TypeError:
-            anchors = self._reserves_arrival_anchor_points(game, unit)
-        for x, y in anchors:
-            now = time.perf_counter()
-            if now >= deadline:
+            anchor_groups = [("fallback", self._reserves_arrival_anchor_points(game, unit))]
+        consumed = 0
+        seen: set[tuple[float, float]] = set()
+        for source, anchors in list(anchor_groups or []):
+            if str(source or "").endswith("exhaustive"):
+                metric["exhaustive_fallback_used"] = True
+            for x, y in list(anchors or []):
+                now = time.perf_counter()
+                if now >= deadline:
+                    break
+                metric["anchor_attempts"] = int(metric.get("anchor_attempts", 0) or 0) + 1
+                self._bump_metric_counter(metric, "source_attempt_counts", str(source))
+                key = (round(float(x), 3), round(float(y), 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if self._quick_reject_reserves_anchor(game, unit, x=float(x), y=float(y), _context=context):
+                    metric["quick_rejects"] = int(metric.get("quick_rejects", 0) or 0) + 1
+                    self._bump_metric_counter(metric, "source_quick_rejects", str(source))
+                    continue
+                attempted += 1
+                consumed += 1
+                metric["build_calls"] = int(metric.get("build_calls", 0) or 0) + 1
+                self._bump_metric_counter(metric, "source_build_calls", str(source))
+                model_positions = call_with_supported_kwargs(
+                    self._build_model_positions_from_anchor,
+                    game,
+                    unit,
+                    x=float(x),
+                    y=float(y),
+                    search_context=search_context,
+                )
+                if not model_positions:
+                    continue
+                metric["resolve_attempts"] = int(metric.get("resolve_attempts", 0) or 0) + 1
+                apply_result = self._safe_resolve_decision_command(
+                    game,
+                    request,
+                    confirm_option_id,
+                    result_payload={"model_positions": model_positions},
+                    player_id=getattr(request, "player_id", None),
+                )
+                if apply_result is not None and bool(getattr(apply_result, "ok", False)):
+                    metric["consumed_anchor_count"] = int(consumed)
+                    metric["returned_candidate_count"] = 1
+                    metric["first_valid_source"] = str(source or "")
+                    if metric.get("calls_to_first_valid") is None:
+                        metric["calls_to_first_valid"] = int(metric.get("build_calls", 0) or 0)
+                    metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+                    self._record_reserves_metric(metric)
+                    return True
+            if time.perf_counter() >= deadline:
                 break
-            if self._quick_reject_reserves_anchor(game, unit, x=float(x), y=float(y), _context=context):
-                continue
-            attempted += 1
-            model_positions = self._build_model_positions_from_anchor(game, unit, x=float(x), y=float(y))
-            if not model_positions:
-                continue
-            apply_result = resolve_decision_command(
-                game,
-                request,
-                confirm_option_id,
-                result_payload={"model_positions": model_positions},
-                player_id=getattr(request, "player_id", None),
-            )
-            if bool(getattr(apply_result, "ok", False)):
-                return True
 
         timed_out = bool(time.perf_counter() >= deadline)
         if timed_out:
@@ -256,25 +331,111 @@ class HeadlessPolicyDecisionController(DecisionController):
 
         allow_skip = bool(context.get("allow_skip", True))
         if allow_skip and skip_option_id:
-            apply_result = resolve_decision_command(
+            apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
                 skip_option_id,
                 result_payload={"skipped": True},
                 player_id=getattr(request, "player_id", None),
             )
-            return bool(getattr(apply_result, "ok", False))
+            metric["skipped"] = bool(apply_result is not None and getattr(apply_result, "ok", False))
+            metric["consumed_anchor_count"] = int(consumed)
+            metric["returned_candidate_count"] = 0
+            metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+            self._record_reserves_metric(metric)
+            return bool(apply_result is not None and getattr(apply_result, "ok", False))
         if timed_out and skip_option_id:
-            apply_result = resolve_decision_command(
+            apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
                 skip_option_id,
                 result_payload={"skipped": True},
                 player_id=getattr(request, "player_id", None),
             )
-            if bool(getattr(apply_result, "ok", False)):
+            metric["skipped"] = bool(apply_result is not None and getattr(apply_result, "ok", False))
+            metric["consumed_anchor_count"] = int(consumed)
+            metric["returned_candidate_count"] = 0
+            metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+            self._record_reserves_metric(metric)
+            if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                 return True
+        metric["timed_out"] = bool(timed_out)
+        metric["consumed_anchor_count"] = int(consumed)
+        metric["returned_candidate_count"] = 0
+        metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+        self._record_reserves_metric(metric)
         return False
+
+    def get_reserves_arrival_search_metrics(self) -> list[dict[str, object]]:
+        return [dict(entry or {}) for entry in list(self._reserves_arrival_search_metrics or [])]
+
+    def reset_reserves_arrival_search_metrics(self) -> None:
+        self._reserves_arrival_search_metrics.clear()
+
+    def _reserve_boundary_repulsors(self, game: object, unit: object) -> list[object]:
+        repulsor_fn = getattr(game, "get_boundary_repulsors", None)
+        if callable(repulsor_fn):
+            return list(repulsor_fn(unit, context="reserves_arrival") or [])
+        game_map = getattr(game, "map", None)
+        get_repulsors = getattr(game_map, "get_battlefield_edge_repulsors", None)
+        if callable(get_repulsors):
+            return list(get_repulsors() or [])
+        return []
+
+    def _build_reserves_search_context(
+        self,
+        game: object,
+        unit: object,
+        *,
+        boundary_repulsors: list[object],
+    ) -> object | None:
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+        return build_placement_search_context(
+            unit,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=boundary_repulsors,
+        )
+
+    def _new_reserves_metric(self, game: object, unit: object, *, context: dict[str, object]) -> dict[str, object]:
+        footprint = estimate_unit_pack_footprint(unit)
+        in_strategic_attr = getattr(unit, "is_in_strategic_reserves", None)
+        in_strategic = bool(in_strategic_attr()) if callable(in_strategic_attr) else bool(in_strategic_attr)
+        return {
+            "unit_id": str(get_entity_id(unit) or ""),
+            "unit_name": str(getattr(unit, "name", "") or "Unit"),
+            "placement_kind": str(context.get("placement_kind", "") or ""),
+            "in_strategic_reserves": bool(in_strategic),
+            "max_anchor_points": int(self._max_reserves_anchor_points),
+            "anchor_attempts": 0,
+            "quick_rejects": 0,
+            "build_calls": 0,
+            "resolve_attempts": 0,
+            "calls_to_first_valid": None,
+            "first_valid_source": "",
+            "returned_candidate_count": 0,
+            "consumed_anchor_count": 0,
+            "source_attempt_counts": {},
+            "source_quick_rejects": {},
+            "source_build_calls": {},
+            "exhaustive_fallback_used": False,
+            "footprint_width": float(footprint["width"]),
+            "footprint_depth": float(footprint["depth"]),
+            "footprint_radius": float(footprint["radius"]),
+            "board_width": float(self._board_dimensions(game)[0]),
+            "board_height": float(self._board_dimensions(game)[1]),
+        }
+
+    @staticmethod
+    def _bump_metric_counter(metric: dict[str, object], key: str, source: str) -> None:
+        counters = dict(metric.get(key, {}) or {})
+        counters[str(source or "unknown")] = int(counters.get(str(source or "unknown"), 0) or 0) + 1
+        metric[key] = counters
+
+    def _record_reserves_metric(self, metric: dict[str, object]) -> None:
+        self._reserves_arrival_search_metrics.append(dict(metric or {}))
 
     @staticmethod
     def _should_skip_request(request: DecisionRequest) -> bool:
@@ -317,182 +478,371 @@ class HeadlessPolicyDecisionController(DecisionController):
         *,
         context: dict | None = None,
     ) -> list[tuple[float, float]]:
-        width, height = self._board_dimensions(game)
-        unit_id = str(get_entity_id(unit) or "")
-        ctx = dict(context or {})
+        groups = self._reserves_arrival_anchor_candidate_groups(game, unit, context=context)
         points: list[tuple[float, float]] = []
         seen: set[tuple[float, float]] = set()
-
-        def _add(x: float, y: float) -> None:
-            key = (round(float(x), 3), round(float(y), 3))
-            if key in seen:
-                return
-            seen.add(key)
-            points.append((float(x), float(y)))
-
-        anchor_unit_id = str(ctx.get("reserves_arrival_anchor_unit_id", "") or "").strip()
-        try:
-            anchor_range = float(ctx.get("reserves_arrival_anchor_range", 0.0) or 0.0)
-        except (TypeError, ValueError):
-            anchor_range = 0.0
-        if anchor_unit_id and anchor_range > 0.0:
-            anchor_unit = self._resolve_unit_by_id(game, anchor_unit_id)
-            if anchor_unit is not None:
-                get_root = getattr(anchor_unit, "get_attached_unit_root", None)
-                anchor_root = get_root() if callable(get_root) else anchor_unit
-                anchor_pos = getattr(anchor_root, "position", None)
-                if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
-                    anchor_pos = None
-                    models = list(getattr(anchor_root, "models", []) or [])
-                    for model in models:
-                        if not getattr(model, "is_alive", True):
-                            continue
-                        try:
-                            loc = model.get_location()
-                        except Exception:
-                            continue
-                        if isinstance(loc, (tuple, list)) and len(loc) >= 2:
-                            anchor_pos = loc
-                            break
-                if isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2:
-                    ax = float(anchor_pos[0])
-                    ay = float(anchor_pos[1])
-                    _add(ax, ay)
-                    radius_steps = (
-                        max(0.5, float(anchor_range) * 0.33),
-                        max(0.5, float(anchor_range) * 0.66),
-                        float(anchor_range),
-                    )
-                    for radius in radius_steps:
-                        for deg in range(0, 360, 45):
-                            rad = math.radians(float(deg))
-                            _add(ax + math.cos(rad) * float(radius), ay + math.sin(rad) * float(radius))
-
-        tunnel_allowed_ids = {
-            str(item or "").strip()
-            for item in list(ctx.get("tunnel_marker_allowed_ids") or [])
-            if str(item or "").strip()
-        }
-        tunnel_excluded_ids = {
-            str(item or "").strip()
-            for item in list(ctx.get("tunnel_marker_excluded_ids") or [])
-            if str(item or "").strip()
-        }
-        try:
-            army = unit.get_parent_army()
-        except Exception:
-            army = None
-        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
-        get_markers = getattr(tyr_mgr, "get_active_tunnel_markers", None) if tyr_mgr is not None else None
-        if callable(get_markers):
-            for marker in list(get_markers() or []):
-                marker_id = str(getattr(marker, "marker_id", "") or "").strip()
-                if tunnel_allowed_ids and marker_id not in tunnel_allowed_ids:
+        max_points = int(self._max_reserves_anchor_points)
+        for _source, anchors in list(groups or []):
+            for x, y in list(anchors or []):
+                key = (round(float(x), 3), round(float(y), 3))
+                if key in seen:
                     continue
-                if tunnel_excluded_ids and marker_id in tunnel_excluded_ids:
-                    continue
-                try:
-                    mx = float(getattr(marker, "x", 0.0) or 0.0)
-                    my = float(getattr(marker, "y", 0.0) or 0.0)
-                except (TypeError, ValueError):
-                    continue
-                _add(mx, my)
-                for radius in (3.0, 6.0, 9.0):
-                    for deg in range(0, 360, 45):
-                        rad = math.radians(float(deg))
-                        _add(mx + math.cos(rad) * float(radius), my + math.sin(rad) * float(radius))
+                seen.add(key)
+                points.append((float(x), float(y)))
+                if max_points > 0 and len(points) >= max_points:
+                    return points
+        return points
+
+    def _reserves_arrival_anchor_candidate_groups(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict | None = None,
+    ) -> list[tuple[str, list[tuple[float, float]]]]:
+        width, height = self._board_dimensions(game)
+        ctx = dict(context or {})
+        groups: list[tuple[str, list[tuple[float, float]]]] = []
+
+        anchor_ring = self._anchor_unit_ring_points(game, context=ctx)
+        if anchor_ring:
+            groups.append(("anchor_ring", anchor_ring))
+
+        tunnel_ring = self._tunnel_marker_ring_points(unit, context=ctx)
+        if tunnel_ring:
+            groups.append(("tunnel_marker_ring", tunnel_ring))
 
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            along_step = self._strategic_edge_scan_step(unit, width=width, height=height)
-            preferred_offset = self._strategic_edge_offset_preference(unit)
-            offsets = self._strategic_edge_offsets(preferred_offset)
-            xs_primary = self._axis_points(0.0, width, step=along_step, offset=0.0)
-            ys_primary = self._axis_points(0.0, height, step=along_step, offset=0.0)
-            xs_secondary = self._axis_points(0.0, width, step=along_step, offset=(along_step / 2.0))
-            ys_secondary = self._axis_points(0.0, height, step=along_step, offset=(along_step / 2.0))
-            for edge_offset in offsets:
-                for x in xs_primary:
-                    _add(x, edge_offset)
-                    _add(x, max(0.0, height - edge_offset))
-                for y in ys_primary:
-                    _add(edge_offset, y)
-                    _add(max(0.0, width - edge_offset), y)
-                for x in xs_secondary:
-                    _add(x, edge_offset)
-                    _add(x, max(0.0, height - edge_offset))
-                for y in ys_secondary:
-                    _add(edge_offset, y)
-                    _add(max(0.0, width - edge_offset), y)
-                _add(edge_offset, edge_offset)
-                _add(edge_offset, max(0.0, height - edge_offset))
-                _add(max(0.0, width - edge_offset), edge_offset)
-                _add(max(0.0, width - edge_offset), max(0.0, height - edge_offset))
-            # Always include corners as fallbacks (some rules/test doubles require exact edge touch at 0").
-            _add(0.0, 0.0)
-            _add(0.0, float(height))
-            _add(float(width), 0.0)
-            _add(float(width), float(height))
-
-            # Sparse fallback edge bands in case preferred offsets are blocked.
-            fallback_step = max(1.5, along_step * 1.5)
-            fallback_offsets = self._strategic_edge_offsets(0.0)
-            xs_fallback = self._axis_points(0.0, width, step=fallback_step, offset=0.0)
-            ys_fallback = self._axis_points(0.0, height, step=fallback_step, offset=0.0)
-            for edge_offset in fallback_offsets:
-                for x in xs_fallback:
-                    _add(x, edge_offset)
-                    _add(x, max(0.0, height - edge_offset))
-                for y in ys_fallback:
-                    _add(edge_offset, y)
-                    _add(max(0.0, width - edge_offset), y)
+            groups.extend(self._strategic_edge_anchor_groups(unit, width=width, height=height))
+            if self._strategic_reserves_can_use_gap_search(ctx, unit):
+                gap_points = self._reserves_gap_anchor_points(game, unit, context=ctx)
+                if gap_points:
+                    groups.append(("gap_openings", gap_points))
+                groups.extend(self._deep_strike_scan_anchor_groups(unit, width=width, height=height))
         else:
-            deep_steps = self._deep_strike_scan_steps(unit)
-            for step in deep_steps:
-                xs = self._axis_points(0.0, width, step=step, offset=0.0)
-                ys = self._axis_points(0.0, height, step=step, offset=0.0)
-                xs_half = self._axis_points(0.0, width, step=step, offset=(step / 2.0))
-                ys_half = self._axis_points(0.0, height, step=step, offset=(step / 2.0))
-                for y in ys:
-                    for x in xs:
-                        _add(x, y)
-                for y in ys_half:
-                    for x in xs_half:
-                        _add(x, y)
+            groups.append(("board_landmarks", self._board_landmark_anchor_points(width=width, height=height)))
+            gap_points = self._reserves_gap_anchor_points(game, unit, context=ctx)
+            if gap_points:
+                groups.append(("gap_openings", gap_points))
+            groups.extend(self._deep_strike_scan_anchor_groups(unit, width=width, height=height))
 
-        center_x = width / 2.0
-        center_y = height / 2.0
-        strategic_edge_preference = self._strategic_edge_offset_preference(unit)
+        trimmed: list[tuple[str, list[tuple[float, float]]]] = []
+        consumed = 0
+        seen: set[tuple[float, float]] = set()
+        for source, anchors in list(groups or []):
+            deduped: list[tuple[float, float]] = []
+            for x, y in list(anchors or []):
+                key = (round(float(x), 3), round(float(y), 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append((float(x), float(y)))
+                consumed += 1
+                if consumed >= int(self._max_reserves_anchor_points):
+                    break
+            if deduped:
+                trimmed.append((str(source or ""), deduped))
+            if consumed >= int(self._max_reserves_anchor_points):
+                break
+        return trimmed
 
-        def _sort_key(point: tuple[float, float]) -> tuple[float, float, str]:
-            x, y = point
-            edge_dist = min(float(x), float(y), float(max(0.0, width - x)), float(max(0.0, height - y)))
-            center_dist_sq = (float(x) - center_x) ** 2 + (float(y) - center_y) ** 2
-            tie = hashlib.sha256(f"{unit_id}:{x:.3f}:{y:.3f}".encode("utf-8")).hexdigest()
-            if in_strategic:
-                edge_priority = abs(float(edge_dist) - float(strategic_edge_preference))
-                d_left = float(x)
-                d_right = float(max(0.0, width - x))
-                d_bottom = float(y)
-                d_top = float(max(0.0, height - y))
-                nearest = min(d_left, d_right, d_bottom, d_top)
-                if nearest == d_left or nearest == d_right:
-                    along = float(y)
-                    along_max = float(height)
-                else:
-                    along = float(x)
-                    along_max = float(width)
-                along_center = along_max / 2.0
-                along_priority = min(abs(along - along_center), along, max(0.0, along_max - along))
-                return (edge_priority, along_priority, abs(along - along_center), tie)
-            return (center_dist_sq, edge_dist, tie)
-
-        points.sort(key=_sort_key)
-        max_points = int(self._max_reserves_anchor_points)
-        if max_points > 0 and len(points) > max_points:
-            return points[:max_points]
+    def _anchor_unit_ring_points(self, game: object, *, context: dict[str, object]) -> list[tuple[float, float]]:
+        anchor_unit_id = str(context.get("reserves_arrival_anchor_unit_id", "") or "").strip()
+        anchor_range_raw = context.get("reserves_arrival_anchor_range", 0.0)
+        try:
+            anchor_range = float(anchor_range_raw) if anchor_range_raw is not None else 0.0
+        except (TypeError, ValueError):
+            anchor_range = 0.0
+        if not anchor_unit_id or anchor_range <= 0.0:
+            return []
+        anchor_unit = self._resolve_unit_by_id(game, anchor_unit_id)
+        if anchor_unit is None:
+            return []
+        get_root = getattr(anchor_unit, "get_attached_unit_root", None)
+        anchor_root = get_root() if callable(get_root) else anchor_unit
+        anchor_positions: list[tuple[float, float]] = []
+        for model in list(getattr(anchor_root, "models", []) or []):
+            if not getattr(model, "is_alive", True):
+                continue
+            get_location = getattr(model, "get_location", None)
+            if not callable(get_location):
+                continue
+            loc = get_location()
+            if isinstance(loc, (tuple, list)) and len(loc) >= 2:
+                anchor_positions.append((float(loc[0]), float(loc[1])))
+        if not anchor_positions:
+            anchor_pos = getattr(anchor_root, "position", None)
+            if isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2:
+                anchor_positions.append((float(anchor_pos[0]), float(anchor_pos[1])))
+        points: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        radii = (
+            0.0,
+            max(0.5, float(anchor_range) * 0.33),
+            max(0.5, float(anchor_range) * 0.66),
+            float(anchor_range),
+        )
+        for ax, ay in list(anchor_positions or []):
+            for radius in radii:
+                for deg in range(0, 360, 45):
+                    rad = math.radians(float(deg))
+                    x = float(ax + math.cos(rad) * float(radius))
+                    y = float(ay + math.sin(rad) * float(radius))
+                    key = (round(x, 3), round(y, 3))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    points.append((x, y))
+        points.sort(
+            key=lambda point: (
+                min((point[0] - ax) ** 2 + (point[1] - ay) ** 2 for ax, ay in anchor_positions),
+                hashlib.sha256(f"anchor:{point[0]:.3f}:{point[1]:.3f}".encode("utf-8")).hexdigest(),
+            )
+        )
         return points
+
+    def _tunnel_marker_ring_points(self, unit: object, *, context: dict[str, object]) -> list[tuple[float, float]]:
+        tunnel_allowed_ids = {
+            str(item or "").strip()
+            for item in list(context.get("tunnel_marker_allowed_ids") or [])
+            if str(item or "").strip()
+        }
+        tunnel_excluded_ids = {
+            str(item or "").strip()
+            for item in list(context.get("tunnel_marker_excluded_ids") or [])
+            if str(item or "").strip()
+        }
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        get_markers = getattr(tyr_mgr, "get_active_tunnel_markers", None) if tyr_mgr is not None else None
+        if not callable(get_markers):
+            return []
+        points: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for marker in list(get_markers() or []):
+            marker_id = str(getattr(marker, "marker_id", "") or "").strip()
+            if tunnel_allowed_ids and marker_id not in tunnel_allowed_ids:
+                continue
+            if tunnel_excluded_ids and marker_id in tunnel_excluded_ids:
+                continue
+            mx = float(getattr(marker, "x", 0.0) or 0.0)
+            my = float(getattr(marker, "y", 0.0) or 0.0)
+            for radius in (0.0, 3.0, 6.0, 9.0):
+                for deg in range(0, 360, 45):
+                    rad = math.radians(float(deg))
+                    x = float(mx + math.cos(rad) * float(radius))
+                    y = float(my + math.sin(rad) * float(radius))
+                    key = (round(x, 3), round(y, 3))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    points.append((x, y))
+        return points
+
+    @staticmethod
+    def _board_landmark_anchor_points(*, width: float, height: float) -> list[tuple[float, float]]:
+        quarter_x = float(width) * 0.25
+        quarter_y = float(height) * 0.25
+        return [
+            (float(width) * 0.5, float(height) * 0.5),
+            (quarter_x, quarter_y),
+            (quarter_x, float(height) - quarter_y),
+            (float(width) - quarter_x, quarter_y),
+            (float(width) - quarter_x, float(height) - quarter_y),
+            (quarter_x, float(height) * 0.5),
+            (float(width) - quarter_x, float(height) * 0.5),
+            (float(width) * 0.5, quarter_y),
+            (float(width) * 0.5, float(height) - quarter_y),
+        ]
+
+    def _reserves_gap_anchor_points(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict[str, object],
+    ) -> list[tuple[float, float]]:
+        width, height = self._board_dimensions(game)
+        footprint = estimate_unit_pack_footprint(unit)
+        required_enemy_distance = self._reserves_min_enemy_distance_hint(game, context=context)
+        clearance = max(1.0, float(footprint["largest_radius"]) + float(required_enemy_distance) * 0.35)
+        points: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+
+        def _add(x: float, y: float) -> None:
+            clamped_x = float(max(0.0, min(float(width), float(x))))
+            clamped_y = float(max(0.0, min(float(height), float(y))))
+            key = (round(clamped_x, 3), round(clamped_y, 3))
+            if key in seen:
+                return
+            seen.add(key)
+            points.append((clamped_x, clamped_y))
+
+        for candidate in list(self._iter_deployed_units(game, exclude_unit=unit) or []):
+            bounds = deployed_unit_bounds(candidate)
+            if bounds is None:
+                continue
+            bx0, by0, bx1, by1 = bounds
+            cx = (float(bx0) + float(bx1)) * 0.5
+            cy = (float(by0) + float(by1)) * 0.5
+            options = (
+                (float(bx0) - clearance, cy),
+                (float(bx1) + clearance, cy),
+                (cx, float(by0) - clearance),
+                (cx, float(by1) + clearance),
+                (float(bx0) - clearance, float(by0) - clearance),
+                (float(bx0) - clearance, float(by1) + clearance),
+                (float(bx1) + clearance, float(by0) - clearance),
+                (float(bx1) + clearance, float(by1) + clearance),
+            )
+            for x, y in options:
+                _add(x, y)
+        for x, y in self._board_landmark_anchor_points(width=width, height=height):
+            _add(x, y)
+
+        center_x = float(width) * 0.5
+        center_y = float(height) * 0.5
+        points.sort(
+            key=lambda point: (
+                -self._gap_clearance_score(game, point),
+                (float(point[0]) - center_x) ** 2 + (float(point[1]) - center_y) ** 2,
+                hashlib.sha256(f"gap:{point[0]:.3f}:{point[1]:.3f}".encode("utf-8")).hexdigest(),
+            )
+        )
+        return points
+
+    def _strategic_reserves_can_use_gap_search(self, context: dict[str, object], unit: object) -> bool:
+        if bool(context.get("reserves_arrival_ignore_battlefield_edge_requirement", False)):
+            return True
+        has_deep_strike = getattr(unit, "has_deep_strike", None)
+        return bool(has_deep_strike()) if callable(has_deep_strike) else False
+
+    def _strategic_edge_anchor_groups(
+        self,
+        unit: object,
+        *,
+        width: float,
+        height: float,
+    ) -> list[tuple[str, list[tuple[float, float]]]]:
+        along_step = self._strategic_edge_scan_step(unit, width=width, height=height)
+        preferred_offset = self._strategic_edge_offset_preference(unit)
+        offsets = self._strategic_edge_offsets(preferred_offset)
+        groups: list[tuple[str, list[tuple[float, float]]]] = []
+
+        primary: list[tuple[float, float]] = []
+        staggered: list[tuple[float, float]] = []
+        fallback: list[tuple[float, float]] = []
+
+        def _edge_band(step: float, offset_values: list[float], *, half_step: bool, out: list[tuple[float, float]]) -> None:
+            xs = self._axis_points(0.0, width, step=step, offset=(step / 2.0) if half_step else 0.0)
+            ys = self._axis_points(0.0, height, step=step, offset=(step / 2.0) if half_step else 0.0)
+            for edge_offset in list(offset_values or []):
+                for x in xs:
+                    out.append((float(x), float(edge_offset)))
+                    out.append((float(x), max(0.0, float(height) - float(edge_offset))))
+                for y in ys:
+                    out.append((float(edge_offset), float(y)))
+                    out.append((max(0.0, float(width) - float(edge_offset)), float(y)))
+
+        _edge_band(along_step, offsets[:4], half_step=False, out=primary)
+        _edge_band(along_step, offsets[:4], half_step=True, out=staggered)
+        _edge_band(max(1.5, along_step * 1.5), self._strategic_edge_offsets(0.0), half_step=False, out=fallback)
+        fallback.extend(
+            [
+                (0.0, 0.0),
+                (0.0, float(height)),
+                (float(width), 0.0),
+                (float(width), float(height)),
+            ]
+        )
+        groups.append(("strategic_edge_band", primary))
+        groups.append(("strategic_edge_staggered", staggered))
+        groups.append(("strategic_edge_exhaustive", fallback[: self._reserves_exhaustive_anchor_limit]))
+        return groups
+
+    def _deep_strike_scan_anchor_groups(
+        self,
+        unit: object,
+        *,
+        width: float,
+        height: float,
+    ) -> list[tuple[str, list[tuple[float, float]]]]:
+        groups: list[tuple[str, list[tuple[float, float]]]] = []
+        deep_steps = self._deep_strike_scan_steps(unit)
+        labels = ("deep_strike_coarse", "deep_strike_medium", "deep_strike_exhaustive")
+        for label, step in zip(labels, deep_steps):
+            anchors: list[tuple[float, float]] = []
+            xs = self._axis_points(0.0, width, step=step, offset=0.0)
+            ys = self._axis_points(0.0, height, step=step, offset=0.0)
+            xs_half = self._axis_points(0.0, width, step=step, offset=(step / 2.0))
+            ys_half = self._axis_points(0.0, height, step=step, offset=(step / 2.0))
+            for y in ys:
+                for x in xs:
+                    anchors.append((float(x), float(y)))
+            for y in ys_half:
+                for x in xs_half:
+                    anchors.append((float(x), float(y)))
+            if str(label).endswith("exhaustive"):
+                anchors = anchors[: self._reserves_exhaustive_anchor_limit]
+            groups.append((str(label), anchors))
+        return groups
+
+    def _iter_deployed_units(self, game: object, *, exclude_unit: object | None = None) -> list[object]:
+        units: list[object] = []
+        for player in list(getattr(game, "players", []) or []):
+            army = getattr(player, "army", None)
+            get_army = getattr(player, "get_army", None)
+            if army is None and callable(get_army):
+                army = get_army()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None or unit is exclude_unit:
+                    continue
+                is_alive = getattr(unit, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                if getattr(unit, "deployed", True) is False:
+                    continue
+                if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+                    continue
+                if getattr(unit, "embarked_in", None) is not None or bool(getattr(unit, "is_embarked", False)):
+                    continue
+                units.append(unit)
+        units.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return units
+
+    def _gap_clearance_score(self, game: object, point: tuple[float, float]) -> float:
+        x = float(point[0])
+        y = float(point[1])
+        bounds_list = [
+            bounds
+            for bounds in (
+                deployed_unit_bounds(unit) for unit in list(self._iter_deployed_units(game) or [])
+            )
+            if bounds is not None
+        ]
+        if not bounds_list:
+            return 0.0
+        clearances = [self._distance_to_bounds(x, y, bounds) for bounds in bounds_list]
+        return float(min(clearances))
+
+    @staticmethod
+    def _distance_to_bounds(x: float, y: float, bounds: tuple[float, float, float, float]) -> float:
+        bx0, by0, bx1, by1 = bounds
+        dx = max(float(bx0) - float(x), 0.0, float(x) - float(bx1))
+        dy = max(float(by0) - float(y), 0.0, float(y) - float(by1))
+        return math.hypot(dx, dy)
+
+    def _reserves_min_enemy_distance_hint(self, game: object, *, context: dict[str, object]) -> float:
+        override = context.get("reserves_arrival_min_enemy_distance_override")
+        if override is not None:
+            try:
+                return max(0.0, float(override))
+            except (TypeError, ValueError):
+                return 0.0
+        profile = geometry_profile_for_game(game, context=dict(context or {}))
+        return float(getattr(profile, "ingress_exclusion_distance", 9.0) or 9.0)
 
     def _quick_reject_reserves_anchor(
         self,
@@ -508,16 +858,94 @@ class HeadlessPolicyDecisionController(DecisionController):
             return True
         if float(y) < 0.0 or float(y) > float(height):
             return True
+        footprint = estimate_unit_pack_footprint(unit)
+        if self._context_anchor_range_reject(game, unit, x=float(x), y=float(y), context=dict(_context or {}), footprint=footprint):
+            return True
+        if self._enemy_distance_envelope_reject(
+            game,
+            unit=unit,
+            x=float(x),
+            y=float(y),
+            context=dict(_context or {}),
+            footprint=footprint,
+        ):
+            return True
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if not in_strategic:
             return False
-        largest_radius = self._largest_model_radius(unit)
         edge_dist = min(float(x), float(y), float(max(0.0, width - x)), float(max(0.0, height - y)))
-        # Strategic-reserves setups must end wholly within 6" of an edge; very deep interior anchors are never viable.
-        if edge_dist > 10.0 + float(largest_radius):
+        max_edge_band = 8.0 + float(footprint["radius"])
+        if edge_dist > max_edge_band and not self._strategic_reserves_can_use_gap_search(dict(_context or {}), unit):
             return True
         return False
+
+    def _context_anchor_range_reject(
+        self,
+        game: object,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        context: dict[str, object],
+        footprint: dict[str, float],
+    ) -> bool:
+        anchor_unit_id = str(context.get("reserves_arrival_anchor_unit_id", "") or "").strip()
+        anchor_range_raw = context.get("reserves_arrival_anchor_range", 0.0)
+        if not anchor_unit_id:
+            return False
+        try:
+            anchor_range = float(anchor_range_raw or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if anchor_range <= 0.0:
+            return False
+        anchor_unit = self._resolve_unit_by_id(game, anchor_unit_id)
+        if anchor_unit is None:
+            return False
+        bounds = deployed_unit_bounds(anchor_unit)
+        if bounds is None:
+            return False
+        distance = self._distance_to_bounds(float(x), float(y), bounds)
+        return bool(distance > float(anchor_range) + float(footprint["radius"]) + 0.5)
+
+    def _enemy_distance_envelope_reject(
+        self,
+        game: object,
+        *,
+        unit: object,
+        x: float,
+        y: float,
+        context: dict[str, object],
+        footprint: dict[str, float],
+    ) -> bool:
+        min_enemy_distance = self._reserves_min_enemy_distance_hint(game, context=context)
+        if min_enemy_distance <= 0.0 and not bool(context.get("reserves_arrival_require_not_engagement", False)):
+            return False
+        engagement_horizontal = float(getattr(geometry_profile_for_game(game, context=context), "engagement_range_horizontal", 1.0) or 1.0)
+        required_distance = max(float(min_enemy_distance), engagement_horizontal if bool(context.get("reserves_arrival_require_not_engagement", False)) else 0.0)
+        clearance = float(required_distance) + float(footprint["largest_radius"])
+        for enemy_unit in list(self._iter_enemy_units(game, unit=unit) or []):
+            bounds = deployed_unit_bounds(enemy_unit)
+            if bounds is None:
+                continue
+            if self._distance_to_bounds(float(x), float(y), bounds) < clearance:
+                return True
+        return False
+
+    def _iter_enemy_units(self, game: object, *, unit: object) -> list[object]:
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        player_id = str(getattr(player, "id", "") or "")
+        enemies: list[object] = []
+        for candidate in list(self._iter_deployed_units(game, exclude_unit=unit) or []):
+            candidate_army = candidate.get_parent_army() if hasattr(candidate, "get_parent_army") else None
+            candidate_player = getattr(candidate_army, "player", None) if candidate_army is not None else None
+            candidate_player_id = str(getattr(candidate_player, "id", "") or "")
+            if player_id and candidate_player_id and candidate_player_id == player_id:
+                continue
+            enemies.append(candidate)
+        return enemies
 
     @staticmethod
     def _deep_strike_scan_steps(unit: object) -> tuple[float, float, float]:
@@ -634,7 +1062,15 @@ class HeadlessPolicyDecisionController(DecisionController):
         # Strategic reserves usually need a small but non-zero edge offset to satisfy wholly-on-board placement.
         return float(max(0.5, min(4.0, largest_model_radius + 0.25)))
 
-    def _build_model_positions_from_anchor(self, game: object, unit: object, *, x: float, y: float) -> list[dict]:
+    def _build_model_positions_from_anchor(
+        self,
+        game: object,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        search_context: object | None = None,
+    ) -> list[dict]:
         return list(
             _build_reserves_model_positions_from_anchor(
                 game,
@@ -642,6 +1078,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 x=float(x),
                 y=float(y),
                 avoid_friendly_units=False,
+                search_context=search_context,
             )
         )
 

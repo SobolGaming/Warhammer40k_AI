@@ -1089,7 +1089,16 @@ class GameSetupDeploymentReservesMixin:
         
         return repulsors
 
-    def is_valid_deployment_position(self, unit: 'Unit', x: float, y: float, player_id: str) -> bool:
+    def is_valid_deployment_position(
+        self,
+        unit: 'Unit',
+        x: float,
+        y: float,
+        player_id: str,
+        *,
+        boundary_repulsors=None,
+        search_context=None,
+    ) -> bool:
         """Check if a position is valid for deploying a unit during deployment phase."""
         # Units in reserves don't need position validation
         if unit.reserve_status in ['reserves', 'strategic_reserves']:
@@ -1139,7 +1148,9 @@ class GameSetupDeploymentReservesMixin:
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
             # Use deployment boundary repulsors (mission-zone aware) to guide formation inside zone
-            deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
+            deployment_repulsors = boundary_repulsors
+            if deployment_repulsors is None:
+                deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
             model_positions = calculate_prospective_model_positions(
                 unit,
                 x,
@@ -1147,6 +1158,7 @@ class GameSetupDeploymentReservesMixin:
                 self.map,
                 avoid_friendly_units=False,
                 boundary_repulsors=deployment_repulsors,
+                search_context=search_context,
             )
 
             if not model_positions:
@@ -1202,7 +1214,9 @@ class GameSetupDeploymentReservesMixin:
             # Calculate model positions using the same logic as unit deployment
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
+            deployment_repulsors = boundary_repulsors
+            if deployment_repulsors is None:
+                deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
             model_positions = calculate_prospective_model_positions(
                 unit,
                 x,
@@ -1210,6 +1224,7 @@ class GameSetupDeploymentReservesMixin:
                 self.map,
                 avoid_friendly_units=False,
                 boundary_repulsors=deployment_repulsors,
+                search_context=search_context,
             )
 
             if not model_positions:

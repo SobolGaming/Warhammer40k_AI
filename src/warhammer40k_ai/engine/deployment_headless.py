@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Iterable, Optional
 
 from .decision_dispatcher import validate_decision
@@ -11,7 +12,14 @@ from .deployment_ranker import DeploymentCandidateRanker
 from .pregame_deployment_agent import PregameDeploymentAgent
 from .prospective_positions import calculate_prospective_model_positions
 from ..roster.player import Player
+from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.entity_ids import get_entity_id
+from ..utility.placement_search import (
+    build_placement_search_context,
+    deployed_unit_bounds,
+    estimate_unit_pack_footprint,
+    stable_board_occupancy_key,
+)
 
 
 class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
@@ -33,6 +41,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         reserve_policy: str = "forced_only",
         use_pregame_teacher: bool = True,
         ranker_model_path: str | None = None,
+        placement_candidate_limit: int = 2,
+        exhaustive_anchor_limit: int = 256,
     ) -> None:
         self.game = game
         self.lattice_step = float(max(0.5, lattice_step))
@@ -46,6 +56,9 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         )
         self._active_player_id: str = ""
         self._selected_payload_by_unit_id: dict[str, tuple[tuple[float, float], list[dict]]] = {}
+        self._placement_candidate_limit = int(max(1, placement_candidate_limit))
+        self._exhaustive_anchor_limit = int(max(16, exhaustive_anchor_limit))
+        self._deployment_search_metrics: list[dict[str, object]] = []
 
     def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
         zones = [dict(zone or {}) for zone in list(available_zones or [])]
@@ -77,6 +90,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         player = self._resolve_player_for_units(deployable_units)
         if player is None and self._active_player_id:
             player = self._resolve_player_by_id(self._active_player_id)
+        teacher_rank: dict[str, int] = {}
         if self._pregame_agent is not None and player is not None:
             ordered = self._pregame_agent.ordered_deploy_units(
                 player=player,
@@ -84,9 +98,20 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 deployment_zone=dict(deployment_zone or {}),
                 already_deployed=list(already_deployed or []),
             )
-            if ordered:
-                return ordered[0]
-        return deployable_units[0]
+            teacher_rank = {
+                str(get_entity_id(candidate) or ""): int(index)
+                for index, candidate in enumerate(list(ordered or []))
+                if str(get_entity_id(candidate) or "")
+            }
+        ranked = sorted(
+            list(deployable_units or []),
+            key=lambda candidate: (
+                -self._unit_pack_priority(candidate, player=player),
+                int(teacher_rank.get(str(get_entity_id(candidate) or ""), 10**6)),
+                str(get_entity_id(candidate) or ""),
+            ),
+        )
+        return ranked[0]
 
     def choose_deployment_zone_option(
         self,
@@ -244,23 +269,123 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return float(base)
 
     def _unit_footprint_score(self, unit: object) -> float:
-        models = list(getattr(unit, "models", []) or [])
-        if not models:
-            return 0.0
-        score = 0.0
-        for model in models:
-            model_base = getattr(model, "model_base", None)
-            if model_base is None:
-                continue
-            get_longest_radius = getattr(model_base, "get_longest_radius", None)
-            if callable(get_longest_radius):
-                radius = float(get_longest_radius() or 0.0)
-            else:
-                get_radius = getattr(model_base, "get_radius", None)
-                radius = float(get_radius() or 0.0) if callable(get_radius) else 0.0
-            score += max(0.25, radius)
-        score += 0.5 * float(len(models))
+        footprint = estimate_unit_pack_footprint(unit)
+        return float(footprint["radius"] + (0.35 * footprint["width"]) + (0.25 * footprint["depth"]))
+
+    def deployment_candidate_limit(
+        self,
+        *,
+        unit: object | None = None,
+        deployment_zone: dict | None = None,
+        already_deployed: list[object] | None = None,
+    ) -> int:
+        del unit, deployment_zone, already_deployed
+        return int(self._placement_candidate_limit)
+
+    def get_deployment_search_metrics(self) -> list[dict[str, object]]:
+        return [dict(entry or {}) for entry in list(self._deployment_search_metrics or [])]
+
+    def reset_deployment_search_metrics(self) -> None:
+        self._deployment_search_metrics.clear()
+
+    def _unit_pack_priority(self, unit: object, *, player: Optional[Player]) -> float:
+        del player
+        footprint = estimate_unit_pack_footprint(unit)
+        score = float(footprint["radius"] * 20.0 + footprint["width"] * 2.5 + footprint["depth"] * 2.0)
+        if bool(getattr(unit, "is_titanic", False)):
+            score += 120.0
+        if bool(getattr(unit, "is_transport", False)):
+            score += 35.0
+        if bool(getattr(unit, "is_monster", False)):
+            score += 25.0
+        if bool(getattr(unit, "is_vehicle", False)):
+            score += 25.0
+        if self._unit_has_infiltrate(unit):
+            score -= 45.0
+        if self._unit_has_scout(unit):
+            score -= 30.0
+        if self._unit_has_deep_strike(unit):
+            score -= 12.0
         return float(score)
+
+    @staticmethod
+    def _unit_has_scout(unit: object) -> bool:
+        has_scout = getattr(unit, "has_scout", None)
+        if callable(has_scout):
+            value = has_scout()
+            if isinstance(value, (list, tuple)):
+                return bool(value[0]) if value else False
+            return bool(value)
+        return bool(getattr(unit, "scout_move_distance", 0.0))
+
+    @staticmethod
+    def _unit_has_deep_strike(unit: object) -> bool:
+        has_deep_strike = getattr(unit, "has_deep_strike", None)
+        return bool(has_deep_strike()) if callable(has_deep_strike) else False
+
+    def _deployment_boundary_repulsors(self, unit: object) -> list[object]:
+        if self._unit_has_infiltrate(unit):
+            return []
+        repulsor_fn = getattr(self.game, "get_boundary_repulsors", None)
+        if callable(repulsor_fn):
+            return list(repulsor_fn(unit, context="deployment") or [])
+        return []
+
+    def _build_deployment_search_context(
+        self,
+        unit: object,
+        *,
+        boundary_repulsors: list[object],
+    ):
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return None
+        return build_placement_search_context(
+            unit,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=boundary_repulsors,
+        )
+
+    def _new_deployment_metric(
+        self,
+        *,
+        unit: object,
+        player_id: str,
+        candidate_limit: int,
+        already_deployed: list[object],
+    ) -> dict[str, object]:
+        unit_id = str(get_entity_id(unit) or "")
+        metric = {
+            "unit_id": unit_id,
+            "unit_name": str(getattr(unit, "name", "") or unit_id or "Unit"),
+            "player_id": str(player_id or ""),
+            "candidate_limit": int(candidate_limit),
+            "anchor_attempts": 0,
+            "quick_rejects": 0,
+            "validate_calls": 0,
+            "full_validation_calls": 0,
+            "calls_to_first_valid": None,
+            "first_valid_source": "",
+            "returned_candidate_count": 0,
+            "returned_candidate_sources": [],
+            "source_attempt_counts": {},
+            "source_validate_calls": {},
+            "source_quick_rejects": {},
+            "exhaustive_fallback_used": False,
+            "already_deployed_count": int(len(list(already_deployed or []))),
+            "board_occupancy_key": list(stable_board_occupancy_key(already_deployed)),
+        }
+        return metric
+
+    @staticmethod
+    def _bump_metric_counter(metric: dict[str, object], key: str, source: str) -> None:
+        counters = dict(metric.get(key, {}) or {})
+        counters[str(source or "unknown")] = int(counters.get(str(source or "unknown"), 0) or 0) + 1
+        metric[key] = counters
+
+    def _record_deployment_metric(self, metric: dict[str, object]) -> None:
+        self._deployment_search_metrics.append(dict(metric or {}))
 
     def choose_unit_deployment_position(
         self,
@@ -310,30 +435,73 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if unit_id:
             self._selected_payload_by_unit_id.pop(unit_id, None)
 
+        candidate_limit = max(
+            1,
+            min(
+                int(max_candidates),
+                int(
+                    self.deployment_candidate_limit(
+                        unit=unit,
+                        deployment_zone=deployment_zone,
+                        already_deployed=list(already_deployed or []),
+                    )
+                ),
+            ),
+        )
         player = self._resolve_player_for_unit(unit)
+        boundary_repulsors = self._deployment_boundary_repulsors(unit)
+        search_context = self._build_deployment_search_context(
+            unit,
+            boundary_repulsors=boundary_repulsors,
+        )
+        metric = self._new_deployment_metric(
+            unit=unit,
+            player_id=str(player_id),
+            candidate_limit=int(candidate_limit),
+            already_deployed=list(already_deployed or []),
+        )
+        started = time.perf_counter()
         candidate_groups = self._deployment_anchor_candidate_groups(
             unit,
             deployment_zone,
             already_deployed=list(already_deployed or []),
             player=player,
+            footprint=estimate_unit_pack_footprint(unit),
         )
-        candidate_limit = max(1, int(max_candidates))
         seen_anchor: set[tuple[float, float]] = set()
         seen_payload: set[tuple[tuple[str, float, float, float, float], ...]] = set()
         candidates: list[dict] = []
 
         for source, anchors in list(candidate_groups or []):
+            if str(source or "").startswith("lattice_exhaustive"):
+                metric["exhaustive_fallback_used"] = True
             for x, y in list(anchors or []):
+                metric["anchor_attempts"] = int(metric.get("anchor_attempts", 0) or 0) + 1
+                self._bump_metric_counter(metric, "source_attempt_counts", str(source))
                 key = (round(float(x), 3), round(float(y), 3))
                 if key in seen_anchor:
                     continue
                 seen_anchor.add(key)
+                if self._quick_reject_deployment_anchor(
+                    unit,
+                    deployment_zone,
+                    already_deployed=list(already_deployed or []),
+                    x=float(x),
+                    y=float(y),
+                ):
+                    metric["quick_rejects"] = int(metric.get("quick_rejects", 0) or 0) + 1
+                    self._bump_metric_counter(metric, "source_quick_rejects", str(source))
+                    continue
                 payload = self._select_valid_deployment_payload(
                     unit,
                     player_id=str(player_id),
                     x=float(x),
                     y=float(y),
                     fast_validate_fn=validate_fn,
+                    boundary_repulsors=boundary_repulsors,
+                    search_context=search_context,
+                    metric=metric,
+                    source=str(source),
                 )
                 if not payload:
                     continue
@@ -353,6 +521,14 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             if len(candidates) >= candidate_limit:
                 break
 
+        metric["returned_candidate_count"] = int(len(candidates))
+        metric["returned_candidate_sources"] = [
+            str(dict(candidate or {}).get("source", "") or "")
+            for candidate in list(candidates or [])
+        ]
+        metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+        self._record_deployment_metric(metric)
+
         if unit_id and candidates:
             first = dict(candidates[0] or {})
             first_anchor = list(first.get("anchor", []) or [])
@@ -371,8 +547,27 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         *,
         already_deployed: list[object],
         player: Optional[Player],
+        footprint: dict[str, float],
     ) -> list[tuple[str, list[tuple[float, float]]]]:
         groups: list[tuple[str, list[tuple[float, float]]]] = [
+            (
+                "packer_gap",
+                self._gap_anchor_candidates(
+                    unit,
+                    deployment_zone,
+                    already_deployed=already_deployed,
+                    footprint=footprint,
+                ),
+            ),
+            (
+                "packer_rows",
+                self._packing_row_anchor_candidates(
+                    unit,
+                    deployment_zone,
+                    already_deployed=already_deployed,
+                    footprint=footprint,
+                ),
+            ),
             (
                 "semantic_anchor",
                 self._semantic_anchor_candidates(
@@ -388,7 +583,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self._unit_has_infiltrate(unit):
             infiltrate_groups = self._infiltrate_candidate_groups(unit, already_deployed=already_deployed)
             for idx, anchors in enumerate(list(infiltrate_groups or [])):
-                groups.append((f"infiltrate_{int(idx)}", list(anchors or [])))
+                groups.insert(int(idx), (f"infiltrate_{int(idx)}", list(anchors or [])))
         return groups
 
     @staticmethod
@@ -412,6 +607,207 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         signature.sort(key=lambda item: item[0])
         return tuple(signature)
 
+    def _quick_reject_deployment_anchor(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+        x: float,
+        y: float,
+    ) -> bool:
+        if not self._unit_has_infiltrate(unit) and not self._point_in_zone(deployment_zone, float(x), float(y)):
+            return True
+        bounds = self._zone_bounds(deployment_zone)
+        footprint = estimate_unit_pack_footprint(unit)
+        conservative_margin = max(0.25, float(footprint["largest_radius"]) * 0.75)
+        if bounds is not None and not self._unit_has_infiltrate(unit):
+            min_x, max_x, min_y, max_y = bounds
+            if (
+                float(x) < float(min_x) + conservative_margin
+                or float(x) > float(max_x) - conservative_margin
+                or float(y) < float(min_y) + conservative_margin
+                or float(y) > float(max_y) - conservative_margin
+            ):
+                return True
+        clearance = max(0.25, float(footprint["largest_radius"]) + 0.25)
+        for deployed_unit in list(already_deployed or []):
+            unit_bounds = deployed_unit_bounds(deployed_unit)
+            if unit_bounds is None:
+                continue
+            bx0, by0, bx1, by1 = unit_bounds
+            if (
+                float(bx0) - clearance <= float(x) <= float(bx1) + clearance
+                and float(by0) - clearance <= float(y) <= float(by1) + clearance
+            ):
+                return True
+        return False
+
+    def _packing_row_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+        footprint: dict[str, float],
+    ) -> list[tuple[float, float]]:
+        del already_deployed
+        bounds = self._zone_bounds(deployment_zone)
+        if bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = bounds
+        center_x, center_y = self._zone_center(deployment_zone)
+        battlefield = getattr(self.game, "battlefield", None)
+        board_width = float(getattr(battlefield, "width", 60.0) or 60.0)
+        board_height = float(getattr(battlefield, "height", 44.0) or 44.0)
+        forward_dx = (board_width * 0.5) - float(center_x)
+        forward_dy = (board_height * 0.5) - float(center_y)
+        depth_is_x = abs(forward_dx) >= abs(forward_dy)
+        forward_positive = forward_dx >= 0.0 if depth_is_x else forward_dy >= 0.0
+        depth_margin = max(0.5, float(footprint["largest_radius"]) + 0.25)
+        frontage_margin = max(0.5, float(footprint["largest_radius"]) + 0.25)
+        depth_step = max(float(self.lattice_step), float(footprint["depth"]) * 0.9)
+        frontage_step = max(float(self.lattice_step), float(footprint["width"]) * 0.9)
+        if depth_is_x:
+            depth_values = self._back_to_front_axis_points(
+                min_x,
+                max_x,
+                step=depth_step,
+                margin=depth_margin,
+                forward_positive=forward_positive,
+            )
+            frontage_values = self._edge_first_axis_points(min_y, max_y, step=frontage_step, margin=frontage_margin)
+        else:
+            depth_values = self._back_to_front_axis_points(
+                min_y,
+                max_y,
+                step=depth_step,
+                margin=depth_margin,
+                forward_positive=forward_positive,
+            )
+            frontage_values = self._edge_first_axis_points(min_x, max_x, step=frontage_step, margin=frontage_margin)
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for row_idx, depth in enumerate(list(depth_values or [])):
+            along_values = list(frontage_values or [])
+            if row_idx % 2 == 1:
+                along_values.reverse()
+            for along in along_values:
+                if depth_is_x:
+                    anchor = (float(depth), float(along))
+                else:
+                    anchor = (float(along), float(depth))
+                key = (round(anchor[0], 3), round(anchor[1], 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not self._point_in_zone(deployment_zone, anchor[0], anchor[1]):
+                    continue
+                candidates.append(anchor)
+        return candidates
+
+    def _gap_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+        footprint: dict[str, float],
+    ) -> list[tuple[float, float]]:
+        if not already_deployed:
+            return []
+        bounds = self._zone_bounds(deployment_zone)
+        if bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = bounds
+        clearance = max(0.75, float(footprint["largest_radius"]) + 0.5)
+        center_x, center_y = self._zone_center(deployment_zone)
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for deployed_unit in list(already_deployed or []):
+            unit_bounds = deployed_unit_bounds(deployed_unit)
+            if unit_bounds is None:
+                continue
+            bx0, by0, bx1, by1 = unit_bounds
+            cx = (float(bx0) + float(bx1)) * 0.5
+            cy = (float(by0) + float(by1)) * 0.5
+            options = (
+                (float(bx0) - clearance, cy),
+                (float(bx1) + clearance, cy),
+                (cx, float(by0) - clearance),
+                (cx, float(by1) + clearance),
+                (float(bx0) - clearance, float(by0) - clearance),
+                (float(bx0) - clearance, float(by1) + clearance),
+                (float(bx1) + clearance, float(by0) - clearance),
+                (float(bx1) + clearance, float(by1) + clearance),
+            )
+            for x, y in options:
+                clamped = (
+                    float(max(min_x, min(max_x, float(x)))),
+                    float(max(min_y, min(max_y, float(y)))),
+                )
+                key = (round(clamped[0], 3), round(clamped[1], 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not self._point_in_zone(deployment_zone, clamped[0], clamped[1]):
+                    continue
+                candidates.append(clamped)
+        candidates.sort(
+            key=lambda point: (
+                (float(point[0]) - float(center_x)) ** 2 + (float(point[1]) - float(center_y)) ** 2,
+                point[0],
+                point[1],
+            )
+        )
+        return candidates
+
+    def _edge_first_axis_points(self, lo: float, hi: float, *, step: float, margin: float) -> list[float]:
+        start = float(lo) + float(margin)
+        end = float(hi) - float(margin)
+        if end < start:
+            return [float((lo + hi) * 0.5)]
+        values: list[float] = []
+        seen: set[float] = set()
+        for offset in (0.0, float(step) * 0.5):
+            for value in self._axis_points(start, end, step=float(step), offset=float(offset)):
+                key = round(float(value), 4)
+                if key in seen:
+                    continue
+                seen.add(key)
+                values.append(float(value))
+        mid = (float(start) + float(end)) * 0.5
+        values.sort(key=lambda value: (min(abs(value - start), abs(end - value)), abs(value - mid), value))
+        return values
+
+    @staticmethod
+    def _back_to_front_axis_points(
+        lo: float,
+        hi: float,
+        *,
+        step: float,
+        margin: float,
+        forward_positive: bool,
+    ) -> list[float]:
+        start = float(lo) + float(margin)
+        end = float(hi) - float(margin)
+        if end < start:
+            return [float((lo + hi) * 0.5)]
+        values: list[float] = []
+        if forward_positive:
+            cursor = float(start)
+            while cursor <= end + 1e-6:
+                values.append(round(float(cursor), 4))
+                cursor += float(step)
+        else:
+            cursor = float(end)
+            while cursor >= start - 1e-6:
+                values.append(round(float(cursor), 4))
+                cursor -= float(step)
+        if not values:
+            values = [round(float((lo + hi) * 0.5), 4)]
+        return [float(value) for value in values]
+
     def _select_valid_deployment_payload(
         self,
         unit: object,
@@ -420,18 +816,41 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         x: float,
         y: float,
         fast_validate_fn,
+        boundary_repulsors: list[object],
+        search_context,
+        metric: dict[str, object],
+        source: str,
     ) -> list[dict]:
-        if not bool(fast_validate_fn(unit, float(x), float(y), str(player_id))):
+        metric["validate_calls"] = int(metric.get("validate_calls", 0) or 0) + 1
+        self._bump_metric_counter(metric, "source_validate_calls", str(source))
+        if not bool(
+            call_with_supported_kwargs(
+                fast_validate_fn,
+                unit,
+                float(x),
+                float(y),
+                str(player_id),
+                boundary_repulsors=boundary_repulsors,
+                search_context=search_context,
+            )
+        ):
             return []
         unit_id = str(get_entity_id(unit) or "")
         if not unit_id:
             return []
 
-        payload_variants = self._build_model_positions_variants(unit, x=float(x), y=float(y))
+        payload_variants = self._build_model_positions_variants(
+            unit,
+            x=float(x),
+            y=float(y),
+            boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
+        )
         for model_positions in payload_variants:
             allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
             if not all(allowed_model_ids):
                 continue
+            metric["full_validation_calls"] = int(metric.get("full_validation_calls", 0) or 0) + 1
             request = DecisionRequest.create(
                 DECISION_MOVE_UNIT,
                 f"Deploy {getattr(unit, 'name', 'Unit')}",
@@ -462,22 +881,24 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             )
             errors = tuple(validate_decision(self.game, request, result) or ())
             if not errors:
+                if metric.get("calls_to_first_valid", None) is None:
+                    metric["calls_to_first_valid"] = int(metric.get("validate_calls", 0) or 0)
+                    metric["first_valid_source"] = str(source or "")
                 return list(model_positions)
         return []
 
-    def _build_model_positions(self, unit: object, *, x: float, y: float) -> list[dict]:
+    def _build_model_positions(
+        self,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        boundary_repulsors: list[object],
+        search_context,
+    ) -> list[dict]:
         game_map = getattr(self.game, "map", None)
         if game_map is None:
             return []
-        use_repulsors = True
-        has_infiltrate = getattr(unit, "has_infiltrate", None)
-        if callable(has_infiltrate) and has_infiltrate():
-            use_repulsors = False
-        boundary_repulsors = None
-        if use_repulsors:
-            repulsor_fn = getattr(self.game, "get_boundary_repulsors", None)
-            if callable(repulsor_fn):
-                boundary_repulsors = repulsor_fn(unit, context="deployment")
         model_positions = calculate_prospective_model_positions(
             unit,
             float(x),
@@ -485,6 +906,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             game_map,
             avoid_friendly_units=False,
             boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
         )
         models = list(getattr(unit, "models", []) or [])
         if not model_positions or len(model_positions) != len(models):
@@ -504,8 +926,22 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             )
         return payload_positions
 
-    def _build_model_positions_variants(self, unit: object, *, x: float, y: float) -> list[list[dict]]:
-        base_positions = self._build_model_positions(unit, x=float(x), y=float(y))
+    def _build_model_positions_variants(
+        self,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        boundary_repulsors: list[object],
+        search_context,
+    ) -> list[list[dict]]:
+        base_positions = self._build_model_positions(
+            unit,
+            x=float(x),
+            y=float(y),
+            boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
+        )
         if not base_positions:
             return []
         models = list(getattr(unit, "models", []) or [])
@@ -713,7 +1149,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             return (float(dist_sq), tie)
 
         candidates.sort(key=_sort_key)
-        return candidates
+        return candidates[: int(self._exhaustive_anchor_limit)]
 
     @staticmethod
     def _unit_has_infiltrate(unit: object) -> bool:
@@ -784,7 +1220,18 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 if abs(float(cx) - float(position[0])) <= 1e-3 and abs(float(cy) - float(position[1])) <= 1e-3:
                     return [dict(entry) for entry in list(payload or [])]
 
-        payload_variants = self._build_model_positions_variants(unit, x=float(position[0]), y=float(position[1]))
+        boundary_repulsors = self._deployment_boundary_repulsors(unit)
+        search_context = self._build_deployment_search_context(
+            unit,
+            boundary_repulsors=boundary_repulsors,
+        )
+        payload_variants = self._build_model_positions_variants(
+            unit,
+            x=float(position[0]),
+            y=float(position[1]),
+            boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
+        )
         return list(payload_variants[0] if payload_variants else [])
 
     def _reserve_group_roots(self, army: object) -> list[object]:
@@ -902,7 +1349,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             return (float(dist_sq), tie)
 
         candidates.sort(key=_scan_sort_key)
-        return candidates
+        return candidates[: int(self._exhaustive_anchor_limit)]
 
     @staticmethod
     def _axis_points(start: float, end: float, *, step: float, offset: float) -> list[float]:

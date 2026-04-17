@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..utility.call_utils import call_with_supported_kwargs
+
 
 def _safe_float(value: object, default: float = 0.0) -> float:
     try:
@@ -56,18 +58,21 @@ def calculate_prospective_model_positions(
     *,
     avoid_friendly_units: bool = True,
     boundary_repulsors: Any = None,
+    search_context: Any = None,
 ) -> list[tuple[float, float, float, float]]:
     calculate = getattr(unit, "calculate_model_positions", None)
     if not callable(calculate):
         return []
     snapshot = snapshot_unit_model_state(unit)
     try:
-        model_positions = calculate(
+        model_positions = call_with_supported_kwargs(
+            calculate,
             float(start_x),
             float(start_y),
             game_map,
             avoid_friendly_units=avoid_friendly_units,
             boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
         )
         normalized: list[tuple[float, float, float, float]] = []
         for entry in list(model_positions or []):

@@ -103,6 +103,16 @@ class DeploymentDecisionMaker(ABC):
         del request, unit, deployment_zone, already_deployed
         return None
 
+    def deployment_candidate_limit(
+        self,
+        *,
+        unit: Optional['Unit'] = None,
+        deployment_zone: Optional[dict] = None,
+        already_deployed: Optional[List['Unit']] = None,
+    ) -> int:
+        del unit, deployment_zone, already_deployed
+        return 8
+
     def build_deployment_intent(
         self,
         *,
@@ -1062,12 +1072,22 @@ class DeploymentManager:
                     current_deployed,
                 )
                 self._pop_selected_deploy_unit(current_units, unit)
+                candidate_limit = max(
+                    1,
+                    int(
+                        getattr(current_decision_maker, "deployment_candidate_limit", lambda **_kwargs: 8)(
+                            unit=unit,
+                            deployment_zone=current_zone,
+                            already_deployed=current_deployed,
+                        )
+                    ),
+                )
                 placement_candidates = self._build_deployment_move_candidates(
                     unit,
                     decision_maker=current_decision_maker,
                     deployment_zone=current_zone,
                     already_deployed=current_deployed,
-                    max_candidates=8,
+                    max_candidates=candidate_limit,
                 )
                 if not placement_candidates:
                     self._handle_unplaceable_deployment_unit(

@@ -633,7 +633,8 @@ class PositioningFightMovementMixin:
                                 grid_step=0.5,
                                 relax_iters=5,
                                 avoid_friendly_units=True,
-                                boundary_repulsors=None):
+                                boundary_repulsors=None,
+                                search_context=None):
         """
         Computes (x, y, z, facing) for each model in self.models.
         Tries formation templates (block, wedge, circle, column) built
@@ -651,22 +652,38 @@ class PositioningFightMovementMixin:
         Returns:
             List of (x, y, z, facing) tuples for each model, or None if failed
         """
+        from ...utility.placement_search import (
+            build_placement_search_context,
+            cached_formation_templates,
+            estimated_unit_pack_spacing,
+        )
+
         if not self.models:
             return []
 
         if boundary_repulsors is None:
             boundary_repulsors = []
 
-        # Single model - use fast path
-        if len(self.models) == 1:
-            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
-            self.models[0].set_location(start_x, start_y, z, 0.0)
-            return [(start_x, start_y, z, 0.0)]
-
         logger.debug(f"DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
         logger.debug(f"DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
         logger.debug(f"DEBUG: avoid_friendly_units: {avoid_friendly_units}")
         logger.debug(f"DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
+
+        if len(self.models) == 1:
+            # Exact-placement callers expect the requested anchor itself; later validation
+            # decides whether that anchor is legal for deployment/reserves/scout flows.
+            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
+            f = self.calculate_strategic_facing(start_x, start_y, game_map)
+            self.models[0].set_location(float(start_x), float(start_y), float(z), float(f))
+            return [(float(start_x), float(start_y), float(z), float(f))]
+
+        if search_context is None:
+            search_context = build_placement_search_context(
+                self,
+                game_map,
+                avoid_friendly_units=bool(avoid_friendly_units),
+                boundary_repulsors=boundary_repulsors,
+            )
 
         # Debug boundary repulsors
         if len(boundary_repulsors) == 0:
@@ -674,121 +691,25 @@ class PositioningFightMovementMixin:
         else:
             logger.debug(f"DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
 
-        # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
-        if len(self.models) == 1:
-            logger.debug(f"DEBUG: Using single-model fast path")
-            # initial drop
-            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
-            f = self.calculate_strategic_facing(start_x, start_y, game_map)
-            pos = [start_x, start_y, z, f]
-            m = self.models[0]
-
-            # Build list of blocking models (enemies + optionally friendlies)
-            blocking_models = game_map.get_enemy_models(self)
-            if avoid_friendly_units:
-                # Add friendly models from other units (excluding self)
-                friendly_models = []
-                for unit in game_map.get_friendly_units(self):
-                    if unit != self:  # Don't include models from the unit being positioned
-                        friendly_models.extend(unit.models)
-                blocking_models.extend(friendly_models)
-
-            # Use provided boundary repulsors or default to empty list
-            if boundary_repulsors is None:
-                boundary_repulsors = []
-
-            # one-off spatial index of terrain + blocking models + boundary repulsors
-            # Convert terrain features to blocking polygons for this unit
-            from ...utility.calcs import get_terrain_blocking_polygons
-            terrain_polygons = []
-            for terrain_feature in game_map.terrain_features:
-                blocking_polygons = get_terrain_blocking_polygons(self, terrain_feature)
-                terrain_polygons.extend(blocking_polygons)
-
-            tree = build_spatial_index(terrain_polygons + boundary_repulsors, blocking_models)
-
-            # relax away from any collisions
-            for _ in range(relax_iters):
-                # build the model's polygon at its trial spot
-                base = m.model_base.get_base_shape()
-                poly = translate(base,
-                                pos[0] - base.centroid.x,
-                                pos[1] - base.centroid.y)
-
-                # check for collisions with terrain/enemy/friendly/boundary blockers
-                hits = query_spatial_index(tree, poly)
-                # if no intersection, we're done
-                # DEBUG: Add defensive programming to catch geometry type errors
-                try:
-                    if not any(poly.intersects(b) for b in hits):
-                        break
-                except TypeError as e:
-                    logger.debug(f"DEBUG: TypeError in single-model intersects check: {e}")
-                    logger.debug(f"DEBUG: poly type: {type(poly)}")
-                    logger.debug(f"DEBUG: hits count: {len(hits)}")
-                    for i, hit in enumerate(hits):
-                        logger.debug(f"DEBUG: hit {i}: {type(hit)} - {hit}")
-                        if hasattr(hit, 'geom_type'):
-                            logger.debug(f"DEBUG:   geom_type: {hit.geom_type}")
-                        if hasattr(hit, 'is_valid'):
-                            logger.debug(f"DEBUG:   is_valid: {hit.is_valid}")
-                    raise
-
-                # repel vector from first blocker
-                b = next(b for b in hits if poly.intersects(b))
-                vx = poly.centroid.x - b.centroid.x
-                vy = poly.centroid.y - b.centroid.y
-                norm = get_dist(vx, vy) or 1.0
-                pos[0] += (vx / norm) * grid_step
-                pos[1] += (vy / norm) * grid_step
-                pos[2] = game_map.get_surface_height_for_model(m, pos[0], pos[1])
-
-            # commit and return
-            m.set_location(*pos)
-            logger.debug(f"DEBUG: Single-model positioning successful")
-            return [(pos[0], pos[1], pos[2], pos[3])]
-
         logger.debug(f"DEBUG: Using multi-model formation templates")
         # SLOW PATH FOR MULTI-MODEL UNITS
-        # 1) Build list of blocking models (enemies + optionally friendlies)
-        enemy_models = game_map.get_enemy_models(self)
-        blocking_models = enemy_models
-        logger.debug(f"DEBUG: Found {len(enemy_models)} enemy models")
-
-        if avoid_friendly_units:
-            # Add friendly models from other units (excluding self)
-            friendly_models = []
-            for unit in game_map.get_friendly_units(self):
-                if unit != self:  # Don't include models from the unit being positioned
-                    friendly_models.extend(unit.models)
-            blocking_models.extend(friendly_models)
-            logger.debug(f"DEBUG: Added {len(friendly_models)} friendly models from other units")
-
-        logger.debug(f"DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
-
-        # 2) Use provided boundary repulsors or default to empty list
-        if boundary_repulsors is None:
-            boundary_repulsors = []
-
-        # 3) Spatial index of terrain + blocking models + boundary repulsors
-        # Convert terrain features to blocking polygons for this unit
-        from ...utility.calcs import get_terrain_blocking_polygons
-        terrain_polygons = []
-        for terrain_feature in game_map.terrain_features:
-            blocking_polygons = get_terrain_blocking_polygons(self, terrain_feature)
-            terrain_polygons.extend(blocking_polygons)
-
-        tree = build_spatial_index(terrain_polygons + boundary_repulsors, blocking_models)
+        logger.debug(
+            "DEBUG: Search context blockers: enemies=%d friendlies=%d terrain=%d boundary=%d",
+            int(getattr(search_context, "enemy_blocking_count", 0)),
+            int(getattr(search_context, "friendly_blocking_count", 0)),
+            int(len(getattr(search_context, "terrain_polygons", ()) or ())),
+            int(len(getattr(search_context, "boundary_repulsors", ()) or ())),
+        )
+        tree = search_context.tree
 
         # 4) Compute safe spacing from the model base shape
         # Use tighter spacing for deployment to allow formations to fit in crowded areas
         # Models can be in base-to-base contact (spacing = 2 * radius) but we allow slightly tighter
-        base_radius = self.models[0].model_base.radius[0]
-        spacing = 2 * base_radius * 0.8  # 80% of full spacing allows for tighter formations
-        logger.debug(f"DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
+        spacing = float(estimated_unit_pack_spacing(self))
+        logger.debug("DEBUG: Computed spacing: %.2f inches", float(spacing))
 
         # 5) Build formation templates
-        templates = build_formation_templates(len(self.models), spacing)
+        templates = cached_formation_templates(len(self.models), spacing)
         logger.debug(f"DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
 
         origin_2d = np.array((start_x, start_y), float)

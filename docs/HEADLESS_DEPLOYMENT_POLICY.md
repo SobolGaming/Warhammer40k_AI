@@ -5,6 +5,13 @@ This document describes deterministic headless placement behavior for deployment
 ## Deployment (Headless Decision Maker)
 
 - `DeterministicDeploymentDecisionMaker` remains legality-first and deterministic.
+- Default headless deployment is now a deterministic fast-packer:
+  - deployment order prefers large-footprint / low-flex units before small screens when rules do not force another order;
+  - exact placement generation stops at a small bounded candidate set by default (`top_k=2`);
+  - semantic/ranker/lookahead scoring remains active, but only as a tie-break across that bounded candidate set.
+- Deployment search now reuses a cached occupancy snapshot per board state instead of rebuilding terrain/blocker geometry for every anchor.
+  - terrain blockers, boundary repulsors, live blocker polygons, and the Shapely `STRtree` are built once per search;
+  - unit formation templates are cached by model count and spacing.
 - The headless decision maker now uses a deterministic heuristic pregame teacher (`PregameDeploymentAgent`) when player context is available.
   - Deployment zone choice is teacher-scored from army-role inference and board affordances.
   - Board affordances include terrain-agnostic LOS/route signals (not RUINS-only), including
@@ -26,14 +33,16 @@ This document describes deterministic headless placement behavior for deployment
 - Teacher decision context now includes optional rollout settings under `deployment_lookahead`
   (enabled, depth, branch count, discount, blend, candidate kinds) for bounded pregame lookahead.
 - Standard units:
-  - Candidate anchors are searched inside the assigned deployment zone.
-  - Teacher semantic anchors are evaluated first, then lattice fallback scanning.
+  - Candidate anchors are searched inside the assigned deployment zone with packing-first rows/gaps before lattice fallback scanning.
+  - Teacher semantic anchors are still evaluated, but they no longer force an unbounded exact-placement search.
 - Units with `Infiltrators`:
   - Candidate anchors are searched in-zone first, then expanded to board-wide candidates.
   - Final legality is still enforced by deployment validation (`enemy zone`, `9"` enemy zone buffer, `9"` enemy model buffer, terrain legality).
 - If a unit still produces no legal deployment placements after candidate generation/validation, the
   engine logs a warning, skips battlefield placement, and removes the unit from play instead of
   crashing the whole headless run.
+- Deployment diagnostics are available from `DeterministicDeploymentDecisionMaker.get_deployment_search_metrics()`.
+  - Per-unit metrics include deployment order, anchor attempts, quick rejects, validation calls, calls to first valid result, returned candidate count, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
 
 ## Ruins Floors (Headless Deployment Payloads)
 
@@ -44,18 +53,38 @@ This document describes deterministic headless placement behavior for deployment
 
 ## Reserves Arrival Candidate Generation
 
-- `HeadlessPolicyDecisionController` now uses an adaptive, deterministic anchor strategy:
+- `HeadlessPolicyDecisionController` now uses an adaptive, deterministic fast-packer anchor strategy:
   - Strategic reserves:
-    - Edge-biased anchors around preferred edge offsets.
-    - Staggered along-edge scans.
-    - Sparse fallback edge bands and guaranteed corner anchors.
+    - edge-biased anchors around preferred edge offsets;
+    - staggered along-edge scans;
+    - sparse fallback edge bands and guaranteed corner anchors.
   - Non-strategic reserves arrival:
-    - Adaptive coarse-to-fine board scans with staggered lattices.
-- A cheap prefilter rejects clearly impossible strategic anchors (deep interior points) before expensive placement synthesis.
+    - board landmarks, open-gap anchors, then adaptive coarse-to-fine board scans with staggered lattices.
+- A cheap prefilter rejects clearly impossible anchors before expensive placement synthesis.
+  - board bounds;
+  - strategic edge-band depth;
+  - enemy-distance envelopes;
+  - anchor-range envelopes for source-unit-based arrivals.
 - Exact reserve model-position synthesis now delegates to the shared `reserve_entry_geometry.py`
   helper so headless reserve landing generation stays aligned with the authoritative reserve-entry
   validation seam.
 - Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`.
+- Reserves diagnostics are available from `HeadlessPolicyDecisionController.get_reserves_arrival_search_metrics()`.
+  - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
+
+## Benchmark Workflow
+
+- Setup-only headless benchmark helper:
+  - `warhammer40k_ai.engine.headless_setup_benchmark.run_setup_only_headless_benchmark(...)`
+- Local benchmark CLI:
+  - `python scripts/benchmark_headless_setup.py --player1-army army_lists/Aeldari_Warhost_2000.txt --player2-army army_lists/WE_Daemonkin_2000.txt --output data/headless_setup_benchmark.json`
+- Optional before/after comparison:
+  - pass `--baseline-json <path>` to compare current output against a previously captured benchmark JSON.
+- Benchmark output includes:
+  - per-setup-phase timings;
+  - per-unit deployment diagnostics;
+  - reserves-arrival synthetic benchmark cases for crowded Deep Strike and strategic-reserve edge entry;
+  - aggregated summaries for validation calls, fallback usage, and first-valid anchor sources.
 
 ## Pregame Decision Surfaces
 

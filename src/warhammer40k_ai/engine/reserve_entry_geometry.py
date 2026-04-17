@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.entity_ids import get_entity_id
 
 _STRATEGIC_RESERVES_EDGES = ("own", "left", "right", "enemy")
@@ -129,6 +130,7 @@ def build_model_positions_from_anchor(
     x: float,
     y: float,
     avoid_friendly_units: bool,
+    search_context: object | None = None,
 ) -> list[dict]:
     game_map = getattr(game, "map", None)
     if game_map is None or unit is None:
@@ -139,12 +141,14 @@ def build_model_positions_from_anchor(
         boundary_repulsors = repulsor_fn(unit, context="reserves_arrival")
     elif hasattr(game_map, "get_battlefield_edge_repulsors"):
         boundary_repulsors = game_map.get_battlefield_edge_repulsors()
-    model_positions = unit.calculate_model_positions(
+    model_positions = call_with_supported_kwargs(
+        unit.calculate_model_positions,
         float(x),
         float(y),
         game_map,
         avoid_friendly_units=bool(avoid_friendly_units),
         boundary_repulsors=boundary_repulsors,
+        search_context=search_context,
     )
     models = list(getattr(unit, "models", []) or [])
     if not model_positions or len(model_positions) != len(models):
