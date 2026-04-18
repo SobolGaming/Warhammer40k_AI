@@ -7,6 +7,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
 )
 from .decisions import DecisionOption, DecisionRequest
+from ..utility.decision_utils import resolve_or_reuse_payload_choice
 
 if TYPE_CHECKING:
     from .attack_resolution import AttackSequence
@@ -135,11 +136,12 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     )
                     if not callable(skill_provider):
                         skill_provider = provider
+                    fallback_choice = None
                     if callable(skill_provider) and player is not None and bool(
                         getattr(player, "has_control", lambda: False)()
                     ):
                         try:
-                            choice = skill_provider(
+                            fallback_choice = skill_provider(
                                 player=player,
                                 attacker=attacker,
                                 target=target,
@@ -148,10 +150,9 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                                 choices=skill_opts,
                             )
                         except (AttributeError, TypeError, ValueError):
-                            choice = None
-                        if choice not in skill_opts:
-                            choice = CHOICE_KEEP_ALL
-                        attack_instance["skill_modifier_choice"] = choice
+                            fallback_choice = None
+                        if fallback_choice not in skill_opts:
+                            fallback_choice = CHOICE_KEEP_ALL
                 if attack_instance.get("skill_modifier_choice") is None and skill_opts:
                     prompt = "Choose which modifiers to ignore."
                     req_options = [
@@ -166,7 +167,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                         "wargear_id": seq.wargear_id,
                         "profile_name": seq.profile_name,
                         "ability_name": f"{rule_name} ({skill_label})",
-                        "modifier_kind": "weapon_skill" if is_melee else "ballistic_skill",
+                        "modifier_kind": "skill",
                     }
                     request = DecisionRequest.create(
                         DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
@@ -178,6 +179,15 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     seq.step = "skill_modifier_choice"
                     if hasattr(game, "request_decision"):
                         game.request_decision(request)
+                        resolve_or_reuse_payload_choice(
+                            game,
+                            request,
+                            payload_key="choice",
+                            fallback_value=fallback_choice,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                        )
+                    elif fallback_choice is not None:
+                        attack_instance["skill_modifier_choice"] = fallback_choice
                     return True
 
             if allow_hit and attack_instance.get("hit_modifier_choice") is None:
@@ -185,9 +195,10 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                 if not hit_opts:
                     attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
                 else:
+                    fallback_choice = None
                     if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
                         try:
-                            choice = provider(
+                            fallback_choice = provider(
                                 player=player,
                                 attacker=attacker,
                                 target=target,
@@ -196,10 +207,9 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                                 choices=hit_opts,
                             )
                         except (AttributeError, TypeError, ValueError):
-                            choice = None
-                        if choice not in hit_opts:
-                            choice = CHOICE_KEEP_ALL
-                        attack_instance["hit_modifier_choice"] = choice
+                            fallback_choice = None
+                        if fallback_choice not in hit_opts:
+                            fallback_choice = CHOICE_KEEP_ALL
                 if attack_instance.get("hit_modifier_choice") is None and hit_opts:
                     prompt = "Choose which modifiers to ignore."
                     req_options = [
@@ -226,6 +236,15 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     seq.step = "hit_modifier_choice"
                     if hasattr(game, "request_decision"):
                         game.request_decision(request)
+                        resolve_or_reuse_payload_choice(
+                            game,
+                            request,
+                            payload_key="choice",
+                            fallback_value=fallback_choice,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                        )
+                    elif fallback_choice is not None:
+                        attack_instance["hit_modifier_choice"] = fallback_choice
                     return True
 
         if driven_by_ultimate_rage:
@@ -241,11 +260,12 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     )
                     if not callable(skill_provider):
                         skill_provider = provider
+                    fallback_choice = None
                     if callable(skill_provider) and player is not None and bool(
                         getattr(player, "has_control", lambda: False)()
                     ):
                         try:
-                            choice = skill_provider(
+                            fallback_choice = skill_provider(
                                 player=player,
                                 attacker=attacker,
                                 target=target,
@@ -254,10 +274,9 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                                 choices=skill_opts,
                             )
                         except (AttributeError, TypeError, ValueError):
-                            choice = None
-                        if choice not in skill_opts:
-                            choice = CHOICE_KEEP_ALL
-                        attack_instance["skill_modifier_choice"] = choice
+                            fallback_choice = None
+                        if fallback_choice not in skill_opts:
+                            fallback_choice = CHOICE_KEEP_ALL
                 if attack_instance.get("skill_modifier_choice") is None and skill_opts:
                     prompt = "Choose which modifiers to ignore."
                     req_options = [
@@ -272,7 +291,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                         "wargear_id": seq.wargear_id,
                         "profile_name": seq.profile_name,
                         "ability_name": f"{driven_rule_name} (Weapon Skill)",
-                        "modifier_kind": "weapon_skill",
+                        "modifier_kind": "skill",
                     }
                     request = DecisionRequest.create(
                         DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
@@ -284,6 +303,15 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     seq.step = "skill_modifier_choice"
                     if hasattr(game, "request_decision"):
                         game.request_decision(request)
+                        resolve_or_reuse_payload_choice(
+                            game,
+                            request,
+                            payload_key="choice",
+                            fallback_value=fallback_choice,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                        )
+                    elif fallback_choice is not None:
+                        attack_instance["skill_modifier_choice"] = fallback_choice
                     return True
 
             if attack_instance.get("hit_modifier_choice") is None:
@@ -291,9 +319,10 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                 if not hit_opts:
                     attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
                 else:
+                    fallback_choice = None
                     if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
                         try:
-                            choice = provider(
+                            fallback_choice = provider(
                                 player=player,
                                 attacker=attacker,
                                 target=target,
@@ -302,10 +331,9 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                                 choices=hit_opts,
                             )
                         except (AttributeError, TypeError, ValueError):
-                            choice = None
-                        if choice not in hit_opts:
-                            choice = CHOICE_KEEP_ALL
-                        attack_instance["hit_modifier_choice"] = choice
+                            fallback_choice = None
+                        if fallback_choice not in hit_opts:
+                            fallback_choice = CHOICE_KEEP_ALL
                 if attack_instance.get("hit_modifier_choice") is None and hit_opts:
                     prompt = "Choose which modifiers to ignore."
                     req_options = [
@@ -332,6 +360,15 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                     seq.step = "hit_modifier_choice"
                     if hasattr(game, "request_decision"):
                         game.request_decision(request)
+                        resolve_or_reuse_payload_choice(
+                            game,
+                            request,
+                            payload_key="choice",
+                            fallback_value=fallback_choice,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                        )
+                    elif fallback_choice is not None:
+                        attack_instance["hit_modifier_choice"] = fallback_choice
                     return True
 
     return False
@@ -410,9 +447,10 @@ def _ensure_wound_modifier_choices(manager, game: object, seq: AttackSequence) -
         game_map = getattr(game, "map", None)
         provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
         rule_name = str(ignore_rule.get("name") or "Ignore modifiers").strip() or "Ignore modifiers"
+        fallback_choice = None
         if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
             try:
-                choice = provider(
+                fallback_choice = provider(
                     player=player,
                     attacker=attacker,
                     target=target,
@@ -421,10 +459,9 @@ def _ensure_wound_modifier_choices(manager, game: object, seq: AttackSequence) -
                     choices=options,
                 )
             except (AttributeError, TypeError, ValueError):
-                choice = None
-            if choice not in options:
-                choice = CHOICE_KEEP_ALL
-            attack_instance["wound_modifier_choice"] = choice
+                fallback_choice = None
+            if fallback_choice not in options:
+                fallback_choice = CHOICE_KEEP_ALL
 
         if attack_instance.get("wound_modifier_choice") is not None:
             continue
@@ -454,6 +491,15 @@ def _ensure_wound_modifier_choices(manager, game: object, seq: AttackSequence) -
         seq.step = "wound_modifier_choice"
         if hasattr(game, "request_decision"):
             game.request_decision(request)
+            resolve_or_reuse_payload_choice(
+                game,
+                request,
+                payload_key="choice",
+                fallback_value=fallback_choice,
+                player_id=getattr(player, "id", None) if player is not None else None,
+            )
+        elif fallback_choice is not None:
+            attack_instance["wound_modifier_choice"] = fallback_choice
         return True
 
     return False

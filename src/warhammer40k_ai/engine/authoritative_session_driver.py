@@ -7,10 +7,10 @@ from typing import Optional
 from .command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
-    CMD_SELECT_MISSION,
+    CMD_RESOLVE_DECISION,
 )
 from .commands import GameCommand
-from .decisions import DecisionRequest
+from .decisions import DecisionOption, DecisionRequest
 from .game import Game
 from .phase import SetupPhase
 
@@ -70,13 +70,7 @@ class AuthoritativeSessionDriver:
                 if not self._should_handle_phase(phase):
                     return
                 if phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
-                    combo, layout = self._choose_random_mission(game)
-                    await self._apply_command(
-                        GameCommand.create(
-                            CMD_SELECT_MISSION,
-                            payload={"combination": dict(combo or {}), "layout": layout},
-                        )
-                    )
+                    await self._resolve_mission_selection_request(game)
                     await self._apply_command(self._create_execute_setup_command(phase))
                     await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
                     continue
@@ -119,3 +113,63 @@ class AuthoritativeSessionDriver:
     def _create_execute_setup_command(self, phase: SetupPhase) -> GameCommand:
         payload = dict(self._build_execute_setup_payload(phase) or {})
         return GameCommand.create(CMD_EXECUTE_SETUP_PHASE, payload=payload)
+
+    async def _resolve_mission_selection_request(self, game: Game) -> None:
+        request_fn = getattr(game, "request_mission_selection", None)
+        if not callable(request_fn):
+            raise RuntimeError("Game missing request_mission_selection for authoritative setup flow.")
+        request = request_fn()
+        pending = self._pending_request(game, request)
+        if pending is None:
+            return
+        combo, layout = self._choose_random_mission(game)
+        option = self._match_mission_option(request, combo)
+        if option is None:
+            raise RuntimeError("Chosen mission option did not match any emitted CHOOSE_MISSION option.")
+        await self._apply_command(
+            GameCommand.create(
+                CMD_RESOLVE_DECISION,
+                player_id=getattr(request, "player_id", None),
+                payload={
+                    "decision_id": request.decision_id,
+                    "option_id": option.option_id,
+                    "result_payload": {"layout": int(layout)},
+                },
+            )
+        )
+
+    @staticmethod
+    def _pending_request(game: Game, request: DecisionRequest | None) -> DecisionRequest | None:
+        if request is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return request
+        return queue.get(str(getattr(request, "decision_id", "") or ""))
+
+    @staticmethod
+    def _match_mission_option(request: DecisionRequest, choice: dict | None) -> DecisionOption | None:
+        selected = dict(choice or {})
+        selected_pack_id = str(selected.get("pack_id", "") or "").strip()
+        selected_combo_id = str(selected.get("combination_id", "") or selected.get("id", "") or "").strip()
+        selected_primary = str(selected.get("primary", "") or "").strip()
+        selected_deployment = str(selected.get("deployment", "") or "").strip()
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            combo = dict(payload.get("combination", {}) or {})
+            combo_pack_id = str(combo.get("pack_id", "") or "").strip()
+            combo_id = str(combo.get("combination_id", "") or combo.get("id", "") or "").strip()
+            if selected_pack_id and combo_pack_id and combo_pack_id != selected_pack_id:
+                continue
+            if selected_combo_id and combo_id:
+                if combo_id == selected_combo_id:
+                    return option
+                continue
+            combo_primary = str(combo.get("primary", "") or "").strip()
+            combo_deployment = str(combo.get("deployment", "") or "").strip()
+            if selected_primary and combo_primary and combo_primary != selected_primary:
+                continue
+            if selected_deployment and combo_deployment and combo_deployment != selected_deployment:
+                continue
+            return option
+        return None

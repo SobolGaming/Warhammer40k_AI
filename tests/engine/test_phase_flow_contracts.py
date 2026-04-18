@@ -11,7 +11,10 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
+    DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_FIGHT_TARGETS,
+    DECISION_SELECT_MOVEMENT_ACTION,
+    DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.fight_phase_manager import FightStage
@@ -20,7 +23,7 @@ from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDeci
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
-from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.unit import MovementAction, Unit
 
 
 class _MockDatasheet:
@@ -388,6 +391,28 @@ def test_real_game_headless_controller_resolves_phase_contract_request(build_pha
     assert len(resolved) == 1
     assert resolved[0][0] is request
     assert resolved[0][1].option_id in {option.option_id for option in request.options}
+
+
+def test_real_game_headless_movement_phase_preserves_decision_chain(build_phase_game) -> None:
+    fixture = build_phase_game(current_control=PlayerControl.REMOTE)
+    fixture.game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.ADVANCE.value]
+    HeadlessPolicyDecisionController(game=fixture.game, auto_attach=True)
+
+    fixture.game._queue_movement_phase_move_units_selection()
+
+    requested = [
+        str((getattr(event, "payload", {}) or {}).get("decision_type", "") or "")
+        for event in list(fixture.game.event_log.events or [])
+        if str(getattr(event, "event_type", "") or "") == "decision_requested"
+    ]
+    assert requested == [
+        DECISION_SELECT_UNIT,
+        DECISION_SELECT_MOVEMENT_ACTION,
+        DECISION_REQUEST_DICE_ROLL,
+        DECISION_MOVE_UNIT,
+    ]
+    assert list(fixture.game.decision_queue.list() or []) == []
 
 
 def test_real_local_runtime_routes_phase_contract_request(build_phase_game) -> None:

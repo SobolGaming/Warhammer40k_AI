@@ -298,6 +298,132 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
             "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
         )
 
+    def test_hit_modifier_choice_reuses_immediately_resolved_decision_request(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_HIT_MODIFIER_IGNORES
+        from warhammer40k_ai.utility import dice as dice_mod
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+
+        ignore_mods = {
+            "name": "Ignore Ranged Modifiers",
+            "description": (
+                "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to "
+                "that attack's Ballistic Skill characteristic and any or all modifiers to the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        stealth = {"name": "Stealth", "description": "Stealth.", "type": "Datasheet", "parameter": ""}
+
+        game, army1, army2, p1, _p2 = _build_game()
+        game.turn = 1
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        attacker = _make_unit("Shooter", abilities=[ignore_mods])
+        target = _make_unit("Target", abilities=[stealth])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        attacker.models[0].set_location(0, 0, 0, 0)
+        target.models[0].set_location(1, 0, 0, 0)
+        game.map.units = [attacker, target]
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if (getattr(opt, "payload", {}) or {}).get("choice") == CHOICE_IGNORE_NEGATIVE
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=p1.id)
+
+        game.request_decision = _auto_resolve
+
+        rolls = iter([4, 4, 4])
+        original_get_dice_roll = dice_mod.get_dice_roll
+        dice_mod.get_dice_roll = lambda _size=6: next(rolls)
+        try:
+            profile = _make_profile()
+            result = profile.attack(target, attacker.models[0], game.map)
+        finally:
+            dice_mod.get_dice_roll = original_get_dice_roll
+
+        self.assertIn(DECISION_CHOOSE_HIT_MODIFIER_IGNORES, seen_decisions)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.hit_results)
+        self.assertTrue(result.hit_results[0]["hit"])
+
+    def test_skill_modifier_choice_reuses_immediately_resolved_decision_request(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_SKILL_MODIFIER_IGNORES
+        from warhammer40k_ai.rules.doctrina_imperatives import DoctrinaImperativesManager, PROTECTOR_IMPERATIVE
+        from warhammer40k_ai.utility import dice as dice_mod
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_POSITIVE
+
+        ignore_mods = {
+            "name": "Ignore Ranged Modifiers",
+            "description": (
+                "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to "
+                "that attack's Ballistic Skill characteristic and any or all modifiers to the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        doctrina = {"name": "Doctrina Imperatives", "description": "Doctrina Imperatives", "type": "Datasheet", "parameter": ""}
+
+        game, army1, army2, p1, _p2 = _build_game()
+        game.turn = 1
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        mgr = DoctrinaImperativesManager(army1)
+        mgr.active_imperative_key = PROTECTOR_IMPERATIVE.key
+        mgr.active_round = 1
+        army1.doctrina_imperatives = mgr
+
+        attacker = _make_unit("Shooter", abilities=[ignore_mods, doctrina])
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        attacker.models[0].set_location(0, 0, 0, 0)
+        target.models[0].set_location(1, 0, 0, 0)
+        game.map.units = [attacker, target]
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if (getattr(opt, "payload", {}) or {}).get("choice") == CHOICE_IGNORE_POSITIVE
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=p1.id)
+
+        game.request_decision = _auto_resolve
+
+        rolls = iter([3, 4, 4])
+        original_get_dice_roll = dice_mod.get_dice_roll
+        dice_mod.get_dice_roll = lambda _size=6: next(rolls)
+        try:
+            profile = _make_profile()
+            result = profile.attack(target, attacker.models[0], game.map)
+        finally:
+            dice_mod.get_dice_roll = original_get_dice_roll
+
+        self.assertIn(DECISION_CHOOSE_SKILL_MODIFIER_IGNORES, seen_decisions)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.hit_results)
+        self.assertFalse(result.hit_results[0]["hit"])
+
 
 if __name__ == "__main__":
     unittest.main()

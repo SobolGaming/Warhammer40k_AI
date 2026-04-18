@@ -132,41 +132,12 @@ class DamageDeathMixin:
             }
 
             use_now = False
-            if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
-                if game is not None:
-                    from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
-                    from ...engine.decisions import DecisionOption, DecisionRequest
-
-                    request = DecisionRequest.create(
-                        DECISION_CONFIRM_YES_NO,
-                        ability_name,
-                        player_id=getattr(player, "id", None),
-                        options=[
-                            DecisionOption.create("Use", payload={"choice": True}),
-                            DecisionOption.create("Skip", payload={"choice": False}),
-                        ],
-                        context=context,
-                    )
-                    request_fn = getattr(game, "request_decision", None)
-                    if callable(request_fn):
-                        request_fn(request)
-                decision = provider(
-                    player=player,
-                    unit=root,
-                    target_model=target_model,
-                    attacker_model=attacker_model,
-                    weapon_profile=weapon_profile,
-                    ability_name=ability_name,
-                    ability_key=ability_key,
-                    fnp_value=int(fnp_value),
-                    condition=condition,
-                    phase_name=phase_label,
-                )
-                use_now = str(decision or "").strip().lower() in ("use", "yes", "true")
-            elif game is not None:
+            request = None
+            provider_choice = None
+            if game is not None:
                 from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
                 from ...engine.decisions import DecisionOption, DecisionRequest
-                from ...utility.decision_utils import resolve_or_reuse_decision_value
+                from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
 
                 request = DecisionRequest.create(
                     DECISION_CONFIRM_YES_NO,
@@ -181,24 +152,41 @@ class DamageDeathMixin:
                 request_fn = getattr(game, "request_decision", None)
                 if callable(request_fn):
                     request_fn(request)
-                should_use_fn = getattr(player, "_should_use_optional_ability", None)
-                if callable(should_use_fn):
-                    use_now = bool(should_use_fn("WATCHER_IN_THE_DARK", context))
-                option_id = None
-                for opt in list(getattr(request, "options", []) or []):
-                    payload = dict(getattr(opt, "payload", {}) or {})
-                    if bool(payload.get("choice", False)) == use_now:
-                        option_id = opt.option_id
-                        break
-                if option_id:
-                    _value, apply_result = resolve_or_reuse_decision_value(
-                        game,
-                        request,
-                        option_id,
-                        player_id=getattr(player, "id", None),
+
+                if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
+                    decision = provider(
+                        player=player,
+                        unit=root,
+                        target_model=target_model,
+                        attacker_model=attacker_model,
+                        weapon_profile=weapon_profile,
+                        ability_name=ability_name,
+                        ability_key=ability_key,
+                        fnp_value=int(fnp_value),
+                        condition=condition,
+                        phase_name=phase_label,
                     )
-                    if apply_result is None or not getattr(apply_result, "ok", False):
-                        use_now = False
+                    provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
+                else:
+                    fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                    if callable(fallback_fn):
+                        provider_choice = bool(fallback_fn("WATCHER_IN_THE_DARK", context))
+                    else:
+                        should_use_fn = getattr(player, "_should_use_optional_ability", None)
+                        if callable(should_use_fn):
+                            provider_choice = bool(
+                                should_use_fn("WATCHER_IN_THE_DARK", dict(context, _fallback_only=True))
+                            )
+
+                resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                    game,
+                    request,
+                    fallback_choice=provider_choice,
+                    player_id=getattr(player, "id", None),
+                )
+                use_now = bool(
+                    resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)
+                )
             if not use_now:
                 continue
 
@@ -360,41 +348,12 @@ class DamageDeathMixin:
         provider = getattr(game_map, "unit_psychic_attack_fnp_provider", None) if game_map is not None else None
 
         use_now = False
-        if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
-            if game is not None:
-                from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
-                from ...engine.decisions import DecisionOption, DecisionRequest
-
-                request = DecisionRequest.create(
-                    DECISION_CONFIRM_YES_NO,
-                    ability_name,
-                    player_id=getattr(player, "id", None),
-                    options=[
-                        DecisionOption.create("Use", payload={"choice": True}),
-                        DecisionOption.create("Skip", payload={"choice": False}),
-                    ],
-                    context=context,
-                )
-                request_fn = getattr(game, "request_decision", None)
-                if callable(request_fn):
-                    request_fn(request)
-            decision = provider(
-                player=player,
-                unit=root,
-                target_model=target_model,
-                attacker_model=attacker_model,
-                weapon_profile=weapon_profile,
-                ability_name=ability_name,
-                ability_key=ability_key,
-                fnp_value=int(fnp_value),
-                condition=condition,
-                phase_name=phase_label,
-            )
-            use_now = str(decision or "").strip().lower() in ("use", "yes", "true")
-        elif game is not None:
+        request = None
+        provider_choice = None
+        if game is not None:
             from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
             from ...engine.decisions import DecisionOption, DecisionRequest
-            from ...utility.decision_utils import resolve_or_reuse_decision_value
+            from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
 
             request = DecisionRequest.create(
                 DECISION_CONFIRM_YES_NO,
@@ -409,24 +368,39 @@ class DamageDeathMixin:
             request_fn = getattr(game, "request_decision", None)
             if callable(request_fn):
                 request_fn(request)
-            should_use_fn = getattr(player, "_should_use_optional_ability", None)
-            if callable(should_use_fn):
-                use_now = bool(should_use_fn("NULL_NODULES", context))
-            option_id = None
-            for opt in list(getattr(request, "options", []) or []):
-                payload = dict(getattr(opt, "payload", {}) or {})
-                if bool(payload.get("choice", False)) == use_now:
-                    option_id = opt.option_id
-                    break
-            if option_id:
-                _value, apply_result = resolve_or_reuse_decision_value(
-                    game,
-                    request,
-                    option_id,
-                    player_id=getattr(player, "id", None),
+
+            if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
+                decision = provider(
+                    player=player,
+                    unit=root,
+                    target_model=target_model,
+                    attacker_model=attacker_model,
+                    weapon_profile=weapon_profile,
+                    ability_name=ability_name,
+                    ability_key=ability_key,
+                    fnp_value=int(fnp_value),
+                    condition=condition,
+                    phase_name=phase_label,
                 )
-                if apply_result is None or not getattr(apply_result, "ok", False):
-                    use_now = False
+                provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
+            else:
+                fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                if callable(fallback_fn):
+                    provider_choice = bool(fallback_fn("NULL_NODULES", context))
+                else:
+                    should_use_fn = getattr(player, "_should_use_optional_ability", None)
+                    if callable(should_use_fn):
+                        provider_choice = bool(should_use_fn("NULL_NODULES", dict(context, _fallback_only=True)))
+
+            resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                game,
+                request,
+                fallback_choice=provider_choice,
+                player_id=getattr(player, "id", None),
+            )
+            use_now = bool(
+                resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)
+            )
         if not use_now:
             return False
 
@@ -550,28 +524,12 @@ class DamageDeathMixin:
             attacker_unit_id = ""
 
         provider = getattr(game_map, "death_vision_of_sanguinius_provider", None) if game_map is not None else None
-        if self._player_has_local_control(player) and callable(provider):
-            decision = provider(
-                player=player,
-                source_unit=source_unit,
-                source_model=source_model,
-                attacker_unit=attacker_unit,
-                ability_name=ability_name,
-                message=message,
-                attacker_contains_enemy_warlord=bool(attacker_contains_warlord),
-                warlord_bonus=int(warlord_bonus),
-                low_expr=str(rule.get("low_expr", "") or ""),
-                mid_expr=str(rule.get("mid_expr", "") or ""),
-                high_expr=str(rule.get("high_expr", "") or ""),
-            )
-            return str(decision or "").strip().lower() in ("use", "yes", "true")
-
         if game is None:
             return False
 
         from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from ...engine.decisions import DecisionOption, DecisionRequest
-        from ...utility.decision_utils import resolve_or_reuse_decision_value
+        from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
 
         context = {
             "ability": "death_vision_of_sanguinius",
@@ -597,24 +555,41 @@ class DamageDeathMixin:
         if callable(request_fn):
             request_fn(request)
 
-        should_use_fn = getattr(player, "_should_use_optional_ability", None)
-        use_now = bool(should_use_fn("DEATH_VISION_OF_SANGUINIUS", context)) if callable(should_use_fn) else False
+        fallback_choice = None
+        if self._player_has_local_control(player) and callable(provider):
+            decision = provider(
+                player=player,
+                source_unit=source_unit,
+                source_model=source_model,
+                attacker_unit=attacker_unit,
+                ability_name=ability_name,
+                message=message,
+                attacker_contains_enemy_warlord=bool(attacker_contains_warlord),
+                warlord_bonus=int(warlord_bonus),
+                low_expr=str(rule.get("low_expr", "") or ""),
+                mid_expr=str(rule.get("mid_expr", "") or ""),
+                high_expr=str(rule.get("high_expr", "") or ""),
+            )
+            fallback_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
+        else:
+            fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+            if callable(fallback_fn):
+                fallback_choice = bool(fallback_fn("DEATH_VISION_OF_SANGUINIUS", context))
+            else:
+                should_use_fn = getattr(player, "_should_use_optional_ability", None)
+                fallback_choice = (
+                    bool(should_use_fn("DEATH_VISION_OF_SANGUINIUS", dict(context, _fallback_only=True)))
+                    if callable(should_use_fn)
+                    else False
+                )
 
-        option_id = None
-        for option in list(getattr(request, "options", []) or []):
-            payload = dict(getattr(option, "payload", {}) or {})
-            if bool(payload.get("choice", False)) == use_now:
-                option_id = option.option_id
-                break
-        if not option_id:
-            return False
-        _value, apply_result = resolve_or_reuse_decision_value(
+        resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
             game,
             request,
-            option_id,
+            fallback_choice=fallback_choice,
             player_id=getattr(player, "id", None),
         )
-        return bool(apply_result is not None and getattr(apply_result, "ok", False) and use_now)
+        return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
 
     def _queue_death_vision_of_sanguinius(
         self,

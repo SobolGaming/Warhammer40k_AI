@@ -26,7 +26,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - "Human" below means the same pending `DecisionRequest` is presented through the local
   or network UI and resolved by the player.
 - "Headless" below uses the current controller stack:
-  - `Runtime random`: deterministic runtime-owned mission autorandom.
+  - `Runtime chooser`: deterministic runtime-owned chooser that resolves an emitted
+    request without skipping the decision type.
   - `DeployDM`: `DeterministicDeploymentDecisionMaker` for deployment-manager-owned setup
     choices.
   - `Policy`: `HeadlessPolicyDecisionController`, which ranks legal candidates using
@@ -210,7 +211,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 
 | Decision Type | Reachability / Trigger | Human (via UI) | Headless | AI |
 | --- | --- | --- | --- | --- |
-| `CHOOSE_MISSION` | Mission-selection tooling or manual mission-pick surface. | UI | Runtime random | `T1` |
+| `CHOOSE_MISSION` | Mission-selection tooling or manual mission-pick surface. | UI | `Runtime chooser` | `T1` |
 | `CONFIRM_MODAL` | Generic modal wrapper or non-gameplay shell. | UI/manual | `N/A` | `N/A` |
 | `ATTACH_LEADER` | Declare Battle Formations with unresolved Leader attachment. | UI | `Policy` | `T2` |
 | `ATTACH_SUPPORT_ARTILLERY` | Declare Battle Formations with unresolved joined support or retinue attachment. | UI | `Policy` | `T2` |
@@ -328,4 +329,3 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `CHOOSE_POWER_FROM_PAIN_OPTION` | Power from Pain must choose an available option. | UI | `Policy` | `T1` |
 | `CHOOSE_MALEFIC_SURGE_UNIT` | Malefic Surge must choose the source or recipient unit. | UI | `Policy` | `T2` |
 | `CHOOSE_MALEFIC_SURGE_ABILITY` | Malefic Surge must choose the ability to apply. | UI | `Policy` | `T1/T2` |
-

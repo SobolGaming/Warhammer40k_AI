@@ -88,6 +88,8 @@ class Map:
         self.hazardous_allocation_provider = None
         # Signature: provider(target_unit_root, eligible_models, ctx_dict) -> chosen_model | None
         self.reanimation_allocation_provider = None
+        # Signature: provider(player, leader_unit, bodyguard_unit, candidates, ability_name) -> chosen_model | None
+        self.bodyguard_loss_provider = None
         # Signature: provider(player, unit, roll_type, dice_count, die_faces, pool, needed) -> chosen_value | None
         self.miracle_dice_provider = None
         # Signature: provider(player, unit, roll_type, value, needed, tokens_remaining, ...) -> "use" | "skip" | "suppress"

@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
@@ -9,6 +11,8 @@ from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.rules.stratagems import StratagemManager
+from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class TestBrutalExampleOverwatch(unittest.TestCase):
@@ -262,6 +266,59 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
 
         assert stratagem_mgr.use("FIRE OVERWATCH", shooter_unit=bodyguard, enemy_unit=enemy_unit, phase_name="Charge phase")
         self.assertEqual(order, ["loss", "shoot", "mark"])
+
+    def test_brutal_example_bodyguard_loss_local_provider_consumes_allocate_damage_request(self):
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
+        army.faction_id = "CSM"
+        bodyguard, leader = self._setup_units_with_brutal_example(army)
+        extra_model = self._make_model("Extra Bodyguard", bodyguard)
+        bodyguard.models.append(extra_model)
+        army.units = [bodyguard, leader]
+
+        player = Player("Chaos", PlayerControl.LOCAL, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+        game.map.units = [bodyguard]
+        game.rebuild_entity_registry()
+
+        chosen_model = bodyguard.models[1]
+        seen = {"pending": 0}
+
+        def _provider(**_kwargs):
+            pending = [
+                req
+                for req in list(game.decision_queue.list() or [])
+                if str(getattr(req, "decision_type", "") or "") == DECISION_ALLOCATE_DAMAGE
+                and str(getattr(req, "context", {}).get("selection_kind", "") or "") == "bodyguard_loss"
+            ]
+            self.assertEqual(len(pending), 1)
+            req = pending[0]
+            seen["pending"] = len(pending)
+            option_id = next(
+                opt.option_id
+                for opt in list(getattr(req, "options", []) or [])
+                if str(getattr(opt, "payload", {}).get("model_id", "") or "") == str(get_entity_id(chosen_model) or "")
+            )
+            value, apply_result = resolve_decision_value(game, req, option_id, player_id=player.id)
+            self.assertIsNotNone(apply_result)
+            self.assertTrue(getattr(apply_result, "ok", False))
+            return value
+
+        game.map.bodyguard_loss_provider = _provider
+
+        removed_model = game.resolve_bodyguard_loss_immediately(
+            leader_unit=None,
+            bodyguard_unit=bodyguard,
+            ability_name="Brutal Example",
+            player=player,
+            leader_unit_id=leader._id,
+            selection_key="BRUTAL_EXAMPLE_BODYGUARD_LOSS",
+        )
+
+        self.assertIs(removed_model, chosen_model)
+        self.assertEqual(seen["pending"], 1)
+        self.assertEqual(len(bodyguard.models), 1)
+        self.assertNotIn(chosen_model, bodyguard.models)
+        self.assertEqual(list(game.decision_queue.list() or []), [])
 
 
 if __name__ == "__main__":

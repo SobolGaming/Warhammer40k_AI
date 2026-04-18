@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_controller import DecisionController
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.roster.army import Army
@@ -12,6 +13,33 @@ from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.model_base import Base, BaseType
+
+
+class _ResolveChoiceDecisionController(DecisionController):
+    def __init__(self, *, player_id=None, choose_yes: bool = True):
+        super().__init__(player_id=player_id)
+        self.choose_yes = bool(choose_yes)
+        self.requests = []
+
+    def on_decision_requested(self, game: object, request) -> None:
+        self.requests.append(request)
+        option_id = None
+        for opt in list(getattr(request, "options", []) or []):
+            choice = bool((getattr(opt, "payload", {}) or {}).get("choice", False))
+            if choice == self.choose_yes:
+                option_id = opt.option_id
+                break
+        if option_id is None and list(getattr(request, "options", []) or []):
+            option_id = request.options[0].option_id
+        if option_id is None:
+            return
+        resolve_decision_command(
+            game,
+            request,
+            option_id,
+            result_payload={"choice": self.choose_yes},
+            player_id=getattr(request, "player_id", None),
+        )
 
 
 class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
@@ -650,6 +678,138 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
 
         self._resolve_yes(game, request, player)
         self.assertTrue(mgr._resolved)
+
+    def test_direct_the_slaughter_uses_decision_request_for_discount(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem
+
+        army = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
+        army.faction_id = "WE"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("World Eaters", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        controller = _ResolveChoiceDecisionController(player_id=player.id, choose_yes=True)
+        game.add_decision_controller(controller)
+
+        direct_the_slaughter = Ability(
+            "Direct the Slaughter",
+            "WE",
+            "Reduce the CP cost of a targeted Stratagem by 1 once per battle round.",
+            "Datasheet",
+            "",
+        )
+        source_unit = self._make_unit(
+            "Juggerlord",
+            army,
+            keywords=["WORLD EATERS", "CHARACTER"],
+            faction_keywords=["WORLD EATERS"],
+            abilities=[direct_the_slaughter],
+        )
+        target_unit = self._make_unit(
+            "Berzerkers",
+            army,
+            keywords=["WORLD EATERS", "INFANTRY"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.units = [source_unit, target_unit]
+        game.rebuild_entity_registry()
+
+        player.command_points = 1
+        stratagem = Stratagem(
+            id="test-direct-the-slaughter",
+            name="Blood Offering",
+            type="Core",
+            description="",
+            cp_cost=2,
+            turn="Either",
+            phase="Any phase",
+            detachment="",
+            faction_id="",
+        )
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
+            self.assertTrue(stratagem.can_use(player, game, target_unit=target_unit))
+            self.assertTrue(stratagem.use(player, game, target_unit=target_unit))
+
+        self.assertEqual(int(player.command_points), 0)
+        self.assertEqual(len(controller.requests), 1)
+        request = controller.requests[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "direct_the_slaughter")
+        self.assertEqual(ctx.get("ability_key"), "DIRECT_THE_SLAUGHTER")
+        self.assertEqual(ctx.get("ability_name"), "Direct the Slaughter")
+
+    def test_power_from_pain_stratagem_addon_uses_decision_request(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem
+
+        army = Army.with_detachment("Drukhari", detachment_type="Other")
+        army.faction_id = "DRU"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Drukhari", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        controller = _ResolveChoiceDecisionController(player_id=player.id, choose_yes=True)
+        game.add_decision_controller(controller)
+
+        mgr = army.power_from_pain
+        if mgr is None:
+            self.skipTest("Power from Pain manager unavailable")
+        mgr.tokens = 2
+        mgr.stratagem_pain_token_cost = lambda _stratagem: 1
+
+        spent = {"count": 0}
+
+        def _spend_pain_for_stratagem(_stratagem):
+            if int(getattr(mgr, "tokens", 0) or 0) < 1:
+                return False
+            mgr.tokens = int(getattr(mgr, "tokens", 0) or 0) - 1
+            spent["count"] += 1
+            return True
+
+        mgr.spend_pain_for_stratagem = _spend_pain_for_stratagem
+
+        effect_state = {}
+
+        def _effect(_player, _game, **kwargs):
+            effect_state["pain_tokens_spent"] = int(kwargs.get("pain_tokens_spent", 0) or 0)
+
+        player.command_points = 2
+        stratagem = Stratagem(
+            id="test-power-from-pain",
+            name="Cruel Flourish",
+            type="Core",
+            description="",
+            cp_cost=1,
+            turn="Either",
+            phase="Any phase",
+            detachment="",
+            faction_id="",
+        )
+        stratagem.effect = _effect
+
+        self.assertTrue(stratagem.use(player, game))
+        self.assertEqual(spent["count"], 1)
+        self.assertEqual(effect_state.get("pain_tokens_spent"), 1)
+        self.assertEqual(len(controller.requests), 1)
+        request = controller.requests[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "power_from_pain_stratagem")
+        self.assertEqual(ctx.get("ability_key"), "POWER_FROM_PAIN_STRATAGEM")
+        self.assertEqual(ctx.get("pain_cost"), 1)
 
     def test_enhancement_fight_first_queues_and_applies(self):
         army = Army.with_detachment("Test", detachment_type="Other")

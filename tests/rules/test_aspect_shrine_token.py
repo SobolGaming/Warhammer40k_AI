@@ -1,13 +1,22 @@
 import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
 
 class _MockDatasheet:
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, faction_name: str = "Aeldari", faction_keywords=None, keywords=None):
         self.name = name
-        self.faction_data = {"name": "Aeldari"}
-        self.keywords = ["INFANTRY"]
-        self.faction_keywords = ["AELDARI"]
+        self.faction_data = {"name": faction_name}
+        self.keywords = list(keywords or ["INFANTRY"])
+        if faction_keywords is None:
+            faction_keywords = ["AELDARI"] if faction_name == "Aeldari" else [str(faction_name).upper()]
+        self.faction_keywords = list(faction_keywords)
         self.datasheets_unit_composition = [{"description": "1 Test Model"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
         self.datasheets_models = [
@@ -30,10 +39,47 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name: str):
+def _make_unit(name: str, *, faction_name: str = "Aeldari", faction_keywords=None, keywords=None):
     from warhammer40k_ai.units.unit import Unit
 
-    return Unit(_MockDatasheet(name))
+    return Unit(
+        _MockDatasheet(
+            name,
+            faction_name=faction_name,
+            faction_keywords=faction_keywords,
+            keywords=keywords,
+        )
+    )
+
+
+def _aura_stub():
+    return SimpleNamespace(
+        hit=0,
+        wound=0,
+        reroll_hit_ones=False,
+        reroll_wound_ones=False,
+        reroll_hit_reasons=(),
+        reroll_wound_reasons=(),
+        target_toughness_delta=0,
+        target_toughness_reasons=(),
+    )
+
+
+def _make_profile():
+    parent = SimpleNamespace(name="Avenger Shuriken Catapult", is_melee=lambda: False, is_ranged=lambda: True)
+    return WargearProfile(
+        profile_name="default",
+        wargear_data={
+            "range": "18",
+            "A": "2",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
 
 
 class TestAspectShrineToken(unittest.TestCase):
@@ -167,6 +213,59 @@ class TestAspectShrineToken(unittest.TestCase):
 
         self.assertIsNone(leader.attached_to)
         self.assertEqual(leader.get_aspect_shrine_token_remaining(), 0)
+
+    def test_aspect_shrine_token_reuses_immediately_resolved_decision_request(self):
+        aeldari_army = Army.with_detachment("Aeldari", detachment_type="Other")
+        aeldari_army.faction_id = "AE"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+        player = Player("Aeldari", PlayerControl.REMOTE, army=aeldari_army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+
+        shooter = _make_unit("Dire Avengers")
+        target = _make_unit("Enemy Unit", faction_name="Enemy", faction_keywords=["ENEMY"])
+        aeldari_army.add_unit(shooter)
+        enemy_army.add_unit(target)
+        shooter.deployed = True
+        target.deployed = True
+        shooter.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        shooter.add_aspect_shrine_tokens(1)
+        game.map.units = [shooter, target]
+        game.rebuild_entity_registry()
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if str((getattr(opt, "payload", {}) or {}).get("choice", "") or "") == "use"
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=player.id)
+
+        game.request_decision = _auto_resolve
+        profile = _make_profile()
+        hit = profile._hit_target_with_tracking(
+            target,
+            shooter.models[0],
+            {"_aura_attack_mods": _aura_stub()},
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_CHOOSE_ASPECT, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
+        self.assertEqual(shooter.get_aspect_shrine_token_remaining(), 0)
 
 
 if __name__ == "__main__":

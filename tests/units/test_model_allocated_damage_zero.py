@@ -247,6 +247,62 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
             profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
         self.assertEqual(target_unit.models[0].wounds, 3)
 
+    def test_local_provider_consumes_queued_damage_zero_confirmation(self):
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+
+        ability = {
+            "name": "Chaos Familiar",
+            "description": "Once per battle, when an attack is allocated to the bearer, you can change the Damage characteristic to 0.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Sorcerer", abilities=[ability], wounds=3)
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
+        defender_army.faction_id = "DEF"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.LOCAL, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        seen = {"pending": 0}
+
+        def _provider(**_kwargs):
+            pending = [
+                req
+                for req in list(game.decision_queue.list() or [])
+                if str(getattr(req, "context", {}).get("ability", "") or "") == "model_allocated_damage_zero"
+            ]
+            self.assertTrue(pending)
+            req = pending[0]
+            seen["pending"] = len(pending)
+            option_id = next(
+                opt.option_id
+                for opt in list(getattr(req, "options", []) or [])
+                if bool(getattr(opt, "payload", {}).get("choice", False))
+            )
+            _, apply_result = resolve_decision_value(game, req, option_id, player_id=getattr(defender, "id", None))
+            self.assertIsNotNone(apply_result)
+            self.assertTrue(getattr(apply_result, "ok", False))
+            return "use"
+
+        game.map.model_allocated_damage_zero_provider = _provider
+
+        profile = _make_profile()
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            result = profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+        self.assertEqual(seen["pending"], 1)
+        self.assertEqual(list(game.decision_queue.list() or []), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3304,6 +3304,7 @@ class GameView:
                 self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game.map.roll_reroll_provider = self._roll_reroll_provider
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
+                self.game.map.bodyguard_loss_provider = self._bodyguard_loss_provider
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
                 self.game.map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
@@ -3326,6 +3327,7 @@ class GameView:
                 self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game_map.roll_reroll_provider = self._roll_reroll_provider
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
+                self.game_map.bodyguard_loss_provider = self._bodyguard_loss_provider
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
                 self.game_map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
@@ -18066,6 +18068,94 @@ class GameView:
             instruction=instruction,
             ctx=ctx,
         )
+
+    def _bodyguard_loss_provider(
+        self,
+        *,
+        player=None,
+        leader_unit=None,
+        bodyguard_unit=None,
+        candidates=None,
+        ability_name: str = "",
+    ):
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return None
+        except Exception:
+            return None
+        bodyguard = bodyguard_unit if bodyguard_unit is not None else leader_unit
+        if bodyguard is None:
+            return None
+        cand = list(candidates or [])
+        if not cand:
+            return None
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            return None
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        title = str(ability_name or "Bodyguard Loss").strip() or "Bodyguard Loss"
+        subtitle = getattr(bodyguard, "name", "Unit")
+        instruction = "Select a Bodyguard model to destroy."
+        choice_holder = {"choice": None, "done": False}
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
+            DECISION_ALLOCATE_DAMAGE,
+            "Select Bodyguard model to destroy.",
+            player_id=getattr(player, "id", None),
+            context={"unit_id": get_entity_id(bodyguard), "selection_kind": "bodyguard_loss"},
+
+        )
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id, player_id=getattr(player, "id", None))
+            if apply_result is not None and getattr(apply_result, "ok", False):
+                choice_holder["choice"] = value
+            choice_holder["done"] = True
+
+        dlg = self.damage_allocation_dialog
+        try:
+            dlg.show(
+                bodyguard,
+                cand,
+                title=title,
+                subtitle=subtitle,
+                instruction=instruction,
+                on_choice=_on_choice,
+                include_none=False,
+                show_wargear=True,
+                decision_request=req,
+            )
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            return None
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
 
     def _hazardous_allocation_provider(self, attacker_unit_root, eligible_models, ctx):
         """

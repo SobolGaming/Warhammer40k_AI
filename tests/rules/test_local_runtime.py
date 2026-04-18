@@ -5,15 +5,29 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
-    CMD_SELECT_MISSION,
+    CMD_RESOLVE_DECISION,
 )
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_MISSION
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 from warhammer40k_ai.engine.phase import SetupPhase
 
 
 class _FakeDecisionQueue:
+    def __init__(self) -> None:
+        self._requests: dict[str, DecisionRequest] = {}
+
+    def get(self, decision_id: str):
+        return self._requests.get(str(decision_id or ""))
+
+    def add(self, request: DecisionRequest) -> None:
+        self._requests[str(request.decision_id)] = request
+
+    def pop(self, decision_id: str):
+        return self._requests.pop(str(decision_id or ""), None)
+
     def list(self):
-        return []
+        return list(self._requests.values())
 
 
 class _FakeGame:
@@ -29,6 +43,7 @@ class _FakeGame:
         self.setup_complete = False
         self.decision_queue = _FakeDecisionQueue()
         self.commands: list[tuple[str, dict]] = []
+        self.mission_request_count = 0
 
     def is_in_setup_phase(self) -> bool:
         return self._index < len(self._phases)
@@ -41,7 +56,35 @@ class _FakeGame:
         self.commands.append((command.kind, payload))
         if command.kind == CMD_ADVANCE_SETUP_PHASE:
             self._index += 1
+        if command.kind == CMD_RESOLVE_DECISION:
+            self.decision_queue.pop(str(payload.get("decision_id", "") or ""))
         return SimpleNamespace(ok=True)
+
+    def request_mission_selection(self) -> DecisionRequest:
+        self.mission_request_count += 1
+        existing = [
+            req
+            for req in list(self.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_MISSION
+        ]
+        if existing:
+            return existing[0]
+        combo = {
+            "id": "m1",
+            "combination_id": "m1",
+            "pack_id": "chapter_approved_2025_2026",
+            "primary": "p",
+            "deployment": "d",
+            "layouts": [1],
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_MISSION,
+            "Select mission",
+            player_id="player-1",
+            options=[DecisionOption.create("Mission 1", payload={"combination": combo})],
+        )
+        self.decision_queue.add(request)
+        return request
 
 
 def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
@@ -61,7 +104,7 @@ def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
     assert kinds == [
         CMD_EXECUTE_SETUP_PHASE,
         CMD_ADVANCE_SETUP_PHASE,
-        CMD_SELECT_MISSION,
+        CMD_RESOLVE_DECISION,
         CMD_EXECUTE_SETUP_PHASE,
         CMD_ADVANCE_SETUP_PHASE,
         CMD_EXECUTE_SETUP_PHASE,
@@ -69,6 +112,7 @@ def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
         CMD_EXECUTE_SETUP_PHASE,
         CMD_ADVANCE_SETUP_PHASE,
     ]
+    assert game.mission_request_count == 1
     assert game.commands[0][1]["player1_army_file"] == "army_lists/chaos_test.txt"
     assert game.commands[0][1]["player2_army_file"] == "army_lists/aeldari_test.txt"
     assert game.get_current_setup_phase() == SetupPhase.DECLARE_BATTLE_FORMATIONS

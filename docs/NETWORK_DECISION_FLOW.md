@@ -65,12 +65,13 @@ Local runtime parity note:
 
 1. MUSTER_ARMIES → server advances immediately once both players are ready.
 2. SELECT_MISSION_OBJECTIVES
-   - Server rolls a random mission-pack entry + layout (deterministic dice).
+   - Server emits `CHOOSE_MISSION`, then resolves that request using the runtime's
+     deterministic chooser.
    - Auto-random currently stays on the default `chapter_approved_2025_2026`
      pack, even though the authoritative UI can expose additional eligible
      provisional packs.
-   - Server sends `CMD_SELECT_MISSION`, then `CMD_EXECUTE_SETUP_PHASE`,
-     then `CMD_ADVANCE_SETUP_PHASE`.
+   - Server sends `CMD_REQUEST_DECISION`, then `CMD_RESOLVE_DECISION`, then
+     `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`.
 3. CREATE_BATTLEFIELD
    - Server sends `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`.
 4. DETERMINE_ATTACKER_AND_DEFENDER

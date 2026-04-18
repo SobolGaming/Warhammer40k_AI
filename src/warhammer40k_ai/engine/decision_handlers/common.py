@@ -11,23 +11,12 @@ def _validate_confirm(game: object, request: DecisionRequest, result: DecisionRe
     return _validate_choice_from_options(request, result)
 
 
-def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult) -> None:
+def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "").strip().lower()
     def _is_alive(entity: object) -> bool:
         alive_attr = getattr(entity, "is_alive", False)
         return bool(alive_attr() if callable(alive_attr) else alive_attr)
-
-    if ability not in (
-        "hover_mode",
-        "patrol_squad",
-        "combat_squads",
-        "flickering_reality_reroll",
-        "pyrogenesis_flux",
-        "extremis_level_threat",
-        "oath_of_rynn",
-    ):
-        return None
 
     unit_id = str(ctx.get("unit_id", "") or "")
     choice = None
@@ -52,6 +41,21 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
     if choice is None:
         if "choice" in result.payload:
             choice = bool(result.payload.get("choice"))
+    resolved_payload = dict(selected_payload or {})
+    resolved_payload.update(dict(getattr(result, "payload", {}) or {}))
+    if choice is not None:
+        resolved_payload["choice"] = bool(choice)
+
+    if ability not in (
+        "hover_mode",
+        "patrol_squad",
+        "combat_squads",
+        "flickering_reality_reroll",
+        "pyrogenesis_flux",
+        "extremis_level_threat",
+        "oath_of_rynn",
+    ):
+        return resolved_payload if choice is not None else None
 
     if ability == "extremis_level_threat":
         army_id = str(

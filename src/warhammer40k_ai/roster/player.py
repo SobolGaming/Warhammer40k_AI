@@ -622,6 +622,41 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             return True
         return bool(alive_attr)
 
+    def _has_attached_decision_controller(self) -> bool:
+        game = getattr(self, "game", None)
+        hub = getattr(game, "decision_controller_hub", None) if game is not None else None
+        controllers = getattr(hub, "_controllers", None)
+        if not isinstance(controllers, list):
+            return False
+        for controller in list(controllers):
+            handles_player = getattr(controller, "handles_player", None)
+            if callable(handles_player) and bool(handles_player(getattr(self, "id", None))):
+                return True
+        return False
+
+    @staticmethod
+    def _default_optional_ability_name(key: str) -> str:
+        words = [part for part in str(key or "").strip().split("_") if part]
+        return " ".join(word.capitalize() for word in words)
+
+    def _resolve_optional_ability_fallback_choice(self, key: str, context: dict) -> bool:
+        """Consume one-shot overrides or the legacy synchronous hook without emitting a request."""
+        k = (key or "").strip().upper()
+        if not k:
+            return False
+        current_impl = getattr(self, "_should_use_optional_ability", None)
+        default_impl = getattr(type(self), "_should_use_optional_ability", None)
+        current_func = getattr(current_impl, "__func__", current_impl)
+        if callable(current_impl) and current_func is not default_impl:
+            return bool(current_impl(k, dict(context or {}, _fallback_only=True)))
+        overrides = getattr(self, "_next_optional_decisions", None)
+        if isinstance(overrides, dict) and k in overrides:
+            return bool(overrides.pop(k))
+        hook = getattr(self, "decision_hook", None)
+        if callable(hook):
+            return bool(hook(self, k, dict(context or {})))
+        return False
+
     def _should_preview_optional_ability(self, key: str, context: dict, *, assume: bool | None) -> bool:
         if assume is True:
             return True
@@ -636,7 +671,7 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         hook = getattr(self, "decision_hook", None)
         if callable(hook):
             return bool(hook(self, k, context))
-        return False
+        return self._has_attached_decision_controller()
 
     def _preview_direct_the_slaughter_discount(self, *, target_unit=None) -> int:
         """
@@ -2818,13 +2853,51 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         k = (key or "").strip().upper()
         if not k:
             return False
-        overrides = getattr(self, "_next_optional_decisions", None)
-        if isinstance(overrides, dict) and k in overrides:
-            return bool(overrides.pop(k))
-        hook = getattr(self, "decision_hook", None)
-        if callable(hook):
-            return bool(hook(self, k, context))
-        return False
+        ctx = dict(context or {})
+        if bool(ctx.pop("_fallback_only", False)):
+            return self._resolve_optional_ability_fallback_choice(k, ctx)
+
+        game = getattr(self, "game", None)
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if not callable(request_fn):
+            return self._resolve_optional_ability_fallback_choice(k, ctx)
+
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import decision_request_is_pending, resolve_or_reuse_confirmation_choice
+
+        ability_name = str(ctx.get("ability_name", "") or "").strip() or self._default_optional_ability_name(k)
+        ctx.setdefault("ability", str(k).lower())
+        ctx["ability_name"] = ability_name
+        ctx.setdefault("ability_key", k)
+        ctx.setdefault("optional", True)
+        prompt = str(ctx.get("prompt", "") or f"Use {ability_name}?")
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            prompt,
+            player_id=getattr(self, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ],
+            context=ctx,
+        )
+        try:
+            request_fn(request)
+        except ValueError:
+            return self._resolve_optional_ability_fallback_choice(k, ctx)
+
+        fallback_choice = None
+        if decision_request_is_pending(game, request):
+            fallback_choice = self._resolve_optional_ability_fallback_choice(k, ctx)
+
+        resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+            game,
+            request,
+            fallback_choice=fallback_choice,
+            player_id=getattr(self, "id", None),
+        )
+        return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
 
     def _choose_optional_value(self, key: str, options: list, context: dict):
         """

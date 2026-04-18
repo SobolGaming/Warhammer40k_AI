@@ -860,7 +860,7 @@ class CabalOfSorcerersManager:
                     try:
                         from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
                         from ..engine.decisions import DecisionOption, DecisionRequest
-                        from ..utility.decision_utils import resolve_or_reuse_decision_value
+                        from ..utility.decision_utils import resolve_or_reuse_confirmation_choice
                         from ..utility.entity_ids import get_entity_id
                     except Exception:
                         use_arcane_focus = False
@@ -889,26 +889,25 @@ class CabalOfSorcerersManager:
                         )
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
-                        use_now = bool(
-                            getattr(army_player, "_should_use_optional_ability", lambda _key, _ctx: False)(
-                                "ARCANE_FOCUS",
-                                dict(ctx),
+                        fallback_fn = getattr(army_player, "_resolve_optional_ability_fallback_choice", None)
+                        if callable(fallback_fn):
+                            fallback_choice = bool(fallback_fn("ARCANE_FOCUS", dict(ctx)))
+                        else:
+                            fallback_choice = bool(
+                                getattr(army_player, "_should_use_optional_ability", lambda _key, _ctx: False)(
+                                    "ARCANE_FOCUS",
+                                    dict(ctx, _fallback_only=True),
+                                )
                             )
+                        resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                            game,
+                            request,
+                            fallback_choice=fallback_choice,
+                            player_id=getattr(army_player, "id", None),
                         )
-                        option_id = None
-                        for option in list(getattr(request, "options", []) or []):
-                            payload = dict(getattr(option, "payload", {}) or {})
-                            if bool(payload.get("choice", False)) == bool(use_now):
-                                option_id = option.option_id
-                                break
-                        if option_id:
-                            _value, apply_result = resolve_or_reuse_decision_value(
-                                game,
-                                request,
-                                option_id,
-                                player_id=getattr(army_player, "id", None),
-                            )
-                            use_arcane_focus = bool(use_now and apply_result is not None and getattr(apply_result, "ok", False))
+                        use_arcane_focus = bool(
+                            resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)
+                        )
             if use_arcane_focus and stratagems is not None:
                 rolls_state = {"rolls": list(total_rolls)}
                 used = bool(

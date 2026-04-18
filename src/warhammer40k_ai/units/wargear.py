@@ -13,7 +13,7 @@ from warhammer40k_ai.utility.hazardous import (
 from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
-from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.utility.entity_ids import get_entity_id, maybe_entity_id
 from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
@@ -9242,7 +9242,10 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
+                    from warhammer40k_ai.utility.decision_utils import (
+                        decision_request_is_pending,
+                        resolve_or_reuse_decision_value,
+                    )
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -9281,41 +9284,49 @@ class WargearProfile:
                     if hasattr(game, "request_decision"):
                         game.request_decision(req)
 
-                    choice = None
-                    try:
-                        overrides = getattr(player, "_next_optional_selections", None)
-                        if isinstance(overrides, dict) and "LEADING_UNMODIFIED_SIX" in overrides:
-                            choice = overrides.pop("LEADING_UNMODIFIED_SIX")
-                    except Exception:
-                        choice = None
-                    choice_norm = str(choice or "").strip().lower()
-                    desired_key = ""
-                    if choice_norm in ("use", "yes", "true"):
-                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
-                    elif choice_norm in ("skip", "no", "false"):
-                        desired_key = ""
-                    else:
-                        # Allow explicit ability_key selection.
-                        for entry in option_entries:
-                            if str(entry.get("ability_key", "")).lower() == choice_norm:
-                                desired_key = str(entry.get("ability_key", "") or "")
-                                break
                     option_id = None
-                    try:
-                        if not desired_key:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if str(payload.get("action", "") or "") == "skip":
-                                    option_id = opt.option_id
-                                    break
+                    request_pending = bool(decision_request_is_pending(game, req))
+                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                    if request_pending:
+                        choice = None
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "LEADING_UNMODIFIED_SIX" in overrides:
+                                choice = overrides.pop("LEADING_UNMODIFIED_SIX")
+                        except Exception:
+                            choice = None
+                        choice_norm = str(choice or "").strip().lower()
+                        desired_key = ""
+                        if choice_norm in ("use", "yes", "true"):
+                            desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                        elif choice_norm in ("skip", "no", "false"):
+                            desired_key = ""
                         else:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if str(payload.get("ability_key", "") or "") == desired_key:
-                                    option_id = opt.option_id
+                            # Allow explicit ability_key selection.
+                            for entry in option_entries:
+                                if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                    desired_key = str(entry.get("ability_key", "") or "")
                                     break
-                    except Exception:
-                        option_id = None
+                        try:
+                            if not desired_key:
+                                for opt in list(getattr(req, "options", []) or []):
+                                    payload = dict(getattr(opt, "payload", {}) or {})
+                                    if str(payload.get("action", "") or "") == "skip":
+                                        option_id = opt.option_id
+                                        break
+                            else:
+                                for opt in list(getattr(req, "options", []) or []):
+                                    payload = dict(getattr(opt, "payload", {}) or {})
+                                    if str(payload.get("ability_key", "") or "") == desired_key:
+                                        option_id = opt.option_id
+                                        break
+                        except Exception:
+                            option_id = None
+                    elif request_resolved:
+                        for opt in list(getattr(req, "options", []) or []):
+                            option_id = str(getattr(opt, "option_id", "") or "")
+                            if option_id:
+                                break
                     if option_id:
                         value, apply_result = resolve_or_reuse_decision_value(
                             game,
@@ -9560,7 +9571,10 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
+                    from warhammer40k_ai.utility.decision_utils import (
+                        decision_request_is_pending,
+                        resolve_or_reuse_decision_value,
+                    )
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -9599,40 +9613,48 @@ class WargearProfile:
                     if hasattr(game, "request_decision"):
                         game.request_decision(req)
 
-                    choice = None
-                    try:
-                        overrides = getattr(player, "_next_optional_selections", None)
-                        if isinstance(overrides, dict) and "MODEL_UNMODIFIED_SIX" in overrides:
-                            choice = overrides.pop("MODEL_UNMODIFIED_SIX")
-                    except Exception:
-                        choice = None
-                    choice_norm = str(choice or "").strip().lower()
-                    desired_key = ""
-                    if choice_norm in ("use", "yes", "true"):
-                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
-                    elif choice_norm in ("skip", "no", "false"):
-                        desired_key = ""
-                    else:
-                        for entry in option_entries:
-                            if str(entry.get("ability_key", "")).lower() == choice_norm:
-                                desired_key = str(entry.get("ability_key", "") or "")
-                                break
                     option_id = None
-                    try:
-                        if not desired_key:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if str(payload.get("action", "") or "") == "skip":
-                                    option_id = opt.option_id
-                                    break
+                    request_pending = bool(decision_request_is_pending(game, req))
+                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                    if request_pending:
+                        choice = None
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "MODEL_UNMODIFIED_SIX" in overrides:
+                                choice = overrides.pop("MODEL_UNMODIFIED_SIX")
+                        except Exception:
+                            choice = None
+                        choice_norm = str(choice or "").strip().lower()
+                        desired_key = ""
+                        if choice_norm in ("use", "yes", "true"):
+                            desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                        elif choice_norm in ("skip", "no", "false"):
+                            desired_key = ""
                         else:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if str(payload.get("ability_key", "") or "") == desired_key:
-                                    option_id = opt.option_id
+                            for entry in option_entries:
+                                if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                    desired_key = str(entry.get("ability_key", "") or "")
                                     break
-                    except Exception:
-                        option_id = None
+                        try:
+                            if not desired_key:
+                                for opt in list(getattr(req, "options", []) or []):
+                                    payload = dict(getattr(opt, "payload", {}) or {})
+                                    if str(payload.get("action", "") or "") == "skip":
+                                        option_id = opt.option_id
+                                        break
+                            else:
+                                for opt in list(getattr(req, "options", []) or []):
+                                    payload = dict(getattr(opt, "payload", {}) or {})
+                                    if str(payload.get("ability_key", "") or "") == desired_key:
+                                        option_id = opt.option_id
+                                        break
+                        except Exception:
+                            option_id = None
+                    elif request_resolved:
+                        for opt in list(getattr(req, "options", []) or []):
+                            option_id = str(getattr(opt, "option_id", "") or "")
+                            if option_id:
+                                break
                     if option_id:
                         value, apply_result = resolve_or_reuse_decision_value(
                             game,
@@ -9880,90 +9902,95 @@ class WargearProfile:
         decision = {"choice": True}
         if is_optional:
             decision = None
-            if is_human and callable(provider):
+            if game is not None and player is not None:
                 try:
-                    decision = provider(
-                        player=player,
-                        model=target_model,
-                        ability_name=ability_name,
-                        ability_key=ability_key,
-                        attacker=attacker,
-                        target=target,
-                        weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
-                        or getattr(self, "name", "Weapon"),
-                    )
+                    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
+                    from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
-            else:
-                decision = None
-                if game is not None and player is not None:
+                else:
+                    unit_id = ""
+                    model_id = ""
                     try:
-                        from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
-                        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                        from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
-                        from warhammer40k_ai.utility.entity_ids import get_entity_id
+                        unit_id = get_entity_id(unit)
                     except Exception:
-                        decision = None
-                    else:
                         unit_id = ""
+                    try:
+                        model_id = get_entity_id(target_model)
+                    except Exception:
                         model_id = ""
-                        try:
-                            unit_id = get_entity_id(unit)
-                        except Exception:
-                            unit_id = ""
-                        try:
-                            model_id = get_entity_id(target_model)
-                        except Exception:
-                            model_id = ""
-                        req = DecisionRequest.create(
-                            DECISION_CONFIRM_YES_NO,
-                            ability_name or "Damage set to 0",
-                            player_id=getattr(player, "id", None),
-                            options=[
-                                DecisionOption.create("Use", payload={"choice": True}),
-                                DecisionOption.create("Skip", payload={"choice": False}),
-                            ],
-                            context={
-                                "ability": "model_allocated_damage_zero",
-                                "ability_name": ability_name,
-                                "unit_id": unit_id,
-                                "model_id": model_id,
-                                "ability_key": ability_key,
-                            },
-                        )
-                        if hasattr(game, "request_decision"):
-                            game.request_decision(req)
+                    req = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        ability_name or "Damage set to 0",
+                        player_id=getattr(player, "id", None),
+                        options=[
+                            DecisionOption.create("Use", payload={"choice": True}),
+                            DecisionOption.create("Skip", payload={"choice": False}),
+                        ],
+                        context={
+                            "ability": "model_allocated_damage_zero",
+                            "ability_name": ability_name,
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "ability_key": ability_key,
+                        },
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
 
-                        use_now = False
+                    fallback_choice = None
+                    if is_human and callable(provider):
                         try:
-                            use_now = bool(getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                "MODEL_ALLOCATED_DAMAGE_ZERO",
-                                {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
-                            ))
-                        except Exception:
-                            use_now = False
-
-                        option_id = None
-                        try:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if bool(payload.get("choice", False)) == bool(use_now):
-                                    option_id = opt.option_id
-                                    break
-                        except Exception:
-                            option_id = None
-                        if option_id:
-                            value, apply_result = resolve_or_reuse_decision_value(
-                                game,
-                                req,
-                                option_id,
-                                player_id=getattr(player, "id", None),
+                            provider_decision = provider(
+                                player=player,
+                                model=target_model,
+                                ability_name=ability_name,
+                                ability_key=ability_key,
+                                attacker=attacker,
+                                target=target,
+                                weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                                or getattr(self, "name", "Weapon"),
                             )
-                            if apply_result is not None and getattr(apply_result, "ok", False):
-                                # CONFIRM_YES_NO doesn't return a payload value; use our chosen boolean.
-                                decision = {"choice": bool(use_now)}
-                if decision is None:
-                    decision = {"choice": False}
+                        except Exception:
+                            provider_decision = None
+                        fallback_choice = str(provider_decision or "").strip().lower() in ("use", "yes", "true")
+                    else:
+                        try:
+                            fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                            if callable(fallback_fn):
+                                fallback_choice = bool(
+                                    fallback_fn(
+                                        "MODEL_ALLOCATED_DAMAGE_ZERO",
+                                        {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
+                                    )
+                                )
+                            else:
+                                fallback_choice = bool(
+                                    getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                        "MODEL_ALLOCATED_DAMAGE_ZERO",
+                                        {
+                                            "ability_name": ability_name,
+                                            "unit_id": unit_id,
+                                            "model_id": model_id,
+                                            "_fallback_only": True,
+                                        },
+                                    )
+                                )
+                        except Exception:
+                            fallback_choice = False
+
+                    resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                        game,
+                        req,
+                        fallback_choice=fallback_choice,
+                        player_id=getattr(player, "id", None),
+                    )
+                    if apply_result is not None and getattr(apply_result, "ok", False):
+                        decision = {"choice": bool(resolved_choice)}
+            if decision is None:
+                decision = {"choice": False}
 
         use_it = False
         if isinstance(decision, dict):
@@ -10052,7 +10079,7 @@ class WargearProfile:
             try:
                 from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
                 from ..engine.decisions import DecisionOption, DecisionRequest
-                from ..utility.decision_utils import resolve_or_reuse_decision_value
+                from ..utility.decision_utils import resolve_or_reuse_confirmation_choice
             except Exception:
                 use_now = False
             else:
@@ -10077,26 +10104,23 @@ class WargearProfile:
                 )
                 if game is not None and hasattr(game, "request_decision"):
                     game.request_decision(request)
-                use_decision = bool(
-                    getattr(player, "_should_use_optional_ability", lambda _key, _ctx: False)(
-                        "DESTINED_BY_FATE",
-                        dict(ctx),
+                fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                if callable(fallback_fn):
+                    fallback_choice = bool(fallback_fn("DESTINED_BY_FATE", dict(ctx)))
+                else:
+                    fallback_choice = bool(
+                        getattr(player, "_should_use_optional_ability", lambda _key, _ctx: False)(
+                            "DESTINED_BY_FATE",
+                            dict(ctx, _fallback_only=True),
+                        )
                     )
+                resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                    game,
+                    request,
+                    fallback_choice=fallback_choice,
+                    player_id=getattr(player, "id", None),
                 )
-                option_id = None
-                for option in list(getattr(request, "options", []) or []):
-                    payload = dict(getattr(option, "payload", {}) or {})
-                    if bool(payload.get("choice", False)) == bool(use_decision):
-                        option_id = option.option_id
-                        break
-                if option_id:
-                    _value, apply_result = resolve_or_reuse_decision_value(
-                        game,
-                        request,
-                        option_id,
-                        player_id=getattr(player, "id", None),
-                    )
-                    use_now = bool(use_decision and apply_result is not None and getattr(apply_result, "ok", False))
+                use_now = bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
         if not use_now:
             return False
         return bool(
@@ -10212,7 +10236,10 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
+                    from warhammer40k_ai.utility.decision_utils import (
+                        decision_request_is_pending,
+                        resolve_or_reuse_decision_value,
+                    )
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -10237,29 +10264,37 @@ class WargearProfile:
                     if hasattr(game, "request_decision"):
                         game.request_decision(req)
 
-                    choice = None
-                    try:
-                        overrides = getattr(player, "_next_optional_selections", None)
-                        if isinstance(overrides, dict) and "ASPECT_SHRINE_TOKEN" in overrides:
-                            choice = overrides.pop("ASPECT_SHRINE_TOKEN")
-                    except Exception:
-                        choice = None
-                    choice_norm = str(choice or "").strip().lower()
-                    if choice_norm in ("use", "yes", "true"):
-                        desired = "use"
-                    elif choice_norm in ("suppress", "dont use for this unit", "dont_use_for_this_unit", "dont_use_for_unit", "skip_unit"):
-                        desired = "suppress"
-                    else:
-                        desired = "skip"
                     option_id = None
-                    try:
+                    request_pending = bool(decision_request_is_pending(game, req))
+                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                    if request_pending:
+                        choice = None
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "ASPECT_SHRINE_TOKEN" in overrides:
+                                choice = overrides.pop("ASPECT_SHRINE_TOKEN")
+                        except Exception:
+                            choice = None
+                        choice_norm = str(choice or "").strip().lower()
+                        if choice_norm in ("use", "yes", "true"):
+                            desired = "use"
+                        elif choice_norm in ("suppress", "dont use for this unit", "dont_use_for_this_unit", "dont_use_for_unit", "skip_unit"):
+                            desired = "suppress"
+                        else:
+                            desired = "skip"
+                        try:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("choice", "") or "") == desired:
+                                    option_id = opt.option_id
+                                    break
+                        except Exception:
+                            option_id = None
+                    elif request_resolved:
                         for opt in list(getattr(req, "options", []) or []):
-                            payload = dict(getattr(opt, "payload", {}) or {})
-                            if str(payload.get("choice", "") or "") == desired:
-                                option_id = opt.option_id
+                            option_id = str(getattr(opt, "option_id", "") or "")
+                            if option_id:
                                 break
-                    except Exception:
-                        option_id = None
                     if option_id:
                         value, apply_result = resolve_or_reuse_decision_value(
                             game,
@@ -14394,6 +14429,7 @@ class WargearProfile:
             CHOICE_IGNORE_NEGATIVE,
             CHOICE_IGNORE_POSITIVE,
             CHOICE_IGNORE_ALL,
+            CHOICE_LABELS,
             options_for_signed_pairs,
             options_for_signed_values,
             filter_signed_modifiers,
@@ -14421,7 +14457,66 @@ class WargearProfile:
                 if choice is None:
                     if options:
                         provider = getattr(game_map, provider_attr, None) if game_map is not None else None
-                        if callable(provider):
+                        game_local = getattr(player, "game", None) if player is not None else None
+                        fallback_choice = None
+                        if game_local is not None and hasattr(game_local, "request_decision"):
+                            try:
+                                from ..engine.decision_kinds import (
+                                    DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+                                    DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+                                )
+                                from ..engine.decisions import DecisionOption, DecisionRequest
+                                from ..utility.decision_utils import resolve_or_reuse_payload_choice
+                            except ImportError:
+                                pass
+                            else:
+                                if callable(provider):
+                                    try:
+                                        fallback_choice = provider(
+                                            player=player,
+                                            attacker=attacker,
+                                            target=target,
+                                            weapon_profile=self,
+                                            ability_name=ability_label,
+                                            choices=options,
+                                        )
+                                    except Exception:
+                                        fallback_choice = None
+                                if fallback_choice not in options:
+                                    fallback_choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
+                                decision_kind = DECISION_CHOOSE_SKILL_MODIFIER_IGNORES
+                                modifier_kind = "skill"
+                                if str(choice_key or "") != "skill_modifier_choice":
+                                    decision_kind = DECISION_CHOOSE_HIT_MODIFIER_IGNORES
+                                    modifier_kind = "hit_roll"
+                                request = DecisionRequest.create(
+                                    decision_kind,
+                                    "Choose which modifiers to ignore.",
+                                    player_id=getattr(player, "id", None) if player is not None else None,
+                                    options=[
+                                        DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                                        for opt in options
+                                    ],
+                                    context={
+                                        "attacker_model_id": get_entity_id(attacker) if attacker is not None else None,
+                                        "target_unit_id": get_entity_id(target) if target is not None else None,
+                                        "wargear_id": str(maybe_entity_id(getattr(self, "parent_wargear", None)) or ""),
+                                        "profile_name": getattr(self, "name", None),
+                                        "ability_name": str(ability_label or ""),
+                                        "modifier_kind": modifier_kind,
+                                    },
+                                )
+                                game_local.request_decision(request)
+                                choice, apply_result = resolve_or_reuse_payload_choice(
+                                    game_local,
+                                    request,
+                                    payload_key="choice",
+                                    fallback_value=fallback_choice,
+                                    player_id=getattr(player, "id", None) if player is not None else None,
+                                )
+                                if apply_result is None or not getattr(apply_result, "ok", False):
+                                    choice = None
+                        elif callable(provider):
                             try:
                                 choice = provider(
                                     player=player,
@@ -21628,16 +21723,68 @@ class WargearProfile:
                 if options:
                     player = None
                     game_map = None
+                    game_local = None
                     try:
                         army = attacker.parent_unit.get_parent_army()
                         player = getattr(army, "player", None)
-                        game = getattr(player, "game", None) if player is not None else None
-                        game_map = getattr(game, "map", None) if game is not None else None
+                        game_local = getattr(player, "game", None) if player is not None else None
+                        game_map = getattr(game_local, "map", None) if game_local is not None else None
                     except Exception:
                         player = None
                         game_map = None
+                        game_local = None
                     provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
-                    if callable(provider):
+                    if game_local is not None and hasattr(game_local, "request_decision"):
+                        try:
+                            from ..engine.decision_kinds import DECISION_CHOOSE_HIT_MODIFIER_IGNORES
+                            from ..engine.decisions import DecisionOption, DecisionRequest
+                            from ..utility.decision_utils import resolve_or_reuse_payload_choice
+                        except ImportError:
+                            pass
+                        else:
+                            fallback_choice = None
+                            if callable(provider):
+                                try:
+                                    fallback_choice = provider(
+                                        player=player,
+                                        attacker=attacker,
+                                        target=target,
+                                        weapon_profile=self,
+                                        ability_name=f"{rule_name} (Wound roll)",
+                                        choices=options,
+                                    )
+                                except Exception:
+                                    fallback_choice = None
+                            if fallback_choice not in options:
+                                fallback_choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
+                            request = DecisionRequest.create(
+                                DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+                                "Choose which modifiers to ignore.",
+                                player_id=getattr(player, "id", None) if player is not None else None,
+                                options=[
+                                    DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                                    for opt in options
+                                ],
+                                context={
+                                    "attacker_model_id": get_entity_id(attacker) if attacker is not None else None,
+                                    "target_unit_id": get_entity_id(target) if target is not None else None,
+                                    "wargear_id": get_entity_id(getattr(self, "parent_wargear", None)),
+                                    "profile_name": getattr(self, "name", None),
+                                    "ability_name": f"{rule_name} (Wound roll)",
+                                    "modifier_kind": "wound_roll",
+                                },
+                            )
+                            game_local.request_decision(request)
+                            choice, apply_result = resolve_or_reuse_payload_choice(
+                                game_local,
+                                request,
+                                payload_key="choice",
+                                fallback_value=fallback_choice,
+                                player_id=getattr(player, "id", None) if player is not None else None,
+                            )
+                            if apply_result is None or not getattr(apply_result, "ok", False):
+                                choice = None
+                    elif callable(provider):
                         try:
                             choice = provider(
                                 player=player,
@@ -25757,7 +25904,7 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
+                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
                                 except Exception:
                                     use_it = False
                                 else:
@@ -25781,39 +25928,42 @@ class WargearProfile:
                                         game.request_decision(request)
                                     use_now = False
                                     try:
-                                        use_now = bool(
-                                            getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                                "DISTRACTION_GROT",
-                                                {
-                                                    "ability_name": source,
-                                                    "unit_id": root_id,
-                                                    "usage_key": usage_key,
-                                                    "invuln": int(inv_value),
-                                                },
+                                        fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                                        if callable(fallback_fn):
+                                            use_now = bool(
+                                                fallback_fn(
+                                                    "DISTRACTION_GROT",
+                                                    {
+                                                        "ability_name": source,
+                                                        "unit_id": root_id,
+                                                        "usage_key": usage_key,
+                                                        "invuln": int(inv_value),
+                                                    },
+                                                )
                                             )
-                                        )
+                                        else:
+                                            use_now = bool(
+                                                getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                                    "DISTRACTION_GROT",
+                                                    {
+                                                        "ability_name": source,
+                                                        "unit_id": root_id,
+                                                        "usage_key": usage_key,
+                                                        "invuln": int(inv_value),
+                                                        "_fallback_only": True,
+                                                    },
+                                                )
+                                            )
                                     except Exception:
                                         use_now = False
-                                    option_id = None
-                                    for option in list(getattr(request, "options", []) or []):
-                                        payload = dict(getattr(option, "payload", {}) or {})
-                                        if bool(payload.get("choice", False)) == bool(use_now):
-                                            option_id = option.option_id
-                                            break
-                                    if option_id:
-                                        value, apply_result = resolve_or_reuse_decision_value(
-                                            game,
-                                            request,
-                                            option_id,
-                                            player_id=getattr(player, "id", None),
-                                        )
-                                        if apply_result is not None and getattr(apply_result, "ok", False):
-                                            if isinstance(value, dict):
-                                                use_it = bool(value.get("choice", bool(use_now)))
-                                            elif value is None:
-                                                use_it = bool(use_now)
-                                            else:
-                                                use_it = bool(value)
+                                    resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                                        game,
+                                        request,
+                                        fallback_choice=use_now,
+                                        player_id=getattr(player, "id", None),
+                                    )
+                                    if apply_result is not None and getattr(apply_result, "ok", False):
+                                        use_it = bool(resolved_choice)
                             if not use_it:
                                 continue
 
@@ -26511,7 +26661,7 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
+                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
                                 except Exception:
                                     use_it = False
                                 else:
@@ -26533,34 +26683,35 @@ class WargearProfile:
                                         game.request_decision(request)
                                     use_now = False
                                     try:
-                                        use_now = bool(
-                                            getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                                "FIRST_FAILED_SAVE_DAMAGE_ZERO",
-                                                {"ability_name": source, "usage_key": usage_key},
+                                        fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
+                                        if callable(fallback_fn):
+                                            use_now = bool(
+                                                fallback_fn(
+                                                    "FIRST_FAILED_SAVE_DAMAGE_ZERO",
+                                                    {"ability_name": source, "usage_key": usage_key},
+                                                )
                                             )
-                                        )
+                                        else:
+                                            use_now = bool(
+                                                getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                                    "FIRST_FAILED_SAVE_DAMAGE_ZERO",
+                                                    {
+                                                        "ability_name": source,
+                                                        "usage_key": usage_key,
+                                                        "_fallback_only": True,
+                                                    },
+                                                )
+                                            )
                                     except Exception:
                                         use_now = False
-                                    option_id = None
-                                    for option in list(getattr(request, "options", []) or []):
-                                        payload = dict(getattr(option, "payload", {}) or {})
-                                        if bool(payload.get("choice", False)) == bool(use_now):
-                                            option_id = option.option_id
-                                            break
-                                    if option_id:
-                                        value, apply_result = resolve_or_reuse_decision_value(
-                                            game,
-                                            request,
-                                            option_id,
-                                            player_id=getattr(player, "id", None),
-                                        )
-                                        if apply_result is not None and getattr(apply_result, "ok", False):
-                                            if isinstance(value, dict):
-                                                use_it = bool(value.get("choice", bool(use_now)))
-                                            elif value is None:
-                                                use_it = bool(use_now)
-                                            else:
-                                                use_it = bool(value)
+                                    resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
+                                        game,
+                                        request,
+                                        fallback_choice=use_now,
+                                        player_id=getattr(player, "id", None),
+                                    )
+                                    if apply_result is not None and getattr(apply_result, "ok", False):
+                                        use_it = bool(resolved_choice)
                         if use_it:
                             attack_instance["force_damage_zero"] = True
                             attack_instance["force_damage_zero_source"] = source

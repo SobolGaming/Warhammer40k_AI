@@ -1,5 +1,7 @@
 import unittest
+from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -7,6 +9,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
 class _MockDatasheet:
@@ -272,6 +275,68 @@ class TestSpaceMarinesFirestormAssaultForceEnhancements(unittest.TestCase):
         _detach_leader(bodyguard, leader)
         specs_detached = list(bodyguard.leading_unmodified_six_specs() or [])
         self.assertFalse(any(str(s.get("source", "") or "") == "Forged in Battle" for s in specs_detached))
+
+    def test_forged_in_battle_reuses_immediately_resolved_decision_request(self):
+        game, sm_army, enemy_army = _build_game()
+        sm_player = game.players[0]
+        leader = _make_unit(
+            "Captain",
+            keywords=["CHARACTER", "INFANTRY"],
+            attached_to=["INFANTRY_BODYGUARD"],
+        )
+        bodyguard = _make_unit("Intercessor Squad", keywords=["INFANTRY"])
+        enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        sm_army.add_unit(leader)
+        sm_army.add_unit(bodyguard)
+        enemy_army.add_unit(enemy)
+        _attach_leader(bodyguard, leader)
+        _apply_enhancement(
+            leader,
+            enhancement_id="000008482004",
+            enhancement_name="Forged in Battle",
+        )
+        game.map.units = [leader, bodyguard, enemy]
+        game.rebuild_entity_registry()
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if str((getattr(opt, "payload", {}) or {}).get("choice", "") or "") == "use"
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=sm_player.id)
+
+        game.request_decision = _auto_resolve
+        profile = _make_profile(is_melee=False)
+        attack_context = {
+            "_aura_attack_mods": SimpleNamespace(
+                hit=0,
+                wound=0,
+                reroll_hit_ones=False,
+                reroll_wound_ones=False,
+                reroll_hit_reasons=(),
+                reroll_wound_reasons=(),
+                target_toughness_delta=0,
+                target_toughness_reasons=(),
+            )
+        }
+
+        hit = profile._hit_target_with_tracking(
+            enemy,
+            bodyguard.models[0],
+            attack_context,
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_USE_LEADING_UNMODIFIED_SIX, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
 
     def test_adamantine_mantle_reduces_damage_and_sets_melta_or_torrent_to_one_for_bearer(self):
         _game, sm_army, enemy_army = _build_game()

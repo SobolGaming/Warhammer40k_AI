@@ -217,3 +217,56 @@ def test_death_vision_of_sanguinius_requires_melee_attack():
         tycho.end_attack_resolution(game_map=game.map)
 
     assert applied == []
+
+
+def test_death_vision_of_sanguinius_local_provider_consumes_queued_confirmation():
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+
+    game, blood_player, _enemy_player, blood_angels, enemy_army = _build_game()
+
+    tycho = _make_unit("Tycho the Lost", abilities=[_captain_style_rule()], keywords=["CHARACTER"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+
+    blood_angels.add_unit(tycho)
+    enemy_army.add_unit(enemy)
+    tycho.deployed = True
+    enemy.deployed = True
+    game.map.units = [tycho, enemy]
+    game.rebuild_entity_registry()
+
+    tycho._last_destroyed_by_unit = enemy
+    tycho._last_destroyed_by_weapon_profile = _DummyProfile()
+    model = tycho.models[0]
+    model._wounds = 0
+
+    applied = []
+    seen = {"pending": 0}
+    tycho._apply_mortal_wounds_to_unit = lambda target, amount, **_kwargs: applied.append((target, int(amount)))
+
+    def _provider(**_kwargs):
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "context", {}).get("ability", "") or "") == "death_vision_of_sanguinius"
+        ]
+        assert pending
+        req = pending[0]
+        seen["pending"] = len(pending)
+        option_id = next(
+            opt.option_id
+            for opt in list(getattr(req, "options", []) or [])
+            if bool(getattr(opt, "payload", {}).get("choice", False))
+        )
+        _, apply_result = resolve_decision_value(game, req, option_id, player_id=getattr(blood_player, "id", None))
+        assert apply_result is not None and getattr(apply_result, "ok", False)
+        return "use"
+
+    game.map.death_vision_of_sanguinius_provider = _provider
+
+    with patch("warhammer40k_ai.units.unit.get_roll", return_value=4):
+        tycho._handle_model_destroyed(model, game.map)
+        tycho.end_attack_resolution(game_map=game.map)
+
+    assert applied == [(enemy, 3)]
+    assert seen["pending"] == 1
+    assert list(game.decision_queue.list() or []) == []

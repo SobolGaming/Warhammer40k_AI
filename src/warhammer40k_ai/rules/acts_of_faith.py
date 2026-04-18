@@ -663,6 +663,80 @@ class ActsOfFaithManager:
             return None
         player = getattr(self.army, "player", None) if self.army is not None else None
         provider = getattr(getattr(game, "map", None), "miracle_dice_provider", None) if game is not None else None
+        if game is not None and hasattr(game, "request_decision"):
+            try:
+                from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.decision_utils import resolve_or_reuse_payload_choice
+            except ImportError:
+                pass
+            else:
+                try:
+                    values_sorted = sorted(pool, reverse=True)
+                except TypeError:
+                    values_sorted = list(pool)
+                unit_id = get_entity_id(unit) if unit is not None else None
+                options = [
+                    DecisionOption.create(str(val), payload={"die_value": int(val), "unit_id": unit_id})
+                    for val in list(values_sorted or [])
+                ]
+                options.append(DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}))
+                context = {
+                    "unit_id": unit_id,
+                    "roll_type": str(roll_type or ""),
+                    "dice_count": int(dice_count or 1),
+                    "die_faces": int(die_faces or 6),
+                    "pool": list(values_sorted or []),
+                    "ability": "acts_of_faith",
+                    "ability_name": "Acts of Faith",
+                }
+                if needed is not None:
+                    context["needed"] = int(needed)
+                request = DecisionRequest.create(
+                    DECISION_USE_MIRACLE_DIE,
+                    "Select Miracle Die",
+                    player_id=getattr(player, "id", None) if player is not None else None,
+                    options=options,
+                    context=context,
+                )
+                game.request_decision(request)
+
+                fallback_value = None
+                if callable(provider):
+                    try:
+                        chosen = provider(
+                            player=player,
+                            unit=unit,
+                            roll_type=str(roll_type or ""),
+                            dice_count=int(dice_count or 1),
+                            die_faces=int(die_faces or 6),
+                            pool=list(pool),
+                            needed=needed,
+                        )
+                    except Exception:
+                        chosen = None
+                    try:
+                        chosen_val = int(chosen)
+                    except (TypeError, ValueError):
+                        chosen_val = None
+                    if chosen_val is not None and chosen_val in pool:
+                        fallback_value = chosen_val
+                chosen_value, apply_result = resolve_or_reuse_payload_choice(
+                    game,
+                    request,
+                    payload_key="die_value",
+                    fallback_value=fallback_value,
+                    use_skip_when_pending=True,
+                    player_id=getattr(player, "id", None) if player is not None else None,
+                )
+                if apply_result is not None and getattr(apply_result, "ok", False):
+                    try:
+                        resolved_value = int(chosen_value)
+                    except (TypeError, ValueError):
+                        return None
+                    if resolved_value in pool:
+                        return resolved_value
+                    return None
         if callable(provider):
             try:
                 chosen = provider(
@@ -678,7 +752,7 @@ class ActsOfFaithManager:
                 chosen = None
             try:
                 chosen_val = int(chosen)
-            except Exception:
+            except (TypeError, ValueError):
                 chosen_val = None
             if chosen_val is not None and chosen_val in pool:
                 return chosen_val

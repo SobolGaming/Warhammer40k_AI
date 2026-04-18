@@ -78,3 +78,106 @@ def resolve_decision_value(
     if apply_result is None or not getattr(apply_result, "ok", False):
         return None, apply_result
     return getattr(apply_result, "value", None), apply_result
+
+
+def option_id_for_boolean_choice(request: DecisionRequest, choice: bool) -> Optional[str]:
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if bool(payload.get("choice", False)) == bool(choice):
+            return str(getattr(option, "option_id", "") or "")
+    return None
+
+
+def option_id_for_payload_value(request: DecisionRequest, payload_key: str, expected_value: Any) -> Optional[str]:
+    key = str(payload_key or "")
+    if not key:
+        return None
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if payload.get(key) == expected_value:
+            return str(getattr(option, "option_id", "") or "")
+    return None
+
+
+def option_id_for_skip_action(request: DecisionRequest) -> Optional[str]:
+    return option_id_for_payload_value(request, "action", "skip")
+
+
+def choice_from_decision_value(value: Any) -> Optional[bool]:
+    if isinstance(value, dict) and "choice" in value:
+        return bool(value.get("choice"))
+    if isinstance(value, bool):
+        return bool(value)
+    return None
+
+
+def resolve_or_reuse_confirmation_choice(
+    game: object,
+    request: DecisionRequest,
+    *,
+    fallback_choice: Optional[bool] = None,
+    player_id: Optional[str] = None,
+) -> Tuple[Optional[bool], Any]:
+    if request is None:
+        return None, None
+    option_id = None
+    result_payload = None
+    if decision_request_is_pending(game, request):
+        if fallback_choice is None:
+            return None, None
+        option_id = option_id_for_boolean_choice(request, bool(fallback_choice))
+        result_payload = {"choice": bool(fallback_choice)}
+    else:
+        options = list(getattr(request, "options", []) or [])
+        if options:
+            option_id = str(getattr(options[0], "option_id", "") or "")
+    if not option_id:
+        return None, None
+    value, apply_result = resolve_or_reuse_decision_value(
+        game,
+        request,
+        option_id,
+        result_payload=result_payload,
+        player_id=player_id,
+    )
+    choice = choice_from_decision_value(value)
+    if choice is None and fallback_choice is not None and apply_result is not None and getattr(apply_result, "ok", False):
+        choice = bool(fallback_choice)
+    return choice, apply_result
+
+
+def resolve_or_reuse_payload_choice(
+    game: object,
+    request: DecisionRequest,
+    *,
+    payload_key: str,
+    fallback_value: Any = None,
+    use_skip_when_pending: bool = False,
+    player_id: Optional[str] = None,
+) -> Tuple[Any, Any]:
+    if request is None:
+        return None, None
+    option_id = None
+    result_payload = None
+    if decision_request_is_pending(game, request):
+        if fallback_value is not None:
+            option_id = option_id_for_payload_value(request, payload_key, fallback_value)
+            result_payload = {str(payload_key or ""): fallback_value}
+        elif use_skip_when_pending:
+            option_id = option_id_for_skip_action(request)
+    else:
+        options = list(getattr(request, "options", []) or [])
+        if options:
+            option_id = str(getattr(options[0], "option_id", "") or "")
+    if not option_id:
+        return None, None
+    value, apply_result = resolve_or_reuse_decision_value(
+        game,
+        request,
+        option_id,
+        result_payload=result_payload,
+        player_id=player_id,
+    )
+    if isinstance(value, dict) and str(payload_key or "") in value:
+        return value.get(str(payload_key or "")), apply_result
+    return value, apply_result

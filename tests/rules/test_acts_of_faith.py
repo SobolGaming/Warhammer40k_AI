@@ -704,9 +704,11 @@ class TestActsOfFaith(unittest.TestCase):
 
     def test_charge_roll_uses_miracle(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.units.unit import Unit
         from warhammer40k_ai.rules import acts_of_faith as aof
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
         class MockDatasheet:
             def __init__(self, name, model_count=1):
@@ -777,6 +779,90 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(int(result.get("base_roll", 0)), 7)
         self.assertTrue(bool(result.get("miracle_used", False)))
         self.assertEqual(a1.acts_of_faith.miracle_dice, [])
+
+    def test_miracle_die_reuses_immediately_resolved_decision_request(self):
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.rules import acts_of_faith as aof
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
+        class MockDatasheet:
+            def __init__(self, name, model_count=1):
+                self.name = name
+                self.faction_data = {"name": "Adepta Sororitas"}
+                self.keywords = []
+                self.faction_keywords = ["ADEPTA SORORITAS"]
+                self.datasheets_unit_composition = [{"description": f"{model_count} Test Model"}]
+                self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
+                self.datasheets_models = [{
+                    "M": "6", "T": "3", "Sv": "3", "W": "1", "Ld": "7", "OC": "1",
+                    "base_size": "32mm", "inv_sv": "7", "inv_sv_descr": "none",
+                }]
+                self.datasheets_wargear = []
+                self.datasheets_options = [{"description": "none"}]
+                self.datasheets_abilities = []
+                self.loadout = "This model is equipped with: nothing"
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf)
+        p1 = Player("P1", control=PlayerControl.REMOTE, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
+        game.add_player(p1)
+        game.add_player(p2)
+        p1.game = game
+
+        sisters = Unit(MockDatasheet("Battle Sisters"))
+
+        class _Army:
+            def __init__(self, units, player):
+                self.units = list(units)
+                self.player = player
+                self.faction_id = "AS"
+                self.acts_of_faith = aof.ActsOfFaithManager(self)
+
+            def on_battle_round_start(self, *_a, **_k):
+                return None
+
+        army = _Army([sisters], p1)
+        p1.army = army
+        sisters.set_parent_army(army)
+        army.acts_of_faith.miracle_dice = [6]
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if (getattr(opt, "payload", {}) or {}).get("die_value") == 6
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=p1.id)
+
+        game.request_decision = _auto_resolve
+
+        old_get_dice_roll = aof.get_dice_roll
+        aof.get_dice_roll = lambda _faces=6: 1
+        try:
+            total, dice, used = army.acts_of_faith.resolve_roll(
+                sisters,
+                roll_type="charge",
+                game=game,
+                dice_count=2,
+                die_faces=6,
+            )
+        finally:
+            aof.get_dice_roll = old_get_dice_roll
+
+        self.assertIn(DECISION_USE_MIRACLE_DIE, seen_decisions)
+        self.assertTrue(used)
+        self.assertEqual(total, 7)
+        self.assertEqual(dice, [6, 1])
+        self.assertEqual(army.acts_of_faith.miracle_dice, [])
 
 
 if __name__ == "__main__":

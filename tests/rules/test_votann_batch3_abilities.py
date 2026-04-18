@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_MOVE_UNIT,
+    DECISION_USE_MODEL_UNMODIFIED_SIX,
 )
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -151,6 +152,77 @@ class TestVotannBatch3Abilities(unittest.TestCase):
         specs = list(attacker.model_once_per_battle_unmodified_six_specs(attacker.models[0]) or [])
         self.assertTrue(specs)
         self.assertTrue(attacker.models[0].has_used_once_per_battle_round(specs[0]["key"]))
+
+    def test_ancestral_fortune_reuses_immediately_resolved_decision_request(self):
+        game, army, enemy_army, player, _enemy_player = _build_game()
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+
+        ability = {
+            "name": "Ancestral Fortune",
+            "description": (
+                "Once per turn, you can spend 1 YP to change the result of one hit roll, "
+                "one wound roll or one saving throw made for this model to an unmodified 6."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Kahl", abilities=[ability])
+        target = _make_unit("Enemy Unit")
+        army.add_unit(attacker)
+        enemy_army.add_unit(target)
+        attacker.deployed = True
+        target.deployed = True
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, target]
+
+        pe = getattr(army, "prioritised_efficiency", None)
+        self.assertIsNotNone(pe)
+        pe.add_yield_points(2, game=game)
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if str((getattr(opt, "payload", {}) or {}).get("choice", "") or "") == "use"
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=player.id)
+
+        game.request_decision = _auto_resolve
+
+        parent = SimpleNamespace(name="Autoch-pattern bolter", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="default",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "5",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        hit = profile._hit_target_with_tracking(
+            target,
+            attacker.models[0],
+            {"_aura_attack_mods": _aura_stub()},
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_USE_MODEL_UNMODIFIED_SIX, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
+        self.assertEqual(int(getattr(pe, "yield_points", 0) or 0), 1)
 
     def test_computational_mastermind_can_spend_yp_before_mode_update(self):
         game, army, _enemy_army, player, _enemy_player = _build_game()
