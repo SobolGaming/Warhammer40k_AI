@@ -311,6 +311,13 @@ class WargearProfile:
                 return unit
         return unit
 
+    @staticmethod
+    def _should_reroll_below_average(value: Any, stat: Any) -> bool:
+        try:
+            return float(value) < float(stat.stat_average())
+        except Exception:
+            return False
+
     def _unit_attack_rule(
         self,
         unit: Optional['Unit'],
@@ -5760,7 +5767,8 @@ class WargearProfile:
                                         player = None
                                     provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                                     reason = str(rule.get("source", "") or "Point-blank Devastation").strip() or "Point-blank Devastation"
-                                    if provider is not None:
+                                    average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
+                                    if callable(provider):
                                         do_reroll = bool(
                                             provider(
                                                 player=player,
@@ -5769,14 +5777,11 @@ class WargearProfile:
                                                 value=num_attacks,
                                                 dice=dice_rolls,
                                                 reason=reason,
+                                                fallback_choice=average_reroll,
                                             )
                                         )
                                     else:
-                                        try:
-                                            avg = float(self.attacks.stat_average())
-                                            do_reroll = float(num_attacks) < avg
-                                        except Exception:
-                                            do_reroll = False
+                                        do_reroll = average_reroll
                                     if do_reroll:
                                         new_num, new_rolls = self.attacks.resolve_detailed()
                                         num_attacks = new_num
@@ -5826,7 +5831,8 @@ class WargearProfile:
                             player = None
                         provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                         reason = "Breath of Vaul"
-                        if provider is not None:
+                        average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
+                        if callable(provider):
                             do_reroll = bool(
                                 provider(
                                     player=player,
@@ -5835,14 +5841,11 @@ class WargearProfile:
                                     value=num_attacks,
                                     dice=dice_rolls,
                                     reason=reason,
+                                    fallback_choice=average_reroll,
                                 )
                             )
                         else:
-                            try:
-                                avg = float(self.attacks.stat_average())
-                                do_reroll = float(num_attacks) < avg
-                            except Exception:
-                                do_reroll = False
+                            do_reroll = average_reroll
                         if do_reroll:
                             new_num, new_rolls = _reroll_attacks()
                             num_attacks = new_num
@@ -5896,7 +5899,8 @@ class WargearProfile:
                                 player = None
                             reason = str(spec.get("source", "") or "Attack-count re-roll").strip() or "Attack-count re-roll"
                             provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
-                            if provider is not None:
+                            average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
+                            if callable(provider):
                                 do_reroll = bool(
                                     provider(
                                         player=player,
@@ -5905,14 +5909,11 @@ class WargearProfile:
                                         value=num_attacks,
                                         dice=dice_rolls,
                                         reason=reason,
+                                        fallback_choice=average_reroll,
                                     )
                                 )
                             else:
-                                try:
-                                    avg = float(self.attacks.stat_average())
-                                    do_reroll = float(num_attacks) < avg
-                                except Exception:
-                                    do_reroll = False
+                                do_reroll = average_reroll
                             if not do_reroll:
                                 continue
                             new_num, new_rolls = _reroll_attacks()
@@ -5987,7 +5988,8 @@ class WargearProfile:
                                 do_reroll = False
                                 provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                                 source = str(tsr.get("overwhelming_generosity_source", "") or "Overwhelming Generosity").strip() or "Overwhelming Generosity"
-                                if provider is not None:
+                                average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
+                                if callable(provider):
                                     do_reroll = bool(
                                         provider(
                                             player=player_obj,
@@ -5996,14 +5998,11 @@ class WargearProfile:
                                             value=num_attacks,
                                             dice=dice_rolls,
                                             reason=source,
+                                            fallback_choice=average_reroll,
                                         )
                                     )
                                 else:
-                                    try:
-                                        avg = float(self.attacks.stat_average())
-                                        do_reroll = float(num_attacks) < avg
-                                    except Exception:
-                                        do_reroll = False
+                                    do_reroll = average_reroll
                                 if do_reroll:
                                     new_num, new_rolls = _reroll_attacks()
                                     num_attacks = new_num
@@ -6066,7 +6065,8 @@ class WargearProfile:
                                 provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                                 source = str(usr.get("tau_experimental_weaponry_source", "") or "EXPERIMENTAL WEAPONRY").strip()
                                 source = source or "EXPERIMENTAL WEAPONRY"
-                                if provider is not None:
+                                average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
+                                if callable(provider):
                                     do_reroll = bool(
                                         provider(
                                             player=player_obj,
@@ -6075,14 +6075,11 @@ class WargearProfile:
                                             value=num_attacks,
                                             dice=dice_rolls,
                                             reason=source,
+                                            fallback_choice=average_reroll,
                                         )
                                     )
                                 else:
-                                    try:
-                                        avg = float(self.attacks.stat_average())
-                                        do_reroll = float(num_attacks) < avg
-                                    except Exception:
-                                        do_reroll = False
+                                    do_reroll = average_reroll
                                 if do_reroll:
                                     new_num, new_rolls = _reroll_attacks()
                                     num_attacks = new_num
@@ -12735,7 +12732,7 @@ class WargearProfile:
                     game = getattr(player, "game", None) if player is not None else None
                     provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                     is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-                    if is_human and callable(provider):
+                    if callable(provider):
                         do_reroll = bool(
                             provider(
                                 player=player,
@@ -15822,7 +15819,7 @@ class WargearProfile:
                         player = None
                         game = None
                     reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -15888,7 +15885,7 @@ class WargearProfile:
                     is_human = False
                     provider = None
                     player = None
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -15935,7 +15932,7 @@ class WargearProfile:
                     is_human = False
                     provider = None
                     player = None
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -15983,7 +15980,7 @@ class WargearProfile:
                     is_human = False
                     provider = None
                     player = None
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -16181,7 +16178,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16230,7 +16227,7 @@ class WargearProfile:
                         provider = None
                         player = None
 
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16282,7 +16279,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -16330,7 +16327,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -16376,7 +16373,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16427,7 +16424,7 @@ class WargearProfile:
                     except Exception:
                         reason = ""
                     label = reason or "Selected to shoot"
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16480,7 +16477,7 @@ class WargearProfile:
                         reason = ""
                     default_label = "Selected to shoot" if action == "shoot" else "Selected to fight"
                     label = reason or default_label
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16531,7 +16528,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16587,7 +16584,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16636,7 +16633,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16681,7 +16678,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -16728,7 +16725,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -16775,7 +16772,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -16824,7 +16821,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -16875,7 +16872,7 @@ class WargearProfile:
                     is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
                     provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
                     source_name = str(source or "Sadistic Fulcrum").strip() or "Sadistic Fulcrum"
-                    if is_human and callable(provider):
+                    if callable(provider):
                         do_reroll = bool(
                             provider(
                                 player=player,
@@ -16977,7 +16974,7 @@ class WargearProfile:
                             provider = None
                             player = None
                         source = str(sr.get("enhancement_furys_cage_source", "") or "Fury's Cage").strip() or "Fury's Cage"
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -17028,7 +17025,7 @@ class WargearProfile:
                             provider = None
                             player = None
 
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -22865,7 +22862,7 @@ class WargearProfile:
                         provider = None
                         player = None
                     reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -22955,7 +22952,7 @@ class WargearProfile:
                     provider = None
                     player = None
                 reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -23024,7 +23021,7 @@ class WargearProfile:
                     provider = None
                     player = None
                 reason = str(rule.get("source", "") or "").strip() or "Monster/Vehicle rerolls"
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -23263,7 +23260,7 @@ class WargearProfile:
                     is_human = False
                     provider = None
                     player = None
-                if is_human and callable(provider):
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -23346,7 +23343,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -23414,7 +23411,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -23542,7 +23539,7 @@ class WargearProfile:
                             provider = None
                             player = None
                         source = str(sr.get("enhancement_furys_cage_source", "") or "Fury's Cage").strip() or "Fury's Cage"
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -23616,7 +23613,7 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -23742,7 +23739,7 @@ class WargearProfile:
                                 is_human = False
                                 provider = None
                                 player = None
-                            if is_human and callable(provider):
+                            if callable(provider):
                                 try:
                                     do_reroll = bool(provider(
                                         player=player,
@@ -23819,7 +23816,7 @@ class WargearProfile:
                             provider = None
                             player = None
                         reason = "Methodical Destruction"
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -23899,7 +23896,7 @@ class WargearProfile:
                             provider = None
                             player = None
                         reason = str(getattr(unit, "_exemplar_of_the_code_source", "") or "Exemplar of the Code")
-                        if is_human and callable(provider):
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -23985,7 +23982,7 @@ class WargearProfile:
                                 provider = None
                                 player = None
                             reason = str(getattr(unit, "_prey_selection_source", "") or "Prey selection")
-                            if is_human and callable(provider):
+                            if callable(provider):
                                 try:
                                     do_reroll = bool(provider(
                                         player=player,
@@ -24068,7 +24065,7 @@ class WargearProfile:
                                 provider = None
                                 player = None
                             reason = str(getattr(unit, "_singular_purpose_source", "") or "Singular Purpose")
-                            if is_human and callable(provider):
+                            if callable(provider):
                                 try:
                                     do_reroll = bool(provider(
                                         player=player,
@@ -24138,7 +24135,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -24212,7 +24209,7 @@ class WargearProfile:
                     except Exception:
                         reason = ""
                     label = reason or "Selected to shoot"
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -24289,7 +24286,7 @@ class WargearProfile:
                         reason = ""
                     default_label = "Selected to shoot" if action == "shoot" else "Selected to fight"
                     label = reason or default_label
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -24364,7 +24361,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -24444,7 +24441,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -24515,7 +24512,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27138,7 +27135,8 @@ class WargearProfile:
                             is_human = False
                             provider = None
                             player = None
-                        if is_human and callable(provider):
+                        average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                        if callable(provider):
                             try:
                                 do_reroll = bool(provider(
                                     player=player,
@@ -27147,15 +27145,12 @@ class WargearProfile:
                                     value=damage_value,
                                     dice=damage_result.get("damage_dice_rolls", None),
                                     reason=source,
+                                    fallback_choice=average_reroll,
                                 ))
                             except Exception:
                                 do_reroll = False
                         else:
-                            try:
-                                avg = float(self.damage.stat_average())
-                                do_reroll = float(damage_value) < avg
-                            except Exception:
-                                do_reroll = False
+                            do_reroll = average_reroll
                         if do_reroll:
                             new_val, new_rolls = _reroll_damage()
                             damage_value = new_val
@@ -27215,7 +27210,8 @@ class WargearProfile:
                         provider = None
                         player = None
                     reason = "Breath of Vaul"
-                    if is_human and callable(provider):
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27224,15 +27220,12 @@ class WargearProfile:
                                 value=damage_value,
                                 dice=damage_result.get("damage_dice_rolls", None),
                                 reason=reason,
+                                fallback_choice=average_reroll,
                             ))
                         except Exception:
                             do_reroll = False
                     else:
-                        try:
-                            avg = float(self.damage.stat_average())
-                            do_reroll = float(damage_value) < avg
-                        except Exception:
-                            do_reroll = False
+                        do_reroll = average_reroll
                     if do_reroll:
                         new_val, new_rolls = _reroll_damage()
                         damage_value = new_val
@@ -27261,7 +27254,8 @@ class WargearProfile:
                     provider = None
                     player = None
                 reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
-                if is_human and callable(provider):
+                average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -27270,15 +27264,12 @@ class WargearProfile:
                             value=damage_value,
                             dice=damage_result.get("damage_dice_rolls", None),
                             reason=reason,
+                            fallback_choice=average_reroll,
                         ))
                     except Exception:
                         do_reroll = False
                 else:
-                    try:
-                        avg = float(self.damage.stat_average())
-                        do_reroll = float(damage_value) < avg
-                    except Exception:
-                        do_reroll = False
+                    do_reroll = average_reroll
                 if do_reroll:
                     new_val, new_rolls = _reroll_damage()
                     damage_value = new_val
@@ -27307,7 +27298,8 @@ class WargearProfile:
                     provider = None
                     player = None
                 reason = str(rule.get("source", "") or "").strip() or "Monster/Vehicle rerolls"
-                if is_human and callable(provider):
+                average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                if callable(provider):
                     try:
                         do_reroll = bool(provider(
                             player=player,
@@ -27316,15 +27308,12 @@ class WargearProfile:
                             value=damage_value,
                             dice=damage_result.get("damage_dice_rolls", None),
                             reason=reason,
+                            fallback_choice=average_reroll,
                         ))
                     except Exception:
                         do_reroll = False
                 else:
-                    try:
-                        avg = float(self.damage.stat_average())
-                        do_reroll = float(damage_value) < avg
-                    except Exception:
-                        do_reroll = False
+                    do_reroll = average_reroll
                 if do_reroll:
                     new_val, new_rolls = _reroll_damage()
                     damage_value = new_val
@@ -27360,7 +27349,8 @@ class WargearProfile:
                     except Exception:
                         reason = ""
                     label = reason or "Selected to shoot"
-                    if is_human and callable(provider):
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27369,15 +27359,12 @@ class WargearProfile:
                                 value=damage_value,
                                 dice=damage_result.get("damage_dice_rolls", None),
                                 reason=label,
+                                fallback_choice=average_reroll,
                             ))
                         except Exception:
                             do_reroll = False
                     else:
-                        try:
-                            avg = float(self.damage.stat_average())
-                            do_reroll = float(damage_value) < avg
-                        except Exception:
-                            do_reroll = False
+                        do_reroll = average_reroll
                     if do_reroll and attacker.consume_selected_to_shoot_reroll("damage"):
                         new_val, new_rolls = _reroll_damage()
                         damage_value = new_val
@@ -27414,7 +27401,8 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27423,15 +27411,12 @@ class WargearProfile:
                                 value=damage_value,
                                 dice=damage_result.get("damage_dice_rolls", None),
                                 reason="Heroes All",
+                                fallback_choice=average_reroll,
                             ))
                         except Exception:
                             do_reroll = False
                     else:
-                        try:
-                            avg = float(self.damage.stat_average())
-                            do_reroll = float(damage_value) < avg
-                        except Exception:
-                            do_reroll = False
+                        do_reroll = average_reroll
                     if do_reroll and bool(consume(unit, "damage", action=action)):
                         new_val, new_rolls = _reroll_damage()
                         damage_value = new_val
@@ -27473,7 +27458,8 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27482,15 +27468,12 @@ class WargearProfile:
                                 value=damage_value,
                                 dice=damage_result.get("damage_dice_rolls", None),
                                 reason="Warpfire Infusion",
+                                fallback_choice=average_reroll,
                             ))
                         except Exception:
                             do_reroll = False
                     else:
-                        try:
-                            avg = float(self.damage.stat_average())
-                            do_reroll = float(damage_value) < avg
-                        except Exception:
-                            do_reroll = False
+                        do_reroll = average_reroll
                     if do_reroll and bool(consume(unit, "damage", action=action, game=game_local)):
                         new_val, new_rolls = _reroll_damage()
                         damage_value = new_val
@@ -27523,7 +27506,8 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
-                    if is_human and callable(provider):
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
                         try:
                             do_reroll = bool(provider(
                                 player=player,
@@ -27532,15 +27516,12 @@ class WargearProfile:
                                 value=damage_value,
                                 dice=damage_result.get("damage_dice_rolls", None),
                                 reason="Armoured Wrath",
+                                fallback_choice=average_reroll,
                             ))
                         except Exception:
                             do_reroll = False
                     else:
-                        try:
-                            avg = float(self.damage.stat_average())
-                            do_reroll = float(damage_value) < avg
-                        except Exception:
-                            do_reroll = False
+                        do_reroll = average_reroll
                     if do_reroll and bool(consume(unit, "damage", game=game_local)):
                         new_val, new_rolls = _reroll_damage()
                         damage_value = new_val

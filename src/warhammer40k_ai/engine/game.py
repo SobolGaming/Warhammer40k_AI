@@ -121,6 +121,7 @@ class Game(
         self.turn = 1
         self.current_player_index = 0
         self.map = Map(battlefield.width, battlefield.height)
+        self.map.game = self
         self.event_system = EventSystem()
         self.event_log = DeterministicEventLog()
         self.event_log.attach(self)
@@ -14642,22 +14643,19 @@ class Game(
         player = parent_army.player if parent_army is not None else None
 
         can_reroll = bool(unit.can_reroll_blood_surge_roll())
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-
-        if is_human:
-            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
-            if callable(provider):
-                want = bool(provider(
-                    player=player,
-                    unit=unit,
-                    roll_type="blood_surge",
-                    value=int(base_roll or 0),
-                    dice=[int(base_roll or 0)],
-                    allow_reroll=bool(can_reroll),
-                ))
-                if want and can_reroll:
-                    base_roll = get_roll("D6")
-                    reroll_used = True
+        provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+        if callable(provider):
+            want = bool(provider(
+                player=player,
+                unit=unit,
+                roll_type="blood_surge",
+                value=int(base_roll or 0),
+                dice=[int(base_roll or 0)],
+                allow_reroll=bool(can_reroll),
+            ))
+            if want and can_reroll:
+                base_roll = get_roll("D6")
+                reroll_used = True
         max_distance = int(base_roll or 0) + 2
 
         from ..utility.event_bus import append_dice
@@ -14773,24 +14771,22 @@ class Game(
         reroll_used = False
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-        if fixed_distance <= 0 and is_human and can_reroll:
-            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
-            if callable(provider):
-                want = bool(
-                    provider(
-                        player=player,
-                        unit=unit,
-                        roll_type="horde_move",
-                        value=int(base_roll or 0),
-                        dice=[int(base_roll or 0)],
-                        allow_reroll=True,
-                        source=source,
-                    )
+        provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+        if fixed_distance <= 0 and can_reroll and callable(provider):
+            want = bool(
+                provider(
+                    player=player,
+                    unit=unit,
+                    roll_type="horde_move",
+                    value=int(base_roll or 0),
+                    dice=[int(base_roll or 0)],
+                    allow_reroll=True,
+                    source=source,
                 )
-                if want:
-                    base_roll = int(get_roll("D6") or 0)
-                    reroll_used = True
+            )
+            if want:
+                base_roll = int(get_roll("D6") or 0)
+                reroll_used = True
         max_distance = int(base_roll + distance_bonus)
         if player is not None:
             if fixed_distance > 0:

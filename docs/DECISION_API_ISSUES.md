@@ -47,18 +47,31 @@ This note tracks the specific decision-parity regressions audited in this pass.
   no longer bypasses `DecisionRequest` for the Drukhari `Power from Pain`
   stratagem add-on spend; it now settles the same emitted confirmation request that
   the player/controller answers.
+- [map.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/battlefield/map.py:172),
+  [game.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game.py:14646),
+  [actions_movement_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/actions_movement_mixin.py:16964),
+  [dice_rolls.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/dice_rolls.py:781),
+  [shooting_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/shooting_mixin.py:2947),
+  [state_attachment_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/state_attachment_mixin.py:1820),
+  [stratagems_emperors_children.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/stratagems_emperors_children.py:2040),
+  [stratagems_world_eaters.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/stratagems_world_eaters.py:2617),
+  and the audited reroll paths in [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:5768)
+  now route local, remote, and headless reroll prompts through the same emitted
+  `DECISION_REROLL_ROLL` request. The reroll wrapper preserves the old fallback
+  strategies where they existed (`below average` attack/damage rolls and the
+  reactive `<= 3` distance heuristics) instead of skipping the reroll decision
+  entirely in non-local flows.
 
 ## Remaining Known Gaps
 
-- Direct `roll_reroll_provider` paths remain in several engine/rules attack and
-  reroll flows, so not every reroll decision has been normalized to the same
-  emitted request path yet.
+- None in the tracked reroll-provider parity bucket from this audit pass.
 
 ## Audit Scope
 
 - This document covers the tracked gaps above. The audited request-reuse gaps from
-  this pass are now closed, but this is still not a full-repo proof that every
-  optional provider path has been audited.
+  this pass are now closed, and the audited reroll-provider parity bucket is also
+  closed, but this is still not a full-repo proof that every optional provider
+  path has been audited.
 - The invariant enforced by these fixes is: if a controller answers a tracked
   decision automatically, it settles exactly that emitted `DECISION_TYPE`; it does
   not skip the request and jump ahead to later effects.

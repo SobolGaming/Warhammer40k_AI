@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
+    DECISION_REROLL_ROLL,
 )
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -544,7 +545,12 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
 
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
         game.turn = 1
-        game.map.roll_reroll_provider = lambda **_kwargs: True
+        requested = []
+        game.event_system.subscribe(
+            "decision_requested",
+            lambda request=None, **_kwargs: requested.append(request),
+            group="test_point_blank_devastation_reroll_request",
+        )
 
         ability_desc = (
             "Each time this model’s heavy wraithcannon or suncannon targets a unit within half range, "
@@ -584,6 +590,10 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
 
         self.assertEqual(info.dice_rolls, [6])
         self.assertTrue(any("Point-blank Devastation" in s for s in info.special_modifiers))
+        self.assertTrue(
+            any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
+        )
+        self.assertEqual(list(game.decision_queue.list() or []), [])
 
 
 if __name__ == "__main__":

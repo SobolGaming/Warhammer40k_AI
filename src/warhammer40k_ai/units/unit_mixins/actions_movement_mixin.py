@@ -16963,7 +16963,7 @@ class ActionsMovementMixin:
                     reroll_used = False
                     provider = getattr(getattr(_game, "map", None), "roll_reroll_provider", None)
                     is_human = self._player_has_local_control(_player)
-                    if is_human and callable(provider) and self.can_reroll_advance_roll():
+                    if callable(provider) and self.can_reroll_advance_roll():
                         if bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None)):
                             advance_roll = _reroll()
                             reroll_used = True

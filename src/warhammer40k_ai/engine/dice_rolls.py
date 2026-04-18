@@ -819,7 +819,7 @@ class DiceRollManager:
                 return []
             return eligible
 
-        if is_human and callable(provider):
+        if callable(provider):
             for opt in options:
                 action_id = str(opt.get("action_id", ""))
                 if action_id in ("none", "command_reroll"):

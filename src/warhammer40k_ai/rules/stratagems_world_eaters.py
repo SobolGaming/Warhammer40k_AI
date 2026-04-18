@@ -2613,25 +2613,23 @@ class WorldEatersStratagemMixin:
         can_reroll = bool(self._is_khorne_berzerkers_unit(unit) or self._is_vessel_of_wrath_unit(unit))
         reroll_used = False
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-
         if can_reroll:
-            if is_human:
-                provider = getattr(getattr(self.game, "map", None), "roll_reroll_provider", None) if self.game is not None else None
-                if callable(provider):
-                    want = bool(
-                        provider(
-                            player=player,
-                            unit=unit,
-                            roll_type="meet_force_with_force",
-                            value=int(base_roll or 0),
-                            dice=[int(base_roll or 0)],
-                            allow_reroll=True,
-                        )
+            provider = getattr(getattr(self.game, "map", None), "roll_reroll_provider", None) if self.game is not None else None
+            if callable(provider):
+                want = bool(
+                    provider(
+                        player=player,
+                        unit=unit,
+                        roll_type="meet_force_with_force",
+                        value=int(base_roll or 0),
+                        dice=[int(base_roll or 0)],
+                        allow_reroll=True,
+                        fallback_choice=int(base_roll or 0) <= 3,
                     )
-                    if want:
-                        base_roll = int(get_roll("D6") or 0)
-                        reroll_used = True
+                )
+                if want:
+                    base_roll = int(get_roll("D6") or 0)
+                    reroll_used = True
             else:
                 if int(base_roll or 0) <= 3:
                     base_roll = int(get_roll("D6") or 0)

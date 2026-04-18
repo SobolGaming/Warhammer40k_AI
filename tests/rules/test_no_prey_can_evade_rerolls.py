@@ -93,6 +93,92 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         self.assertTrue(rm, "Expected an advance roll_made publish")
         self.assertTrue(bool(rm[-1][1].get("reroll_locked", False)))
 
+    def test_remote_advance_reroll_emits_decision_request_before_resolving(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_REROLL_ROLL
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
+
+        class MockDatasheet:
+            def __init__(self, name):
+                self.name = name
+                self.faction_data = {"name": "Test"}
+                self.keywords = []
+                self.faction_keywords = []
+                self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+                self.datasheets_models_cost = [{"description": "1 models", "cost": 100}]
+                self.datasheets_models = [{
+                    "M": "6", "T": "4", "Sv": "3", "W": "1", "Ld": "7", "OC": "1",
+                    "base_size": "32mm", "inv_sv": "7", "inv_sv_descr": "none",
+                }]
+                self.datasheets_wargear = []
+                self.datasheets_options = [{"description": "none"}]
+                self.datasheets_abilities = []
+                self.loadout = "This model is equipped with: nothing"
+
+        no_prey = Ability(
+            name="No Prey Can Evade",
+            faction_id="",
+            description="You can re-roll Advance and Charge rolls made for this model.",
+            type="Datasheet",
+            parameter="",
+            legend=None,
+        )
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        g = Game(bf)
+
+        u = Unit(MockDatasheet("Shalaxi"))
+        u.possible_abilities = [no_prey]
+
+        p1 = Player("P1", control=PlayerControl.REMOTE, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
+        g.add_player(p1)
+        g.add_player(p2)
+
+        class _Army:
+            def __init__(self, unit, player):
+                self.units = [unit]
+                self.player = player
+                self.faction_id = "TEST"
+
+            def get_army(self):
+                return self
+
+            def on_battle_round_start(self, *_a, **_k):
+                return None
+
+        army = _Army(u, p1)
+        p1.army = army
+        u.set_parent_army(army)
+        p1.game = g
+
+        g.map.roll_reroll_provider = lambda **_k: True
+        requested = []
+        g.event_system.subscribe(
+            "decision_requested",
+            lambda request=None, **_kwargs: requested.append(request),
+            group="test_remote_advance_reroll_request",
+        )
+
+        from warhammer40k_ai.units import unit as unit_mod
+
+        seq = iter([2, 5])
+        old_get_roll = unit_mod.get_roll
+        unit_mod.get_roll = lambda _s: next(seq)
+        try:
+            result = u.prepare_advance()
+        finally:
+            unit_mod.get_roll = old_get_roll
+
+        self.assertEqual(int(result), 5)
+        self.assertEqual(int(u.round_state.advance_roll), 5)
+        self.assertTrue(
+            any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
+        )
+        self.assertEqual(list(g.decision_queue.list() or []), [])
+
 
 if __name__ == "__main__":
     unittest.main()

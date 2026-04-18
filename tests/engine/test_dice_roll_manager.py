@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield
-from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
+from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.utility.dice import get_roll, suppress_get_roll_requests
 from warhammer40k_ai.utility.game_context import game_context
@@ -139,6 +139,53 @@ def test_get_roll_uses_request_roll_with_modifier():
     sum_modifier = dict(explanation.get("sum_modifier", {}) or {})
     assert int(sum_modifier.get("total", 0) or 0) == 2
     assert game.decision_queue.get(req.decision_id) is None
+
+
+def test_auto_pick_reroll_action_uses_reroll_decision_for_remote_player():
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = False
+    player = game.players[0]
+    player.has_control = lambda: False
+    game.map.roll_reroll_provider = lambda **_kwargs: True
+    requested = []
+
+    def _capture_request(request=None, **_kwargs):
+        if request is not None:
+            requested.append(request)
+
+    game.event_system.subscribe("decision_requested", _capture_request, group="test:auto_pick_reroll")
+    req = game.roll_manager.request_roll(
+        game,
+        player_id=player.id,
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "fixed_dice": [1, 2],
+            "reason": "Hit roll",
+            "roll_type": "hit",
+            "reroll_rules": [
+                {
+                    "action_id": "reroll_ones",
+                    "label": "Re-roll ones",
+                    "mode": "values",
+                    "eligible_values": [1],
+                }
+            ],
+        },
+        prompt="Hit roll",
+    )
+    roll_id = int((req.context or {}).get("roll_id", 0) or 0)
+    state = game.roll_manager.resolve_roll(game, roll_id)
+
+    action_id, selected = game.roll_manager._auto_pick_reroll_action(game, state)
+
+    assert action_id == "reroll_ones"
+    assert list(selected or [])
+    assert any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
+    assert not any(
+        str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
+        for req in list(game.decision_queue.list() or [])
+    )
 
 
 def test_get_roll_d33_uses_request_roll():

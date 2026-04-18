@@ -1825,7 +1825,7 @@ class StateAttachmentMixin:
             except Exception:
                 is_human = False
             source_label = " / ".join(reroll_sources)
-            if is_human and callable(provider):
+            if callable(provider):
                 try:
                     want_reroll = bool(
                         provider(

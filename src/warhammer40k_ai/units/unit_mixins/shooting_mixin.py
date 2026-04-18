@@ -2949,7 +2949,7 @@ class ShootingMixin:
                     except Exception:
                         provider = None
                         is_human = False
-                    if is_human and callable(provider):
+                    if callable(provider):
                         try:
                             want_reroll = bool(
                                 provider(

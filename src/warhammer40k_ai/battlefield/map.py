@@ -68,6 +68,7 @@ logger = logging.getLogger(__name__)
 
 class Map:
     def __init__(self, width: int, height: int):
+        self.game = None
         self.width = width
         self.height = height
         self.boundary = self.create_boundary_polygon()
@@ -90,6 +91,9 @@ class Map:
         self.reanimation_allocation_provider = None
         # Signature: provider(player, leader_unit, bodyguard_unit, candidates, ability_name) -> chosen_model | None
         self.bodyguard_loss_provider = None
+        # Assigned fallback/UI hook for reroll choices. Access through the property below so
+        # engine and UI/headless flows settle the same DECISION_REROLL_ROLL request.
+        self._roll_reroll_provider = None
         # Signature: provider(player, unit, roll_type, dice_count, die_faces, pool, needed) -> chosen_value | None
         self.miracle_dice_provider = None
         # Signature: provider(player, unit, roll_type, value, needed, tokens_remaining, ...) -> "use" | "skip" | "suppress"
@@ -110,6 +114,142 @@ class Map:
         self.advance_modifier_choice_provider = None
         # Signature: provider(player, unit, target_unit_ids, ability_name, choices) -> choice_key | None
         self.charge_modifier_choice_provider = None
+
+    @staticmethod
+    def _reroll_prompt_title(roll_type: str) -> str:
+        rt = str(roll_type or "").strip().lower()
+        if rt == "advance":
+            return "Advance Roll"
+        if rt == "charge":
+            return "Charge Roll"
+        if rt in ("blood_surge", "blood surge"):
+            return "Blood Surge Roll"
+        if rt == "hit":
+            return "Hit Roll"
+        if rt == "wound":
+            return "Wound Roll"
+        return "Re-roll?"
+
+    def _fallback_roll_reroll_choice(
+        self,
+        *,
+        player=None,
+        unit=None,
+        roll_type: str = "",
+        value=None,
+        dice=None,
+        allow_reroll: bool = True,
+        **kwargs,
+    ) -> bool:
+        if not bool(allow_reroll):
+            return False
+        provider = getattr(self, "_roll_reroll_provider", None)
+        if callable(provider):
+            return bool(
+                provider(
+                    player=player,
+                    unit=unit,
+                    roll_type=roll_type,
+                    value=value,
+                    dice=dice,
+                    allow_reroll=allow_reroll,
+                    **kwargs,
+                )
+            )
+        if "fallback_choice" in kwargs and kwargs.get("fallback_choice", None) is not None:
+            return bool(kwargs.get("fallback_choice"))
+        success = kwargs.get("success", None)
+        if success is not None:
+            return not bool(success)
+        needed = kwargs.get("needed", None)
+        try:
+            if needed is not None and value is not None:
+                return float(value) < float(needed)
+        except (TypeError, ValueError):
+            return False
+        return False
+
+    def _resolve_roll_reroll_provider(self, player=None, unit=None, roll_type: str = "", value=None, dice=None, **kwargs):
+        allow_reroll = bool(kwargs.get("allow_reroll", True))
+        fallback_kwargs = dict(kwargs or {})
+        fallback_kwargs["allow_reroll"] = bool(allow_reroll)
+        fallback_kwargs.pop("game", None)
+        if not allow_reroll:
+            return False
+        game = kwargs.get("game", None)
+        if game is None:
+            game = getattr(self, "game", None)
+        if game is None and player is not None:
+            game = getattr(player, "game", None)
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if not callable(request_fn):
+            return self._fallback_roll_reroll_choice(
+                player=player,
+                unit=unit,
+                roll_type=roll_type,
+                value=value,
+                dice=dice,
+                **fallback_kwargs,
+            )
+
+        from ..engine.decision_kinds import DECISION_REROLL_ROLL
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import decision_request_is_pending, resolve_or_reuse_payload_choice
+
+        rt = str(roll_type or "").strip().lower()
+        request = DecisionRequest.create(
+            DECISION_REROLL_ROLL,
+            self._reroll_prompt_title(rt),
+            player_id=getattr(player, "id", None) if player is not None else None,
+            options=[
+                DecisionOption.create("Keep", payload={"reroll": False}),
+                DecisionOption.create("Re-roll", payload={"reroll": True}),
+            ],
+            context={
+                "roll_type": rt,
+                "roll_value": value,
+                "unit_id": str(maybe_entity_id(unit) or ""),
+            },
+        )
+        try:
+            request_fn(request)
+        except ValueError:
+            return self._fallback_roll_reroll_choice(
+                player=player,
+                unit=unit,
+                roll_type=roll_type,
+                value=value,
+                dice=dice,
+                **fallback_kwargs,
+            )
+
+        fallback_choice = None
+        if decision_request_is_pending(game, request):
+            fallback_choice = self._fallback_roll_reroll_choice(
+                player=player,
+                unit=unit,
+                roll_type=roll_type,
+                value=value,
+                dice=dice,
+                **fallback_kwargs,
+            )
+
+        resolved_choice, apply_result = resolve_or_reuse_payload_choice(
+            game,
+            request,
+            payload_key="reroll",
+            fallback_value=bool(fallback_choice),
+            player_id=getattr(player, "id", None) if player is not None else None,
+        )
+        return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
+
+    @property
+    def roll_reroll_provider(self):
+        return self._resolve_roll_reroll_provider
+
+    @roll_reroll_provider.setter
+    def roll_reroll_provider(self, provider) -> None:
+        self._roll_reroll_provider = provider if callable(provider) else None
 
     def create_boundary_polygon(self) -> Polygon:
         """
