@@ -624,7 +624,20 @@ class GamePhaseHandlersMixin:
         elif phase_name == "SHOOTING_PHASE" and phase_step == "SHOOT_UNITS":
             self._queue_shooting_phase_declare_shots_request(selected_unit)
         elif phase_name == "CHARGE_PHASE" and phase_step == "DECLARE_CHARGES":
-            self._queue_charge_phase_declare_request(selected_unit)
+            round_state = getattr(selected_unit, "round_state", None)
+            declared_target_ids = [
+                str(value or "")
+                for value in list(getattr(round_state, "charge_move_target_ids", None) or getattr(round_state, "charge_target_ids", []) or [])
+                if str(value or "")
+            ]
+            if declared_target_ids and int(getattr(round_state, "charge_roll", 0) or 0) > 0:
+                self._queue_charge_phase_move_request(
+                    unit=selected_unit,
+                    target_unit_ids=declared_target_ids,
+                    count_as_charged=True,
+                )
+            else:
+                self._queue_charge_phase_declare_request(selected_unit)
         elif phase_name == "FIGHT_PHASE" and phase_step in {"FIGHT_FIRST", "REMAINING_COMBATANTS"}:
             manager = self._ensure_fight_phase_manager_started()
             if manager is not None:
@@ -664,6 +677,7 @@ class GamePhaseHandlersMixin:
             DECISION_DECLARE_CHARGE,
             DECISION_MOVE_UNIT,
             DECISION_REQUEST_DICE_ROLL,
+            DECISION_SELECT_DICE_REROLL,
         )
 
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
@@ -696,7 +710,7 @@ class GamePhaseHandlersMixin:
             unit_id = str(ctx.get("unit_id", "") or "")
             target_unit_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
             out_of_turn = bool(ctx.get("out_of_turn", False))
-        elif decision_type == DECISION_REQUEST_DICE_ROLL:
+        elif decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
             roll_spec = dict(ctx.get("roll_spec", {}) or {})
             if str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "")).strip().lower() != "charge":
                 return

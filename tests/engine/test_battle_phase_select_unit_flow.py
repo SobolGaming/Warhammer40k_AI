@@ -9,6 +9,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_UNIT,
 )
@@ -332,6 +333,36 @@ def test_charge_select_unit_resolution_queues_declare_charge_request() -> None:
     assert queued.context["unit_id"] == unit.id
 
 
+def test_charge_select_unit_resolution_queues_charge_move_when_roll_already_resolved() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.charge_roll = 8
+    unit.round_state.charge_target_ids = {enemy.id}
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    request = build_select_unit_request(
+        [unit],
+        player_id="player-1",
+        phase_name="CHARGE_PHASE",
+        phase_step="DECLARE_CHARGES",
+        selection_purpose="ACTIVATE_CHARGING_UNIT",
+        allow_pass=True,
+    )
+    assert request is not None
+
+    game.on_select_unit_resolved(
+        request=request,
+        selected_unit_id=unit.id,
+        selected_unit=unit,
+        payload={"unit_id": unit.id},
+        pass_selected=False,
+    )
+
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["movement_type"] == "charge"
+    assert queued.context["target_unit_ids"] == [enemy.id]
+
+
 def test_charge_followup_queues_charge_move_request_after_declaration() -> None:
     _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
     unit.round_state.charge_roll = 8
@@ -350,6 +381,40 @@ def test_charge_followup_queues_charge_move_request_after_declaration() -> None:
         player_id="player-1",
         option_id=option.option_id,
         payload={"target_unit_ids": [enemy.id]},
+    )
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["movement_type"] == "charge"
+    assert queued.context["target_unit_ids"] == [enemy.id]
+
+
+def test_charge_followup_queues_charge_move_request_after_reroll_resolution() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.charge_roll = 8
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Charge reroll",
+        player_id="player-1",
+        options=[DecisionOption.create("No re-roll", payload={"action_id": "none"})],
+        context={
+            "roll_spec": {
+                "roll_type": "charge",
+                "unit_id": unit.id,
+                "target_unit_ids": [enemy.id],
+                "out_of_turn": False,
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={"selected_die_ids": []},
     )
 
     game._maybe_queue_charge_phase_followup(request, result)

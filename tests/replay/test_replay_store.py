@@ -12,7 +12,11 @@ from warhammer40k_ai.engine.command_dispatcher import register_command_handler
 from warhammer40k_ai.engine.command_kinds import CMD_RESOLVE_DECISION
 from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.engine.decision_dispatcher import register_decision_handler
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_SELECT_DICE_REROLL,
+)
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
@@ -32,6 +36,8 @@ TEST_REPLAY_NOP_COMMAND = "TEST_REPLAY_NOP_COMMAND"
 TEST_DYNAMIC_REQUEST_COMMAND = "TEST_DYNAMIC_REQUEST_COMMAND"
 TEST_DYNAMIC_REQUEST_DECISION = "TEST_DYNAMIC_REQUEST_DECISION"
 TEST_ZONE_DEPENDENT_DECISION = "TEST_ZONE_DEPENDENT_DECISION"
+TEST_CHAINED_OUTER_DECISION = "TEST_CHAINED_OUTER_DECISION"
+TEST_CHAINED_INNER_DECISION = "TEST_CHAINED_INNER_DECISION"
 
 
 def _build_game() -> tuple[Game, Player]:
@@ -108,6 +114,22 @@ def _register_test_zone_dependent_handler() -> None:
     )
 
 
+def _register_test_chained_decision_handlers() -> None:
+    if TEST_CHAINED_OUTER_DECISION not in decision_dispatcher._HANDLERS:
+        register_decision_handler(
+            TEST_CHAINED_OUTER_DECISION,
+            validate=_validate_test_chained_outer_decision,
+            apply=_apply_test_chained_outer_decision,
+        )
+    if TEST_CHAINED_INNER_DECISION in decision_dispatcher._HANDLERS:
+        return
+    register_decision_handler(
+        TEST_CHAINED_INNER_DECISION,
+        validate=_validate_test_chained_inner_decision,
+        apply=_apply_test_chained_inner_decision,
+    )
+
+
 def _apply_test_dynamic_request_command(game: Game, command: GameCommand) -> DecisionRequest:
     primary_id = str(uuid.uuid4())
     setattr(game, "_test_dynamic_entities", {"primary": primary_id})
@@ -166,6 +188,30 @@ def _validate_test_zone_dependent_decision(game: Game, request: DecisionRequest,
     if str(zone.get("name", "") or "") != str(request.context.get("expected_zone_name", "") or ""):
         return ("Unexpected deployment zone name.",)
     return ()
+
+
+def _validate_test_chained_outer_decision(game: Game, _request: DecisionRequest, _result: DecisionResult):
+    if bool(getattr(game, "_test_nested_inner_resolved", False)):
+        return ("Outer decision cannot resolve after nested follow-up.",)
+    return ()
+
+
+def _apply_test_chained_outer_decision(game: Game, request: DecisionRequest, _result: DecisionResult) -> bool:
+    setattr(game, "_test_nested_outer_resolved", True)
+    return True
+
+
+def _validate_test_chained_inner_decision(game: Game, _request: DecisionRequest, _result: DecisionResult):
+    if not bool(getattr(game, "_test_nested_outer_resolved", False)):
+        return ("Nested follow-up requires the outer decision first.",)
+    if bool(getattr(game, "_test_nested_inner_resolved", False)):
+        return ("Nested follow-up already resolved.",)
+    return ()
+
+
+def _apply_test_chained_inner_decision(game: Game, _request: DecisionRequest, _result: DecisionResult) -> bool:
+    setattr(game, "_test_nested_inner_resolved", True)
+    return True
 
 
 def test_replay_store_records_decisions_events_and_keyframes(tmp_path) -> None:
@@ -346,6 +392,83 @@ def test_replay_store_reconstructs_steps_with_leading_command_events(tmp_path) -
 
     assert _canonical_snapshot(replayed_after_first.save_snapshot()) == _canonical_snapshot(expected_after_first)
     assert _canonical_snapshot(replayed_after_second.save_snapshot()) == _canonical_snapshot(expected_after_second)
+
+
+def test_replay_store_preserves_nested_decision_order_for_strict_replay(tmp_path) -> None:
+    _register_test_chained_decision_handlers()
+    game, player = _build_game()
+    replay_path = tmp_path / "nested_decision_order.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-nested-order",
+        label="Replay Nested Decision Order",
+    )
+
+    def _queue_nested_followup(self, request, _result) -> None:
+        if str(getattr(request, "decision_type", "") or "") != TEST_CHAINED_OUTER_DECISION:
+            return
+        followup = DecisionRequest.create(
+            TEST_CHAINED_INNER_DECISION,
+            "Resolve follow-up",
+            player_id=request.player_id,
+            options=[DecisionOption.create("Continue", payload={})],
+        )
+        self.request_decision(followup)
+
+    game._maybe_apply_choice_samples_followup = MethodType(_queue_nested_followup, game)
+
+    def _auto_resolve_nested_followup(*, request=None, game=None, **_kwargs) -> None:
+        if request is None or game is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != TEST_CHAINED_INNER_DECISION:
+            return
+        cmd = GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=request.player_id,
+            payload={
+                "decision_id": request.decision_id,
+                "option_id": request.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+        result = game.apply_command(cmd)
+        assert bool(getattr(result, "ok", False))
+
+    game.event_system.subscribe_group("test_nested_auto", "decision_requested", _auto_resolve_nested_followup)
+
+    outer = DecisionRequest.create(
+        TEST_CHAINED_OUTER_DECISION,
+        "Choose outer action",
+        player_id=player.id,
+        options=[DecisionOption.create("Continue", payload={})],
+    )
+    game.request_decision(outer)
+    outer_result = game.apply_command(
+        GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player.id,
+            payload={
+                "decision_id": outer.decision_id,
+                "option_id": outer.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+    )
+    assert bool(getattr(outer_result, "ok", False))
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+
+    assert [step.decision_type for step in steps] == [
+        TEST_CHAINED_OUTER_DECISION,
+        TEST_CHAINED_INNER_DECISION,
+    ]
+
+    replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
+    assert bool(getattr(replayed_game, "_test_nested_outer_resolved", False))
+    assert bool(getattr(replayed_game, "_test_nested_inner_resolved", False))
 
 
 def test_replay_store_reconstructs_steps_with_leading_dice_roll_events(tmp_path) -> None:
@@ -595,3 +718,70 @@ def test_replay_store_matches_runtime_request_when_recorded_ids_drift(tmp_path, 
     replayed_entities = dict(getattr(replayed_game, "_test_dynamic_entities", {}) or {})
     assert replayed_choice == replayed_entities.get("primary")
     assert replayed_choice != recorded_primary_id
+
+
+def test_result_for_record_marks_skip_payload_for_skip_option() -> None:
+    request = DecisionRequest.create(
+        "MOVE_UNIT",
+        "Move unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create("Confirm", payload={"action": "confirm"}),
+            DecisionOption.create("Skip", payload={"action": "skip"}),
+        ],
+    )
+    skip_option_id = request.options[1].option_id
+    action_id = request.action_id_for_option_id(skip_option_id)
+
+    result = ReplayStoreReader._result_for_record(
+        request,
+        {
+            "chosen_action_id": action_id,
+            "human_action_injected": False,
+        },
+    )
+
+    assert result.option_id == skip_option_id
+    assert result.payload == {"skipped": True}
+
+
+def test_prime_request_state_materializes_rerolled_roll_without_queueing_duplicate_request() -> None:
+    game, player = _build_game()
+    reroll_request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Advance roll",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("No re-roll", payload={"action_id": "none"}),
+            DecisionOption.create("Re-roll Advance roll", payload={"action_id": "reroll_advance"}),
+        ],
+        context={
+            "roll_id": 7,
+            "roll_spec": {
+                "dice_count": 1,
+                "faces": 6,
+                "fixed_dice": [2],
+                "reason": "Advance roll",
+                "roll_type": "advance",
+                "unit_id": "unit-1",
+                "reroll_rules": [
+                    {
+                        "action_id": "reroll_advance",
+                        "label": "Re-roll Advance roll",
+                        "mode": "all",
+                        "source": "rule",
+                    }
+                ],
+            },
+        },
+    )
+    roll_id = int((reroll_request.context or {}).get("roll_id", 0) or 0)
+
+    replay_game, _replay_player = _build_game()
+    ReplayStoreReader._prime_request_state(replay_game, reroll_request)
+
+    replay_state = replay_game.roll_manager.get_roll(roll_id)
+    assert replay_state is not None
+    assert str(replay_state.status) == "rolled"
+    assert list(getattr(replay_state, "reroll_options", []) or [])
+    assert list(replay_game.decision_queue.list() or []) == []

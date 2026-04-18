@@ -33,6 +33,8 @@ Canonical runtime module:
   - timing (`wall_clock_ms`, `time_budget_ms`)
   - event linkage (`event_start_id`, `event_end_id`)
   - full DecisionRecord blob (compressed JSON)
+- Step rows are persisted at `decision_resolved`, so nested follow-up decisions keep
+  the same parent-before-child ordering that the engine validated at runtime.
 
 ### `events`
 - Deterministic event log rows referenced by `decision_steps`.

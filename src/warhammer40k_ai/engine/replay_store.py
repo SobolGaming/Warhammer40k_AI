@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 from typing import Any, Iterator
 import zlib
 
@@ -136,6 +137,7 @@ class ReplayStoreRecorder:
         self.keyframe_interval = max(1, int(keyframe_interval or DEFAULT_KEYFRAME_INTERVAL))
         self.last_event_id = 0
         self.last_decision_idx = 0
+        self._pending_keyframes: dict[str, int] = {}
         self._ensure_schema()
         self._refresh_offsets()
 
@@ -320,7 +322,14 @@ class ReplayStoreRecorder:
             )
         return True
 
-    def record_resolution(self, game: Game, request: DecisionRequest, result: DecisionResult) -> int:
+    def record_resolution(
+        self,
+        game: Game,
+        request: DecisionRequest,
+        result: DecisionResult,
+        *,
+        defer_keyframe: bool = False,
+    ) -> int:
         if game is None:
             raise ValueError("Game is required for replay recording.")
         if request is None or result is None:
@@ -336,6 +345,8 @@ class ReplayStoreRecorder:
             if str(payload.get("decision_id", "") or "") == str(getattr(request, "decision_id", "") or ""):
                 request_payload = payload
                 break
+        if request_payload is None:
+            request_payload = dict(getattr(request, "to_dict", lambda: {})() or {})
         actor_player_id = str(
             getattr(result, "player_id", None)
             or getattr(request, "player_id", None)
@@ -391,7 +402,11 @@ class ReplayStoreRecorder:
             raise RuntimeError("Failed to persist replay decision step.")
         self.last_decision_idx = max(self.last_decision_idx, decision_idx)
         if (decision_idx % self.keyframe_interval) == 0:
-            self._write_keyframe(game, decision_idx=decision_idx, event_id=int(self.last_event_id))
+            decision_id = str(record.get("decision_id", "") or getattr(request, "decision_id", "") or "")
+            if defer_keyframe and decision_id:
+                self._pending_keyframes[decision_id] = int(decision_idx)
+            else:
+                self._write_keyframe(game, decision_idx=decision_idx, event_id=int(self.last_event_id))
         self._set_meta(
             {
                 "updated_at": _utc_now(),
@@ -400,6 +415,18 @@ class ReplayStoreRecorder:
             }
         )
         return decision_idx
+
+    def finalize_resolution(self, game: Game, request: DecisionRequest | None) -> None:
+        if game is None or request is None:
+            return
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not decision_id:
+            return
+        decision_idx = self._pending_keyframes.pop(decision_id, None)
+        if decision_idx is None:
+            return
+        self._write_keyframe(game, decision_idx=int(decision_idx), event_id=int(self.last_event_id))
+        self._set_meta({"updated_at": _utc_now()})
 
     def decision_count(self) -> int:
         with self._connect() as conn:
@@ -847,6 +874,16 @@ class ReplayStoreReader:
         return None
 
     @staticmethod
+    def _skip_payload_for_option(option: object | None) -> dict[str, Any]:
+        payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
+        result_payload: dict[str, Any] = {}
+        if bool(payload.get("skip", False)):
+            result_payload["skipped"] = True
+        if str(payload.get("action", "") or "").strip().lower() == "skip":
+            result_payload["skipped"] = True
+        return result_payload
+
+    @staticmethod
     def _result_for_record(
         request: DecisionRequest,
         record: dict[str, Any],
@@ -865,7 +902,7 @@ class ReplayStoreReader:
                     decision_id=str(getattr(request, "decision_id", "") or ""),
                     player_id=getattr(request, "player_id", None),
                     option_id=option_id,
-                    payload={},
+                    payload=ReplayStoreReader._skip_payload_for_option(option),
                 )
         if request_payload:
             chosen_label, chosen_index = ReplayStoreReader._request_option_label_by_action_id(
@@ -880,7 +917,7 @@ class ReplayStoreReader:
                         decision_id=str(getattr(request, "decision_id", "") or ""),
                         player_id=getattr(request, "player_id", None),
                         option_id=getattr(option, "option_id", None),
-                        payload={},
+                        payload=ReplayStoreReader._skip_payload_for_option(option),
                     )
             if chosen_index is not None:
                 options = list(getattr(request, "options", []) or [])
@@ -890,7 +927,7 @@ class ReplayStoreReader:
                         decision_id=str(getattr(request, "decision_id", "") or ""),
                         player_id=getattr(request, "player_id", None),
                         option_id=getattr(option, "option_id", None),
-                        payload={},
+                        payload=ReplayStoreReader._skip_payload_for_option(option),
                     )
         if not bool(record.get("human_action_injected", False)):
             raise ValueError("Replay chosen_action_id does not map to an option_id.")
@@ -1027,17 +1064,43 @@ class ReplayStoreReader:
         if roll_manager is None:
             raise RuntimeError("Replay game missing roll manager for dice decision replay.")
         normalized_roll_id = int(roll_id)
-        if roll_manager.get_roll(normalized_roll_id) is not None:
-            return
-        from .dice_rolls import DiceRollState
+        state = roll_manager.get_roll(normalized_roll_id)
+        if state is not None:
+            if request.decision_type != DECISION_SELECT_DICE_REROLL:
+                return
+            if str(getattr(state, "status", "") or "") == "rolled":
+                return
+        else:
+            from .dice_rolls import DiceRollState
 
-        spec = dict(ctx.get("roll_spec", {}) or {})
-        roll_manager.rolls[normalized_roll_id] = DiceRollState(
-            roll_id=normalized_roll_id,
-            player_id=getattr(request, "player_id", None),
-            spec=spec,
-            status="pending",
+            spec = dict(ctx.get("roll_spec", {}) or {})
+            state = DiceRollState(
+                roll_id=normalized_roll_id,
+                player_id=getattr(request, "player_id", None),
+                spec=spec,
+                status="pending",
+            )
+            roll_manager.rolls[normalized_roll_id] = state
+        if request.decision_type != DECISION_SELECT_DICE_REROLL:
+            return
+        proxy_game = SimpleNamespace(
+            is_authoritative=bool(getattr(game, "is_authoritative", True)),
+            event_system=None,
+            request_decision=lambda _request: None,
+            roll_manager=roll_manager,
+            entity_registry=getattr(game, "entity_registry", None),
+            players=getattr(game, "players", None),
+            map=getattr(game, "map", None),
         )
+        try:
+            roll_manager.resolve_roll(
+                proxy_game,
+                normalized_roll_id,
+                result_payload={},
+                actor_player_id=getattr(request, "player_id", None),
+            )
+        except RuntimeError:
+            return
 
     def _advance_until_request_pending(
         self,
@@ -1188,21 +1251,33 @@ def enable_decision_replay_recording(
         raise RuntimeError("Game missing event_system.")
     event_system.unsubscribe_group(REPLAY_RECORDING_GROUP)
 
-    def _on_decision_settled(
+    def _on_decision_resolved(
         *,
         request: DecisionRequest | None = None,
         result: DecisionResult | None = None,
         game: Game | None = None,
-        accepted: bool | None = None,
         **_kwargs: Any,
     ) -> None:
         active_game = game if game is not None else getattr(request, "game", None)
         if active_game is None or request is None or result is None:
             return
+        recorder.record_resolution(active_game, request, result, defer_keyframe=True)
+
+    def _on_decision_settled(
+        *,
+        request: DecisionRequest | None = None,
+        game: Game | None = None,
+        accepted: bool | None = None,
+        **_kwargs: Any,
+    ) -> None:
         if not bool(accepted):
             return
-        recorder.record_resolution(active_game, request, result)
+        active_game = game if game is not None else getattr(request, "game", None)
+        if active_game is None or request is None:
+            return
+        recorder.finalize_resolution(active_game, request)
 
+    event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_resolved", _on_decision_resolved)
     event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_settled", _on_decision_settled)
     setattr(game, "_decision_replay_recorder", recorder)
     setattr(game, "_decision_replay_path", str(path))
