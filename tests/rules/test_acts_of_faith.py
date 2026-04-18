@@ -69,6 +69,56 @@ class TestActsOfFaith(unittest.TestCase):
 
         return _Unit()
 
+    def _build_authoritative_aof_game(self, *, control_name: str = "REMOTE"):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules import acts_of_faith as aof
+        from warhammer40k_ai.units.unit import Unit
+
+        class MockDatasheet:
+            def __init__(self, name, model_count=1):
+                self.name = name
+                self.faction_data = {"name": "Adepta Sororitas"}
+                self.keywords = []
+                self.faction_keywords = ["ADEPTA SORORITAS"]
+                self.datasheets_unit_composition = [{"description": f"{model_count} Test Model"}]
+                self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
+                self.datasheets_models = [{
+                    "M": "6", "T": "3", "Sv": "3", "W": "1", "Ld": "7", "OC": "1",
+                    "base_size": "32mm", "inv_sv": "7", "inv_sv_descr": "none",
+                }]
+                self.datasheets_wargear = []
+                self.datasheets_options = [{"description": "none"}]
+                self.datasheets_abilities = []
+                self.loadout = "This model is equipped with: nothing"
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf)
+        control = PlayerControl.LOCAL if str(control_name or "").strip().upper() == "LOCAL" else PlayerControl.REMOTE
+        p1 = Player("P1", control=control, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
+        game.add_player(p1)
+        game.add_player(p2)
+        p1.game = game
+        p2.game = game
+
+        sisters = Unit(MockDatasheet("Battle Sisters"))
+
+        class _Army:
+            def __init__(self, units, player):
+                self.units = list(units)
+                self.player = player
+                self.faction_id = "AS"
+                self.acts_of_faith = aof.ActsOfFaithManager(self)
+
+            def on_battle_round_start(self, *_a, **_k):
+                return None
+
+        army = _Army([sisters], p1)
+        p1.army = army
+        sisters.set_parent_army(army)
+        return game, p1, army, sisters
+
     def test_battle_round_gain(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 
@@ -701,6 +751,78 @@ class TestActsOfFaith(unittest.TestCase):
             aof.get_roll = old_get_roll
 
         self.assertEqual(mgr.miracle_dice, [4, 5, 6, 6])
+
+    def test_miracle_pool_reroll_provider_path_emits_use_miracle_die_until_skip(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+
+        game, _player, army, sisters = self._build_authoritative_aof_game(control_name="LOCAL")
+        game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0, 1]}
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _record_request(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+
+        game.request_decision = _record_request
+
+        chosen_indices = army.acts_of_faith._choose_miracle_pool_indices(
+            unit=sisters,
+            bearer_model=sisters.models[0],
+            game=game,
+            pool=[1, 2, 6],
+            max_select=3,
+            reason="Righteous Rage",
+            skip_sixes=True,
+        )
+
+        self.assertEqual(chosen_indices, [0, 1])
+        self.assertEqual(
+            seen_decisions,
+            [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE],
+        )
+
+    def test_miracle_pool_reroll_reuses_immediately_resolved_requests(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
+        game, player, army, sisters = self._build_authoritative_aof_game(control_name="REMOTE")
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            if len(seen_decisions) == 1:
+                option = next(
+                    opt
+                    for opt in list(request.options or [])
+                    if int((getattr(opt, "payload", {}) or {}).get("die_value", 0) or 0) == 2
+                )
+            else:
+                option = next(
+                    opt
+                    for opt in list(request.options or [])
+                    if str((getattr(opt, "payload", {}) or {}).get("action", "") or "") == "skip"
+                )
+            resolve_decision_command(game, request, option.option_id, player_id=player.id)
+
+        game.request_decision = _auto_resolve
+
+        chosen_indices = army.acts_of_faith._choose_miracle_pool_indices(
+            unit=sisters,
+            bearer_model=sisters.models[0],
+            game=game,
+            pool=[2, 6],
+            max_select=2,
+            reason="Chaplet of Sacrifice",
+            skip_sixes=True,
+        )
+
+        self.assertEqual(chosen_indices, [0])
+        self.assertEqual(seen_decisions, [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE])
 
     def test_charge_roll_uses_miracle(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize

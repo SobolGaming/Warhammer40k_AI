@@ -1573,34 +1573,186 @@ class ActsOfFaithManager:
             return []
         player = getattr(self.army, "player", None) if self.army is not None else None
         provider = getattr(getattr(game, "map", None), "miracle_dice_pool_reroll_provider", None) if game is not None else None
-        if callable(provider):
-            try:
-                selection = provider(
-                    player=player,
-                    unit=unit,
-                    model=bearer_model,
+        plan_values: list[int] | None = None
+
+        def _build_fallback_plan_values() -> list[int]:
+            if callable(provider):
+                try:
+                    selection = provider(
+                        player=player,
+                        unit=unit,
+                        model=bearer_model,
+                        pool=list(pool),
+                        max_rerolls=int(max_select),
+                        reason=str(reason or ""),
+                    )
+                except Exception:
+                    selection = None
+                if selection is None:
+                    return []
+                chosen_indices = self._normalize_chaplet_reroll_indices(
+                    selection,
                     pool=list(pool),
                     max_rerolls=int(max_select),
-                    reason=str(reason or ""),
                 )
-            except Exception:
-                selection = None
-            if selection is None:
-                return []
-            return self._normalize_chaplet_reroll_indices(selection, pool=list(pool), max_rerolls=int(max_select))
+                resolved_values: list[int] = []
+                for idx in list(chosen_indices or []):
+                    if idx < 0 or idx >= len(pool):
+                        continue
+                    try:
+                        resolved_values.append(int(pool[idx]))
+                    except Exception:
+                        continue
+                return resolved_values
 
-        # Deterministic fallback: select the lowest dice values up to limit.
-        candidates = []
-        for idx, die in enumerate(list(pool or [])):
+            candidates = []
+            for idx, die in enumerate(list(pool or [])):
+                try:
+                    val = int(die)
+                except Exception:
+                    continue
+                if skip_sixes and val >= 6:
+                    continue
+                candidates.append(idx)
+            candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
+            resolved_values: list[int] = []
+            for idx in list(candidates[: int(max_select)]):
+                try:
+                    resolved_values.append(int(pool[idx]))
+                except Exception:
+                    continue
+            return resolved_values
+
+        if game is not None and hasattr(game, "request_decision"):
             try:
-                val = int(die)
+                from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.decision_utils import decision_request_is_pending, resolve_or_reuse_payload_choice
+            except ImportError:
+                pass
+            else:
+                selected_indices: list[int] = []
+                remaining_indices = list(range(len(pool)))
+                unit_id = get_entity_id(unit) if unit is not None else ""
+                bearer_model_id = get_entity_id(bearer_model) if bearer_model is not None else ""
+                prompt_reason = str(reason or "Miracle dice pool re-roll").strip() or "Miracle dice pool re-roll"
+
+                for selection_number in range(1, min(int(max_select), len(remaining_indices)) + 1):
+                    available_values: list[int] = []
+                    for idx in list(remaining_indices):
+                        try:
+                            available_values.append(int(pool[idx]))
+                        except Exception:
+                            continue
+                    if not available_values:
+                        break
+                    request = DecisionRequest.create(
+                        DECISION_USE_MIRACLE_DIE,
+                        f"{prompt_reason}: select Miracle die to discard ({selection_number}/{int(max_select)}).",
+                        player_id=getattr(player, "id", None) if player is not None else None,
+                        options=[
+                            *[
+                                DecisionOption.create(
+                                    str(int(val)),
+                                    payload={
+                                        "die_value": int(val),
+                                        "unit_id": unit_id,
+                                        "source_model_id": bearer_model_id,
+                                    },
+                                )
+                                for val in list(available_values or [])
+                            ],
+                            DecisionOption.create(
+                                "Skip",
+                                payload={
+                                    "action": "skip",
+                                    "unit_id": unit_id,
+                                    "source_model_id": bearer_model_id,
+                                },
+                            ),
+                        ],
+                        context={
+                            "unit_id": unit_id,
+                            "source_model_id": bearer_model_id,
+                            "roll_type": str(reason or "miracle pool re-roll"),
+                            "dice_count": 1,
+                            "die_faces": 6,
+                            "pool": list(available_values),
+                            "ability": "miracle_pool_discard",
+                            "ability_name": prompt_reason,
+                            "selection_index": int(selection_number),
+                            "max_select": int(max_select),
+                        },
+                    )
+                    game.request_decision(request)
+
+                    fallback_value = None
+                    if decision_request_is_pending(game, request):
+                        if plan_values is None:
+                            plan_values = _build_fallback_plan_values()
+                        if plan_values:
+                            fallback_value = int(plan_values.pop(0))
+
+                    chosen_value, apply_result = resolve_or_reuse_payload_choice(
+                        game,
+                        request,
+                        payload_key="die_value",
+                        fallback_value=fallback_value,
+                        use_skip_when_pending=True,
+                        player_id=getattr(player, "id", None) if player is not None else None,
+                    )
+                    if apply_result is None or not getattr(apply_result, "ok", False):
+                        break
+                    try:
+                        resolved_value = int(chosen_value)
+                    except (TypeError, ValueError):
+                        break
+
+                    chosen_index = None
+                    for idx in list(remaining_indices):
+                        try:
+                            current_value = int(pool[idx])
+                        except Exception:
+                            continue
+                        if current_value != resolved_value:
+                            continue
+                        chosen_index = int(idx)
+                        break
+                    if chosen_index is None:
+                        break
+                    selected_indices.append(int(chosen_index))
+                    remaining_indices.remove(chosen_index)
+
+                selected_indices.sort()
+                return selected_indices
+
+        if plan_values is None:
+            plan_values = _build_fallback_plan_values()
+        if not plan_values:
+            return []
+        selected_indices: list[int] = []
+        remaining_indices = list(range(len(pool)))
+        for value in list(plan_values or []):
+            try:
+                resolved_value = int(value)
             except Exception:
                 continue
-            if skip_sixes and val >= 6:
+            chosen_index = None
+            for idx in list(remaining_indices):
+                try:
+                    current_value = int(pool[idx])
+                except Exception:
+                    continue
+                if current_value != resolved_value:
+                    continue
+                chosen_index = int(idx)
+                break
+            if chosen_index is None:
                 continue
-            candidates.append(idx)
-        candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
-        return list(candidates[: int(max_select)])
+            selected_indices.append(int(chosen_index))
+            remaining_indices.remove(chosen_index)
+        selected_indices.sort()
+        return selected_indices
 
     @staticmethod
     def _discard_miracle_dice_by_indices(pool: list[int], indices: list[int]) -> list[int]:

@@ -32,6 +32,13 @@ This note tracks the specific decision-parity regressions audited in this pass.
   now emits and settles `DECISION_USE_MIRACLE_DIE` before consuming a Miracle
   die in engine-backed flows. Local provider answers now resolve that same
   request instead of bypassing it.
+- [acts_of_faith.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/acts_of_faith.py:1561)
+  now emits and settles repeated `DECISION_USE_MIRACLE_DIE` requests for the
+  Miracle-dice-pool discard abilities (`Chaplet of Sacrifice`, `Righteous
+  Repugnance`, `Rapturous Blows`, `Righteous Rage`, `Manual of Saint Griselda`,
+  and `Psalm of Righteous Judgement`) instead of jumping straight from
+  `miracle_dice_pool_reroll_provider` or the deterministic fallback heuristic
+  to the final discard effect.
 - [attack_modifiers.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/attack_modifiers.py:15)
   and [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:14418)
   now emit and settle `DECISION_CHOOSE_HIT_MODIFIER_IGNORES` /
@@ -64,14 +71,14 @@ This note tracks the specific decision-parity regressions audited in this pass.
 
 ## Remaining Known Gaps
 
-- None in the tracked reroll-provider parity bucket from this audit pass.
+- None in the tracked provider/request-parity buckets from this audit pass.
 
 ## Audit Scope
 
 - This document covers the tracked gaps above. The audited request-reuse gaps from
-  this pass are now closed, and the audited reroll-provider parity bucket is also
-  closed, but this is still not a full-repo proof that every optional provider
-  path has been audited.
+  this pass are now closed, and the audited provider/request-parity buckets are
+  also closed. This is still an audit claim, not a mathematical proof over every
+  future call site.
 - The invariant enforced by these fixes is: if a controller answers a tracked
   decision automatically, it settles exactly that emitted `DECISION_TYPE`; it does
   not skip the request and jump ahead to later effects.
