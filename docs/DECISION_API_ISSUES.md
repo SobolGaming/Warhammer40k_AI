@@ -7,7 +7,7 @@ This list enumerates **all known player-facing decisions** that do **not** curre
 
 ## Non-DecisionRequest Flows (Direct UI/Console/Provider)
 
-- [ ] DEC-DEP-001 Deployment zone selection bypasses DecisionRequest. Current path uses DeploymentDecisionMaker/UI. Files: `src/warhammer40k_ai/engine/deployment.py:21`, `src/warhammer40k_ai/UI/human_interface.py:33`. Suggested: new DecisionRequest (e.g., DECISION_CHOOSE_DEPLOYMENT_ZONE) with deterministic options.
+- (none; resolved)
 
 ## Optional Selection Decisions (Player._choose_optional_value)
 
