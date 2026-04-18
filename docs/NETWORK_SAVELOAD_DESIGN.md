@@ -476,7 +476,7 @@ Charge:
 
 Fight:
 - fight_unit_selection_dialog: SELECT_UNIT {unit_id} (context `phase_name="FIGHT_PHASE"`, `phase_step`, `selection_purpose="ACTIVATE_FIGHTING_UNIT"`)
-- fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
+- fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids[]} (engine issues the authoritative pending request first; headless/non-human controllers may accept the default option, while human UI submits an override)
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
 - eye_of_spite_dialog: CHOOSE_QUARRY {action="spend_pain_token" | skip} (context `ability="eye_of_spite"`, `ability_name="Eye of Spite"`, `phase="Fight phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `optional=true`)
 - fight_phase_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="fight_phase_end"`, `unit_id`, `model_id`, `ability_name`, `spec`)
@@ -517,8 +517,8 @@ Fight:
 - malefic_surge_diabolic_power_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="fight"`)
 - malefic_surge_unnatural_fortitude_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_fight"`)
 - hysterical_frenzy_psyker_dialog: CHOOSE_HYSTERICAL_FRENZY_PSYKER {model_id | skip} (context `target_unit_id`, `ability_name`, `phase`, `range`, `source_unit_id`)
-- melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
-- melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
+- melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]} (pending request payload carries the authoritative default declaration used by non-human controllers; human UI edits and resubmits the same request)
+- melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {unit_id, attack_declarations[]} (pending request payload carries the authoritative default allocation used by non-human controllers; human UI edits and resubmits the same request)
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}
 - melee_attack_split_dialog: SPLIT_ATTACKS {bundle_id, split_plan[]}
 - target_model_selection_dialog: SELECT_TARGET_MODEL {unit_id, target_model_id}

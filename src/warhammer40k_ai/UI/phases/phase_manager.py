@@ -3201,15 +3201,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                                     decision_request=req,
                                 )
                             return
-                        value = [t for t in list(eligible_targets or []) if t is not None]
-                    if not value:
-                        value = [t for t in list(eligible_targets or []) if t is not None]
-                    self._start_comprehensive_fight_sequence(fighting_unit, list(value), current_player, opponent_player)
-
-                if len(target_ids) <= 1:
-                    option_id = options[0].option_id if options else ""
-                    logger.info("INFO: Auto-selecting single target")
-                    _resolve_targets(option_id, target_ids)
+                        self.game_view.fight_target_selection_dialog.show(
+                            fighting_unit,
+                            eligible_targets,
+                            on_target_selected,
+                            on_cancel,
+                            decision_request=req,
+                        )
                     return
 
                 def on_target_selected(option_id: str, selected_ids: List[str]):
@@ -3218,14 +3216,14 @@ class BattlePhaseHandler(BasePhaseHandler):
                 def on_cancel():
                     fallback = target_ids
                     option_id = ""
-                    for opt in options:
+                    for opt in list(getattr(req, "options", []) or []):
                         payload = dict(getattr(opt, "payload", {}) or {})
                         if payload.get("action") == "all":
                             option_id = opt.option_id
                             fallback = list(payload.get("target_unit_ids") or target_ids)
                             break
-                    if not option_id and options:
-                        option_id = options[0].option_id
+                    if not option_id and list(getattr(req, "options", []) or []):
+                        option_id = req.options[0].option_id
                         fallback = [target_ids[0]] if target_ids else []
                     _resolve_targets(option_id, fallback)
 
@@ -3438,20 +3436,36 @@ class BattlePhaseHandler(BasePhaseHandler):
                 decision_request=decision_request,
             )
 
-        def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
-            """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
-            logger.info(f"{unit.name} needs to select melee weapons against {target_unit.name}")
-            def _show_weapons():
-                self._request_melee_weapon_declarations(unit, target_unit, callback)
-            if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
-                self.game_view._maybe_prompt_fight_within_3(unit, target_unit, _show_weapons)
-            else:
-                _show_weapons()
+        def on_weapon_selection_required(
+            unit: Unit,
+            target_unit,
+            callback,
+            decision_request=None,
+            *,
+            eligible_model_ids=None,
+        ):
+            self._request_melee_weapon_declarations(
+                unit,
+                target_unit,
+                callback,
+                eligible_model_ids=eligible_model_ids,
+                decision_request=decision_request,
+            )
+
+        def on_target_allocation_required(unit: Unit, target_units: List[Unit], weapon_declarations, callback, decision_request=None):
+            self._request_melee_target_allocations(
+                unit,
+                target_units,
+                weapon_declarations,
+                callback,
+                decision_request=decision_request,
+            )
 
         self.fight_phase_manager.on_target_selection_required = on_target_selection_required
         self.fight_phase_manager.on_stage_complete = on_stage_complete
         self.fight_phase_manager.on_movement_required = on_movement_required
         self.fight_phase_manager.on_weapon_selection_required = on_weapon_selection_required
+        self.fight_phase_manager.on_target_allocation_required = on_target_allocation_required
         
         # Start the fight phase
         if getattr(self.fight_phase_manager, "_current_player", None) is None:
@@ -3929,51 +3943,131 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _request_melee_weapon_declarations(
         self,
         unit: Unit,
-        target_unit: Optional[Unit],
+        target_unit,
         on_complete,
         *,
         eligible_models=None,
+        eligible_model_ids=None,
+        decision_request=None,
+        on_cancel=None,
     ) -> None:
         from ...engine.decision_kinds import DECISION_DECLARE_MELEE_WEAPONS
-        from ...engine.decisions import DecisionOption, DecisionRequest
         from ...utility.decision_utils import resolve_decision_value
         from ...utility.entity_ids import get_entity_id
+        from ..decision_ui_utils import first_option_id
 
-        unit_id = get_entity_id(unit)
-        options = [DecisionOption.create("Confirm", payload={"unit_id": unit_id})]
-        context = {"unit_id": unit_id}
-        if target_unit is not None:
-            context["target_unit_id"] = get_entity_id(target_unit)
-        player_id = None
-        try:
-            player_id = unit.get_parent_army().player.id
-        except Exception:
+        req = decision_request
+        target_unit_obj = target_unit[0] if isinstance(target_unit, list) and len(target_unit) == 1 else target_unit
+        if req is None:
+            unit_id = get_entity_id(unit)
+            context = {"unit_id": unit_id}
+            if target_unit_obj is not None:
+                context["target_unit_id"] = get_entity_id(target_unit_obj)
             player_id = None
-        req = _require_pending_decision_request(self.game,
-            DECISION_DECLARE_MELEE_WEAPONS,
-            f"Declare melee weapons for {getattr(unit, 'name', 'Unit')}",
-            player_id=player_id,
-            options=options,
-            context=context,
+            try:
+                player_id = unit.get_parent_army().player.id
+            except Exception:
+                player_id = None
+            req = _require_pending_decision_request(self.game,
+                DECISION_DECLARE_MELEE_WEAPONS,
+                f"Declare melee weapons for {getattr(unit, 'name', 'Unit')}",
+                player_id=player_id,
+                context=context,
 
-        )
+            )
+        req_context = dict(getattr(req, "context", {}) or {})
+        if eligible_models is None and eligible_model_ids is None:
+            eligible_model_ids = list(req_context.get("eligible_model_ids", []) or [])
+        if target_unit_obj is None:
+            target_unit_id = str(req_context.get("target_unit_id", "") or "").strip()
+            if target_unit_id:
+                target_unit_obj = getattr(self.game, "_resolve_unit_by_id", lambda _unit_id: None)(target_unit_id)
+        if eligible_models is None and eligible_model_ids is not None:
+            resolve_model = getattr(getattr(self.game, "entity_registry", None), "get", None)
+            if callable(resolve_model):
+                eligible_models = [
+                    resolve_model(str(model_id), kind="model")
+                    for model_id in list(eligible_model_ids or [])
+                ]
+                eligible_models = [model for model in eligible_models if model is not None]
 
         def _on_confirm(option_id: str, payload: dict):
             value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
             if value is None or apply_result is None or not getattr(apply_result, "ok", False):
                 value = []
-            on_complete(value)
+            if callable(on_complete):
+                on_complete(value)
             try:
                 self.game_view.melee_weapon_declaration_dialog.hide()
             except Exception:
                 pass
 
+        def _on_cancel():
+            option_id = first_option_id(req)
+            if option_id:
+                resolve_decision_value(self.game, req, option_id)
+            if callable(on_cancel):
+                on_cancel()
+
         self.game_view.melee_weapon_declaration_dialog.show(
             unit,
             _on_confirm,
             self.game.map,
-            target_unit=target_unit,
+            target_unit=target_unit_obj,
             eligible_models=eligible_models,
+            decision_request=req,
+            on_cancel=_on_cancel,
+        )
+
+    def _request_melee_target_allocations(
+        self,
+        unit: Unit,
+        target_units: List[Unit],
+        weapon_declarations: List[dict],
+        on_complete,
+        *,
+        decision_request=None,
+        on_cancel=None,
+    ) -> None:
+        from ...engine.decision_kinds import DECISION_ALLOCATE_MELEE_TARGETS
+        from ...utility.decision_utils import resolve_decision_value
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_ui_utils import first_option_id
+
+        req = decision_request
+        if req is None:
+            unit_id = get_entity_id(unit)
+            req = _require_pending_decision_request(self.game,
+                DECISION_ALLOCATE_MELEE_TARGETS,
+                f"Allocate melee targets for {getattr(unit, 'name', 'Unit')}",
+                player_id=getattr(unit.get_parent_army().player, "id", None),
+                context={"unit_id": unit_id},
+
+            )
+
+        def _on_confirm(option_id: str, payload: dict):
+            value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+            if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                value = []
+            if callable(on_complete):
+                on_complete(value)
+
+        def _on_cancel():
+            option_id = first_option_id(req)
+            if option_id:
+                resolve_decision_value(self.game, req, option_id)
+            if callable(on_cancel):
+                on_cancel()
+
+        self.game_view.melee_weapon_target_allocation_dialog.show(
+            unit,
+            target_units,
+            weapon_declarations,
+            _on_confirm,
+            self.game.map,
+            game=self.game,
+            on_cancel=_on_cancel,
+            split_dialog=self.game_view.melee_attack_split_dialog,
             decision_request=req,
         )
     

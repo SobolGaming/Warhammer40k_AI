@@ -43,6 +43,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.eligible_models_override = None
         self.decision_request = None
         self._option_entries: List[dict] = []
+        self.on_cancel = None
         
         # Model-based weapon declarations storage
         self.model_weapon_selections = {}  # {model_index: {weapon_profile_id: weapon_info}}
@@ -67,7 +68,17 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         
         # Fonts provided by BaseDialog: self.font_large/medium/small
     
-    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None, *, eligible_models=None, decision_request=None):
+    def show(
+        self,
+        unit: Unit,
+        callback: Callable,
+        game_map=None,
+        target_unit=None,
+        *,
+        eligible_models=None,
+        decision_request=None,
+        on_cancel=None,
+    ):
         """Show the melee weapon declaration dialog."""
         self.unit = unit
         self.callback = callback
@@ -76,6 +87,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.eligible_models_override = set(eligible_models) if eligible_models is not None else None
         self.decision_request = decision_request
         self._option_entries = []
+        self.on_cancel = on_cancel
         if self.decision_request is not None:
             from ..decision_ui_utils import option_entries
 
@@ -104,6 +116,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.expanded_weapon_groups.clear()  # Clear expansion state
         self.decision_request = None
         self._option_entries = []
+        self.on_cancel = None
     
     def _initialize_weapon_selection(self):
         """Initialize the model-based weapon selection interface."""
@@ -173,7 +186,55 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         
         # Set first eligible model as selected by default
         self.selected_model_index = eligible_indices[0] if eligible_indices else None
+        self._apply_request_default_selections()
         self._create_model_and_weapon_buttons()
+
+    def _apply_request_default_selections(self) -> None:
+        bundles = []
+        for entry in list(self._option_entries or []):
+            payload = dict(entry.get("payload", {}) or {})
+            declared = payload.get("weapon_bundles")
+            if not isinstance(declared, list):
+                declared = payload.get("weapon_declarations")
+            if isinstance(declared, list):
+                bundles = list(declared)
+                break
+        if not bundles:
+            return
+
+        weapon_lookup: Dict[tuple[str, str, str], tuple[int, dict]] = {}
+        for model_index, weapons in list(self.available_weapons_by_model.items()):
+            for weapon_info in list(weapons or []):
+                model = weapon_info.get("model")
+                wargear = weapon_info.get("wargear")
+                key = (
+                    str(get_entity_id(model) or ""),
+                    str(get_entity_id(wargear) or ""),
+                    str(weapon_info.get("profile_name", "") or ""),
+                )
+                weapon_lookup[key] = (int(model_index), weapon_info)
+
+        resolved_selections: Dict[int, dict] = {}
+        for bundle in list(bundles or []):
+            key = (
+                str(bundle.get("model_id", bundle.get("model", "")) or ""),
+                str(bundle.get("wargear_id", bundle.get("wargear", "")) or ""),
+                str(bundle.get("profile_name", "") or ""),
+            )
+            lookup = weapon_lookup.get(key)
+            if lookup is None:
+                continue
+            model_index, weapon_info = lookup
+            resolved_selections.setdefault(model_index, {})
+            profile = weapon_info.get("profile")
+            profile_id = getattr(profile, "id", None)
+            if profile_id is None:
+                continue
+            resolved_selections[model_index][profile_id] = weapon_info
+
+        if resolved_selections:
+            self.model_weapon_selections = resolved_selections
+            self.selected_model_index = min(resolved_selections.keys())
         
     def _get_available_melee_weapons_for_model(self, model):
         """Get all available melee weapon profiles for a specific model."""
@@ -289,6 +350,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                 return True
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                if callable(self.on_cancel):
+                    self.on_cancel()
                 self.hide()
                 return True
             elif event.key == pygame.K_RETURN:

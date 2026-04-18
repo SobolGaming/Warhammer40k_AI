@@ -559,6 +559,16 @@ class GamePhaseHandlersMixin:
             )
             for target in targets
         ]
+        if len(targets) > 1:
+            options.append(
+                DecisionOption.create(
+                    "All engaged targets",
+                    payload={
+                        "target_unit_ids": [str(get_entity_id(target) or "") for target in targets],
+                        "action": "all",
+                    },
+                )
+            )
         request = DecisionRequest.create(
             DECISION_SELECT_FIGHT_TARGETS,
             f"Select targets for {getattr(fighting_unit, 'name', 'Unit')}",
@@ -734,8 +744,13 @@ class GamePhaseHandlersMixin:
             return
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
             return
-        from ..decision_handlers._helpers import find_option
-        from ..decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT, DECISION_SELECT_FIGHT_TARGETS
+        from ..decision_kinds import (
+            DECISION_ALLOCATE_MELEE_TARGETS,
+            DECISION_CONFIRM_YES_NO,
+            DECISION_DECLARE_MELEE_WEAPONS,
+            DECISION_MOVE_UNIT,
+            DECISION_SELECT_FIGHT_TARGETS,
+        )
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
         if decision_type == DECISION_SELECT_FIGHT_TARGETS:
             ctx = dict(getattr(request, "context", {}) or {})
@@ -745,26 +760,11 @@ class GamePhaseHandlersMixin:
             fighting_unit = self._resolve_unit_by_id(unit_id)
             if fighting_unit is None:
                 return
-            option = find_option(request, getattr(result, "option_id", ""))
-            option_payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
-            target_unit_ids = [
-                str(value or "").strip()
-                for value in list(getattr(result, "payload", {}).get("target_unit_ids", []) or [])
-                if str(value or "").strip()
+            target_units = [
+                target_unit
+                for target_unit in list(getattr(request, "_resolved_decision_value", None) or [])
+                if target_unit is not None
             ]
-            if not target_unit_ids:
-                target_unit_id = str(
-                    getattr(result, "payload", {}).get("target_unit_id", "")
-                    or option_payload.get("target_unit_id", "")
-                    or ""
-                ).strip()
-                if target_unit_id:
-                    target_unit_ids = [target_unit_id]
-            target_units = []
-            for target_unit_id in target_unit_ids:
-                target_unit = self._resolve_unit_by_id(target_unit_id)
-                if target_unit is not None:
-                    target_units.append(target_unit)
             if not target_units:
                 return
             manager = self._ensure_fight_phase_manager_started()
@@ -772,10 +772,40 @@ class GamePhaseHandlersMixin:
                 return
             manager.targets_selected(
                 fighting_unit,
-                {target_units[0]: []},
+                {target_unit: [] for target_unit in target_units},
                 self.get_current_player(),
                 self.get_opponent(),
             )
+            return
+        if decision_type == DECISION_DECLARE_MELEE_WEAPONS:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is None:
+                return
+            on_resolved = getattr(manager, "on_melee_weapons_declared", None)
+            if callable(on_resolved):
+                on_resolved(
+                    unit_id=unit_id,
+                    weapon_declarations=list(getattr(request, "_resolved_decision_value", None) or []),
+                )
+            return
+        if decision_type == DECISION_ALLOCATE_MELEE_TARGETS:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is None:
+                return
+            on_resolved = getattr(manager, "on_melee_target_allocation_resolved", None)
+            if callable(on_resolved):
+                on_resolved(
+                    unit_id=unit_id,
+                    attack_declarations=list(getattr(request, "_resolved_decision_value", None) or []),
+                )
             return
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})

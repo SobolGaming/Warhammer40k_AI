@@ -33,13 +33,13 @@ Recommended repository layout:
 models/
   registry.json
   artifacts/
-    <artifact_id>/
+    <artifact_storage_token>/
       manifest.json
       config.json
       metrics.json
       checkpoint.safetensors
   bundles/
-    <policy_bundle_id>.json
+    <policy_bundle_storage_token>.json
   reports/
     <evaluation_run_id>/
       summary.json
@@ -50,9 +50,16 @@ models/
 
 Storage rules:
 - `models/registry.json` is a convenience index only.
-- Per-artifact `manifest.json` and per-bundle `<policy_bundle_id>.json` files are
+- Per-artifact `manifest.json` and per-bundle `<policy_bundle_storage_token>.json` files are
   the authoritative compatibility records.
 - Report outputs are reproducibility artifacts, not compatibility declarations.
+- On-disk artifact and bundle paths must be derived through
+  `ArtifactManifestStore`, not by interpolating ids directly into paths. The
+  current runtime percent-encodes reserved filename characters, so manifest ids
+  like `artifact:matchup_evaluator:preview11e_capability_v1:20260414` are stored
+  under `artifact%3Amatchup_evaluator%3Apreview11e_capability_v1%3A20260414/`
+  and `policy_bundle:heuristic_matchup_baseline_v1` is stored as
+  `policy_bundle%3Aheuristic_matchup_baseline_v1.json`.
 
 Current framework-free runtime implementation:
 - `src/warhammer40k_ai/ml/interfaces.py`

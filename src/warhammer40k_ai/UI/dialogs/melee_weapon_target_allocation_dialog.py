@@ -74,6 +74,7 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
 
         self.scroll_offset = 0
         self._build_bundles(list(weapon_declarations or []))
+        self._apply_request_default_allocations()
         super().show(callback=None)
         self._create_buttons()
 
@@ -215,6 +216,49 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
                 "target_unit_id": get_entity_id(target),
             })
         return declarations
+
+    def _apply_request_default_allocations(self) -> None:
+        declarations = []
+        for entry in list(self._option_entries or []):
+            payload = dict(entry.get("payload", {}) or {})
+            declared = payload.get("attack_declarations")
+            if isinstance(declared, list):
+                declarations = list(declared)
+                break
+        if not declarations:
+            return
+
+        target_by_id = {
+            str(get_entity_id(target) or ""): target
+            for target in list(self.target_units or [])
+            if str(get_entity_id(target) or "")
+        }
+        bundle_lookup = {}
+        for bundle in list(self.weapon_bundles or []):
+            model = bundle.get("model")
+            wargear = bundle.get("wargear")
+            key = (
+                str(get_entity_id(model) or ""),
+                str(get_entity_id(wargear) or ""),
+                str(bundle.get("profile_name", "") or ""),
+            )
+            bundle_lookup[key] = bundle
+
+        for declaration in list(declarations or []):
+            key = (
+                str(declaration.get("model_id", declaration.get("model", "")) or ""),
+                str(declaration.get("wargear_id", declaration.get("wargear", "")) or ""),
+                str(declaration.get("profile_name", "") or ""),
+            )
+            bundle = bundle_lookup.get(key)
+            if bundle is None:
+                continue
+            target = target_by_id.get(
+                str(declaration.get("target_unit_id", declaration.get("target_unit", "")) or "")
+            )
+            if target is None:
+                continue
+            bundle["selected_target"] = target
 
     def _open_split_dialog(self, bundle_idx: int) -> None:
         if self.split_dialog is None:

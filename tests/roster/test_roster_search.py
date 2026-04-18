@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from warhammer40k_ai.ml import ArtifactManifestStore
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry
 from warhammer40k_ai.roster.event_policy import (
     chapter_approved_10e_event_policy,
@@ -351,7 +352,7 @@ def test_heuristic_roster_evaluator_works_with_framework_free_policy_bundle(
     waha_helper: WahaHelper,
 ) -> None:
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_search_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_search_v1")
     bundle_path.parent.mkdir(parents=True, exist_ok=True)
     bundle_path.write_text(
         json.dumps(_heuristic_bundle_payload("policy_bundle:heuristic_search_v1"), indent=2, sort_keys=True),

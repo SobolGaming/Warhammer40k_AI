@@ -12,12 +12,14 @@ from .decisions import DecisionOption, DecisionRequest
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_ALLOCATE_MELEE_TARGETS,
     DECISION_ASSIGN_TRANSPORT,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_CHARGE,
+    DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
@@ -712,7 +714,10 @@ def _attached_alive_models(unit: object) -> list[object]:
         return []
     get_models = getattr(unit, "get_attached_unit_models", None)
     if callable(get_models):
-        models = list(get_models() or [])
+        try:
+            models = list(get_models() or [])
+        except TypeError:
+            models = list(getattr(unit, "models", []) or [])
     else:
         models = list(getattr(unit, "models", []) or [])
     alive_models = [
@@ -735,6 +740,193 @@ def _unit_has_ranged_weapon(unit: object) -> bool:
             except Exception:
                 continue
     return False
+
+
+def _unit_has_melee_weapon(unit: object) -> bool:
+    for model in _attached_alive_models(unit):
+        for wargear in list(getattr(model, "wargear", []) or []):
+            is_melee = getattr(wargear, "is_melee", None)
+            if callable(is_melee) and bool(is_melee()):
+                return True
+    return False
+
+
+def _sorted_target_units(target_units: Iterable[object] | None) -> list[object]:
+    ordered: list[object] = []
+    seen: set[str] = set()
+    for target in list(target_units or []):
+        if target is None:
+            continue
+        target_id = str(get_entity_id(target) or "").strip()
+        if not target_id or target_id in seen:
+            continue
+        seen.add(target_id)
+        ordered.append(target)
+    ordered.sort(key=lambda target: str(get_entity_id(target) or "").strip())
+    return ordered
+
+
+def _fight_within_3_enabled(unit: object) -> bool:
+    has_ability = getattr(unit, "has_fight_within_3_ability", None)
+    if not callable(has_ability) or not bool(has_ability()):
+        return False
+    is_active = getattr(unit, "fight_within_3_active", None)
+    return bool(callable(is_active) and bool(is_active()))
+
+
+def _eligible_melee_models_for_targets(
+    unit: object,
+    target_units: Iterable[object] | None,
+    *,
+    game_map: object | None,
+) -> list[object]:
+    if unit is None:
+        return []
+    get_eligible = getattr(unit, "get_fight_eligible_models_for_target", None)
+    if not callable(get_eligible):
+        return _attached_alive_models(unit)
+    allow_within_3 = _fight_within_3_enabled(unit)
+    eligible_by_id: dict[str, object] = {}
+    for target in _sorted_target_units(target_units):
+        models = list(
+            get_eligible(
+                target,
+                game_map=game_map,
+                allow_within_3=allow_within_3,
+            )
+            or []
+        )
+        for model in models:
+            model_id = str(get_entity_id(model) or "").strip()
+            if model_id:
+                eligible_by_id[model_id] = model
+    return [eligible_by_id[model_id] for model_id in sorted(eligible_by_id.keys())]
+
+
+def _default_melee_weapon_bundles(
+    unit: object,
+    *,
+    eligible_models: Iterable[object] | None = None,
+) -> list[dict[str, str]]:
+    if unit is None:
+        return []
+    eligible_model_ids = {
+        str(get_entity_id(model) or "").strip()
+        for model in list(eligible_models or [])
+        if str(get_entity_id(model) or "").strip()
+    }
+    bundles: list[dict[str, str]] = []
+    for model in _attached_alive_models(unit):
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id:
+            continue
+        if eligible_model_ids and model_id not in eligible_model_ids:
+            continue
+        primary_bundle: dict[str, str] | None = None
+        extra_bundles: list[dict[str, str]] = []
+        wargear_items = sorted(
+            list(getattr(model, "wargear", []) or []),
+            key=lambda item: str(get_entity_id(item) or "").strip(),
+        )
+        for wargear in wargear_items:
+            is_melee = getattr(wargear, "is_melee", None)
+            if not callable(is_melee) or not bool(is_melee()):
+                continue
+            wargear_id = str(get_entity_id(wargear) or "").strip()
+            if not wargear_id:
+                continue
+            profiles = getattr(wargear, "profiles", {}) or {}
+            for profile_name, profile in sorted(profiles.items(), key=lambda item: str(item[0])):
+                is_extra_attacks = False
+                is_extra_attacks_fn = getattr(profile, "is_extra_attacks", None)
+                if callable(is_extra_attacks_fn):
+                    is_extra_attacks = bool(is_extra_attacks_fn())
+                elif hasattr(profile, "extra_attacks"):
+                    is_extra_attacks = bool(getattr(profile, "extra_attacks", False))
+                entry = {
+                    "model_id": model_id,
+                    "wargear_id": wargear_id,
+                    "profile_name": str(profile_name or ""),
+                }
+                if is_extra_attacks:
+                    extra_bundles.append(entry)
+                    continue
+                if primary_bundle is None:
+                    primary_bundle = entry
+        if primary_bundle is not None:
+            bundles.append(primary_bundle)
+        bundles.extend(extra_bundles)
+    return bundles
+
+
+def _default_attack_declarations(
+    unit: object,
+    *,
+    target_units: Iterable[object] | None,
+    weapon_declarations: Iterable[dict] | None,
+    game_map: object | None,
+) -> list[dict[str, object]]:
+    if unit is None:
+        return []
+    targets = list(target_units or [])
+    if not targets:
+        return []
+    allow_within_3 = _fight_within_3_enabled(unit)
+    get_eligible = getattr(unit, "get_fight_eligible_models_for_target", None)
+    eligible_by_target: dict[str, set[str]] = {}
+    if callable(get_eligible):
+        for target in targets:
+            target_id = str(get_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            models = list(
+                get_eligible(
+                    target,
+                    game_map=game_map,
+                    allow_within_3=allow_within_3,
+                )
+                or []
+            )
+            eligible_by_target[target_id] = {
+                str(get_entity_id(model) or "").strip()
+                for model in models
+                if str(get_entity_id(model) or "").strip()
+            }
+    attack_declarations: list[dict[str, object]] = []
+    for declaration in list(weapon_declarations or []):
+        model = declaration.get("model")
+        wargear = declaration.get("wargear")
+        profile_name = str(declaration.get("profile_name", "") or "")
+        model_id = str(get_entity_id(model) or "").strip()
+        wargear_id = str(get_entity_id(wargear) or "").strip()
+        if not model_id or not wargear_id or not profile_name:
+            continue
+        selected_target_id = ""
+        for target in targets:
+            target_id = str(get_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            eligible_model_ids = eligible_by_target.get(target_id)
+            if eligible_model_ids is not None and model_id not in eligible_model_ids:
+                continue
+            selected_target_id = target_id
+            break
+        if not selected_target_id:
+            continue
+        entry: dict[str, object] = {
+            "model_id": model_id,
+            "wargear_id": wargear_id,
+            "profile_name": profile_name,
+            "target_unit_id": selected_target_id,
+        }
+        if "attacks_override" in declaration:
+            entry["attacks_override"] = int(declaration.get("attacks_override") or 0)
+        if "attacks_override_modifiers" in declaration:
+            entry["attacks_override_modifiers"] = list(declaration.get("attacks_override_modifiers") or [])
+        if "attacks_override_note" in declaration:
+            entry["attacks_override_note"] = str(declaration.get("attacks_override_note", "") or "")
+        attack_declarations.append(entry)
+    return attack_declarations
 
 
 def _declare_shots_prompt(*, prompt: str, unit: object) -> str:
@@ -820,6 +1012,183 @@ def queue_declare_shots_request(
         prompt=prompt,
         player_id=player_id,
         out_of_phase=out_of_phase,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _declare_melee_weapons_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Declare melee weapons for {label}"
+
+
+def build_declare_melee_weapons_request(
+    game: object,
+    unit: object,
+    *,
+    target_units: Iterable[object] | None,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if game is None or unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id or not _unit_has_melee_weapon(unit):
+        return None
+    targets = _sorted_target_units(target_units)
+    if not targets:
+        return None
+    eligible_models = _eligible_melee_models_for_targets(unit, targets, game_map=getattr(game, "map", None))
+    weapon_bundles = _default_melee_weapon_bundles(unit, eligible_models=eligible_models)
+    if not weapon_bundles:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    target_ids = [str(get_entity_id(target) or "").strip() for target in targets]
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("phase_name", "FIGHT_PHASE")
+    request_context.setdefault("selection_purpose", "DECLARE_MELEE_WEAPONS")
+    request_context["target_unit_ids"] = list(target_ids)
+    if len(target_ids) == 1:
+        request_context.setdefault("target_unit_id", target_ids[0])
+    request_context["eligible_model_ids"] = [
+        str(get_entity_id(model) or "").strip()
+        for model in eligible_models
+        if str(get_entity_id(model) or "").strip()
+    ]
+    options = [
+        DecisionOption.create(
+            "Confirm",
+            payload={
+                "action": "confirm",
+                "unit_id": unit_id,
+                "weapon_bundles": weapon_bundles,
+            },
+        )
+    ]
+    return DecisionRequest.create(
+        DECISION_DECLARE_MELEE_WEAPONS,
+        _declare_melee_weapons_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_declare_melee_weapons_request(
+    game: object,
+    unit: object,
+    *,
+    target_units: Iterable[object] | None,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_declare_melee_weapons_request(
+        game,
+        unit,
+        target_units=target_units,
+        prompt=prompt,
+        player_id=player_id,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _allocate_melee_targets_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Allocate melee targets for {label}"
+
+
+def build_allocate_melee_targets_request(
+    game: object,
+    unit: object,
+    *,
+    target_units: Iterable[object] | None,
+    weapon_declarations: Iterable[dict] | None,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if game is None or unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return None
+    targets = _sorted_target_units(target_units)
+    if len(targets) < 2:
+        return None
+    attack_declarations = _default_attack_declarations(
+        unit,
+        target_units=targets,
+        weapon_declarations=weapon_declarations,
+        game_map=getattr(game, "map", None),
+    )
+    if not attack_declarations:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("phase_name", "FIGHT_PHASE")
+    request_context.setdefault("selection_purpose", "ALLOCATE_MELEE_TARGETS")
+    request_context["target_unit_ids"] = [str(get_entity_id(target) or "").strip() for target in targets]
+    options = [
+        DecisionOption.create(
+            "Confirm",
+            payload={
+                "action": "confirm",
+                "unit_id": unit_id,
+                "attack_declarations": attack_declarations,
+            },
+        )
+    ]
+    return DecisionRequest.create(
+        DECISION_ALLOCATE_MELEE_TARGETS,
+        _allocate_melee_targets_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_allocate_melee_targets_request(
+    game: object,
+    unit: object,
+    *,
+    target_units: Iterable[object] | None,
+    weapon_declarations: Iterable[dict] | None,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_allocate_melee_targets_request(
+        game,
+        unit,
+        target_units=target_units,
+        weapon_declarations=weapon_declarations,
+        prompt=prompt,
+        player_id=player_id,
         context=context,
     )
     if request is None:

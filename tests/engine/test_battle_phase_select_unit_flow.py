@@ -3,15 +3,19 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ALLOCATE_MELEE_TARGETS,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_CHARGE,
+    DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import (
+    build_allocate_melee_targets_request,
     build_declare_charge_request,
+    build_declare_melee_weapons_request,
     build_declare_shots_request,
     build_select_unit_request,
 )
@@ -51,9 +55,24 @@ class _WargearStub:
     def __init__(self, wargear_id: str) -> None:
         self.id = wargear_id
         self._id = wargear_id
+        self.profiles = {"default": _ProfileStub(f"{wargear_id}:default")}
 
     def is_ranged(self) -> bool:
         return True
+
+    def is_melee(self) -> bool:
+        return True
+
+
+class _ProfileStub:
+    def __init__(self, profile_id: str, *, extra_attacks: bool = False) -> None:
+        self.id = profile_id
+        self._id = profile_id
+        self.name = "default"
+        self.extra_attacks = bool(extra_attacks)
+
+    def is_extra_attacks(self) -> bool:
+        return self.extra_attacks
 
 
 class _ModelStub:
@@ -97,6 +116,16 @@ class _UnitStub:
 
     def get_attached_unit_models(self):
         return list(self.models)
+
+    def get_fight_eligible_models_for_target(self, _target, *, game_map=None, allow_within_3: bool = False):
+        del game_map, allow_within_3
+        return list(self.models)
+
+    def has_fight_within_3_ability(self) -> bool:
+        return False
+
+    def fight_within_3_active(self) -> bool:
+        return False
 
     def is_in_reserves(self) -> bool:
         return False
@@ -489,6 +518,7 @@ def test_fight_target_selection_followup_calls_fight_manager_targets_selected() 
         option_id=request.options[0].option_id,
         payload={},
     )
+    setattr(request, "_resolved_decision_value", [enemy])
 
     game._maybe_queue_fight_phase_followup(request, result)
 
@@ -496,6 +526,115 @@ def test_fight_target_selection_followup_calls_fight_manager_targets_selected() 
     assert calls[0][0] is unit
     assert list(calls[0][1].keys()) == [enemy]
     assert calls[0][1][enemy] == []
+
+
+def test_build_declare_melee_weapons_request_includes_default_weapon_bundle() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit, enemy_units=[enemy])
+
+    request = build_declare_melee_weapons_request(
+        game,
+        unit,
+        target_units=[enemy],
+        player_id="player-1",
+    )
+
+    assert request is not None
+    assert request.decision_type == DECISION_DECLARE_MELEE_WEAPONS
+    assert request.context["unit_id"] == unit.id
+    assert request.context["target_unit_id"] == enemy.id
+    payload = request.options[0].payload
+    assert payload["unit_id"] == unit.id
+    assert payload["weapon_bundles"][0]["model_id"] == unit.models[0].id
+    assert payload["weapon_bundles"][0]["wargear_id"] == unit.models[0].wargear[0].id
+
+
+def test_build_allocate_melee_targets_request_defaults_to_first_eligible_target() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit()
+    second_enemy = _UnitStub("enemy-2", enemy.parent_army)
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit, enemy_units=[enemy, second_enemy])
+    weapon_declarations = [
+        {
+            "model": unit.models[0],
+            "wargear": unit.models[0].wargear[0],
+            "weapon_profile": unit.models[0].wargear[0].profiles["default"],
+            "profile_name": "default",
+        }
+    ]
+
+    request = build_allocate_melee_targets_request(
+        game,
+        unit,
+        target_units=[enemy, second_enemy],
+        weapon_declarations=weapon_declarations,
+        player_id="player-1",
+    )
+
+    assert request is not None
+    assert request.decision_type == DECISION_ALLOCATE_MELEE_TARGETS
+    payload = request.options[0].payload
+    assert payload["attack_declarations"][0]["model_id"] == unit.models[0].id
+    assert payload["attack_declarations"][0]["target_unit_id"] == enemy.id
+
+
+def test_fight_melee_weapon_followup_calls_fight_manager() -> None:
+    _player, _army, unit, _enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit)
+    calls = []
+    game.fight_phase_manager = SimpleNamespace(
+        on_melee_weapons_declared=lambda unit_id=None, weapon_declarations=None: calls.append(
+            (unit_id, weapon_declarations)
+        ),
+        is_complete=lambda: False,
+    )
+    request = DecisionRequest.create(
+        DECISION_DECLARE_MELEE_WEAPONS,
+        f"Declare melee weapons for {unit.name}",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"unit_id": unit.id, "weapon_bundles": []})],
+        context={"unit_id": unit.id, "phase_name": "FIGHT_PHASE"},
+    )
+    setattr(request, "_resolved_decision_value", [{"model": unit.models[0]}])
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    game._maybe_queue_fight_phase_followup(request, result)
+
+    assert calls == [(unit.id, [{"model": unit.models[0]}])]
+
+
+def test_fight_melee_target_allocation_followup_calls_fight_manager() -> None:
+    _player, _army, unit, _enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit)
+    calls = []
+    game.fight_phase_manager = SimpleNamespace(
+        on_melee_target_allocation_resolved=lambda unit_id=None, attack_declarations=None: calls.append(
+            (unit_id, attack_declarations)
+        ),
+        is_complete=lambda: False,
+    )
+    request = DecisionRequest.create(
+        DECISION_ALLOCATE_MELEE_TARGETS,
+        f"Allocate melee targets for {unit.name}",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"unit_id": unit.id, "attack_declarations": []})],
+        context={"unit_id": unit.id, "phase_name": "FIGHT_PHASE"},
+    )
+    setattr(request, "_resolved_decision_value", [{"target_unit": object()}])
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    game._maybe_queue_fight_phase_followup(request, result)
+
+    assert calls == [(unit.id, getattr(request, "_resolved_decision_value"))]
 
 
 def test_fight_followup_resumes_pending_target_selection_after_battle_focus_confirmation() -> None:

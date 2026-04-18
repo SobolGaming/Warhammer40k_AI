@@ -54,6 +54,7 @@ class FightPhaseManager:
         self.on_target_selection_required = None
         self.on_movement_required = None
         self.on_weapon_selection_required = None
+        self.on_target_allocation_required = None
         self.on_stage_complete = None
 
     def _canonical_unit_for_fight(self, unit: Unit) -> Unit:
@@ -397,16 +398,18 @@ class FightPhaseManager:
 
     def _dispatch_target_selection(self, selected_unit: Unit, eligible_targets: List[Unit]) -> None:
         logger.info(f"{selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
-        if self.on_target_selection_required:
-            self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
-            return
         queue_request = getattr(self.game, "_queue_fight_target_selection_request", None)
+        request = None
         if callable(queue_request):
-            queue_request(
+            request = queue_request(
                 fighting_unit=selected_unit,
                 eligible_targets=eligible_targets,
                 active_player=self.active_player,
             )
+        if self.on_target_selection_required:
+            self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
+            return
+        return request
 
     def _has_pending_battle_focus_confirmation(self, unit: Unit) -> bool:
         if unit is None:
@@ -486,12 +489,164 @@ class FightPhaseManager:
             movement_type=movement_type,
         )
 
+    def _queue_declare_melee_weapons_request(
+        self,
+        *,
+        fighting_unit: Unit,
+        target_declarations: Dict[Unit, List['Model']],
+    ):
+        return _fight_resolution._queue_declare_melee_weapons_request(
+            self,
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+        )
+
+    def _queue_allocate_melee_targets_request(
+        self,
+        *,
+        fighting_unit: Unit,
+        target_declarations: Dict[Unit, List['Model']],
+        weapon_declarations: List[dict],
+    ):
+        return _fight_resolution._queue_allocate_melee_targets_request(
+            self,
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+            weapon_declarations=weapon_declarations,
+        )
+
     def _resolve_target_declaration_attacks(
         self,
         fighting_unit: Unit,
         target_declarations: Dict[Unit, List['Model']],
+        *,
+        weapon_declarations: List[dict] | None = None,
     ) -> None:
-        _fight_resolution._resolve_target_declaration_attacks(self, fighting_unit, target_declarations)
+        _fight_resolution._resolve_target_declaration_attacks(
+            self,
+            fighting_unit,
+            target_declarations,
+            weapon_declarations=weapon_declarations,
+        )
+
+    def _resolve_allocated_melee_attacks(
+        self,
+        fighting_unit: Unit,
+        ordered_target_units: List[Unit],
+        attack_declarations: List[dict],
+    ) -> None:
+        _fight_resolution._resolve_allocated_melee_attacks(
+            self,
+            fighting_unit,
+            ordered_target_units,
+            attack_declarations,
+        )
+
+    def _advance_after_attack_resolution(
+        self,
+        *,
+        fighting_unit: Unit,
+        target_declarations: Dict[Unit, List['Model']],
+    ) -> None:
+        sequence = dict(self._pending_fight_sequence or {})
+        move_steps = list(fight_phase_move_steps(self.game))
+        next_step = ""
+        if not (self.scheduler is not None and self.scheduler.uses_consolidate_batch()):
+            next_step = move_steps[1] if len(move_steps) > 1 else ""
+        if not next_step:
+            self._pending_fight_sequence = None
+            try:
+                if hasattr(fighting_unit, "_clear_formless_horror_allowed"):
+                    fighting_unit._clear_formless_horror_allowed()
+            except Exception:
+                pass
+            self._complete_attacks_for_unit(fighting_unit, self._current_player, self._opponent_player)
+            return
+        self._pending_fight_sequence = {
+            **sequence,
+            "target_declarations": self._serialize_target_declarations(target_declarations),
+            "step": next_step,
+        }
+        request = self._queue_fight_move_request(
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+            movement_type=next_step,
+        )
+        if request is None:
+            self.on_fight_move_resolved(
+                unit_id=str(get_entity_id(fighting_unit) or ""),
+                movement_type=next_step,
+            )
+
+    def on_melee_weapons_declared(self, *, unit_id: str, weapon_declarations: List[dict] | None) -> None:
+        sequence = dict(self._pending_fight_sequence or {})
+        if not sequence:
+            return
+        if str(sequence.get("fighting_unit_id", "") or "") != str(unit_id or ""):
+            return
+        resolve_unit = getattr(self.game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return
+        fighting_unit = resolve_unit(str(unit_id or ""))
+        if fighting_unit is None:
+            self._pending_fight_sequence = None
+            return
+        target_declarations = self._deserialize_target_declarations(sequence.get("target_declarations", []))
+        if not target_declarations:
+            self._pending_fight_sequence = None
+            return
+        declarations = list(weapon_declarations or [])
+        if len(target_declarations) > 1:
+            self._pending_fight_sequence = {
+                **sequence,
+                "target_declarations": self._serialize_target_declarations(target_declarations),
+                "step": "allocate_melee_targets",
+            }
+            request = self._queue_allocate_melee_targets_request(
+                fighting_unit=fighting_unit,
+                target_declarations=target_declarations,
+                weapon_declarations=declarations,
+            )
+            if request is None:
+                self.on_melee_target_allocation_resolved(
+                    unit_id=str(unit_id or ""),
+                    attack_declarations=[],
+                )
+            return
+        self._resolve_target_declaration_attacks(
+            fighting_unit,
+            target_declarations,
+            weapon_declarations=declarations,
+        )
+        self._advance_after_attack_resolution(
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+        )
+
+    def on_melee_target_allocation_resolved(self, *, unit_id: str, attack_declarations: List[dict] | None) -> None:
+        sequence = dict(self._pending_fight_sequence or {})
+        if not sequence:
+            return
+        if str(sequence.get("fighting_unit_id", "") or "") != str(unit_id or ""):
+            return
+        resolve_unit = getattr(self.game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return
+        fighting_unit = resolve_unit(str(unit_id or ""))
+        if fighting_unit is None:
+            self._pending_fight_sequence = None
+            return
+        target_declarations = self._deserialize_target_declarations(sequence.get("target_declarations", []))
+        target_units = [target_unit for target_unit in list(target_declarations or {}) if target_unit is not None]
+        self._resolve_allocated_melee_attacks(
+            fighting_unit,
+            target_units,
+            list(attack_declarations or []),
+        )
+        self._advance_after_attack_resolution(
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+        )
 
     def on_fight_move_resolved(self, *, unit_id: str, movement_type: str) -> None:
         sequence = dict(self._pending_fight_sequence or {})
@@ -533,30 +688,20 @@ class FightPhaseManager:
         first_step = move_steps[0] if move_steps else ""
         if move_tag == first_step:
             logger.info(f"{fighting_unit.name} pile-in resolved via MOVE_UNIT")
-            self._resolve_target_declaration_attacks(fighting_unit, target_declarations)
-            next_step = ""
-            if not (self.scheduler is not None and self.scheduler.uses_consolidate_batch()):
-                next_step = move_steps[1] if len(move_steps) > 1 else ""
-            if not next_step:
-                self._pending_fight_sequence = None
-                try:
-                    if hasattr(fighting_unit, "_clear_formless_horror_allowed"):
-                        fighting_unit._clear_formless_horror_allowed()
-                except Exception:
-                    pass
-                self._complete_attacks_for_unit(fighting_unit, self._current_player, self._opponent_player)
-                return
             self._pending_fight_sequence = {
                 **sequence,
-                "step": next_step,
+                "target_declarations": self._serialize_target_declarations(target_declarations),
+                "step": "declare_melee_weapons",
             }
-            request = self._queue_fight_move_request(
+            request = self._queue_declare_melee_weapons_request(
                 fighting_unit=fighting_unit,
                 target_declarations=target_declarations,
-                movement_type=next_step,
             )
             if request is None:
-                self.on_fight_move_resolved(unit_id=str(unit_id or ""), movement_type=next_step)
+                self.on_melee_weapons_declared(
+                    unit_id=str(unit_id or ""),
+                    weapon_declarations=[],
+                )
             return
         final_step = move_steps[-1] if move_steps else "consolidate"
         if move_tag != final_step:

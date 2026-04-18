@@ -207,13 +207,13 @@ Use a two-layer storage model:
 models/
   registry.json
   artifacts/
-    <artifact_id>/
+    <artifact_storage_token>/
       manifest.json
       config.json
       metrics.json
       checkpoint.safetensors
   bundles/
-    <policy_bundle_id>.json
+    <policy_bundle_storage_token>.json
   reports/
     <evaluation_run_id>/
       summary.json
@@ -221,6 +221,10 @@ models/
       gate_report.json
       replay_report.json
 ```
+
+The storage token is a deterministic filesystem-safe encoding of the manifest
+id. Runtime code should always derive these paths through
+`ArtifactManifestStore` instead of interpolating raw ids into filenames.
 
 ### Artifact manifest fields
 

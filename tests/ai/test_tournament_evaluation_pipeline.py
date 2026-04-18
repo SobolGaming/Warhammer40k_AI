@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from warhammer40k_ai.engine.ruleset import RulesetBundle
+from warhammer40k_ai.ml import ArtifactManifestStore
 from warhammer40k_ai.ml.evaluation_pipeline import (
     HEADLESS_FIXED_EVALUATION_MODE,
     TRAINING_GRADE_EVALUATION_MODE,
@@ -257,7 +258,7 @@ def test_policy_bundle_smoke_evaluation_is_deterministic_for_fixed_seed(tmp_path
         _record("d2", game_id="game:test:0", player_score=12, opponent_score=8),
     ]
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
     _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
 
     import warhammer40k_ai.ml.evaluation_pipeline as pipeline
@@ -295,7 +296,7 @@ def test_policy_bundle_smoke_evaluation_is_deterministic_for_fixed_seed(tmp_path
 def test_policy_bundle_evaluation_fails_when_replay_audit_fails(tmp_path: Path, monkeypatch) -> None:
     records = [_record("d1", game_id="game:test:0", player_score=4, opponent_score=4)]
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
     _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
 
     import warhammer40k_ai.ml.evaluation_pipeline as pipeline
@@ -320,7 +321,7 @@ def test_policy_bundle_evaluation_fails_when_replay_audit_fails(tmp_path: Path, 
 def test_policy_bundle_training_grade_fails_pre_ml_baseline_gate(tmp_path: Path, monkeypatch) -> None:
     records = [_record("d1", game_id="game:test:0", player_score=4, opponent_score=4)]
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
     _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
 
     import warhammer40k_ai.ml.evaluation_pipeline as pipeline
@@ -346,7 +347,7 @@ def test_policy_bundle_training_grade_fails_pre_ml_baseline_gate(tmp_path: Path,
 def test_policy_bundle_evaluation_reports_timeout_ratio_across_requested_games(tmp_path: Path, monkeypatch) -> None:
     records = [_record("d1", game_id="game:test:0", player_score=4, opponent_score=4)]
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
     _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
     stderr_path = tmp_path / "self_play_stderr.txt"
     stderr_path.write_text("Worker timed out after max phase steps on remaining games.", encoding="utf-8")
@@ -382,7 +383,7 @@ def test_tournament_roster_evaluation_adds_roster_context(tmp_path: Path, monkey
         _record("d2", game_id="game:test:0", player_score=12, opponent_score=8),
     ]
     models_root = tmp_path / "models"
-    bundle_path = models_root / "bundles" / "policy_bundle:heuristic_eval_v1.json"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
     _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
 
     blueprint = ArmyBlueprint(

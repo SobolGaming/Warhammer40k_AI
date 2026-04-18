@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any, Mapping
+from urllib.parse import quote
 
 
 _IDENTIFIER_RE = re.compile(r"^[a-z0-9:_.-]+$")
@@ -45,6 +46,11 @@ def _require_identifier(value: object, *, field_name: str, prefix: str | None = 
     if prefix is not None and not identifier.startswith(prefix):
         raise RegistryValidationError(f"{field_name} must start with {prefix!r}.")
     return identifier
+
+
+def _filesystem_safe_manifest_token(identifier: str) -> str:
+    # Percent-encode reserved filename characters so manifest ids remain portable on Windows.
+    return quote(identifier, safe="._-")
 
 
 def _require_sorted_unique_identifiers(
@@ -424,7 +430,7 @@ class ArtifactManifestStore:
 
     def artifact_manifest_path(self, artifact_id: str) -> Path:
         normalized_id = _require_identifier(artifact_id, field_name="artifact_id", prefix="artifact:")
-        return self._models_root / "artifacts" / normalized_id / "manifest.json"
+        return self._models_root / "artifacts" / _filesystem_safe_manifest_token(normalized_id) / "manifest.json"
 
     def bundle_manifest_path(self, policy_bundle_id: str) -> Path:
         normalized_id = _require_identifier(
@@ -432,7 +438,8 @@ class ArtifactManifestStore:
             field_name="policy_bundle_id",
             prefix="policy_bundle:",
         )
-        return self._models_root / "bundles" / f"{normalized_id}.json"
+        bundle_token = _filesystem_safe_manifest_token(normalized_id)
+        return self._models_root / "bundles" / f"{bundle_token}.json"
 
     def load_artifact_manifest(self, artifact_id: str) -> ArtifactManifest:
         path = self.artifact_manifest_path(artifact_id)

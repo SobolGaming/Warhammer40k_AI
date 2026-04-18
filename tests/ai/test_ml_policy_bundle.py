@@ -152,7 +152,8 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
 def test_policy_bundle_loader_resolves_heuristic_components_from_json(tmp_path: Path) -> None:
     models_root = tmp_path / "models"
     bundle_id = "policy_bundle:heuristic_headless_v1"
-    bundle_path = models_root / "bundles" / f"{bundle_id}.json"
+    manifest_store = ArtifactManifestStore(models_root)
+    bundle_path = manifest_store.bundle_manifest_path(bundle_id)
     _write_json(bundle_path, _base_bundle_payload(bundle_id))
 
     registry = HeuristicRegistry(
@@ -165,7 +166,7 @@ def test_policy_bundle_loader_resolves_heuristic_components_from_json(tmp_path: 
     )
     loader = JSONPolicyBundleLoader(
         heuristic_registry=registry,
-        manifest_store=ArtifactManifestStore(models_root),
+        manifest_store=manifest_store,
     )
 
     bundle = loader.load_bundle(bundle_id)
@@ -218,11 +219,12 @@ def test_policy_bundle_loader_resolves_heuristic_components_from_json(tmp_path: 
 def test_policy_bundle_loader_uses_builtin_heuristics_by_default(tmp_path: Path) -> None:
     models_root = tmp_path / "models"
     bundle_id = "policy_bundle:heuristic_headless_default_v1"
-    bundle_path = models_root / "bundles" / f"{bundle_id}.json"
+    manifest_store = ArtifactManifestStore(models_root)
+    bundle_path = manifest_store.bundle_manifest_path(bundle_id)
     _write_json(bundle_path, _base_bundle_payload(bundle_id))
 
     loader = JSONPolicyBundleLoader(
-        manifest_store=ArtifactManifestStore(models_root),
+        manifest_store=manifest_store,
     )
 
     bundle = loader.load_bundle(bundle_id)
@@ -238,9 +240,10 @@ def test_policy_bundle_loader_accepts_documented_example_fallback_shape(tmp_path
     bundle_payload = _extract_json_block(text, "Example Bundle Manifest")
     models_root = tmp_path / "models"
     artifact_id = str(artifact_payload["artifact_id"])
+    manifest_store = ArtifactManifestStore(models_root)
 
     _write_json(
-        models_root / "artifacts" / artifact_id / "manifest.json",
+        manifest_store.artifact_manifest_path(artifact_id),
         artifact_payload,
     )
 
@@ -253,7 +256,7 @@ def test_policy_bundle_loader_accepts_documented_example_fallback_shape(tmp_path
     )
     loader = JSONPolicyBundleLoader(
         heuristic_registry=registry,
-        manifest_store=ArtifactManifestStore(models_root),
+        manifest_store=manifest_store,
     )
 
     bundle = loader.load_bundle(bundle_payload)
@@ -281,14 +284,15 @@ def test_policy_bundle_loader_resolves_manifest_backed_artifacts_without_ml_extr
     artifact_id = "artifact:matchup_evaluator:preview11e_capability_v1:20260414"
     bundle_id = "policy_bundle:artifact_headless_v1"
     bundle_payload = _base_bundle_payload(bundle_id)
+    manifest_store = ArtifactManifestStore(models_root)
     bundle_payload["components"]["matchup_evaluator"] = {
         "resolver_kind": "artifact",
         "resolver_ref": artifact_id,
     }
 
-    _write_json(models_root / "bundles" / f"{bundle_id}.json", bundle_payload)
+    _write_json(manifest_store.bundle_manifest_path(bundle_id), bundle_payload)
     _write_json(
-        models_root / "artifacts" / artifact_id / "manifest.json",
+        manifest_store.artifact_manifest_path(artifact_id),
         _artifact_manifest_payload(artifact_id, "matchup_evaluator"),
     )
 
@@ -301,7 +305,7 @@ def test_policy_bundle_loader_resolves_manifest_backed_artifacts_without_ml_extr
     )
     loader = JSONPolicyBundleLoader(
         heuristic_registry=registry,
-        manifest_store=ArtifactManifestStore(models_root),
+        manifest_store=manifest_store,
     )
 
     bundle = loader.load_bundle(bundle_id)
@@ -310,7 +314,7 @@ def test_policy_bundle_loader_resolves_manifest_backed_artifacts_without_ml_extr
     assert isinstance(artifact_reference, ArtifactManifestReference)
     assert artifact_reference.artifact_id == artifact_id
     assert artifact_reference.manifest.component_type == "matchup_evaluator"
-    assert artifact_reference.manifest_path == models_root / "artifacts" / artifact_id / "manifest.json"
+    assert artifact_reference.manifest_path == manifest_store.artifact_manifest_path(artifact_id)
 
 
 def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Path) -> None:
@@ -318,12 +322,13 @@ def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Pat
     bundle_id = "policy_bundle:missing_artifact_headless_v1"
     missing_artifact_id = "artifact:missing_matchup_evaluator_v1"
     bundle_payload = _base_bundle_payload(bundle_id)
+    manifest_store = ArtifactManifestStore(models_root)
     bundle_payload["components"]["matchup_evaluator"] = {
         "resolver_kind": "artifact",
         "resolver_ref": missing_artifact_id,
     }
 
-    _write_json(models_root / "bundles" / f"{bundle_id}.json", bundle_payload)
+    _write_json(manifest_store.bundle_manifest_path(bundle_id), bundle_payload)
 
     registry = HeuristicRegistry(
         {
@@ -334,7 +339,7 @@ def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Pat
     )
     loader = JSONPolicyBundleLoader(
         heuristic_registry=registry,
-        manifest_store=ArtifactManifestStore(models_root),
+        manifest_store=manifest_store,
     )
 
     with pytest.raises(UnknownArtifactError) as exc_info:
@@ -342,4 +347,16 @@ def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Pat
 
     message = str(exc_info.value)
     assert missing_artifact_id in message
-    assert str(models_root / "artifacts" / missing_artifact_id / "manifest.json") in message
+    assert str(manifest_store.artifact_manifest_path(missing_artifact_id)) in message
+
+
+def test_manifest_store_uses_filesystem_safe_tokens_for_manifest_paths(tmp_path: Path) -> None:
+    models_root = tmp_path / "models"
+    manifest_store = ArtifactManifestStore(models_root)
+
+    artifact_path = manifest_store.artifact_manifest_path("artifact:matchup_evaluator:preview11e_capability_v1:20260414")
+    bundle_path = manifest_store.bundle_manifest_path("policy_bundle:heuristic_headless_v1")
+
+    assert artifact_path.parts[-2] == "artifact%3Amatchup_evaluator%3Apreview11e_capability_v1%3A20260414"
+    assert artifact_path.name == "manifest.json"
+    assert bundle_path.name == "policy_bundle%3Aheuristic_headless_v1.json"
