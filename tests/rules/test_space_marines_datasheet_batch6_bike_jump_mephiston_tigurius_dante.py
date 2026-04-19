@@ -378,6 +378,7 @@ def test_chief_librarian_tigurius_master_of_prescience_grants_once_per_battle_ro
     rule = bodyguard.get_master_of_prescience_stratagem_discount_rule()
     assert rule is not None
     assert str(rule.get("source", "") or "") == "Master of Prescience (Psychic)"
+    assert bodyguard.get_beast_handler_heroic_intervention_rule() is None
     assert set(rule.get("stratagems", ()) or ()) >= {
         "FIRE OVERWATCH",
         "GO TO GROUND",

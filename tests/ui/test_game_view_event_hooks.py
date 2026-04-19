@@ -20,11 +20,15 @@ class _HookHarness:
         self._subscribed_game = None
         self._ui_event_hook_group = ""
         self._decision_controller = None
+        self._optional_decision_hook_handler = self._optional_decision_hook
 
     def __getattr__(self, name: str):
         if name.startswith("_on_"):
             return lambda **_kwargs: None
         raise AttributeError(name)
+
+    def _optional_decision_hook(self, *_args, **_kwargs):
+        return False
 
 
 def _subscriber_count(event_system: EventSystem) -> int:
@@ -60,6 +64,24 @@ def test_subscribe_event_hooks_detaches_old_game_on_swap():
 
     assert _subscriber_count(game_one.event_system) == 0
     assert _subscriber_count(game_two.event_system) == first
+
+
+def test_subscribe_event_hooks_installs_optional_decision_hook_for_local_players():
+    local_player = SimpleNamespace(optional_decision_hook=None, has_control=lambda: True)
+    remote_player = SimpleNamespace(optional_decision_hook=None, has_control=lambda: False)
+    game = SimpleNamespace(event_system=EventSystem(), players=[local_player, remote_player])
+    harness = _HookHarness(game)
+    harness._unsubscribe_event_hooks = MethodType(GameView._unsubscribe_event_hooks, harness)
+
+    GameView._subscribe_event_hooks(harness)
+
+    assert local_player.optional_decision_hook is harness._optional_decision_hook_handler
+    assert remote_player.optional_decision_hook is None
+
+    GameView._unsubscribe_event_hooks(harness)
+
+    assert local_player.optional_decision_hook is None
+    assert remote_player.optional_decision_hook is None
 
 
 def test_request_lookup_context_strips_ui_only_fields():
@@ -131,6 +153,44 @@ def test_confirm_request_requires_specialized_ui_for_custom_flows():
         context={"ability": "generic_optional"},
     )
     assert _confirm_request_requires_specialized_ui(generic) is False
+
+
+def test_on_decision_requested_skips_optional_confirm_owned_by_optional_hook():
+    player = SimpleNamespace(
+        id="p1",
+        has_control=lambda: True,
+        optional_decision_hook=lambda *_args, **_kwargs: True,
+    )
+    game = SimpleNamespace(event_system=EventSystem(), players=[player], is_authoritative=False)
+    harness = _HookHarness(game)
+
+    class _DialogStub:
+        def __init__(self):
+            self.visible = False
+            self.decision_request = None
+            self.show_calls = 0
+
+        def show(self, *_args, **_kwargs):
+            self.show_calls += 1
+
+    harness.yes_no_dialog = _DialogStub()
+    harness.dialog_manager = SimpleNamespace(open=lambda *_args, **_kwargs: None)
+    harness._resolve_player_by_id = lambda player_id: player if str(player_id or "") == "p1" else None
+
+    request = DecisionRequest.create(
+        "decision.confirm_yes_no",
+        "Confirm",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Use", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"ability": "generic_optional", "optional": True, "message": "Use it?"},
+    )
+
+    GameView._on_decision_requested(harness, request=request, game=game)
+
+    assert harness.yes_no_dialog.show_calls == 0
 
 
 def test_miracle_request_requires_specialized_ui_for_provider_owned_flows():

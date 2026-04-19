@@ -56,6 +56,22 @@ This note tracks the specific decision-parity regressions audited in this pass.
   for already-queued request flows. Preview checks also now treat attached decision
   controllers as reachable choice paths, so optional discounts are not hidden from
   headless/controller-driven play before the actual request is issued.
+- [player.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/roster/player.py:2843),
+  [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:3427),
+  and [reactive_decisions_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/reactive_decisions_mixin.py:266)
+  now keep local optional yes/no abilities on the same emitted request chain. A
+  local controlled player now gets a dedicated synchronous `optional_decision_hook`
+  installed by `GameView`, the generic local `decision_requested` UI path stays
+  out of those optional confirmations, and reachability checks recognize that hook
+  as a valid decision owner instead of falling back to an implicit `Skip`. If an
+  optional yes/no request is emitted with no synchronous owner attached, the player
+  path now fails explicitly rather than silently continuing past the pending request.
+- [keywords_detachments_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/keywords_detachments_mixin.py:10840)
+  no longer over-classifies generic “core stratagems for 0CP” leader rules as
+  `Beast Handler` Heroic Intervention discounts. That false positive surfaced once
+  the optional-decision path stopped auto-skipping unresolved prompts; the parser
+  now only matches explicit “target that unit with the Heroic Intervention
+  Stratagem for 0CP” wording.
 - [stratagems.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/stratagems.py:2161)
   no longer bypasses `DecisionRequest` for the Drukhari `Power from Pain`
   stratagem add-on spend; it now settles the same emitted confirmation request that

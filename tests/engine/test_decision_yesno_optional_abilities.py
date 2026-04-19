@@ -811,6 +811,78 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(ctx.get("ability_key"), "POWER_FROM_PAIN_STRATAGEM")
         self.assertEqual(ctx.get("pain_cost"), 1)
 
+    def test_local_optional_ability_without_hook_raises_and_leaves_request_pending(self):
+        army = Army.with_detachment("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        player = Player("Player", PlayerControl.LOCAL, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        with self.assertRaisesRegex(RuntimeError, "Optional decision 'TEST_OPTIONAL' remained pending"):
+            player._should_use_optional_ability(
+                "TEST_OPTIONAL",
+                {
+                    "ability_name": "Test Optional",
+                    "message": "Use Test Optional?",
+                },
+            )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "test_optional")
+        self.assertEqual(ctx.get("ability_key"), "TEST_OPTIONAL")
+        self.assertTrue(bool(ctx.get("optional")))
+
+    def test_optional_decision_hook_resolves_existing_confirmation_request(self):
+        army = Army.with_detachment("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        player = Player("Player", PlayerControl.LOCAL, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        observed = []
+
+        def _optional_hook(owner, key, context):
+            observed.append((owner, key, dict(context or {})))
+            pending = game.decision_queue.list()
+            self.assertEqual(len(pending), 1)
+            request = pending[0]
+            self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+            self._resolve_yes(game, request, owner)
+            return True
+
+        player.optional_decision_hook = _optional_hook
+
+        result = player._should_use_optional_ability(
+            "TEST_OPTIONAL",
+            {
+                "ability_name": "Test Optional",
+                "message": "Use Test Optional?",
+            },
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(len(game.decision_queue.list()), 0)
+        self.assertEqual(len(observed), 1)
+        self.assertIs(observed[0][0], player)
+        self.assertEqual(observed[0][1], "TEST_OPTIONAL")
+        self.assertEqual(observed[0][2].get("ability_name"), "Test Optional")
+
     def test_enhancement_fight_first_queues_and_applies(self):
         army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "SM"

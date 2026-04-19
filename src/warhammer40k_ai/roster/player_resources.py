@@ -15,6 +15,7 @@ def initialize_player_resource_state(player) -> None:
     player._ability_used_phase = {}
     player._next_optional_decisions = {}
     player._next_optional_selections = {}
+    player.optional_decision_hook = None
     player.reactive_move_position_hook = None
     player._pending_stratagem_target_unit_id = ""
     player._pending_stratagem_name = ""

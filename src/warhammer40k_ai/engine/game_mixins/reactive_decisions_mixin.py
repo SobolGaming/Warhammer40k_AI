@@ -272,6 +272,8 @@ class GameReactiveDecisionsMixin:
         overrides = getattr(player, "_next_optional_decisions", None)
         if isinstance(overrides, dict) and k in overrides:
             return True
+        if callable(getattr(player, "optional_decision_hook", None)):
+            return True
         return callable(getattr(player, "decision_hook", None))
 
     def _resolve_player_by_id(self, player_id: str | None):

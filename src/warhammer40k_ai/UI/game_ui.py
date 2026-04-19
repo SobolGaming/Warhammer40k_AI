@@ -282,6 +282,7 @@ class GameView:
         self.developer_menu_dialog = DeveloperMenuDialog(screen_width, screen_height)
         self._enable_developer_controls = False
         self._profiling_controller = ProfilingController(out_dir="profiles", sort_by="tottime", lines=120)
+        self._optional_decision_hook_handler = self._optional_decision_hook
         # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
         self.blood_tithe_dialog = None
@@ -3420,6 +3421,11 @@ class GameView:
             remove_controller = getattr(hub, "remove_controller", None) if hub is not None else None
             if callable(remove_controller):
                 remove_controller(controller)
+        handler = getattr(self, "_optional_decision_hook_handler", None)
+        for player in list(getattr(subscribed_game, "players", []) or []):
+            current_hook = getattr(player, "optional_decision_hook", None)
+            if current_hook is handler:
+                player.optional_decision_hook = None
 
         self._subscribed_event_system = None
         self._subscribed_game = None
@@ -3453,6 +3459,14 @@ class GameView:
             add_controller(self._decision_controller)
         else:
             _sub("decision_requested", self._on_decision_requested)
+        handler = getattr(self, "_optional_decision_hook_handler", None)
+        if handler is None:
+            handler = self._optional_decision_hook
+            self._optional_decision_hook_handler = handler
+        for player in list(getattr(game, "players", []) or []):
+            has_control = getattr(player, "has_control", None)
+            if callable(has_control) and has_control():
+                player.optional_decision_hook = handler
 
         subscriptions = [
             ("phase_start", self._on_phase_start_optional_ability_prompts),
@@ -3513,6 +3527,64 @@ class GameView:
 
         self._subscribed_event_system = event_system
         self._subscribed_game = game
+
+    def _optional_decision_hook(self, player, key: str, context: dict) -> bool:
+        if player is None or not callable(getattr(player, "has_control", None)) or not player.has_control():
+            return False
+        if getattr(self, "yes_no_dialog", None) is None:
+            return False
+
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..utility.decision_utils import choice_from_decision_value, resolve_decision_value
+
+        request_context = dict(context or {})
+        ability_name = str(
+            request_context.get("ability_name", "")
+            or request_context.get("prompt", "")
+            or str(key or "").strip().replace("_", " ").title()
+        ).strip() or "Confirm"
+        message = str(request_context.get("message", "") or "").strip() or f"Use {ability_name}?"
+        request = _require_pending_decision_request(
+            self.game if self.game is not None else None,
+            DECISION_CONFIRM_YES_NO,
+            ability_name,
+            player_id=getattr(player, "id", None),
+            context=_request_lookup_context(request_context),
+        )
+        _mark_request_ui_prompted(request, message=message)
+
+        choice_holder = {"choice": False, "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, request, option_id, player_id=getattr(player, "id", None))
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                choice_holder["choice"] = False
+            else:
+                choice_holder["choice"] = bool(choice_from_decision_value(value))
+            choice_holder["done"] = True
+
+        if not (
+            self.yes_no_dialog.visible
+            and getattr(self.yes_no_dialog, "decision_request", None) is request
+        ):
+            self.yes_no_dialog.show(ability_name, message, _on_choice, decision_request=request)
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+
+        clock = pygame.time.Clock()
+        while self.yes_no_dialog.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return False
+                self.dialog_manager.handle_event(event)
+            self.draw()
+            self.yes_no_dialog.draw(self.screen)
+            pygame.display.flip()
+            clock.tick(60)
+
+        if choice_holder["done"]:
+            return bool(choice_holder["choice"])
+        return bool(choice_from_decision_value(getattr(request, "_resolved_decision_value", None)))
 
     def _resolve_player_by_id(self, player_id: str | None):
         if not player_id:
@@ -4085,6 +4157,8 @@ class GameView:
                 if not player.has_control():
                     return
             except Exception:
+                return
+            if bool(ctx.get("optional")) and callable(getattr(player, "optional_decision_hook", None)):
                 return
             if getattr(self, "yes_no_dialog", None) is None:
                 return

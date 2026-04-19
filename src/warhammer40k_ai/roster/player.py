@@ -639,11 +639,11 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         words = [part for part in str(key or "").strip().split("_") if part]
         return " ".join(word.capitalize() for word in words)
 
-    def _resolve_optional_ability_fallback_choice(self, key: str, context: dict) -> bool:
-        """Consume one-shot overrides or the legacy synchronous hook without emitting a request."""
+    def _resolve_optional_ability_fallback_choice(self, key: str, context: dict) -> bool | None:
+        """Consume one-shot overrides or synchronous hooks without emitting a request."""
         k = (key or "").strip().upper()
         if not k:
-            return False
+            return None
         current_impl = getattr(self, "_should_use_optional_ability", None)
         default_impl = getattr(type(self), "_should_use_optional_ability", None)
         current_func = getattr(current_impl, "__func__", current_impl)
@@ -652,10 +652,13 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         overrides = getattr(self, "_next_optional_decisions", None)
         if isinstance(overrides, dict) and k in overrides:
             return bool(overrides.pop(k))
+        optional_hook = getattr(self, "optional_decision_hook", None)
+        if callable(optional_hook):
+            return bool(optional_hook(self, k, dict(context or {})))
         hook = getattr(self, "decision_hook", None)
         if callable(hook):
             return bool(hook(self, k, dict(context or {})))
-        return False
+        return None
 
     def _should_preview_optional_ability(self, key: str, context: dict, *, assume: bool | None) -> bool:
         if assume is True:
@@ -668,6 +671,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         overrides = getattr(self, "_next_optional_decisions", None)
         if isinstance(overrides, dict) and k in overrides:
             return bool(overrides.get(k))
+        if callable(getattr(self, "optional_decision_hook", None)):
+            return True
         hook = getattr(self, "decision_hook", None)
         if callable(hook):
             return bool(hook(self, k, context))
@@ -2855,12 +2860,12 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             return False
         ctx = dict(context or {})
         if bool(ctx.pop("_fallback_only", False)):
-            return self._resolve_optional_ability_fallback_choice(k, ctx)
+            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
 
         game = getattr(self, "game", None)
         request_fn = getattr(game, "request_decision", None) if game is not None else None
         if not callable(request_fn):
-            return self._resolve_optional_ability_fallback_choice(k, ctx)
+            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
 
         from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from ..engine.decisions import DecisionOption, DecisionRequest
@@ -2885,7 +2890,7 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         try:
             request_fn(request)
         except ValueError:
-            return self._resolve_optional_ability_fallback_choice(k, ctx)
+            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
 
         fallback_choice = None
         if decision_request_is_pending(game, request):
@@ -2897,6 +2902,10 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             fallback_choice=fallback_choice,
             player_id=getattr(self, "id", None),
         )
+        if decision_request_is_pending(game, request):
+            raise RuntimeError(
+                f"Optional decision '{k}' remained pending without a synchronous decision owner."
+            )
         return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
 
     def _choose_optional_value(self, key: str, options: list, context: dict):

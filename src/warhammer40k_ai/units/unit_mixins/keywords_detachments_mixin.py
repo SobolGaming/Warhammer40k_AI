@@ -10882,6 +10882,8 @@ class KeywordsDetachmentsMixin:
                 continue
             if "leading" not in norm:
                 continue
+            if "target that unit with the heroic intervention stratagem for 0cp" not in norm:
+                continue
             source = str(name or "Beast Handler").strip() or "Beast Handler"
             rule = {"source": source, "ability_key": "beast_handler_heroic_intervention"}
             try:
