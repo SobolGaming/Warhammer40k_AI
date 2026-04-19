@@ -12,11 +12,19 @@ class SecondaryDiscardDialog(BaseDialog):
         self.cards: List[Any] = []
         self.selected_index: Optional[int] = None
         self.on_confirm: Optional[Callable[[str], None]] = None
+        self.on_cancel: Optional[Callable[[], None]] = None
         self.list_rect = None
         self.decision_request = None
         self._option_entries: List[dict] = []
 
-    def show(self, cards: List[Any], on_confirm: Callable[[str], None], *, decision_request=None):
+    def show(
+        self,
+        cards: List[Any],
+        on_confirm: Callable[[str], None],
+        *,
+        on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
+    ):
         super().show()
         self.decision_request = decision_request
         self._option_entries = []
@@ -26,12 +34,15 @@ class SecondaryDiscardDialog(BaseDialog):
             candidates = list(cards or [])
             for opt in options:
                 payload = dict(getattr(opt, "payload", {}) or {})
+                if bool(payload.get("skip", False)) or str(payload.get("action", "") or "").strip().lower() == "skip":
+                    continue
                 name = str(payload.get("card_name", payload.get("name", opt.label)) or "")
                 card = next((c for c in candidates if str(getattr(c, "name", "") or "") == name), None)
                 self.cards.append(card)
                 self._option_entries.append({"option_id": opt.option_id, "label": name, "card": card})
         self.selected_index = 0 if self._option_entries else None
         self.on_confirm = on_confirm
+        self.on_cancel = on_cancel
         self._create_buttons()
 
     def hide(self):
@@ -39,6 +50,7 @@ class SecondaryDiscardDialog(BaseDialog):
         self.cards = []
         self.selected_index = None
         self.on_confirm = None
+        self.on_cancel = None
         self.buttons.clear()
         self.button_states.clear()
         self.decision_request = None
@@ -58,6 +70,8 @@ class SecondaryDiscardDialog(BaseDialog):
                     self.on_confirm(option_id)
             return True
         if button_name in ('cancel', 'close'):
+            if callable(self.on_cancel):
+                self.on_cancel()
             self.hide()
             return True
         return False
@@ -131,4 +145,9 @@ class SecondaryDiscardDialog(BaseDialog):
                     if callable(self.on_confirm):
                         self.on_confirm(option_id)
                     return True
+            elif event.key == pygame.K_ESCAPE:
+                if callable(self.on_cancel):
+                    self.on_cancel()
+                self.hide()
+                return True
         return False

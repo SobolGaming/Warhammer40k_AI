@@ -33378,25 +33378,87 @@ def _apply_daemonic_poisons_target(game: object, request: DecisionRequest, resul
 
 
 def _validate_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
-    return validate_option_choice(request, result)
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    ability = str(
+        request.context.get("ability", "")
+        or payload.get("ability", "")
+        or payload.get("ability_key", "")
+        or ""
+    ).strip().lower()
+    if ability != "new_orders":
+        return ()
+    player = _resolve_player(game, request, payload)
+    if player is None:
+        return ("New Orders player not found.",)
+    if getattr(player, "stratagems", None) is None:
+        return ("New Orders stratagem manager not found.",)
+    if is_skip_choice(request, result):
+        return ()
+    if _resolve_secondary_card_choice(game, request, result) is None:
+        return ("New Orders requires an active secondary card choice.",)
+    return ()
 
 
-def _apply_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult):
+def _resolve_secondary_card_choice(game: object, request: DecisionRequest, result: DecisionResult):
     payload = _option_payload(request, result)
     card = payload.get("card", payload.get("secondary"))
     if card is not None:
         return card
-    name = payload.get("card_name") or payload.get("name")
-    if not name:
-        return None
     player = _resolve_player(game, request, payload)
     if player is None:
         return None
     cards = list(getattr(player, "active_secondaries", []) or [])
+    card_slot = payload.get("card_slot")
+    if card_slot is not None:
+        try:
+            slot_index = int(card_slot)
+        except (TypeError, ValueError):
+            slot_index = -1
+        if 0 <= slot_index < len(cards):
+            return cards[slot_index]
+    name = payload.get("card_name") or payload.get("name")
+    if not name:
+        return None
     for card_obj in cards:
         if str(getattr(card_obj, "name", "") or "") == str(name):
             return card_obj
     return None
+
+
+def _apply_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    ability = str(
+        request.context.get("ability", "")
+        or payload.get("ability", "")
+        or payload.get("ability_key", "")
+        or ""
+    ).strip().lower()
+    if ability != "new_orders":
+        return _resolve_secondary_card_choice(game, request, result)
+
+    player = _resolve_player(game, request, payload)
+    if player is None:
+        raise RuntimeError("New Orders player not found.")
+    manager = getattr(player, "stratagems", None)
+    if manager is None:
+        raise RuntimeError("New Orders stratagem manager not found.")
+    if is_skip_choice(request, result):
+        dequeue_reaction = getattr(manager, "_dequeue_reaction_by_name", None)
+        if callable(dequeue_reaction):
+            dequeue_reaction("NEW ORDERS")
+        return None
+
+    card = _resolve_secondary_card_choice(game, request, result)
+    if card is None:
+        raise RuntimeError("New Orders secondary card not found.")
+    phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "Command phase")
+    stratagem_name = str(request.context.get("stratagem_name", "") or payload.get("stratagem_name", "") or "NEW ORDERS")
+    if not bool(manager.use(stratagem_name, secondary_card=card, phase_name=phase_name, dequeue=True)):
+        raise RuntimeError("New Orders stratagem could not be applied.")
+    return card
 
 
 def _validate_choose_shadow_form(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

@@ -3400,6 +3400,135 @@ class StratagemManager(
                 self._pending_reactions.pop(i)
                 return
 
+    def _has_pending_decision_request(
+        self,
+        *,
+        decision_type: str,
+        ability: str,
+        phase_name: str = "",
+    ) -> bool:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        list_fn = getattr(queue, "list", None) if queue is not None else None
+        if not callable(list_fn):
+            return False
+        normalized_type = str(decision_type or "").strip()
+        normalized_ability = str(ability or "").strip()
+        normalized_phase = str(phase_name or "").strip()
+        player_id = str(getattr(self.player, "id", "") or "").strip()
+        for request in list(list_fn() or []):
+            if str(getattr(request, "decision_type", "") or "").strip() != normalized_type:
+                continue
+            context = dict(getattr(request, "context", {}) or {})
+            if str(context.get("ability", "") or "").strip() != normalized_ability:
+                continue
+            if normalized_phase and str(context.get("phase_name", "") or "").strip() != normalized_phase:
+                continue
+            if player_id and str(getattr(request, "player_id", "") or "").strip() != player_id:
+                continue
+            return True
+        return False
+
+    def _submit_decision_request(self, request: Any) -> bool:
+        if request is None:
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "add"):
+            return False
+        queue.add(request)
+        return True
+
+    def _queue_new_orders_decision(self, *, phase_name: str = "Command phase") -> bool:
+        if self.player is None or self.game is None:
+            return False
+        if not bool(getattr(self.game, "is_authoritative", True)):
+            return False
+        stratagem = self.get_by_name("NEW ORDERS")
+        if stratagem is None:
+            return False
+        phase_label = str(phase_name or "").strip() or "Command phase"
+        if not bool(stratagem.can_use(self.player, self.game, phase_name=phase_label)):
+            return False
+        active_secondaries = list(getattr(self.player, "active_secondaries", []) or [])
+        if not active_secondaries:
+            return False
+        if not bool(getattr(self.player, "can_draw_secondary", lambda: False)()):
+            return False
+
+        from ..engine.decision_kinds import DECISION_DISCARD_SECONDARY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if self._has_pending_decision_request(
+            decision_type=DECISION_DISCARD_SECONDARY,
+            ability="new_orders",
+            phase_name=phase_label,
+        ):
+            return False
+
+        options: list[DecisionOption] = []
+        for index, card in enumerate(active_secondaries):
+            card_name = str(getattr(card, "name", "") or "Secondary")
+            options.append(
+                DecisionOption.create(
+                    card_name,
+                    payload={
+                        "card_name": card_name,
+                        "card_slot": int(index),
+                        "ability_key": "new_orders",
+                        "ability_name": str(getattr(stratagem, "name", "") or "NEW ORDERS"),
+                        "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                        "stratagem_name": "NEW ORDERS",
+                        "tool_id": "stratagem:new_orders",
+                        "tool_type": "stratagem",
+                        "semantic_tags": ["secondary", "mission", "discard", "draw", "resource"],
+                    },
+                )
+            )
+        options.append(
+            DecisionOption.create(
+                "Do not use",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "ability_key": "new_orders",
+                    "ability_name": str(getattr(stratagem, "name", "") or "NEW ORDERS"),
+                    "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                    "stratagem_name": "NEW ORDERS",
+                    "tool_id": "stratagem:new_orders",
+                    "tool_type": "stratagem",
+                    "semantic_tags": ["secondary", "mission", "discard", "draw", "resource"],
+                },
+            )
+        )
+
+        request = DecisionRequest.create(
+            DECISION_DISCARD_SECONDARY,
+            "NEW ORDERS: discard one active Secondary Mission card and draw a new one.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "new_orders",
+                "ability_name": str(getattr(stratagem, "name", "") or "NEW ORDERS"),
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "stratagem_name": "NEW ORDERS",
+                "tool_id": "stratagem:new_orders",
+                "tool_type": "stratagem",
+                "semantic_tags": ["secondary", "mission", "discard", "draw", "resource"],
+                "optional": True,
+                "skip_label": "Do not use",
+            },
+        )
+        return self._submit_decision_request(request)
+
     def _now(self) -> float:
         return float(time.monotonic())
 
@@ -11656,6 +11785,7 @@ class StratagemManager(
                                 'cp_cost': s.cp_cost,
                                 'options': [c for c in self.player.active_secondaries],
                             }, use_timer=False)
+                        self._queue_new_orders_decision(phase_name='Command phase')
         except Exception:
             raise
         # War Horde: MOB RULE (end of your Command phase)

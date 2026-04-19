@@ -220,3 +220,55 @@ def test_miracle_request_requires_specialized_ui_for_provider_owned_flows():
         context={"ability": "generic"},
     )
     assert _miracle_request_requires_specialized_ui(generic) is False
+
+
+def test_on_decision_requested_secondary_discard_cancel_resolves_skip() -> None:
+    commands = []
+    player = SimpleNamespace(id="p1", has_control=lambda: True)
+    game = SimpleNamespace(
+        event_system=EventSystem(),
+        players=[player],
+        apply_command=lambda command: commands.append(command) or SimpleNamespace(
+            value=SimpleNamespace(ok=True, value=None)
+        ),
+    )
+    harness = _HookHarness(game)
+
+    class _DialogStub:
+        def __init__(self):
+            self.calls = []
+
+        def show(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+        def hide(self):
+            return None
+
+    harness.secondary_discard_dialog = _DialogStub()
+    harness.dialog_manager = SimpleNamespace(open=lambda *_args, **_kwargs: None)
+    harness._resolve_player_by_id = lambda player_id: player if str(player_id or "") == "p1" else None
+
+    request = DecisionRequest.create(
+        "DISCARD_SECONDARY",
+        "NEW ORDERS",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Cleanse", payload={"card_name": "Cleanse", "card_slot": 0}),
+            DecisionOption.create("Do not use", payload={"action": "skip", "skip": True}),
+        ],
+        context={"ability": "new_orders", "optional": True},
+    )
+
+    GameView._on_decision_requested(harness, request=request, game=game)
+
+    assert len(harness.secondary_discard_dialog.calls) == 1
+    _, kwargs = harness.secondary_discard_dialog.calls[0]
+    on_cancel = kwargs["on_cancel"]
+    assert callable(on_cancel)
+
+    on_cancel()
+
+    assert len(commands) == 1
+    assert commands[0].kind == "RESOLVE_DECISION"
+    assert commands[0].payload["decision_id"] == request.decision_id
+    assert commands[0].payload["result_payload"] == {"skipped": True}

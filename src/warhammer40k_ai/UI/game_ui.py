@@ -496,27 +496,31 @@ class GameView:
 
         self._resolve_option_selection_dialog = _resolve_option_selection_dialog
 
-        def _request_secondary_discard(player, game, on_chosen):
+        def _request_secondary_discard(player, game, on_chosen, *, context: Optional[dict] = None, allow_skip: bool = False):
             from ..engine.decision_kinds import DECISION_DISCARD_SECONDARY
             from ..engine.decisions import DecisionOption, DecisionRequest
             from ..utility.decision_utils import resolve_decision_value
+            from .decision_ui_utils import option_id_for_action
 
             cards = list(getattr(player, 'active_secondaries', []) or [])
             if not cards:
                 on_chosen(None)
                 return
             options = []
-            for card in cards:
+            for index, card in enumerate(cards):
                 try:
                     name = str(getattr(card, "name", "Secondary") or "Secondary")
                 except Exception:
                     name = "Secondary"
-                options.append(DecisionOption.create(name, payload={"card_name": name}))
+                options.append(DecisionOption.create(name, payload={"card_name": name, "card_slot": int(index)}))
+            if allow_skip:
+                options.append(DecisionOption.create("Do not use", payload={"action": "skip", "skip": True}))
             req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DISCARD_SECONDARY,
                 "Select a secondary to discard.",
                 player_id=getattr(player, "id", None),
                 options=options,
+                context=dict(context or {}),
 
             )
 
@@ -528,7 +532,23 @@ class GameView:
                 except Exception:
                     pass
 
-            self.secondary_discard_dialog.show(cards, _on_confirm, decision_request=req)
+            def _on_cancel():
+                skip_id = option_id_for_action(req, "skip")
+                if not skip_id:
+                    return
+                value, _apply = resolve_decision_value(self.game, req, skip_id, result_payload={"skipped": True})
+                on_chosen(value)
+                try:
+                    self.secondary_discard_dialog.hide()
+                except Exception:
+                    pass
+
+            self.secondary_discard_dialog.show(
+                cards,
+                _on_confirm,
+                on_cancel=_on_cancel if allow_skip else None,
+                decision_request=req,
+            )
             try:
                 self.dialog_manager.open(self.secondary_discard_dialog, modal=True)
             except Exception:
@@ -3735,6 +3755,69 @@ class GameView:
             )
             try:
                 self.dialog_manager.open(self.dice_roll_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_DISCARD_SECONDARY
+        except Exception:
+            DECISION_DISCARD_SECONDARY = ""
+
+        if decision_type == DECISION_DISCARD_SECONDARY:
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action
+
+            dlg = getattr(self, "secondary_discard_dialog", None)
+            if dlg is None:
+                return
+
+            cards = list(getattr(player, "active_secondaries", []) or [])
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                skip_id = option_id_for_action(request, "skip")
+                if not skip_id:
+                    return
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    skip_id,
+                    result_payload={"skipped": True},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                cards,
+                _on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
             except Exception:
                 pass
             return
@@ -18788,7 +18871,13 @@ class GameView:
         name_u = str(name).strip().upper()
         if name_u == "NEW ORDERS" and "secondary_card" not in context:
             if callable(getattr(self, "_request_secondary_discard", None)):
-                self._request_secondary_discard(player, self.game, lambda chosen: self._finalize_new_orders(player, name, context, chosen))
+                self._request_secondary_discard(
+                    player,
+                    self.game,
+                    lambda _chosen: None,
+                    context={"ability": "new_orders"},
+                    allow_skip=True,
+                )
             return
 
         if name_u in ("FIRE OVERWATCH", "OVERWATCH") and "shooter_unit" not in context:

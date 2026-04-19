@@ -307,7 +307,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `SELECT_UNLEASH_HELL_VEHICLE` | Unleash Hell must choose a vehicle or transport. | UI | `Policy` | `T3` |
 | `CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET` | A post-shoot leadership-debuff rule needs a target. | UI | `Policy` | `T3` |
 | `CHOOSE_DAEMONIC_POISONS_TARGET` | Daemonic Poisons must choose a target. | UI | `Policy` | `T3` |
-| `DISCARD_SECONDARY` | Tactical-secondary discard window opens. | UI | `Policy` | `T1` |
+| `DISCARD_SECONDARY` | Tactical-secondary discard window opens, including `NEW ORDERS` discard-or-skip choices. | UI | `Policy` | `T1` |
 | `CHOOSE_SHADOW_FORM` | Shadow Form round-start choice opens. | UI | `Policy` | `T1` |
 | `CHOOSE_VOW` | Vow battle-start choice opens. | UI | `Policy` | `T1` |
 | `ISSUE_ORDER` | An order source must choose an order and recipient. | UI | `Policy` | `T2` |
