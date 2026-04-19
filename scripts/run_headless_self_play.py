@@ -82,6 +82,32 @@ def _resolved_replay_base_dir(path: str | None) -> Path | None:
     return Path(path_text).expanduser().resolve()
 
 
+def _allocate_replay_session_id(
+    game: Game,
+    *,
+    replay_base_dir: Path,
+    preferred_session_id: str,
+    label: str,
+) -> str:
+    preferred_id = str(preferred_session_id or "").strip()
+    if not preferred_id:
+        raise ValueError("Preferred replay session id is required.")
+    suffix = 0
+    candidate_session_id = preferred_id
+    while True:
+        try:
+            create_session(
+                game,
+                base_dir=replay_base_dir,
+                session_id=candidate_session_id,
+                label=label,
+            )
+            return candidate_session_id
+        except FileExistsError:
+            suffix += 1
+            candidate_session_id = f"{preferred_id}:run{suffix:03d}"
+
+
 def _export_decision_records(records: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, Any]]:
     safe_records = _json_safe(list(records or []))
     return list(safe_records or [])
@@ -338,30 +364,33 @@ def _run_single_game(
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
 ) -> dict[str, Any]:
+    stable_game_id = str(game_id or "")
     player1_label = _army_label_from_path(player1_army_file)
     player2_label = _army_label_from_path(player2_army_file)
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
-    game.session_id = str(game_id or "")
+    game.session_id = stable_game_id
     replay_base_dir = _resolved_replay_base_dir(replay_dir)
     replay_path: Path | None = None
     snapshot_path: Path | None = None
     replay_label = f"{player1_label}_vs_{player2_label}"
+    replay_session_id = stable_game_id
     if replay_base_dir is not None:
-        create_session(
+        replay_session_id = _allocate_replay_session_id(
             game,
-            base_dir=replay_base_dir,
-            session_id=str(game_id or ""),
+            replay_base_dir=replay_base_dir,
+            preferred_session_id=stable_game_id,
             label=replay_label,
         )
         replay_path = enable_session_replay_recording(
             game,
             base_dir=replay_base_dir,
-            session_id=str(game_id or ""),
+            session_id=replay_session_id,
             label=replay_label,
             keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
         )
+        game.session_id = stable_game_id
     if game_seed is not None:
         random_source = getattr(game, "random_source", None)
         seed_fn = getattr(random_source, "seed", None)
@@ -486,19 +515,20 @@ def _run_single_game(
         snapshot_path = save_session_snapshot(
             game,
             base_dir=replay_base_dir,
-            session_id=str(game_id or ""),
+            session_id=replay_session_id,
             label=replay_label,
         )
+        game.session_id = stable_game_id
     records = _export_decision_records(list(getattr(game.decision_record_store, "records", []) or []))
     return {
-        "game_id": str(game_id or ""),
+        "game_id": stable_game_id,
         "records": records,
         "phase_steps": int(phase_steps),
         "winner_player_id": str(getattr(winner, "id", "") or ""),
         "winner_army_label": str(winner_army_label or ""),
         "winner_score_line": str(winner_score_line or ""),
         "scoreboard": scoreboard,
-        "replay_session_id": str(game_id or "") if replay_path is not None else "",
+        "replay_session_id": replay_session_id if replay_path is not None else "",
         "replay_path": str(replay_path) if replay_path is not None else "",
         "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
     }

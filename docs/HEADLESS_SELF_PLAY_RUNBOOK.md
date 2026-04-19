@@ -56,14 +56,17 @@ python scripts/run_headless_self_play.py \
 ```
 
 When `--replay-dir` is enabled, each game writes a filesystem-safe session directory under the replay root.
-The manifest keeps the original `game_id`, and the folder name uses a deterministic path-safe encoding when needed
-(for example `selfplay:000000` becomes `selfplay~3A000000` on disk):
+The replay session id normally matches the stable per-game `game_id`, and the folder name uses a deterministic
+path-safe encoding when needed (for example `selfplay:000000` becomes `selfplay~3A000000` on disk):
 - `data/headless_self_play_replays/<session_dir>/manifest.json`
 - `data/headless_self_play_replays/<session_dir>/snapshot.json`
 - `data/headless_self_play_replays/<session_dir>/replay.sqlite3`
 
 Use `--replay-keyframe-interval <N>` to control sparse replay keyframe density.
-Use a fresh replay base directory for each generation run, or delete conflicting encoded session directories first.
+If a prior run already created the preferred replay session id, the script now auto-suffixes the replay session
+id (`selfplay:000000:run001`, `selfplay:000000:run002`, ...) instead of failing. DecisionRecords still keep the
+stable per-game `game_id`, while the machine-readable report records the actual replay session id in
+`replay_session_id`.
 
 What `--max-phase-steps 80` means:
 - It is a safety cap on battle-phase transitions per game after setup.

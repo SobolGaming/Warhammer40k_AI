@@ -75,6 +75,29 @@ def test_resolved_replay_base_dir_returns_absolute_path(tmp_path) -> None:
     assert replay_dir == (tmp_path / "replays").resolve()
 
 
+def test_allocate_replay_session_id_suffixes_conflicts(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+    attempted_session_ids: list[str] = []
+
+    def _fake_create_session(game, *, base_dir, session_id, label):
+        attempted_session_ids.append(str(session_id))
+        if len(attempted_session_ids) == 1:
+            raise FileExistsError(f"Session already exists: {session_id}")
+        return str(session_id)
+
+    monkeypatch.setattr(mod, "create_session", _fake_create_session)
+
+    session_id = mod._allocate_replay_session_id(
+        SimpleNamespace(session_id=""),
+        replay_base_dir=tmp_path,
+        preferred_session_id="selfplay:000000",
+        label="chaos_vs_aeldari",
+    )
+
+    assert attempted_session_ids == ["selfplay:000000", "selfplay:000000:run001"]
+    assert session_id == "selfplay:000000:run001"
+
+
 def test_export_decision_records_normalizes_uncopyable_objects() -> None:
     mod = _load_script_module()
 
@@ -188,6 +211,98 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
     assert result["replay_session_id"] == "selfplay:000000"
     assert result["replay_path"] == "/tmp/replays/selfplay:000000/replay.sqlite3"
     assert result["snapshot_path"] == "/tmp/replays/selfplay:000000/snapshot.json"
+
+
+def test_run_single_game_preserves_stable_game_id_when_replay_session_suffixes(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+    created_games: list[object] = []
+
+    class _FakePlayer:
+        _next_id = 0
+
+        def __init__(self, name, control=None):
+            type(self)._next_id += 1
+            self.id = f"player-{type(self)._next_id}"
+            self.name = name
+            self.control = control
+            self.army = None
+
+        def get_score(self):
+            return 0
+
+    class _FakeGame:
+        def __init__(self, _battlefield, *, players):
+            self.players = list(players)
+            self.session_id = ""
+            self.random_source = SimpleNamespace(seed=lambda _seed: None)
+            self.decision_record_store = SimpleNamespace(records=[{"decision_type": "MOVE_UNIT"}])
+            created_games.append(self)
+
+        def get_winner(self):
+            return self.players[0]
+
+    class _FakeRuntime:
+        def __init__(self, _game, **_kwargs):
+            self.game_proxy = self
+
+        def is_in_setup_phase(self):
+            return False
+
+        def is_game_over(self):
+            return True
+
+    def _fake_allocate_replay_session_id(game, *, replay_base_dir, preferred_session_id, label):
+        assert replay_base_dir == tmp_path.resolve()
+        assert preferred_session_id == "selfplay:000000"
+        assert label == "chaos_test_vs_aeldari_test"
+        game.session_id = "selfplay:000000:run001"
+        return "selfplay:000000:run001"
+
+    def _fake_enable_session_replay_recording(game, *, base_dir, session_id, label, keyframe_interval):
+        assert base_dir == tmp_path.resolve()
+        assert session_id == "selfplay:000000:run001"
+        assert game.session_id == "selfplay:000000:run001"
+        assert label == "chaos_test_vs_aeldari_test"
+        assert keyframe_interval == 3
+        return tmp_path / "selfplay~3A000000~3Arun001" / "replay.sqlite3"
+
+    def _fake_save_session_snapshot(game, *, base_dir, session_id, label):
+        assert base_dir == tmp_path.resolve()
+        assert session_id == "selfplay:000000:run001"
+        assert game.session_id == "selfplay:000000"
+        assert label == "chaos_test_vs_aeldari_test"
+        game.session_id = session_id
+        return tmp_path / "selfplay~3A000000~3Arun001" / "snapshot.json"
+
+    monkeypatch.setattr(mod, "Player", _FakePlayer)
+    monkeypatch.setattr(mod, "Game", _FakeGame)
+    monkeypatch.setattr(mod, "Battlefield", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(mod, "BattlefieldSize", SimpleNamespace(STRIKE_FORCE="strike-force"))
+    monkeypatch.setattr(mod, "HeadlessPolicyDecisionController", lambda **_kwargs: None)
+    monkeypatch.setattr(mod, "LocalAuthoritativeRuntime", _FakeRuntime)
+    monkeypatch.setattr(mod, "DeterministicDeploymentDecisionMaker", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(mod, "_log_phase_state_if_changed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mod, "_drain_pending_decisions", lambda *args, **kwargs: kwargs.get("last_state"))
+    monkeypatch.setattr(mod, "_allocate_replay_session_id", _fake_allocate_replay_session_id)
+    monkeypatch.setattr(mod, "enable_session_replay_recording", _fake_enable_session_replay_recording)
+    monkeypatch.setattr(mod, "save_session_snapshot", _fake_save_session_snapshot)
+
+    result = mod._run_single_game(
+        game_id="selfplay:000000",
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
+        max_phase_steps=1,
+        reserve_policy="forced_only",
+        max_reserves_arrival_seconds=10.0,
+        replay_dir=str(tmp_path),
+        replay_keyframe_interval=3,
+    )
+
+    assert result["game_id"] == "selfplay:000000"
+    assert result["replay_session_id"] == "selfplay:000000:run001"
+    assert result["replay_path"] == str(tmp_path / "selfplay~3A000000~3Arun001" / "replay.sqlite3")
+    assert result["snapshot_path"] == str(tmp_path / "selfplay~3A000000~3Arun001" / "snapshot.json")
+    assert created_games[0].session_id == "selfplay:000000"
 
 
 def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_path) -> None:
