@@ -229,21 +229,14 @@ class Map:
 
         fallback_choice = None
         if decision_request_is_pending(game, request):
-            provider = getattr(self, "_roll_reroll_provider", None)
-            if callable(provider):
-                try:
-                    fallback_choice = bool(
-                        provider(
-                            player=player,
-                            unit=unit,
-                            roll_type=roll_type,
-                            value=value,
-                            dice=dice,
-                            **fallback_kwargs,
-                        )
-                    )
-                except Exception:
-                    fallback_choice = None
+            fallback_choice = self._fallback_roll_reroll_choice(
+                player=player,
+                unit=unit,
+                roll_type=roll_type,
+                value=value,
+                dice=dice,
+                **fallback_kwargs,
+            )
 
         resolved_choice, apply_result = resolve_or_reuse_payload_choice(
             game,

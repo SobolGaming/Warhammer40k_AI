@@ -21681,6 +21681,7 @@ class WargearProfile:
             CHOICE_IGNORE_ALL,
             CHOICE_IGNORE_NEGATIVE,
             CHOICE_IGNORE_POSITIVE,
+            CHOICE_LABELS,
             CHOICE_KEEP_ALL,
             filter_signed_modifiers,
             options_for_signed_pairs,

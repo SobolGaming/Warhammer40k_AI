@@ -171,10 +171,12 @@ This note tracks the specific decision-parity regressions audited in this pass.
   and [shooting_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/shooting_mixin.py:3165)
   now apply the same contract to audited payload-choice requests. Pending
   reroll, Miracle-die, Miracle-pool discard, and Reanimation allocation
-  decisions no longer default to `Keep`, `Skip`, or the first eligible model
-  when no synchronous owner is attached; they now only reuse an explicit
-  provider/controller answer for that same emitted request, or fail explicitly
-  with the request still pending.
+  decisions no longer skip the emitted request and then reconstruct a separate
+  post-request answer. Rerolls and Miracle-pool discard now settle the emitted
+  request through the same deterministic headless strategy used by those flows,
+  while Miracle-die and Reanimation allocation only reuse an explicit
+  provider/controller answer for that same request and otherwise fail
+  explicitly with the request still pending.
 
 ## Remaining Known Gaps
 

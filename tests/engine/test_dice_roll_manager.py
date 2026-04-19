@@ -188,30 +188,32 @@ def test_auto_pick_reroll_action_uses_reroll_decision_for_remote_player():
     )
 
 
-def test_reroll_decision_without_sync_owner_raises_and_stays_pending():
+def test_reroll_decision_without_sync_owner_uses_emitted_request_and_headless_strategy():
     game = _make_game_with_players()
     player = game.players[0]
+    requested = []
+    original_request_decision = game.request_decision
 
-    try:
-        game.map.roll_reroll_provider(
-            player=player,
-            unit=None,
-            roll_type="hit",
-            value=1,
-            dice=[1],
-            game=game,
-        )
-    except RuntimeError as exc:
-        assert "Reroll decision remained pending without a synchronous decision owner" in str(exc)
-    else:
-        raise AssertionError("Expected reroll request without a synchronous owner to raise RuntimeError.")
+    def _capture(request):
+        requested.append(request)
+        return original_request_decision(request)
 
-    pending = [
-        req
+    game.request_decision = _capture
+    reroll = game.map.roll_reroll_provider(
+        player=player,
+        unit=None,
+        roll_type="hit",
+        value=1,
+        dice=[1],
+        game=game,
+    )
+
+    assert reroll is False
+    assert any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
+    assert not any(
+        str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
         for req in list(game.decision_queue.list() or [])
-        if str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
-    ]
-    assert len(pending) == 1
+    )
 
 
 def test_get_roll_d33_uses_request_roll():

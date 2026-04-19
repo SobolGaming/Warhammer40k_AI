@@ -1715,33 +1715,32 @@ class ActsOfFaithManager:
                     fallback_value = None
                     fallback_use_skip = False
                     if decision_request_is_pending(game, request):
-                        if callable(provider):
-                            if provider_requires_single_pending_request:
-                                current_plan = _build_fallback_plan_values(
-                                    current_pool=list(available_values),
-                                    current_max_select=1,
-                                )
-                                if current_plan:
-                                    fallback_value = int(current_plan[0])
-                                else:
-                                    fallback_use_skip = True
+                        if provider_requires_single_pending_request:
+                            current_plan = _build_fallback_plan_values(
+                                current_pool=list(available_values),
+                                current_max_select=1,
+                            )
+                            if current_plan:
+                                fallback_value = int(current_plan[0])
                             else:
-                                if plan_values is None:
-                                    remaining_limit = max(
-                                        0,
-                                        min(
-                                            int(max_select) - len(selected_indices),
-                                            len(remaining_indices),
-                                        ),
-                                    )
-                                    plan_values = _build_fallback_plan_values(
-                                        current_pool=list(available_values),
-                                        current_max_select=int(remaining_limit),
-                                    )
-                                if plan_values:
-                                    fallback_value = int(plan_values.pop(0))
-                                else:
-                                    fallback_use_skip = True
+                                fallback_use_skip = True
+                        else:
+                            if plan_values is None:
+                                remaining_limit = max(
+                                    0,
+                                    min(
+                                        int(max_select) - len(selected_indices),
+                                        len(remaining_indices),
+                                    ),
+                                )
+                                plan_values = _build_fallback_plan_values(
+                                    current_pool=list(available_values),
+                                    current_max_select=int(remaining_limit),
+                                )
+                            if plan_values:
+                                fallback_value = int(plan_values.pop(0))
+                            else:
+                                fallback_use_skip = True
 
                     chosen_value, apply_result = resolve_or_reuse_payload_choice(
                         game,

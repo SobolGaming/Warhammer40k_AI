@@ -863,32 +863,35 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(chosen_indices, [0])
         self.assertEqual(seen_decisions, [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE])
 
-    def test_miracle_pool_reroll_without_sync_owner_raises_and_stays_pending(self):
+    def test_miracle_pool_reroll_without_sync_owner_uses_emitted_request_and_deterministic_plan(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
 
         game, _player, army, sisters = self._build_authoritative_aof_game(control_name="REMOTE")
+        seen_decisions = []
+        original_request_decision = game.request_decision
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "Miracle pool discard decision remained pending without a synchronous decision owner",
-        ):
-            army.acts_of_faith._choose_miracle_pool_indices(
-                unit=sisters,
-                bearer_model=sisters.models[0],
-                game=game,
-                pool=[1, 2, 6],
-                max_select=3,
-                reason="Chaplet of Sacrifice",
-                skip_sixes=True,
-            )
+        def _capture(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            return original_request_decision(request)
 
-        pending = [
-            req
-            for req in list(game.decision_queue.list() or [])
-            if str(getattr(req, "decision_type", "") or "") == DECISION_USE_MIRACLE_DIE
-            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "miracle_pool_discard"
-        ]
-        self.assertEqual(len(pending), 1)
+        game.request_decision = _capture
+
+        chosen_indices = army.acts_of_faith._choose_miracle_pool_indices(
+            unit=sisters,
+            bearer_model=sisters.models[0],
+            game=game,
+            pool=[1, 2, 6],
+            max_select=3,
+            reason="Chaplet of Sacrifice",
+            skip_sixes=True,
+        )
+
+        self.assertEqual(chosen_indices, [0, 1])
+        self.assertEqual(
+            seen_decisions,
+            [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE],
+        )
+        self.assertEqual(list(game.decision_queue.list() or []), [])
 
     def test_charge_roll_uses_miracle(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize

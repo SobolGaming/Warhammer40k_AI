@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 
 class _MockDatasheet:
@@ -86,6 +87,25 @@ def _make_profile():
         "name": "Test Gun",
     }
     return Wargear(data).profiles["default"]
+
+
+def _make_melee_profile():
+    from warhammer40k_ai.units.wargear import WargearProfile
+
+    parent = SimpleNamespace(id="test_blade", name="Test Blade", is_melee=lambda: True, is_ranged=lambda: False)
+    return WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
 
 
 class TestIgnoreRangedModifiers(unittest.TestCase):
@@ -423,6 +443,64 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.hit_results)
         self.assertFalse(result.hit_results[0]["hit"])
+
+    def test_wound_modifier_choice_reuses_immediately_resolved_decision_request(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_HIT_MODIFIER_IGNORES
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        ignore_mods = {
+            "name": "Ignore Wound Modifiers",
+            "description": (
+                "Each time this model makes a melee attack, you can ignore any or all modifiers to the Wound roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+
+        game, army1, army2, _p1, _p2 = _build_game()
+        attacker = _make_unit("Fighter", abilities=[ignore_mods])
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        attacker.models[0].set_location(0, 0, 0, 0)
+        target.models[0].set_location(1, 0, 0, 0)
+        target.special_rules["pain_melee_wound_roll_defense_mod"] = -1
+        game.map.units = [attacker, target]
+
+        seen_decisions = []
+        original_request_decision = game.request_decision
+
+        def _auto_resolve(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            original_request_decision(request)
+            use_option = next(
+                opt
+                for opt in list(request.options or [])
+                if (getattr(opt, "payload", {}) or {}).get("choice") == CHOICE_IGNORE_NEGATIVE
+            )
+            resolve_decision_command(game, request, use_option.option_id, player_id=attacker.get_parent_army().player.id)
+
+        profile = _make_melee_profile()
+        game.request_decision = _auto_resolve
+
+        original_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _size="D6": 4
+        try:
+            result = profile._wound_target_with_tracking(
+                target,
+                attacker.models[0],
+                {},
+                roll_value=None,
+                allow_rerolls=False,
+                log_roll=False,
+            )
+        finally:
+            wargear_mod.get_roll = original_get_roll
+
+        self.assertIn(DECISION_CHOOSE_HIT_MODIFIER_IGNORES, seen_decisions)
+        self.assertTrue(bool(result.get("wound")))
 
 
 if __name__ == "__main__":
