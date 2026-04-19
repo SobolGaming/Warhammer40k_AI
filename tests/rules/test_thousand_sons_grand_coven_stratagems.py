@@ -533,6 +533,7 @@ def test_destined_by_fate_surfaces_yes_no_decision_on_failed_save():
     _deploy_unit(game, target, 10.0, 10.0)
     _deploy_unit(game, attacker, 18.0, 10.0)
     _set_phase(game, "SHOOTING_PHASE", 1)
+    ts_player.set_next_optional_decision("DESTINED_BY_FATE", False)
 
     captured_requests = []
     original_request_decision = game.request_decision
@@ -611,6 +612,51 @@ def test_destined_by_fate_sets_attack_damage_to_zero_when_auto_used():
     assert int(ts_player.command_points or 0) == 9
 
 
+def test_destined_by_fate_without_sync_owner_raises_and_leaves_request_pending():
+    game, ts_player, enemy_player, ts_army, enemy_army = _build_game()
+    target = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    attacker = _make_unit(
+        "Enemy Attackers",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    ts_army.add_unit(target)
+    enemy_army.add_unit(attacker)
+    _refresh(game, ts_player, enemy_player)
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, attacker, 18.0, 10.0)
+    _set_phase(game, "SHOOTING_PHASE", 1)
+
+    attack_instance = {
+        "_aura_attack_mods": _aura_stub(),
+        "attacker_model": attacker.models[0],
+        "attacker_unit": attacker,
+        "target_unit": target,
+    }
+
+    profile = _make_profile(psychic=False)
+    with pytest.raises(
+        RuntimeError,
+        match="DESTINED_BY_FATE' remained pending without a synchronous decision owner",
+    ):
+        profile._save_with_tracking(
+            target.models[0],
+            attack_instance,
+            ap=0,
+            roll_value=1,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+    request = _find_pending_request(game, DECISION_CONFIRM_YES_NO, ability="destined_by_fate")
+    assert request is not None
+
+
 def test_arcane_focus_rerolls_channeled_psychic_test_and_avoids_mortals():
     game, ts_player, _enemy_player, ts_army, enemy_army = _build_game()
     caster = _make_unit(
@@ -652,6 +698,47 @@ def test_arcane_focus_rerolls_channeled_psychic_test_and_avoids_mortals():
     assert list(result.get("arcane_focus_rolls") or []) == [2, 3, 6]
     assert int(result.get("mortal_wounds", 0) or 0) == 0
     assert int(ts_player.command_points or 0) == 9
+
+
+def test_arcane_focus_without_sync_owner_raises_and_leaves_request_pending():
+    game, ts_player, _enemy_player, ts_army, enemy_army = _build_game()
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+        cabal=True,
+    )
+    target = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    ts_army.add_unit(caster)
+    enemy_army.add_unit(target)
+    _refresh(game, ts_player)
+    _deploy_unit(game, caster, 10.0, 10.0)
+    _deploy_unit(game, target, 18.0, 10.0)
+    _set_phase(game, "SHOOTING_PHASE", 0)
+
+    mgr = ts_army.cabal_of_sorcerers
+    with pytest.raises(
+        RuntimeError,
+        match="ARCANE_FOCUS' remained pending without a synchronous decision owner",
+    ), patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=12.0):
+        mgr.attempt_ritual(
+            game,
+            caster_model=caster.models[0],
+            ritual_key=RITUAL_DESTINYS_RUIN.key,
+            target_unit=target,
+            rolls=[4, 4, 5],
+            channel_decision=True,
+            arcane_focus_rerolls=[2, 3, 6],
+            mortal_roll=3,
+        )
+
+    request = _find_pending_request(game, DECISION_CONFIRM_YES_NO, ability="arcane_focus")
+    assert request is not None
 
 
 @pytest.mark.parametrize(

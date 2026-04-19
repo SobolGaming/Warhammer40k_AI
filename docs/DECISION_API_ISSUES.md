@@ -156,6 +156,16 @@ This note tracks the specific decision-parity regressions audited in this pass.
   `DECISION_CONFIRM_YES_NO` for the optional Pain token spend before the
   stratagem is applied, instead of the local UI asking that question itself
   after selection with no backing request.
+- [decision_utils.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/utility/decision_utils.py:22),
+  [cabal_of_sorcerers.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/cabal_of_sorcerers.py:899),
+  [damage_death_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/damage_death_mixin.py:179),
+  and the audited confirmation paths in [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:9999)
+  now preserve tri-state fallback ownership when a `DECISION_CONFIRM_YES_NO`
+  has already been queued. External synchronous rule callers no longer coerce a
+  missing fallback owner into `False`; if they emit one of these confirmations
+  without a synchronous controller, provider, or override attached, they now
+  fail explicitly and leave the queued request pending instead of silently
+  auto-skipping it.
 
 ## Remaining Known Gaps
 

@@ -303,6 +303,43 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         self.assertEqual(seen["pending"], 1)
         self.assertEqual(list(game.decision_queue.list() or []), [])
 
+    def test_local_damage_zero_without_sync_owner_raises_and_leaves_request_pending(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+
+        ability = {
+            "name": "Chaos Familiar",
+            "description": "Once per battle, when an attack is allocated to the bearer, you can change the Damage characteristic to 0.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Sorcerer", abilities=[ability], wounds=3)
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
+        defender_army.faction_id = "DEF"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.LOCAL, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        profile = _make_profile()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "MODEL_ALLOCATED_DAMAGE_ZERO' remained pending without a synchronous decision owner",
+        ):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+                profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+
+        pending = list(game.decision_queue.list() or [])
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_CONFIRM_YES_NO)
+        self.assertEqual(str((pending[0].context or {}).get("ability", "") or ""), "model_allocated_damage_zero")
+
 
 if __name__ == "__main__":
     unittest.main()

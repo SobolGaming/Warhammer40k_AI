@@ -137,7 +137,10 @@ class DamageDeathMixin:
             if game is not None:
                 from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
                 from ...engine.decisions import DecisionOption, DecisionRequest
-                from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
+                from ...utility.decision_utils import (
+                    require_synchronous_decision_resolution,
+                    resolve_or_reuse_confirmation_choice,
+                )
 
                 request = DecisionRequest.create(
                     DECISION_CONFIRM_YES_NO,
@@ -168,21 +171,21 @@ class DamageDeathMixin:
                     )
                     provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
                 else:
+                    provider_choice = None
                     fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                     if callable(fallback_fn):
-                        provider_choice = bool(fallback_fn("WATCHER_IN_THE_DARK", context))
-                    else:
-                        should_use_fn = getattr(player, "_should_use_optional_ability", None)
-                        if callable(should_use_fn):
-                            provider_choice = bool(
-                                should_use_fn("WATCHER_IN_THE_DARK", dict(context, _fallback_only=True))
-                            )
+                        provider_choice = fallback_fn("WATCHER_IN_THE_DARK", context)
 
                 resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                     game,
                     request,
                     fallback_choice=provider_choice,
                     player_id=getattr(player, "id", None),
+                )
+                require_synchronous_decision_resolution(
+                    game,
+                    request,
+                    detail="Optional decision 'WATCHER_IN_THE_DARK' remained pending without a synchronous decision owner.",
                 )
                 use_now = bool(
                     resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)
@@ -353,7 +356,10 @@ class DamageDeathMixin:
         if game is not None:
             from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
             from ...engine.decisions import DecisionOption, DecisionRequest
-            from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
+            from ...utility.decision_utils import (
+                require_synchronous_decision_resolution,
+                resolve_or_reuse_confirmation_choice,
+            )
 
             request = DecisionRequest.create(
                 DECISION_CONFIRM_YES_NO,
@@ -384,19 +390,21 @@ class DamageDeathMixin:
                 )
                 provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
             else:
+                provider_choice = None
                 fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                 if callable(fallback_fn):
-                    provider_choice = bool(fallback_fn("NULL_NODULES", context))
-                else:
-                    should_use_fn = getattr(player, "_should_use_optional_ability", None)
-                    if callable(should_use_fn):
-                        provider_choice = bool(should_use_fn("NULL_NODULES", dict(context, _fallback_only=True)))
+                    provider_choice = fallback_fn("NULL_NODULES", context)
 
             resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                 game,
                 request,
                 fallback_choice=provider_choice,
                 player_id=getattr(player, "id", None),
+            )
+            require_synchronous_decision_resolution(
+                game,
+                request,
+                detail="Optional decision 'NULL_NODULES' remained pending without a synchronous decision owner.",
             )
             use_now = bool(
                 resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)
@@ -529,7 +537,10 @@ class DamageDeathMixin:
 
         from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from ...engine.decisions import DecisionOption, DecisionRequest
-        from ...utility.decision_utils import resolve_or_reuse_confirmation_choice
+        from ...utility.decision_utils import (
+            require_synchronous_decision_resolution,
+            resolve_or_reuse_confirmation_choice,
+        )
 
         context = {
             "ability": "death_vision_of_sanguinius",
@@ -572,22 +583,21 @@ class DamageDeathMixin:
             )
             fallback_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
         else:
+            fallback_choice = None
             fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
             if callable(fallback_fn):
-                fallback_choice = bool(fallback_fn("DEATH_VISION_OF_SANGUINIUS", context))
-            else:
-                should_use_fn = getattr(player, "_should_use_optional_ability", None)
-                fallback_choice = (
-                    bool(should_use_fn("DEATH_VISION_OF_SANGUINIUS", dict(context, _fallback_only=True)))
-                    if callable(should_use_fn)
-                    else False
-                )
+                fallback_choice = fallback_fn("DEATH_VISION_OF_SANGUINIUS", context)
 
         resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
             game,
             request,
             fallback_choice=fallback_choice,
             player_id=getattr(player, "id", None),
+        )
+        require_synchronous_decision_resolution(
+            game,
+            request,
+            detail="Optional decision 'DEATH_VISION_OF_SANGUINIUS' remained pending without a synchronous decision owner.",
         )
         return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
 

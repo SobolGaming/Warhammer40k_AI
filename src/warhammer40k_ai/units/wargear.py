@@ -9932,7 +9932,10 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
+                    from warhammer40k_ai.utility.decision_utils import (
+                        require_synchronous_decision_resolution,
+                        resolve_or_reuse_confirmation_choice,
+                    )
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -9986,32 +9989,23 @@ class WargearProfile:
                         try:
                             fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                             if callable(fallback_fn):
-                                fallback_choice = bool(
-                                    fallback_fn(
-                                        "MODEL_ALLOCATED_DAMAGE_ZERO",
-                                        {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
-                                    )
-                                )
-                            else:
-                                fallback_choice = bool(
-                                    getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                        "MODEL_ALLOCATED_DAMAGE_ZERO",
-                                        {
-                                            "ability_name": ability_name,
-                                            "unit_id": unit_id,
-                                            "model_id": model_id,
-                                            "_fallback_only": True,
-                                        },
-                                    )
+                                fallback_choice = fallback_fn(
+                                    "MODEL_ALLOCATED_DAMAGE_ZERO",
+                                    {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
                                 )
                         except Exception:
-                            fallback_choice = False
+                            fallback_choice = None
 
                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                         game,
                         req,
                         fallback_choice=fallback_choice,
                         player_id=getattr(player, "id", None),
+                    )
+                    require_synchronous_decision_resolution(
+                        game,
+                        req,
+                        detail="Optional decision 'MODEL_ALLOCATED_DAMAGE_ZERO' remained pending without a synchronous decision owner.",
                     )
                     if apply_result is not None and getattr(apply_result, "ok", False):
                         decision = {"choice": bool(resolved_choice)}
@@ -10105,7 +10099,10 @@ class WargearProfile:
             try:
                 from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
                 from ..engine.decisions import DecisionOption, DecisionRequest
-                from ..utility.decision_utils import resolve_or_reuse_confirmation_choice
+                from ..utility.decision_utils import (
+                    require_synchronous_decision_resolution,
+                    resolve_or_reuse_confirmation_choice,
+                )
             except Exception:
                 use_now = False
             else:
@@ -10130,21 +10127,20 @@ class WargearProfile:
                 )
                 if game is not None and hasattr(game, "request_decision"):
                     game.request_decision(request)
+                fallback_choice = None
                 fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                 if callable(fallback_fn):
-                    fallback_choice = bool(fallback_fn("DESTINED_BY_FATE", dict(ctx)))
-                else:
-                    fallback_choice = bool(
-                        getattr(player, "_should_use_optional_ability", lambda _key, _ctx: False)(
-                            "DESTINED_BY_FATE",
-                            dict(ctx, _fallback_only=True),
-                        )
-                    )
+                    fallback_choice = fallback_fn("DESTINED_BY_FATE", dict(ctx))
                 resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                     game,
                     request,
                     fallback_choice=fallback_choice,
                     player_id=getattr(player, "id", None),
+                )
+                require_synchronous_decision_resolution(
+                    game,
+                    request,
+                    detail="Optional decision 'DESTINED_BY_FATE' remained pending without a synchronous decision owner.",
                 )
                 use_now = bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
         if not use_now:
@@ -25084,6 +25080,9 @@ class WargearProfile:
                 attacker=attack_instance.get("attacker_model") if isinstance(attack_instance, dict) else None,
                 target=attack_instance.get("target_unit") if isinstance(attack_instance, dict) else None,
             )
+        except RuntimeError as exc:
+            if "remained pending without a synchronous decision owner" in str(exc):
+                raise
         except Exception:
             pass
 
@@ -25946,7 +25945,10 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
+                                    from warhammer40k_ai.utility.decision_utils import (
+                                        require_synchronous_decision_resolution,
+                                        resolve_or_reuse_confirmation_choice,
+                                    )
                                 except Exception:
                                     use_it = False
                                 else:
@@ -25968,41 +25970,31 @@ class WargearProfile:
                                     )
                                     if hasattr(game, "request_decision"):
                                         game.request_decision(request)
-                                    use_now = False
+                                    use_now = None
                                     try:
                                         fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                                         if callable(fallback_fn):
-                                            use_now = bool(
-                                                fallback_fn(
-                                                    "DISTRACTION_GROT",
-                                                    {
-                                                        "ability_name": source,
-                                                        "unit_id": root_id,
-                                                        "usage_key": usage_key,
-                                                        "invuln": int(inv_value),
-                                                    },
-                                                )
-                                            )
-                                        else:
-                                            use_now = bool(
-                                                getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                                    "DISTRACTION_GROT",
-                                                    {
-                                                        "ability_name": source,
-                                                        "unit_id": root_id,
-                                                        "usage_key": usage_key,
-                                                        "invuln": int(inv_value),
-                                                        "_fallback_only": True,
-                                                    },
-                                                )
+                                            use_now = fallback_fn(
+                                                "DISTRACTION_GROT",
+                                                {
+                                                    "ability_name": source,
+                                                    "unit_id": root_id,
+                                                    "usage_key": usage_key,
+                                                    "invuln": int(inv_value),
+                                                },
                                             )
                                     except Exception:
-                                        use_now = False
+                                        use_now = None
                                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                                         game,
                                         request,
                                         fallback_choice=use_now,
                                         player_id=getattr(player, "id", None),
+                                    )
+                                    require_synchronous_decision_resolution(
+                                        game,
+                                        request,
+                                        detail="Optional decision 'DISTRACTION_GROT' remained pending without a synchronous decision owner.",
                                     )
                                     if apply_result is not None and getattr(apply_result, "ok", False):
                                         use_it = bool(resolved_choice)
@@ -26034,6 +26026,9 @@ class WargearProfile:
                                 f"{source}: unit gains a {int(inv_value)}+ invulnerable save until end of phase"
                             )
                             break
+        except RuntimeError as exc:
+            if "remained pending without a synchronous decision owner" in str(exc):
+                raise
         except Exception:
             pass
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
@@ -26562,6 +26557,9 @@ class WargearProfile:
         try:
             if not save_result.get("saved", False):
                 self._maybe_apply_thousand_sons_destined_by_fate(target_model, attack_instance)
+        except RuntimeError as exc:
+            if "remained pending without a synchronous decision owner" in str(exc):
+                raise
         except Exception:
             pass
 
@@ -26703,7 +26701,10 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_confirmation_choice
+                                    from warhammer40k_ai.utility.decision_utils import (
+                                        require_synchronous_decision_resolution,
+                                        resolve_or_reuse_confirmation_choice,
+                                    )
                                 except Exception:
                                     use_it = False
                                 else:
@@ -26723,34 +26724,26 @@ class WargearProfile:
                                     )
                                     if hasattr(game, "request_decision"):
                                         game.request_decision(request)
-                                    use_now = False
+                                    use_now = None
                                     try:
                                         fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
                                         if callable(fallback_fn):
-                                            use_now = bool(
-                                                fallback_fn(
-                                                    "FIRST_FAILED_SAVE_DAMAGE_ZERO",
-                                                    {"ability_name": source, "usage_key": usage_key},
-                                                )
-                                            )
-                                        else:
-                                            use_now = bool(
-                                                getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                                                    "FIRST_FAILED_SAVE_DAMAGE_ZERO",
-                                                    {
-                                                        "ability_name": source,
-                                                        "usage_key": usage_key,
-                                                        "_fallback_only": True,
-                                                    },
-                                                )
+                                            use_now = fallback_fn(
+                                                "FIRST_FAILED_SAVE_DAMAGE_ZERO",
+                                                {"ability_name": source, "usage_key": usage_key},
                                             )
                                     except Exception:
-                                        use_now = False
+                                        use_now = None
                                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                                         game,
                                         request,
                                         fallback_choice=use_now,
                                         player_id=getattr(player, "id", None),
+                                    )
+                                    require_synchronous_decision_resolution(
+                                        game,
+                                        request,
+                                        detail="Optional decision 'FIRST_FAILED_SAVE_DAMAGE_ZERO' remained pending without a synchronous decision owner.",
                                     )
                                     if apply_result is not None and getattr(apply_result, "ok", False):
                                         use_it = bool(resolved_choice)
@@ -26768,6 +26761,9 @@ class WargearProfile:
                             chosen_sr[f"{usage_key}_source"] = source
                             chosen_root.special_rules = chosen_sr
                             save_result['special_effects'].append(f"{source}: damage set to 0")
+        except RuntimeError as exc:
+            if "remained pending without a synchronous decision owner" in str(exc):
+                raise
         except Exception:
             pass
 
@@ -26780,6 +26776,9 @@ class WargearProfile:
                 attack_instance=attack_instance,
                 save_result=save_result,
             )
+        except RuntimeError as exc:
+            if "remained pending without a synchronous decision owner" in str(exc):
+                raise
         except Exception:
             pass
 

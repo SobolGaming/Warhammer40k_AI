@@ -860,7 +860,10 @@ class CabalOfSorcerersManager:
                     try:
                         from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
                         from ..engine.decisions import DecisionOption, DecisionRequest
-                        from ..utility.decision_utils import resolve_or_reuse_confirmation_choice
+                        from ..utility.decision_utils import (
+                            require_synchronous_decision_resolution,
+                            resolve_or_reuse_confirmation_choice,
+                        )
                         from ..utility.entity_ids import get_entity_id
                     except Exception:
                         use_arcane_focus = False
@@ -889,21 +892,20 @@ class CabalOfSorcerersManager:
                         )
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
+                        fallback_choice = None
                         fallback_fn = getattr(army_player, "_resolve_optional_ability_fallback_choice", None)
                         if callable(fallback_fn):
-                            fallback_choice = bool(fallback_fn("ARCANE_FOCUS", dict(ctx)))
-                        else:
-                            fallback_choice = bool(
-                                getattr(army_player, "_should_use_optional_ability", lambda _key, _ctx: False)(
-                                    "ARCANE_FOCUS",
-                                    dict(ctx, _fallback_only=True),
-                                )
-                            )
+                            fallback_choice = fallback_fn("ARCANE_FOCUS", dict(ctx))
                         resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                             game,
                             request,
                             fallback_choice=fallback_choice,
                             player_id=getattr(army_player, "id", None),
+                        )
+                        require_synchronous_decision_resolution(
+                            game,
+                            request,
+                            detail="Optional decision 'ARCANE_FOCUS' remained pending without a synchronous decision owner.",
                         )
                         use_arcane_focus = bool(
                             resolved_choice and apply_result is not None and getattr(apply_result, "ok", False)

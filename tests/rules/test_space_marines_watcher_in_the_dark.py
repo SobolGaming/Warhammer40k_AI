@@ -246,6 +246,32 @@ def test_watcher_in_the_dark_local_provider_consumes_queued_confirmation():
     assert target_unit.has_used_unit_once_per_battle("watcher_in_the_dark:watcher_in_the_dark")
 
 
+def test_watcher_in_the_dark_without_sync_owner_raises_and_leaves_request_pending():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+
+    game, sm_player, enemy_player = _build_game(sm_control=PlayerControl.LOCAL)
+    target_unit = _make_unit("Deathwing Knights", abilities=[WATCHER_ABILITY], wounds=3)
+    attacker_unit = _make_unit("Enemy Psyker", faction_name="Enemy", faction_keywords=["ENEMY"], keywords=["PSYKER"], wounds=3)
+
+    sm_player.army.add_unit(target_unit)
+    enemy_player.army.add_unit(attacker_unit)
+    game.map.units = [target_unit, attacker_unit]
+    game.rebuild_entity_registry()
+
+    with patch("warhammer40k_ai.units.model.get_roll", return_value=4):
+        try:
+            target_unit.models[0].take_damage(1, is_mortal=True, weapon_profile=None, game_map=game.map)
+        except RuntimeError as exc:
+            assert "WATCHER_IN_THE_DARK' remained pending without a synchronous decision owner" in str(exc)
+        else:
+            raise AssertionError("Expected RuntimeError when Watcher in the Dark has no synchronous owner.")
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    assert pending[0].decision_type == DECISION_CONFIRM_YES_NO
+    assert str((pending[0].context or {}).get("ability", "") or "") == "watcher_in_the_dark"
+
+
 def test_support_matrix_classifies_watcher_in_the_dark_as_supported():
     gsm = _seed_support_maps()
     status, notes = gsm._classify_ability(

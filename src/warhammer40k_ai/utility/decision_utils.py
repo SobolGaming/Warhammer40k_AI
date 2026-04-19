@@ -19,6 +19,16 @@ def decision_request_is_pending(game: object, request: DecisionRequest) -> bool:
     return queue.get(decision_id) is not None
 
 
+def require_synchronous_decision_resolution(
+    game: object,
+    request: DecisionRequest,
+    *,
+    detail: str,
+) -> None:
+    if decision_request_is_pending(game, request):
+        raise RuntimeError(str(detail or "Decision request remained pending without a synchronous owner."))
+
+
 def resolve_decision_command(
     game: object,
     request: DecisionRequest,
