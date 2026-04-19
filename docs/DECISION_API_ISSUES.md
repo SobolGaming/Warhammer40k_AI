@@ -39,6 +39,12 @@ This note tracks the specific decision-parity regressions audited in this pass.
   and `Psalm of Righteous Judgement`) instead of jumping straight from
   `miracle_dice_pool_reroll_provider` or the deterministic fallback heuristic
   to the final discard effect.
+- [acts_of_faith.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/acts_of_faith.py:1561)
+  now consults local/provider Miracle-pool discard fallbacks one queued request
+  at a time. The provider path no longer tries to pre-answer later
+  `DECISION_USE_MIRACLE_DIE` prompts before those later requests exist, which
+  keeps local discard flows aligned with the same sequential request chain used
+  by headless and remote resolution.
 - [attack_modifiers.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/attack_modifiers.py:15)
   and [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:14418)
   now emit and settle `DECISION_CHOOSE_HIT_MODIFIER_IGNORES` /

@@ -1574,16 +1574,27 @@ class ActsOfFaithManager:
         player = getattr(self.army, "player", None) if self.army is not None else None
         provider = getattr(getattr(game, "map", None), "miracle_dice_pool_reroll_provider", None) if game is not None else None
         plan_values: list[int] | None = None
+        provider_requires_single_pending_request = bool(
+            callable(provider)
+            and str(getattr(provider, "__name__", "") or "") == "_miracle_dice_pool_reroll_provider"
+        )
 
-        def _build_fallback_plan_values() -> list[int]:
+        def _build_fallback_plan_values(*, current_pool: list[int] | None = None, current_max_select: int | None = None) -> list[int]:
+            plan_pool = list(current_pool if current_pool is not None else pool)
+            try:
+                plan_limit = int(current_max_select if current_max_select is not None else max_select)
+            except Exception:
+                plan_limit = int(max_select)
+            if plan_limit <= 0 or not plan_pool:
+                return []
             if callable(provider):
                 try:
                     selection = provider(
                         player=player,
                         unit=unit,
                         model=bearer_model,
-                        pool=list(pool),
-                        max_rerolls=int(max_select),
+                        pool=list(plan_pool),
+                        max_rerolls=int(plan_limit),
                         reason=str(reason or ""),
                     )
                 except Exception:
@@ -1592,21 +1603,21 @@ class ActsOfFaithManager:
                     return []
                 chosen_indices = self._normalize_chaplet_reroll_indices(
                     selection,
-                    pool=list(pool),
-                    max_rerolls=int(max_select),
+                    pool=list(plan_pool),
+                    max_rerolls=int(plan_limit),
                 )
                 resolved_values: list[int] = []
                 for idx in list(chosen_indices or []):
-                    if idx < 0 or idx >= len(pool):
+                    if idx < 0 or idx >= len(plan_pool):
                         continue
                     try:
-                        resolved_values.append(int(pool[idx]))
+                        resolved_values.append(int(plan_pool[idx]))
                     except Exception:
                         continue
                 return resolved_values
 
             candidates = []
-            for idx, die in enumerate(list(pool or [])):
+            for idx, die in enumerate(list(plan_pool or [])):
                 try:
                     val = int(die)
                 except Exception:
@@ -1614,11 +1625,11 @@ class ActsOfFaithManager:
                 if skip_sixes and val >= 6:
                     continue
                 candidates.append(idx)
-            candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
+            candidates.sort(key=lambda idx: (int(plan_pool[idx]), int(idx)))
             resolved_values: list[int] = []
-            for idx in list(candidates[: int(max_select)]):
+            for idx in list(candidates[: int(plan_limit)]):
                 try:
-                    resolved_values.append(int(pool[idx]))
+                    resolved_values.append(int(plan_pool[idx]))
                 except Exception:
                     continue
             return resolved_values
@@ -1688,10 +1699,28 @@ class ActsOfFaithManager:
 
                     fallback_value = None
                     if decision_request_is_pending(game, request):
-                        if plan_values is None:
-                            plan_values = _build_fallback_plan_values()
-                        if plan_values:
-                            fallback_value = int(plan_values.pop(0))
+                        if provider_requires_single_pending_request:
+                            current_plan = _build_fallback_plan_values(
+                                current_pool=list(available_values),
+                                current_max_select=1,
+                            )
+                            if current_plan:
+                                fallback_value = int(current_plan[0])
+                        else:
+                            if plan_values is None:
+                                remaining_limit = max(
+                                    0,
+                                    min(
+                                        int(max_select) - len(selected_indices),
+                                        len(remaining_indices),
+                                    ),
+                                )
+                                plan_values = _build_fallback_plan_values(
+                                    current_pool=list(available_values),
+                                    current_max_select=int(remaining_limit),
+                                )
+                            if plan_values:
+                                fallback_value = int(plan_values.pop(0))
 
                     chosen_value, apply_result = resolve_or_reuse_payload_choice(
                         game,

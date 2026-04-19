@@ -783,6 +783,45 @@ class TestActsOfFaith(unittest.TestCase):
             [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE],
         )
 
+    def test_miracle_pool_reroll_provider_is_consulted_one_request_at_a_time(self):
+        game, _player, army, sisters = self._build_authoritative_aof_game(control_name="LOCAL")
+        provider_calls = []
+
+        def _miracle_dice_pool_reroll_provider(**kwargs):
+            call_number = len(provider_calls) + 1
+            provider_calls.append(
+                {
+                    "pool": list(kwargs.get("pool", []) or []),
+                    "max_rerolls": int(kwargs.get("max_rerolls", 0) or 0),
+                }
+            )
+            self.assertEqual(int(kwargs.get("max_rerolls", 0) or 0), 1)
+            if call_number <= 2:
+                return {"indices": [0]}
+            return None
+
+        game.map.miracle_dice_pool_reroll_provider = _miracle_dice_pool_reroll_provider
+
+        chosen_indices = army.acts_of_faith._choose_miracle_pool_indices(
+            unit=sisters,
+            bearer_model=sisters.models[0],
+            game=game,
+            pool=[1, 2, 6],
+            max_select=3,
+            reason="Chaplet of Sacrifice",
+            skip_sixes=True,
+        )
+
+        self.assertEqual(chosen_indices, [0, 1])
+        self.assertEqual(
+            provider_calls,
+            [
+                {"pool": [1, 2, 6], "max_rerolls": 1},
+                {"pool": [2, 6], "max_rerolls": 1},
+                {"pool": [6], "max_rerolls": 1},
+            ],
+        )
+
     def test_miracle_pool_reroll_reuses_immediately_resolved_requests(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
         from warhammer40k_ai.utility.decision_utils import resolve_decision_command
