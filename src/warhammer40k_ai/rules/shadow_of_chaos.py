@@ -928,5 +928,5 @@ class ShadowOfChaosManager:
                         break
         except Exception:
             return 0
-        logger.error(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} suffers mortal wounds from Daemonic Terror.")
+        logger.debug(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} suffers mortal wounds from Daemonic Terror.")
         return int(applied)

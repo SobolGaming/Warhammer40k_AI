@@ -1,4 +1,5 @@
 import unittest
+import logging
 from unittest.mock import patch
 
 
@@ -371,6 +372,25 @@ class TestShadowOfChaos(unittest.TestCase):
 
         with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
             self.assertFalse(mgr.is_unit_within_shadow(target, game=game))
+
+
+def test_daemonic_terror_resolution_logs_at_debug_not_error(caplog):
+    from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+
+    unit = _UnitStub(models=[_ModelStub(wounds=3, base_wounds=3)], lost=[], battleline=False, name="Howling Banshees")
+    ctx = ShadowBattleShockContext(terror_active=True)
+
+    with caplog.at_level(logging.DEBUG, logger="warhammer40k_ai.rules.shadow_of_chaos"):
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=2):
+            ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=False, context=ctx, game=None)
+
+    matching = [
+        record
+        for record in caplog.records
+        if "suffers mortal wounds from Daemonic Terror" in str(record.getMessage())
+    ]
+    assert len(matching) == 1
+    assert matching[0].levelno == logging.DEBUG
 
 
 if __name__ == "__main__":

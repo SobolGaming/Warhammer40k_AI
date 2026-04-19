@@ -3021,7 +3021,7 @@ class ShootingMixin:
         if (not passed) and (not was_battle_shocked):
             battle_shock_effect = BattleShockEffect(int(current_turn))
             self.apply_status_effect(battle_shock_effect)
-            logger.error(f"{self.name} has failed the battle shock test and is battle-shocked!")
+            logger.debug(f"{self.name} has failed the battle shock test and is battle-shocked!")
 
         try:
             fear_queue_fn = getattr(game, "_queue_fear_made_manifest_trigger", None)

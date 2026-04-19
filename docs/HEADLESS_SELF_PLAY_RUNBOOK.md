@@ -83,6 +83,7 @@ Throughput controls:
 Logging controls:
 - `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.
+- Battle-shock failure status lines and Shadow of Chaos Daemonic Terror mortal-wound resolution also log at `DEBUG`, not `ERROR`.
 - `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.
 - Each emitted phase-transition log is tagged with a stable per-game id, so multi-worker output stays attributable:
   - without `--seed-base`: `selfplay:000000`, `selfplay:000001`, ...

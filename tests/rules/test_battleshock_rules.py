@@ -1,4 +1,5 @@
 import unittest
+import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -157,6 +158,32 @@ class TestBattleShockRules(unittest.TestCase):
         self.assertEqual(int(getattr(u, "_last_leadership_test_modified_roll", -1)), 7)
         self.assertTrue(bool(getattr(u, "_last_leadership_test_passed", False)))
         self.assertFalse(u.is_battle_shocked())
+
+def test_battle_shock_failure_logs_at_debug_not_error(caplog):
+    from warhammer40k_ai.units.unit import Unit
+
+    unit = Unit.__new__(Unit)
+    unit.name = "Howling Banshees"
+    unit.status_effects = []
+    unit.special_rules = {}
+
+    with caplog.at_level(logging.DEBUG, logger="warhammer40k_ai.units.unit_mixins.shooting_mixin"):
+        unit._apply_battle_shock_outcome(
+            passed=False,
+            current_turn=1,
+            was_battle_shocked=False,
+            shadow_ctx=None,
+            game=None,
+            event_system=None,
+        )
+
+    matching = [
+        record
+        for record in caplog.records
+        if "failed the battle shock test and is battle-shocked" in str(record.getMessage())
+    ]
+    assert len(matching) == 1
+    assert matching[0].levelno == logging.DEBUG
 
 
 if __name__ == "__main__":
