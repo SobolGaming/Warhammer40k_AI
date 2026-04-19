@@ -574,6 +574,7 @@ class TestImperialAgentsOrdoMalleusEnhancements(unittest.TestCase):
         self.assertEqual(int(preview.get("cost", -1)), 0)
         self.assertTrue(any("Gift of the Prescient" in str(r) for r in list(preview.get("reasons", []) or [])))
 
+        ia_player.set_next_optional_decision("GIFT_OF_THE_PRESCIENT_RAPID_INGRESS", True)
         first = ia_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=gk_terminators)
         self.assertEqual(int(first.get("cost", -1)), 0)
         self.assertTrue(bool(first.get("gift_of_the_prescient_use", False)))
@@ -638,6 +639,7 @@ class TestImperialAgentsOrdoMalleusEnhancements(unittest.TestCase):
         )
         self.assertTrue(bool(list(evaluation_before.get("errors") or [])))
 
+        ia_player.set_next_optional_decision("GIFT_OF_THE_PRESCIENT_RAPID_INGRESS", True)
         used = ia_player.stratagems.use(
             "RAPID INGRESS",
             unit=gk_terminators,

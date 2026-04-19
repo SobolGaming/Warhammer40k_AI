@@ -3138,11 +3138,101 @@ class ShootingMixin:
 
     # ---------------- Reanimation Protocols ----------------
 
-    def _reanimation_choose_model(self, eligible_models, *, is_human: bool, provider, reason: str, instruction: Optional[str] = None):
+    def _reanimation_choose_model(
+        self,
+        eligible_models,
+        *,
+        is_human: bool,
+        provider,
+        reason: str,
+        instruction: Optional[str] = None,
+        selection_kind: str,
+        remaining: int = 0,
+    ):
         if not eligible_models:
             return None
         if len(eligible_models) == 1:
             return eligible_models[0]
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        army = root.get_parent_army() if root is not None and hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if callable(request_fn):
+            try:
+                from ...engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.decision_utils import (
+                    decision_request_is_pending,
+                    resolve_or_reuse_payload_choice,
+                )
+                from ...utility.entity_ids import get_entity_id
+            except Exception:
+                request_fn = None
+            else:
+                allowed_model_ids = [str(get_entity_id(model) or "") for model in list(eligible_models or [])]
+                options = []
+                for model, model_id in zip(list(eligible_models or []), allowed_model_ids):
+                    if not model_id:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            getattr(model, "name", "Model"),
+                            payload={"model_id": model_id},
+                        )
+                    )
+                if options:
+                    context = {
+                        "selection_kind": str(selection_kind or "reanimation"),
+                        "unit_id": str(get_entity_id(root) or ""),
+                        "allowed_model_ids": list(allowed_model_ids),
+                        "remaining_wounds": int(max(0, remaining)),
+                        "reason": str(reason or "Reanimation Protocols"),
+                        "ability": "reanimation_protocols",
+                        "ability_name": "Reanimation Protocols",
+                    }
+                    if instruction:
+                        context["instruction"] = str(instruction)
+                    request = DecisionRequest.create(
+                        DECISION_ALLOCATE_DAMAGE,
+                        str(reason or "Reanimation Protocols"),
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=context,
+                    )
+                    try:
+                        request_fn(request)
+                    except ValueError:
+                        request = None
+                    if request is not None:
+                        fallback_model_id = None
+                        if decision_request_is_pending(game, request):
+                            if is_human and callable(provider):
+                                try:
+                                    chosen = provider(root, list(eligible_models), dict(context))
+                                except Exception:
+                                    chosen = None
+                                if chosen is not None and chosen in eligible_models:
+                                    fallback_model_id = str(get_entity_id(chosen) or "")
+                            if not fallback_model_id:
+                                fallback_model_id = str(allowed_model_ids[0] or "")
+                        chosen_model_id, apply_result = resolve_or_reuse_payload_choice(
+                            game,
+                            request,
+                            payload_key="model_id",
+                            fallback_value=fallback_model_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                        if apply_result is not None and getattr(apply_result, "ok", False):
+                            chosen_model_id = str(chosen_model_id or "")
+                            for model, model_id in zip(list(eligible_models or []), allowed_model_ids):
+                                if str(model_id or "") == chosen_model_id:
+                                    return model
+
         if is_human and callable(provider):
             try:
                 ctx = {"reason": reason}
@@ -3674,6 +3764,8 @@ class ShootingMixin:
                     provider=provider,
                     reason="Reanimation Protocols - Restore Wound",
                     instruction="Select a wounded model to regain 1 wound.",
+                    selection_kind="reanimation_restore_wound",
+                    remaining=int(resolved_wounds or 0) - int(result["healed"] or 0) - int(result["returned"] or 0),
                 )
                 if target is None:
                     break
@@ -3717,6 +3809,8 @@ class ShootingMixin:
                     provider=provider,
                     reason="Reanimation Protocols - Return Model",
                     instruction="Select a destroyed model to return with 1 wound.",
+                    selection_kind="reanimation_return_model",
+                    remaining=int(resolved_wounds or 0) - int(result["healed"] or 0) - int(result["returned"] or 0),
                 )
                 if chosen is None or chosen not in candidates:
                     chosen = candidates[0]

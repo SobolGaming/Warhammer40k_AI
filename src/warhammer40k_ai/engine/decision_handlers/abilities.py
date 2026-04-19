@@ -12695,6 +12695,54 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "voice_of_command_officer":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return None
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "voice_of_command", None) if army is not None else None
+        player = _resolve_player(game, request, payload)
+        officer = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("officer_unit_id") or ctx.get("officer_unit_id"),
+        )
+        if mgr is None or player is None or officer is None:
+            return None
+        queue_next = getattr(mgr, "queue_order_sequence_order_request", None)
+        if not callable(queue_next):
+            return None
+        queue_next(
+            game,
+            player,
+            officer,
+            phase_name=str(payload.get("phase_name", "") or ctx.get("phase_name", "") or ""),
+            trigger=str(payload.get("trigger", "") or ctx.get("trigger", "") or ""),
+        )
+        return officer
+    if ability == "voice_of_command_target":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return None
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "voice_of_command", None) if army is not None else None
+        if mgr is None:
+            return None
+        officer = resolve_unit(
+            game,
+            payload.get("officer_unit_id") or ctx.get("officer_unit_id"),
+        )
+        target = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        order_key = str(payload.get("order_key") or ctx.get("order_key") or "").strip()
+        if officer is None or target is None or not order_key:
+            return None
+        phase_name = str(payload.get("phase_name", "") or ctx.get("phase_name", "") or "")
+        trigger = str(payload.get("trigger", "") or ctx.get("trigger", "") or "")
+        if not bool(mgr.issue_order(game, officer, target, order_key, phase_name=phase_name, trigger=trigger)):
+            return None
+        return target
     if ability in {
         "combined_arms_coordinated_action_regiment",
         "combined_arms_coordinated_action_squadron",
@@ -33344,7 +33392,20 @@ def _validate_issue_order(game: object, request: DecisionRequest, result: Decisi
     if errors:
         return errors
     payload = _option_payload(request, result)
+    ctx = dict(getattr(request, "context", {}) or {})
     if is_skip_choice(request, result):
+        return ()
+    ability = str(ctx.get("ability", "") or "")
+    if ability == "voice_of_command_order":
+        officer_val = payload.get("officer_unit_id") or payload.get("officer_unit") or ctx.get("officer_unit_id")
+        order_key = payload.get("order_key") or payload.get("key") or result.payload.get("order_key")
+        if officer_val is None or order_key is None:
+            return ("Voice of Command order selection requires officer_unit_id and order_key.",)
+        if resolve_unit(game, officer_val) is None:
+            return ("Voice of Command officer was not found.",)
+        army = _resolve_army(game, request, payload)
+        if army is None or getattr(army, "voice_of_command", None) is None:
+            return ("Voice of Command manager not found.",)
         return ()
     officer_val = payload.get("officer_unit_id") or payload.get("officer_unit") or request.context.get("officer_unit_id")
     target_val = result.payload.get("target_unit_id") or payload.get("target_unit_id") or payload.get("target_unit")
@@ -33361,6 +33422,7 @@ def _validate_issue_order(game: object, request: DecisionRequest, result: Decisi
 
 def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionResult):
     payload = _option_payload(request, result)
+    ctx = dict(getattr(request, "context", {}) or {})
     if is_skip_choice(request, result):
         trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "").strip().lower()
         if trigger in {"reactive_command_setup", "inspired_command"}:
@@ -33386,10 +33448,27 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
     if mgr is None:
         raise RuntimeError("Voice of Command manager not found.")
     officer = resolve_unit(game, payload.get("officer_unit_id") or payload.get("officer_unit") or request.context.get("officer_unit_id"))
-    target = resolve_unit(game, result.payload.get("target_unit_id") or payload.get("target_unit_id") or payload.get("target_unit"))
     order_key = payload.get("order_key") or payload.get("key") or result.payload.get("order_key")
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
     trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
+    if str(ctx.get("ability", "") or "") == "voice_of_command_order":
+        player = _resolve_player(game, request, payload)
+        queue_next = getattr(mgr, "queue_order_sequence_target_request", None)
+        if player is None or officer is None or not callable(queue_next):
+            return None
+        queue_next(
+            game,
+            player,
+            officer,
+            str(order_key or ""),
+            phase_name=phase_name,
+            trigger=trigger,
+        )
+        return {
+            "officer_unit_id": str(get_entity_id(officer) or ""),
+            "order_key": str(order_key or ""),
+        }
+    target = resolve_unit(game, result.payload.get("target_unit_id") or payload.get("target_unit_id") or payload.get("target_unit"))
     return bool(mgr.issue_order(game, officer, target, str(order_key), phase_name=phase_name, trigger=trigger))
 
 

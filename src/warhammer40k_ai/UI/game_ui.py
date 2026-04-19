@@ -8662,6 +8662,7 @@ class GameView:
         self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
 
     def _end_voice_of_command_flow(self, game):
+        self._voice_of_command_pending_order = None
         self._voice_of_command_flow_active = False
         self._open_next_voice_of_command_prompt(game)
 
@@ -8875,12 +8876,29 @@ class GameView:
             skip_id = option_id_for_action(req, "skip")
             if skip_id and option_id == skip_id:
                 resolve_decision_value(self.game, req, option_id)
+                self._voice_of_command_pending_order = None
                 self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
                 return
+            order_key = ""
+            order_label = "Order"
+            for opt in list(getattr(req, "options", []) or []):
+                if str(getattr(opt, "option_id", "") or "") != str(option_id or ""):
+                    continue
+                payload = dict(getattr(opt, "payload", {}) or {})
+                order_key = str(payload.get("order_key", "") or "")
+                order_label = str(getattr(opt, "label", "Order") or "Order")
+                break
+            if not order_key:
+                self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+                return
+            _value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+                return
             self._voice_of_command_pending_order = {
-                "request": req,
-                "option_id": option_id,
                 "officer": officer,
+                "order_key": order_key,
+                "order_name": order_label,
             }
             self._open_voice_of_command_target_dialog(player, game, phase_name, trigger, officer, None)
 
@@ -8916,15 +8934,8 @@ class GameView:
         order_key = ""
         order_label = "Order"
         if isinstance(pending, dict):
-            req = pending.get("request")
-            option_id = pending.get("option_id")
-            if req is not None and option_id:
-                for opt in list(getattr(req, "options", []) or []):
-                    if opt.option_id == option_id:
-                        payload = dict(getattr(opt, "payload", {}) or {})
-                        order_key = str(payload.get("order_key", "") or "")
-                        order_label = str(getattr(opt, "label", "Order") or "Order")
-                        break
+            order_key = str(pending.get("order_key", "") or "")
+            order_label = str(pending.get("order_name", "Order") or "Order")
         if not order_key and order is not None:
             order_key = str(getattr(order, "key", "") or "")
             order_label = str(getattr(order, "name", "Order") or "Order")
@@ -8977,43 +8988,31 @@ class GameView:
             "Select Voice of Command target.",
             player_id=getattr(player, "id", None),
             options=target_options,
-            context={"officer_unit_id": get_entity_id(officer), "order_key": order_key},
+            context={"ability": "voice_of_command_target", "officer_unit_id": get_entity_id(officer), "order_key": order_key},
 
         )
-
-        def _resolve_issue_order(target_unit):
-            ok = False
-            pending_order = getattr(self, "_voice_of_command_pending_order", None)
-            req = pending_order.get("request") if isinstance(pending_order, dict) else None
-            option_id = pending_order.get("option_id") if isinstance(pending_order, dict) else None
-            if req is not None and option_id:
-                payload = {"target_unit_id": get_entity_id(target_unit)}
-                value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
-                ok = bool(value) if apply_result is not None and getattr(apply_result, "ok", False) else False
-            return ok
 
         def _on_target(option_id: str):
             value, apply_result = resolve_decision_value(self.game, target_req, option_id)
             if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
                 return
-            ok = _resolve_issue_order(value)
-            if ok:
-                target_unit = value
-                try:
-                    from ..utility.event_bus import append_action
-                    append_action(
-                        player,
-                        f"Voice of Command: {order_name} from {getattr(officer, 'name', 'Officer')} to {getattr(target_unit, 'name', 'Unit')}",
-                    )
-                except Exception:
-                    pass
-                try:
-                    if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
-                        if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
-                            self._toggle_rule_panel(player, "army", force_refresh=True)
-                except Exception:
-                    pass
+            self._voice_of_command_pending_order = None
+            target_unit = value
+            try:
+                from ..utility.event_bus import append_action
+                append_action(
+                    player,
+                    f"Voice of Command: {order_name} from {getattr(officer, 'name', 'Officer')} to {getattr(target_unit, 'name', 'Unit')}",
+                )
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
             battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
             try:
                 has_capacity = bool(
@@ -9034,12 +9033,7 @@ class GameView:
             skip_id = option_id_for_action(target_req, "skip")
             if skip_id:
                 resolve_decision_value(self.game, target_req, skip_id)
-            pending_order = getattr(self, "_voice_of_command_pending_order", None)
-            if isinstance(pending_order, dict):
-                req = pending_order.get("request")
-                option_id = pending_order.get("option_id")
-                if req is not None and option_id:
-                    resolve_decision_value(self.game, req, option_id, result_payload={"action": "skip"})
+            self._voice_of_command_pending_order = None
             self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
 
         self.voice_of_command_target_dialog.show(
@@ -10849,9 +10843,26 @@ class GameView:
                 return
             _start_loping_speed_move()
 
+        prompt_context = {
+            "reactive_move_kind": "loping_speed",
+            "reactive_move_unit_id": get_entity_id(unit),
+            "reactive_move_source": source,
+            "reactive_move_movement_type": "loping_speed",
+            "reactive_move_moving_unit_id": get_entity_id(moving_unit) if moving_unit is not None else "",
+            "reactive_move_range": int(rng),
+        }
+
         self._loping_speed_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Move", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Move",
+                "Skip",
+                _done,
+                player=player,
+                context=prompt_context,
+            )
         except Exception:
             _finish_and_next()
 

@@ -156,6 +156,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         preview = player.preview_stratagem_cp_cost(strat, target_unit=unit)
         self.assertEqual(int(preview["cost"]), 0)
 
+        player.set_next_optional_decision("GIFT_OF_FORESIGHT", True)
         applied = player.apply_stratagem_cp_cost(strat, target_unit=unit)
         self.assertEqual(int(applied["cost"]), 0)
 

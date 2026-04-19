@@ -267,6 +267,70 @@ class TestAspectShrineToken(unittest.TestCase):
         self.assertEqual(int(hit.get("roll", 0) or 0), 6)
         self.assertEqual(shooter.get_aspect_shrine_token_remaining(), 0)
 
+    def test_local_provider_path_still_emits_decision(self):
+        aeldari_army = Army.with_detachment("Aeldari", "Battle Host")
+        aeldari_army.faction_id = "AE"
+        enemy_army = Army.with_detachment("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+        player = Player("Aeldari", PlayerControl.LOCAL, army=aeldari_army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+
+        shooter = _make_unit("Dire Avengers")
+        target = _make_unit("Enemy Unit", faction_name="Enemy", faction_keywords=["ENEMY"])
+        aeldari_army.add_unit(shooter)
+        enemy_army.add_unit(target)
+        shooter.deployed = True
+        target.deployed = True
+        shooter.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        shooter.add_aspect_shrine_tokens(1)
+        game.map.units = [shooter, target]
+        game.rebuild_entity_registry()
+
+        seen_decisions = []
+
+        def _capture(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            game.decision_queue.add(request)
+
+        def _apply(command):
+            payload = dict(getattr(command, "payload", {}) or {})
+            request = game.decision_queue.get(str(payload.get("decision_id", "") or ""))
+            option_id = str(payload.get("option_id", "") or "")
+            option = next(
+                opt for opt in list(getattr(request, "options", []) or []) if str(getattr(opt, "option_id", "") or "") == option_id
+            )
+            resolved_payload = dict(getattr(option, "payload", {}) or {})
+            resolved_value = resolved_payload.get("choice")
+            apply_result = SimpleNamespace(ok=True, value=resolved_value)
+            setattr(request, "_resolved_decision_value", resolved_value)
+            setattr(request, "_resolved_decision_apply_result", apply_result)
+            game.decision_queue.pop(request.decision_id)
+            return SimpleNamespace(value=apply_result)
+
+        game.request_decision = _capture
+        game.apply_command = _apply
+        game.map.aspect_shrine_provider = lambda **_kwargs: "use"
+
+        profile = _make_profile()
+        hit = profile._hit_target_with_tracking(
+            target,
+            shooter.models[0],
+            {"_aura_attack_mods": _aura_stub()},
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_CHOOSE_ASPECT, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
+        self.assertEqual(shooter.get_aspect_shrine_token_remaining(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

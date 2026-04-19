@@ -241,10 +241,20 @@ class GameShootingFightHandlersMixin:
             if mgr is None:
                 continue
             hit_units = list(hits_map.keys())
+            candidates = mgr.get_fade_back_candidates(hit_units, self)
+            if not candidates:
+                continue
+            request = self._queue_battle_focus_reactive_selection(
+                player=player,
+                candidates=list(candidates),
+                manager=mgr,
+                maneuver="fade_back",
+                attacker_unit=attacker_unit,
+                hits_by_unit=dict(hits_map),
+            )
+            if request is None:
+                continue
             if player.has_control():
-                candidates = mgr.get_fade_back_candidates(hit_units, self)
-                if not candidates:
-                    continue
                 es = getattr(self, "event_system", None)
                 if es is None or not hasattr(es, "subscribers"):
                     raise RuntimeError("Event system missing for Battle Focus prompt.")
@@ -260,18 +270,6 @@ class GameShootingFightHandlersMixin:
                         hits_by_unit=dict(hits_map),
                         manager=mgr,
                     )
-            else:
-                candidates = mgr.get_fade_back_candidates(hit_units, self)
-                if not candidates:
-                    continue
-                self._queue_battle_focus_reactive_selection(
-                    player=player,
-                    candidates=list(candidates),
-                    manager=mgr,
-                    maneuver="fade_back",
-                    attacker_unit=attacker_unit,
-                    hits_by_unit=dict(hits_map),
-                )
 
     def _interlocking_tactics_hit_candidates(self, attacker_unit=None, hits_by_target=None):
         if attacker_unit is None or not isinstance(hits_by_target, dict):

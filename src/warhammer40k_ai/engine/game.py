@@ -3006,10 +3006,19 @@ class Game(
             mgr = getattr(army, "battle_focus", None)
             if mgr is None:
                 continue
+            candidates = mgr.consume_opportunity_seized_candidates(unit, self)
+            if not candidates:
+                continue
+            request = self._queue_battle_focus_reactive_selection(
+                player=p,
+                candidates=list(candidates),
+                manager=mgr,
+                maneuver="opportunity",
+                moving_unit=unit,
+            )
+            if request is None:
+                continue
             if p.has_control():
-                candidates = mgr.consume_opportunity_seized_candidates(unit, self)
-                if not candidates:
-                    continue
                 es = getattr(self, "event_system", None)
                 if es is None or not hasattr(es, "subscribers"):
                     raise RuntimeError("Event system missing for Battle Focus prompt.")
@@ -3024,17 +3033,6 @@ class Game(
                         candidates=list(candidates),
                         manager=mgr,
                     )
-            else:
-                candidates = mgr.consume_opportunity_seized_candidates(unit, self)
-                if not candidates:
-                    continue
-                self._queue_battle_focus_reactive_selection(
-                    player=p,
-                    candidates=list(candidates),
-                    manager=mgr,
-                    maneuver="opportunity",
-                    moving_unit=unit,
-                )
 
     def _on_unit_move_started_enemy_fall_back_end_normal_move(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -3860,7 +3858,6 @@ class Game(
                             rule=rule,
                             game=self,
                         )
-                        continue
                 source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
                 move_label = "D6"
                 try:

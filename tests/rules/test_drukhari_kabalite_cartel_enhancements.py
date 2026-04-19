@@ -241,6 +241,7 @@ class TestDrukhariKabaliteCartelEnhancements(unittest.TestCase):
         preview = drukhari_player.preview_stratagem_cp_cost(rapid_ingress, target_unit=archon)
         self.assertEqual(int(preview.get("cost", -1)), 0)
         self.assertTrue(any("Webway Awl" in str(reason) for reason in list(preview.get("reasons", []) or [])))
+        drukhari_player.set_next_optional_decision("WEBWAY_AWL_RAPID_INGRESS", True)
         applied = drukhari_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=archon)
         self.assertEqual(int(applied.get("cost", -1)), 0)
         self.assertTrue(bool(applied.get("webway_awl_rapid_ingress_use", False)))

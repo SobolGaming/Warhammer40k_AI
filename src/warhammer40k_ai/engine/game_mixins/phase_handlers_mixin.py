@@ -18407,6 +18407,14 @@ class GamePhaseHandlersMixin:
         officers = mgr.get_eligible_officers(game=self, player=player, phase_name=pname, trigger="command_phase_start")
         if not officers:
             return
+        queue_start = getattr(mgr, "queue_order_sequence_start", None)
+        request = (
+            queue_start(self, player, phase_name=pname, trigger="command_phase_start")
+            if callable(queue_start)
+            else None
+        )
+        if request is None:
+            return
         if player.has_control():
             es = getattr(self, "event_system", None)
             if es is None or not hasattr(es, "subscribers"):
@@ -18440,6 +18448,10 @@ class GamePhaseHandlersMixin:
             return
         officers = mgr.get_eligible_officers(game=self, player=player, phase_name=pname, trigger="phase_end")
         if not officers:
+            return
+        queue_start = getattr(mgr, "queue_order_sequence_start", None)
+        request = queue_start(self, player, phase_name=pname, trigger="phase_end") if callable(queue_start) else None
+        if request is None:
             return
         if player.has_control():
             es = getattr(self, "event_system", None)
@@ -18488,6 +18500,14 @@ class GamePhaseHandlersMixin:
                 continue
             officers = list(register_fn(unit, game=self) or [])
             if not officers:
+                continue
+            queue_start = getattr(mgr, "queue_order_sequence_start", None)
+            request = (
+                queue_start(self, player, phase_name=phase_name, trigger="reactive_command_setup")
+                if callable(queue_start)
+                else None
+            )
+            if request is None:
                 continue
             if player.has_control():
                 es = getattr(self, "event_system", None)

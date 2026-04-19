@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _Ability:
@@ -14,18 +15,26 @@ class _Ability:
 class _PlayerStub:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
+        self._id = name
         self.id = name
         self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
         self.has_control = lambda: is_human
+        self.army = None
         self.game = None
+
+    def get_army(self):
+        return self.army
 
 
 class _ArmyStub:
     def __init__(self, units=None, *, faction_id="AM", detachment_type=""):
+        self._id = f"army-{faction_id}-{detachment_type or 'default'}"
+        self.id = self._id
         self.units = list(units or [])
         self.faction_id = faction_id
         self.detachment_type = detachment_type
         self.player = _PlayerStub()
+        self.player.army = self
         self.player.game = None
         attach_detachment_helpers(self)
 
@@ -154,6 +163,7 @@ class _MapStub:
     def __init__(self, friendlies=None, *, distance=3.0):
         self._friendlies = list(friendlies or [])
         self._distance = float(distance)
+        self.units = list(friendlies or [])
 
     def get_friendly_units(self, _unit):
         return list(self._friendlies)
@@ -206,6 +216,167 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(keywords, ["REGIMENT", "SQUADRON"])
         self.assertEqual(allowed, [])
+
+    def test_phase_start_voice_of_command_local_prompt_also_queues_officer_request(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.decisions import DecisionQueue
+        from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
+
+        orders_text = 'This model can issue 1 order to REGIMENT units within 6".'
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+
+        game_map = _MapStub([officer, target], distance=3.0)
+        prompts = []
+
+        class _EventSystem:
+            def __init__(self):
+                self.subscribers = {"voice_of_command_prompt": [self._capture]}
+
+            def _capture(self, **kwargs):
+                prompts.append(kwargs)
+
+            def publish(self, name, **kwargs):
+                for fn in list(self.subscribers.get(name, []) or []):
+                    fn(**kwargs)
+
+        game = SimpleNamespace(
+            turn=1,
+            map=game_map,
+            players=[army.player],
+            decision_queue=DecisionQueue(),
+            event_system=_EventSystem(),
+        )
+        game.request_decision = lambda request: game.decision_queue.add(request)
+        army.player.game = game
+
+        GamePhaseHandlersMixin._on_phase_start_voice_of_command(
+            game,
+            player=army.player,
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+        )
+
+        self.assertEqual(len(prompts), 1)
+        request = game.decision_queue.peek()
+        self.assertIsNotNone(request)
+        self.assertEqual(str(request.decision_type), DECISION_CHOOSE_QUARRY)
+        self.assertEqual(str((request.context or {}).get("ability", "") or ""), "voice_of_command_officer")
+
+    def test_voice_of_command_decision_chain_queues_order_and_target_requests(self):
+        from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry, _apply_issue_order
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_ISSUE_ORDER
+        from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
+        from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, VoiceOfCommandManager
+
+        orders_text = 'This model can issue 1 order to REGIMENT units within 6".'
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+
+        game_map = _MapStub([officer, target], distance=3.0)
+        game = SimpleNamespace(
+            turn=1,
+            map=game_map,
+            players=[army.player],
+            decision_queue=DecisionQueue(),
+        )
+        game.request_decision = lambda request: game.decision_queue.add(request)
+        army.player.game = game
+
+        officer_request = mgr.queue_order_sequence_start(
+            game,
+            army.player,
+            phase_name="COMMAND_PHASE",
+            trigger="command_phase_start",
+        )
+        self.assertIsNotNone(officer_request)
+        self.assertEqual(str(officer_request.decision_type), DECISION_CHOOSE_QUARRY)
+        officer_option = next(
+            opt for opt in list(officer_request.options or [])
+            if str((opt.payload or {}).get("target_unit_id", "") or "") == str(get_entity_id(officer) or "")
+        )
+
+        game.decision_queue.pop(officer_request.decision_id)
+        officer_result = DecisionResult(
+            decision_id=officer_request.decision_id,
+            player_id=army.player.id,
+            option_id=officer_option.option_id,
+            payload={},
+        )
+        resolved_officer = _apply_choose_quarry(game, officer_request, officer_result)
+        self.assertIs(resolved_officer, officer)
+
+        order_request = next(
+            req for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_ISSUE_ORDER
+        )
+        order_option = next(
+            opt for opt in list(order_request.options or [])
+            if str((opt.payload or {}).get("order_key", "") or "") == ORDER_MOVE.key
+        )
+
+        game.decision_queue.pop(order_request.decision_id)
+        order_result = DecisionResult(
+            decision_id=order_request.decision_id,
+            player_id=army.player.id,
+            option_id=order_option.option_id,
+            payload={},
+        )
+        order_value = _apply_issue_order(game, order_request, order_result)
+        self.assertEqual(str((order_value or {}).get("order_key", "") or ""), ORDER_MOVE.key)
+
+        target_request = next(
+            req for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "voice_of_command_target"
+        )
+        target_option = next(
+            opt for opt in list(target_request.options or [])
+            if str((opt.payload or {}).get("target_unit_id", "") or "") == str(get_entity_id(target) or "")
+        )
+
+        game.decision_queue.pop(target_request.decision_id)
+        target_result = DecisionResult(
+            decision_id=target_request.decision_id,
+            player_id=army.player.id,
+            option_id=target_option.option_id,
+            payload={},
+        )
+        resolved_target = _apply_choose_quarry(game, target_request, target_result)
+        self.assertIs(resolved_target, target)
+        self.assertEqual(str(target.special_rules.get("voice_of_command_order_key", "") or ""), ORDER_MOVE.key)
 
     def test_orders_profile_parsing_variants(self):
         from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager

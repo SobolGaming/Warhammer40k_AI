@@ -245,8 +245,10 @@ def test_coordinated_action_local_selection_queues_and_mirrors_orders():
     assert int(am_player.command_points or 0) == 5
 
     queued = list(game.decision_queue.list() or [])
-    assert len(queued) == 1
-    first_request = queued[0]
+    first_request = next(
+        req for req in queued
+        if str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "combined_arms_coordinated_action_regiment"
+    )
     assert str(getattr(first_request, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
     assert str((first_request.context or {}).get("ability", "") or "") == "combined_arms_coordinated_action_regiment"
     regiment_option_id = _option_id_for_payload(first_request, "regiment_unit_id", str(get_entity_id(regiment) or ""))
@@ -254,8 +256,10 @@ def test_coordinated_action_local_selection_queues_and_mirrors_orders():
     resolve_decision_command(game, first_request, regiment_option_id, player_id=am_player.id)
 
     queued = list(game.decision_queue.list() or [])
-    assert len(queued) == 1
-    second_request = queued[0]
+    second_request = next(
+        req for req in queued
+        if str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "combined_arms_coordinated_action_squadron"
+    )
     assert str((second_request.context or {}).get("ability", "") or "") == "combined_arms_coordinated_action_squadron"
     squadron_option_id = _option_id_for_payload(second_request, "squadron_unit_id", str(get_entity_id(squadron) or ""))
     assert squadron_option_id

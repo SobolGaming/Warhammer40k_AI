@@ -253,6 +253,7 @@ class TestSpaceMarinesFaqValidation(unittest.TestCase):
 
         rapid_ingress = SimpleNamespace(name="RAPID INGRESS", cp_cost=1)
         preview = player.preview_stratagem_cp_cost(rapid_ingress, target_unit=bearer)
+        player.set_next_optional_decision("BEACON_ANGELIS_RAPID_INGRESS", True)
         applied = player.apply_stratagem_cp_cost(rapid_ingress, target_unit=bearer)
 
         self.assertEqual(int(preview.get("cost", 99)), 0)

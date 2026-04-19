@@ -9217,7 +9217,121 @@ class WargearProfile:
             )
 
         decision = None
-        if is_human and callable(provider):
+        if game is not None and player is not None:
+            try:
+                from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
+                from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                from warhammer40k_ai.utility.decision_utils import (
+                    decision_request_is_pending,
+                    resolve_or_reuse_decision_value,
+                )
+                from warhammer40k_ai.utility.entity_ids import get_entity_id
+            except Exception:
+                decision = None
+            else:
+                unit_id = ""
+                attacker_id = ""
+                try:
+                    unit_id = get_entity_id(root)
+                except Exception:
+                    unit_id = ""
+                try:
+                    attacker_id = get_entity_id(attacker)
+                except Exception:
+                    attacker_id = ""
+                req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+                for entry in option_entries:
+                    req_options.append(
+                        DecisionOption.create(
+                            f"Use {entry.get('label')}",
+                            payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                        )
+                    )
+                req = DecisionRequest.create(
+                    DECISION_USE_LEADING_UNMODIFIED_SIX,
+                    "Leading Ability: Unmodified 6",
+                    player_id=getattr(player, "id", None),
+                    options=req_options,
+                    context={
+                        "unit_id": unit_id,
+                        "attacker_model_id": attacker_id,
+                        "roll_type": str(roll_type or ""),
+                        "roll_value": int(roll_value),
+                        "ability_keys": [e.get("ability_key", "") for e in option_entries],
+                    },
+                )
+                if hasattr(game, "request_decision"):
+                    game.request_decision(req)
+
+                option_id = None
+                request_pending = bool(decision_request_is_pending(game, req))
+                request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                if request_pending:
+                    choice = None
+                    if is_human and callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                unit=root,
+                                roll_type=str(roll_type or ""),
+                                value=int(roll_value),
+                                needed=needed,
+                                options=option_entries,
+                                attacker=attacker,
+                                target=target,
+                                weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                                or getattr(self, "name", "Weapon"),
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None:
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "LEADING_UNMODIFIED_SIX" in overrides:
+                                choice = overrides.pop("LEADING_UNMODIFIED_SIX")
+                        except Exception:
+                            choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    desired_key = ""
+                    if choice_norm in ("use", "yes", "true"):
+                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                    elif choice_norm in ("skip", "no", "false"):
+                        desired_key = ""
+                    else:
+                        for entry in option_entries:
+                            if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                desired_key = str(entry.get("ability_key", "") or "")
+                                break
+                    try:
+                        if not desired_key:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("action", "") or "") == "skip":
+                                    option_id = opt.option_id
+                                    break
+                        else:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("ability_key", "") or "") == desired_key:
+                                    option_id = opt.option_id
+                                    break
+                    except Exception:
+                        option_id = None
+                elif request_resolved:
+                    for opt in list(getattr(req, "options", []) or []):
+                        option_id = str(getattr(opt, "option_id", "") or "")
+                        if option_id:
+                            break
+                if option_id:
+                    value, apply_result = resolve_or_reuse_decision_value(
+                        game,
+                        req,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    if apply_result is not None and getattr(apply_result, "ok", False):
+                        decision = value
+        if decision is None and is_human and callable(provider):
             try:
                 decision = provider(
                     player=player,
@@ -9233,108 +9347,8 @@ class WargearProfile:
                 )
             except Exception:
                 decision = None
-        else:
-            decision = None
-            if game is not None and player is not None:
-                try:
-                    from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
-                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import (
-                        decision_request_is_pending,
-                        resolve_or_reuse_decision_value,
-                    )
-                    from warhammer40k_ai.utility.entity_ids import get_entity_id
-                except Exception:
-                    decision = None
-                else:
-                    unit_id = ""
-                    attacker_id = ""
-                    try:
-                        unit_id = get_entity_id(root)
-                    except Exception:
-                        unit_id = ""
-                    try:
-                        attacker_id = get_entity_id(attacker)
-                    except Exception:
-                        attacker_id = ""
-                    req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
-                    for entry in option_entries:
-                        req_options.append(
-                            DecisionOption.create(
-                                f"Use {entry.get('label')}",
-                                payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
-                            )
-                        )
-                    req = DecisionRequest.create(
-                        DECISION_USE_LEADING_UNMODIFIED_SIX,
-                        "Leading Ability: Unmodified 6",
-                        player_id=getattr(player, "id", None),
-                        options=req_options,
-                        context={
-                            "unit_id": unit_id,
-                            "attacker_model_id": attacker_id,
-                            "roll_type": str(roll_type or ""),
-                            "roll_value": int(roll_value),
-                            "ability_keys": [e.get("ability_key", "") for e in option_entries],
-                        },
-                    )
-                    if hasattr(game, "request_decision"):
-                        game.request_decision(req)
-
-                    option_id = None
-                    request_pending = bool(decision_request_is_pending(game, req))
-                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
-                    if request_pending:
-                        choice = None
-                        try:
-                            overrides = getattr(player, "_next_optional_selections", None)
-                            if isinstance(overrides, dict) and "LEADING_UNMODIFIED_SIX" in overrides:
-                                choice = overrides.pop("LEADING_UNMODIFIED_SIX")
-                        except Exception:
-                            choice = None
-                        choice_norm = str(choice or "").strip().lower()
-                        desired_key = ""
-                        if choice_norm in ("use", "yes", "true"):
-                            desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
-                        elif choice_norm in ("skip", "no", "false"):
-                            desired_key = ""
-                        else:
-                            # Allow explicit ability_key selection.
-                            for entry in option_entries:
-                                if str(entry.get("ability_key", "")).lower() == choice_norm:
-                                    desired_key = str(entry.get("ability_key", "") or "")
-                                    break
-                        try:
-                            if not desired_key:
-                                for opt in list(getattr(req, "options", []) or []):
-                                    payload = dict(getattr(opt, "payload", {}) or {})
-                                    if str(payload.get("action", "") or "") == "skip":
-                                        option_id = opt.option_id
-                                        break
-                            else:
-                                for opt in list(getattr(req, "options", []) or []):
-                                    payload = dict(getattr(opt, "payload", {}) or {})
-                                    if str(payload.get("ability_key", "") or "") == desired_key:
-                                        option_id = opt.option_id
-                                        break
-                        except Exception:
-                            option_id = None
-                    elif request_resolved:
-                        for opt in list(getattr(req, "options", []) or []):
-                            option_id = str(getattr(opt, "option_id", "") or "")
-                            if option_id:
-                                break
-                    if option_id:
-                        value, apply_result = resolve_or_reuse_decision_value(
-                            game,
-                            req,
-                            option_id,
-                            player_id=getattr(player, "id", None),
-                        )
-                        if apply_result is not None and getattr(apply_result, "ok", False):
-                            decision = value
-            if decision is None:
-                decision = "skip"
+        if decision is None:
+            decision = "skip"
 
         decision_key = ""
         if isinstance(decision, dict):
@@ -9546,7 +9560,121 @@ class WargearProfile:
             provider = None
 
         decision = None
-        if is_human and callable(provider):
+        if game is not None and player is not None:
+            try:
+                from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
+                from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                from warhammer40k_ai.utility.decision_utils import (
+                    decision_request_is_pending,
+                    resolve_or_reuse_decision_value,
+                )
+                from warhammer40k_ai.utility.entity_ids import get_entity_id
+            except Exception:
+                decision = None
+            else:
+                model_id = ""
+                unit_id = ""
+                try:
+                    model_id = get_entity_id(model)
+                except Exception:
+                    model_id = ""
+                try:
+                    unit_id = get_entity_id(root)
+                except Exception:
+                    unit_id = ""
+                req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+                for entry in option_entries:
+                    req_options.append(
+                        DecisionOption.create(
+                            f"Use {entry.get('label')}",
+                            payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                        )
+                    )
+                req = DecisionRequest.create(
+                    DECISION_USE_MODEL_UNMODIFIED_SIX,
+                    "Ability: Unmodified 6",
+                    player_id=getattr(player, "id", None),
+                    options=req_options,
+                    context={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "roll_type": rt,
+                        "roll_value": int(roll_value),
+                        "ability_keys": [e.get("ability_key", "") for e in option_entries],
+                    },
+                )
+                if hasattr(game, "request_decision"):
+                    game.request_decision(req)
+
+                option_id = None
+                request_pending = bool(decision_request_is_pending(game, req))
+                request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                if request_pending:
+                    choice = None
+                    if is_human and callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                model=model,
+                                roll_type=rt,
+                                value=int(roll_value),
+                                needed=needed,
+                                options=option_entries,
+                                attacker=attacker,
+                                target=target,
+                                weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                                or getattr(self, "name", "Weapon"),
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None:
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "MODEL_UNMODIFIED_SIX" in overrides:
+                                choice = overrides.pop("MODEL_UNMODIFIED_SIX")
+                        except Exception:
+                            choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    desired_key = ""
+                    if choice_norm in ("use", "yes", "true"):
+                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                    elif choice_norm in ("skip", "no", "false"):
+                        desired_key = ""
+                    else:
+                        for entry in option_entries:
+                            if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                desired_key = str(entry.get("ability_key", "") or "")
+                                break
+                    try:
+                        if not desired_key:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("action", "") or "") == "skip":
+                                    option_id = opt.option_id
+                                    break
+                        else:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("ability_key", "") or "") == desired_key:
+                                    option_id = opt.option_id
+                                    break
+                    except Exception:
+                        option_id = None
+                elif request_resolved:
+                    for opt in list(getattr(req, "options", []) or []):
+                        option_id = str(getattr(opt, "option_id", "") or "")
+                        if option_id:
+                            break
+                if option_id:
+                    value, apply_result = resolve_or_reuse_decision_value(
+                        game,
+                        req,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    if apply_result is not None and getattr(apply_result, "ok", False):
+                        decision = value
+        if decision is None and is_human and callable(provider):
             try:
                 decision = provider(
                     player=player,
@@ -9562,107 +9690,8 @@ class WargearProfile:
                 )
             except Exception:
                 decision = None
-        else:
-            decision = None
-            if game is not None and player is not None:
-                try:
-                    from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
-                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import (
-                        decision_request_is_pending,
-                        resolve_or_reuse_decision_value,
-                    )
-                    from warhammer40k_ai.utility.entity_ids import get_entity_id
-                except Exception:
-                    decision = None
-                else:
-                    model_id = ""
-                    unit_id = ""
-                    try:
-                        model_id = get_entity_id(model)
-                    except Exception:
-                        model_id = ""
-                    try:
-                        unit_id = get_entity_id(root)
-                    except Exception:
-                        unit_id = ""
-                    req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
-                    for entry in option_entries:
-                        req_options.append(
-                            DecisionOption.create(
-                                f"Use {entry.get('label')}",
-                                payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
-                            )
-                        )
-                    req = DecisionRequest.create(
-                        DECISION_USE_MODEL_UNMODIFIED_SIX,
-                        "Ability: Unmodified 6",
-                        player_id=getattr(player, "id", None),
-                        options=req_options,
-                        context={
-                            "unit_id": unit_id,
-                            "model_id": model_id,
-                            "roll_type": rt,
-                            "roll_value": int(roll_value),
-                            "ability_keys": [e.get("ability_key", "") for e in option_entries],
-                        },
-                    )
-                    if hasattr(game, "request_decision"):
-                        game.request_decision(req)
-
-                    option_id = None
-                    request_pending = bool(decision_request_is_pending(game, req))
-                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
-                    if request_pending:
-                        choice = None
-                        try:
-                            overrides = getattr(player, "_next_optional_selections", None)
-                            if isinstance(overrides, dict) and "MODEL_UNMODIFIED_SIX" in overrides:
-                                choice = overrides.pop("MODEL_UNMODIFIED_SIX")
-                        except Exception:
-                            choice = None
-                        choice_norm = str(choice or "").strip().lower()
-                        desired_key = ""
-                        if choice_norm in ("use", "yes", "true"):
-                            desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
-                        elif choice_norm in ("skip", "no", "false"):
-                            desired_key = ""
-                        else:
-                            for entry in option_entries:
-                                if str(entry.get("ability_key", "")).lower() == choice_norm:
-                                    desired_key = str(entry.get("ability_key", "") or "")
-                                    break
-                        try:
-                            if not desired_key:
-                                for opt in list(getattr(req, "options", []) or []):
-                                    payload = dict(getattr(opt, "payload", {}) or {})
-                                    if str(payload.get("action", "") or "") == "skip":
-                                        option_id = opt.option_id
-                                        break
-                            else:
-                                for opt in list(getattr(req, "options", []) or []):
-                                    payload = dict(getattr(opt, "payload", {}) or {})
-                                    if str(payload.get("ability_key", "") or "") == desired_key:
-                                        option_id = opt.option_id
-                                        break
-                        except Exception:
-                            option_id = None
-                    elif request_resolved:
-                        for opt in list(getattr(req, "options", []) or []):
-                            option_id = str(getattr(opt, "option_id", "") or "")
-                            if option_id:
-                                break
-                    if option_id:
-                        value, apply_result = resolve_or_reuse_decision_value(
-                            game,
-                            req,
-                            option_id,
-                            player_id=getattr(player, "id", None),
-                        )
-                        if apply_result is not None and getattr(apply_result, "ok", False):
-                            decision = value
-            if decision is None:
-                decision = "skip"
+        if decision is None:
+            decision = "skip"
 
         decision_key = ""
         if isinstance(decision, dict):
@@ -10199,7 +10228,109 @@ class WargearProfile:
         except Exception:
             tokens_remaining = 0
 
-        if is_human and callable(provider):
+        try:
+            ctx = {
+                "roll_type": str(roll_type or ""),
+                "roll": int(roll_value),
+                "needed": int(needed) if needed is not None else None,
+                "tokens_remaining": int(tokens_remaining or 0),
+                "unit": root,
+                "attacker": attacker,
+                "target": target,
+            }
+        except Exception:
+            ctx = {}
+        decision = None
+        if game is not None and player is not None:
+            try:
+                from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
+                from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                from warhammer40k_ai.utility.decision_utils import (
+                    decision_request_is_pending,
+                    resolve_or_reuse_decision_value,
+                )
+                from warhammer40k_ai.utility.entity_ids import get_entity_id
+            except Exception:
+                decision = None
+            else:
+                unit_id = ""
+                try:
+                    unit_id = get_entity_id(root)
+                except Exception:
+                    unit_id = ""
+                options = [
+                    DecisionOption.create("Use", payload={"choice": "use"}),
+                    DecisionOption.create("Don't Use", payload={"choice": "skip"}),
+                    DecisionOption.create("Don't Use for this Unit", payload={"choice": "suppress"}),
+                ]
+                req = DecisionRequest.create(
+                    DECISION_CHOOSE_ASPECT,
+                    "Aspect Shrine Token",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={"unit_id": unit_id, "roll_type": str(roll_type or ""), "roll_value": int(roll_value)},
+                )
+                if hasattr(game, "request_decision"):
+                    game.request_decision(req)
+
+                option_id = None
+                request_pending = bool(decision_request_is_pending(game, req))
+                request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
+                if request_pending:
+                    choice = None
+                    if is_human and callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                unit=root,
+                                roll_type=str(roll_type or ""),
+                                value=int(roll_value),
+                                needed=needed,
+                                tokens_remaining=tokens_remaining,
+                                attacker=attacker,
+                                target=target,
+                                weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                                or getattr(self, "name", "Weapon"),
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None:
+                        try:
+                            overrides = getattr(player, "_next_optional_selections", None)
+                            if isinstance(overrides, dict) and "ASPECT_SHRINE_TOKEN" in overrides:
+                                choice = overrides.pop("ASPECT_SHRINE_TOKEN")
+                        except Exception:
+                            choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    if choice_norm in ("use", "yes", "true"):
+                        desired = "use"
+                    elif choice_norm in ("suppress", "dont use for this unit", "dont_use_for_this_unit", "dont_use_for_unit", "skip_unit"):
+                        desired = "suppress"
+                    else:
+                        desired = "skip"
+                    try:
+                        for opt in list(getattr(req, "options", []) or []):
+                            payload = dict(getattr(opt, "payload", {}) or {})
+                            if str(payload.get("choice", "") or "") == desired:
+                                option_id = opt.option_id
+                                break
+                    except Exception:
+                        option_id = None
+                elif request_resolved:
+                    for opt in list(getattr(req, "options", []) or []):
+                        option_id = str(getattr(opt, "option_id", "") or "")
+                        if option_id:
+                            break
+                if option_id:
+                    value, apply_result = resolve_or_reuse_decision_value(
+                        game,
+                        req,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    if apply_result is not None and getattr(apply_result, "ok", False):
+                        decision = value
+        if decision is None and is_human and callable(provider):
             try:
                 decision = provider(
                     player=player,
@@ -10215,94 +10346,8 @@ class WargearProfile:
                 )
             except Exception:
                 decision = None
-        else:
-            try:
-                ctx = {
-                    "roll_type": str(roll_type or ""),
-                    "roll": int(roll_value),
-                    "needed": int(needed) if needed is not None else None,
-                    "tokens_remaining": int(tokens_remaining or 0),
-                    "unit": root,
-                    "attacker": attacker,
-                    "target": target,
-                }
-            except Exception:
-                ctx = {}
-            decision = None
-            if game is not None and player is not None:
-                try:
-                    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
-                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import (
-                        decision_request_is_pending,
-                        resolve_or_reuse_decision_value,
-                    )
-                    from warhammer40k_ai.utility.entity_ids import get_entity_id
-                except Exception:
-                    decision = None
-                else:
-                    unit_id = ""
-                    try:
-                        unit_id = get_entity_id(root)
-                    except Exception:
-                        unit_id = ""
-                    options = [
-                        DecisionOption.create("Use", payload={"choice": "use"}),
-                        DecisionOption.create("Don't Use", payload={"choice": "skip"}),
-                        DecisionOption.create("Don't Use for this Unit", payload={"choice": "suppress"}),
-                    ]
-                    req = DecisionRequest.create(
-                        DECISION_CHOOSE_ASPECT,
-                        "Aspect Shrine Token",
-                        player_id=getattr(player, "id", None),
-                        options=options,
-                        context={"unit_id": unit_id, "roll_type": str(roll_type or ""), "roll_value": int(roll_value)},
-                    )
-                    if hasattr(game, "request_decision"):
-                        game.request_decision(req)
-
-                    option_id = None
-                    request_pending = bool(decision_request_is_pending(game, req))
-                    request_resolved = getattr(req, "_resolved_decision_apply_result", None) is not None
-                    if request_pending:
-                        choice = None
-                        try:
-                            overrides = getattr(player, "_next_optional_selections", None)
-                            if isinstance(overrides, dict) and "ASPECT_SHRINE_TOKEN" in overrides:
-                                choice = overrides.pop("ASPECT_SHRINE_TOKEN")
-                        except Exception:
-                            choice = None
-                        choice_norm = str(choice or "").strip().lower()
-                        if choice_norm in ("use", "yes", "true"):
-                            desired = "use"
-                        elif choice_norm in ("suppress", "dont use for this unit", "dont_use_for_this_unit", "dont_use_for_unit", "skip_unit"):
-                            desired = "suppress"
-                        else:
-                            desired = "skip"
-                        try:
-                            for opt in list(getattr(req, "options", []) or []):
-                                payload = dict(getattr(opt, "payload", {}) or {})
-                                if str(payload.get("choice", "") or "") == desired:
-                                    option_id = opt.option_id
-                                    break
-                        except Exception:
-                            option_id = None
-                    elif request_resolved:
-                        for opt in list(getattr(req, "options", []) or []):
-                            option_id = str(getattr(opt, "option_id", "") or "")
-                            if option_id:
-                                break
-                    if option_id:
-                        value, apply_result = resolve_or_reuse_decision_value(
-                            game,
-                            req,
-                            option_id,
-                            player_id=getattr(player, "id", None),
-                        )
-                        if apply_result is not None and getattr(apply_result, "ok", False):
-                            decision = value
-            if decision is None:
-                decision = "skip"
+        if decision is None:
+            decision = "skip"
 
         decision_norm = str(decision or "").strip().lower()
         if decision_norm in ("dont use for this unit", "dont_use_for_unit", "dont_use_for_this_unit", "dont_unit", "skip_unit", "suppress", "unit"):

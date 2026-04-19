@@ -2455,6 +2455,249 @@ class VoiceOfCommandManager:
             return 1
         return 0
 
+    def _pending_order_sequence_request(
+        self,
+        game,
+        decision_type: str,
+        *,
+        player_id: str = "",
+        context: dict | None = None,
+    ):
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        list_fn = getattr(queue, "list", None) if queue is not None else None
+        if not callable(list_fn):
+            return None
+        expected_context = dict(context or {})
+        for request in list(list_fn() or []):
+            if str(getattr(request, "decision_type", "") or "") != str(decision_type or ""):
+                continue
+            if player_id and str(getattr(request, "player_id", "") or "") != str(player_id):
+                continue
+            request_context = dict(getattr(request, "context", {}) or {})
+            matches = True
+            for key, value in expected_context.items():
+                if request_context.get(key) != value:
+                    matches = False
+                    break
+            if matches:
+                return request
+        return None
+
+    def _available_orders_with_targets(self, officer_unit, *, game) -> list[Order]:
+        orders = list(self.get_available_orders(officer_unit) or [])
+        available: list[Order] = []
+        for order in list(orders or []):
+            order_key = str(getattr(order, "key", "") or "").strip().upper()
+            if not order_key:
+                continue
+            targets = list(self.get_eligible_targets(officer_unit, game=game, order_key=order_key) or [])
+            if targets:
+                available.append(order)
+        return available
+
+    def queue_order_sequence_start(self, game, player, *, phase_name: str = "", trigger: str = ""):
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if player is None or not callable(request_fn):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        officers = list(self.get_eligible_officers(game=game, player=player, phase_name=phase_name, trigger=trigger) or [])
+        filtered_officers = [
+            officer for officer in list(officers or [])
+            if officer is not None and self._available_orders_with_targets(officer, game=game)
+        ]
+        if not filtered_officers:
+            return None
+
+        context = {
+            "ability": "voice_of_command_officer",
+            "phase_name": str(phase_name or ""),
+            "trigger": str(trigger or ""),
+            "army_id": str(get_entity_id(self.army) or "") if self.army is not None else "",
+        }
+        existing = self._pending_order_sequence_request(
+            game,
+            DECISION_CHOOSE_QUARRY,
+            player_id=str(getattr(player, "id", "") or ""),
+            context=context,
+        )
+        if existing is not None:
+            return existing
+
+        filtered_officers.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        used_labels: set[str] = set()
+        options = [DecisionOption.create("Skip orders", payload={"action": "skip"})]
+        for officer in filtered_officers:
+            remaining = int(self.orders_remaining_for_trigger(officer, battle_round, trigger=trigger or "") or 0)
+            label = f"{getattr(officer, 'name', 'Officer')} ({remaining} order{'s' if remaining != 1 else ''} remaining)"
+            base = label
+            suffix = 2
+            while label in used_labels:
+                label = f"{base} [{suffix}]"
+                suffix += 1
+            used_labels.add(label)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "target_unit_id": str(get_entity_id(officer) or ""),
+                        "army_id": context["army_id"],
+                        "phase_name": str(phase_name or ""),
+                        "trigger": str(trigger or ""),
+                    },
+                )
+            )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select an officer to issue orders.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        request_fn(request)
+        return request
+
+    def queue_order_sequence_order_request(
+        self,
+        game,
+        player,
+        officer_unit,
+        *,
+        phase_name: str = "",
+        trigger: str = "",
+    ):
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if player is None or officer_unit is None or not callable(request_fn):
+            return None
+
+        from ..engine.decision_kinds import DECISION_ISSUE_ORDER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        officer_id = str(get_entity_id(officer_unit) or "")
+        if not officer_id:
+            return None
+        orders = self._available_orders_with_targets(officer_unit, game=game)
+        if not orders:
+            return None
+
+        context = {
+            "ability": "voice_of_command_order",
+            "officer_unit_id": officer_id,
+            "phase_name": str(phase_name or ""),
+            "trigger": str(trigger or ""),
+            "army_id": str(get_entity_id(self.army) or "") if self.army is not None else "",
+        }
+        existing = self._pending_order_sequence_request(
+            game,
+            DECISION_ISSUE_ORDER,
+            player_id=str(getattr(player, "id", "") or ""),
+            context=context,
+        )
+        if existing is not None:
+            return existing
+
+        options = [
+            DecisionOption.create(
+                "Skip orders",
+                payload={"action": "skip", "officer_unit_id": officer_id, "army_id": context["army_id"]},
+            )
+        ]
+        for order in list(orders or []):
+            options.append(
+                DecisionOption.create(
+                    getattr(order, "name", "Order"),
+                    payload={
+                        "officer_unit_id": officer_id,
+                        "order_key": getattr(order, "key", ""),
+                        "summary": getattr(order, "summary", ""),
+                        "army_id": context["army_id"],
+                        "phase_name": str(phase_name or ""),
+                        "trigger": str(trigger or ""),
+                    },
+                )
+            )
+
+        request = DecisionRequest.create(
+            DECISION_ISSUE_ORDER,
+            f"Select order for {getattr(officer_unit, 'name', 'Officer')}",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        request_fn(request)
+        return request
+
+    def queue_order_sequence_target_request(
+        self,
+        game,
+        player,
+        officer_unit,
+        order_key: str,
+        *,
+        phase_name: str = "",
+        trigger: str = "",
+    ):
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if player is None or officer_unit is None or not callable(request_fn):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        officer_id = str(get_entity_id(officer_unit) or "")
+        normalized_key = str(order_key or "").strip().upper()
+        if not officer_id or not normalized_key:
+            return None
+        targets = list(self.get_eligible_targets(officer_unit, game=game, order_key=normalized_key) or [])
+        if not targets:
+            return None
+
+        context = {
+            "ability": "voice_of_command_target",
+            "officer_unit_id": officer_id,
+            "order_key": normalized_key,
+            "phase_name": str(phase_name or ""),
+            "trigger": str(trigger or ""),
+            "army_id": str(get_entity_id(self.army) or "") if self.army is not None else "",
+        }
+        existing = self._pending_order_sequence_request(
+            game,
+            DECISION_CHOOSE_QUARRY,
+            player_id=str(getattr(player, "id", "") or ""),
+            context=context,
+        )
+        if existing is not None:
+            return existing
+
+        targets.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+        for target_unit in list(targets or []):
+            options.append(
+                DecisionOption.create(
+                    getattr(target_unit, "name", "Unit"),
+                    payload={
+                        "target_unit_id": str(get_entity_id(target_unit) or ""),
+                        "officer_unit_id": officer_id,
+                        "order_key": normalized_key,
+                        "army_id": context["army_id"],
+                    },
+                )
+            )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Voice of Command target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        request_fn(request)
+        return request
+
     def auto_issue_orders(self, game, player, *, phase_name: str = "", trigger: str = "") -> None:
         """No-op: orders require explicit player selection."""
         return

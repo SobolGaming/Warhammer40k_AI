@@ -224,6 +224,88 @@ class TestVotannBatch3Abilities(unittest.TestCase):
         self.assertEqual(int(hit.get("roll", 0) or 0), 6)
         self.assertEqual(int(getattr(pe, "yield_points", 0) or 0), 1)
 
+    def test_ancestral_fortune_local_provider_still_emits_decision(self):
+        game, army, enemy_army, player, _enemy_player = _build_game()
+        player.control = PlayerControl.LOCAL
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+
+        ability = {
+            "name": "Ancestral Fortune",
+            "description": (
+                "Once per turn, you can spend 1 YP to change the result of one hit roll, "
+                "one wound roll or one saving throw made for this model to an unmodified 6."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Kahl", abilities=[ability])
+        target = _make_unit("Enemy Unit")
+        army.add_unit(attacker)
+        enemy_army.add_unit(target)
+        attacker.deployed = True
+        target.deployed = True
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, target]
+        game.rebuild_entity_registry()
+
+        pe = getattr(army, "prioritised_efficiency", None)
+        self.assertIsNotNone(pe)
+        pe.add_yield_points(2, game=game)
+
+        seen_decisions = []
+
+        def _capture(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            game.decision_queue.add(request)
+
+        def _apply(command):
+            payload = dict(getattr(command, "payload", {}) or {})
+            request = game.decision_queue.get(str(payload.get("decision_id", "") or ""))
+            option_id = str(payload.get("option_id", "") or "")
+            option = next(
+                opt for opt in list(getattr(request, "options", []) or []) if str(getattr(opt, "option_id", "") or "") == option_id
+            )
+            resolved_payload = dict(getattr(option, "payload", {}) or {})
+            apply_result = SimpleNamespace(ok=True, value=resolved_payload)
+            setattr(request, "_resolved_decision_value", resolved_payload)
+            setattr(request, "_resolved_decision_apply_result", apply_result)
+            game.decision_queue.pop(request.decision_id)
+            return SimpleNamespace(value=apply_result)
+
+        game.request_decision = _capture
+        game.apply_command = _apply
+        game.map.model_unmodified_six_provider = lambda **_kwargs: "use"
+
+        parent = SimpleNamespace(name="Autoch-pattern bolter", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="default",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "5",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        hit = profile._hit_target_with_tracking(
+            target,
+            attacker.models[0],
+            {"_aura_attack_mods": _aura_stub()},
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_USE_MODEL_UNMODIFIED_SIX, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
+        self.assertEqual(int(getattr(pe, "yield_points", 0) or 0), 1)
+
     def test_computational_mastermind_can_spend_yp_before_mode_update(self):
         game, army, _enemy_army, player, _enemy_player = _build_game()
         game.phase = BattleRoundPhases.COMMAND_PHASE

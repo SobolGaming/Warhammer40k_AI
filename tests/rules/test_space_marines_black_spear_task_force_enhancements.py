@@ -391,7 +391,9 @@ class TestSpaceMarinesBlackSpearTaskForceEnhancements(unittest.TestCase):
         self.assertEqual(int(preview.get("cost", 99)), 0)
         self.assertTrue(any("Beacon Angelis" in str(r) for r in list(preview.get("reasons", []) or [])))
 
+        sm_player.set_next_optional_decision("BEACON_ANGELIS_RAPID_INGRESS", True)
         apply_first = sm_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=unit)
+        sm_player.set_next_optional_decision("BEACON_ANGELIS_RAPID_INGRESS", True)
         apply_second = sm_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=unit)
         self.assertEqual(int(apply_first.get("cost", 99)), 0)
         self.assertEqual(int(apply_second.get("cost", 99)), 0)

@@ -396,6 +396,7 @@ class TestImperialAgentsImperialisFleetStratagems(unittest.TestCase):
         self.assertEqual(int(preview.get("cost", -1)), 0)
         self.assertTrue(any("Fleetmaster" in str(r) for r in list(preview.get("reasons", []) or [])))
 
+        ia_player.set_next_optional_decision("FLEETMASTER_FREE_STRATAGEM", True)
         first = ia_player.apply_stratagem_cp_cost(masters, target_unit=bearer)
         self.assertEqual(int(first.get("cost", -1)), 0)
         self.assertTrue(bool(first.get("fleetmaster_use", False)))
@@ -406,6 +407,7 @@ class TestImperialAgentsImperialisFleetStratagems(unittest.TestCase):
         self.assertFalse(bool(second.get("fleetmaster_use", False)))
 
         game.turn = 3
+        ia_player.set_next_optional_decision("FLEETMASTER_FREE_STRATAGEM", True)
         third = ia_player.apply_stratagem_cp_cost(masters, target_unit=bearer)
         self.assertEqual(int(third.get("cost", -1)), 0)
         self.assertTrue(bool(third.get("fleetmaster_use", False)))
@@ -439,6 +441,7 @@ class TestImperialAgentsImperialisFleetStratagems(unittest.TestCase):
         ]
         for turn, stratagem_name in enumerate(test_names, start=2):
             game.turn = int(turn)
+            ia_player.set_next_optional_decision("FLEETMASTER_FREE_STRATAGEM", True)
             result = ia_player.apply_stratagem_cp_cost(
                 _fleetmaster_test_stratagem(stratagem_name, cp_cost=2),
                 target_unit=bearer,

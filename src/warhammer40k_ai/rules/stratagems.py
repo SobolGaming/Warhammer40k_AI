@@ -4408,69 +4408,60 @@ class StratagemManager(
 
     def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None, enemy_unit=None) -> bool:
         ledger = self._stratagem_application_ledger()
-        if target_unit is not None:
-            if not (
-                self._unit_has_faultless_opportunist(target_unit)
-                or self._unit_has_beast_handler_heroic_intervention(target_unit)
+        can_use_empyric_fn = getattr(self.player, "_target_unit_can_use_empyric_suffusion_heroic_intervention", None)
+        can_use_instinctive_fn = getattr(self.player, "_target_unit_can_use_instinctive_defence_heroic_intervention", None)
+        can_use_adaptive_fn = getattr(self.player, "_target_unit_can_use_adaptive_reprisal_heroic_intervention", None)
+
+        def _can_repeat(unit) -> bool:
+            return bool(
+                self._unit_has_faultless_opportunist(unit)
+                or self._unit_has_beast_handler_heroic_intervention(unit)
                 or self._unit_has_guardians_of_the_machine_heroic_intervention(
-                    target_unit,
+                    unit,
                     enemy_unit=enemy_unit,
                 )
-                or self._unit_has_snarling_protector_heroic_intervention(target_unit)
+                or (callable(can_use_empyric_fn) and bool(can_use_empyric_fn(unit)))
+                or (callable(can_use_instinctive_fn) and bool(can_use_instinctive_fn(unit)))
+                or (callable(can_use_adaptive_fn) and bool(can_use_adaptive_fn(unit, stratagem_name="HEROIC INTERVENTION")))
+                or self._unit_can_use_prophetic_sentinels_stratagem_discount(
+                    unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
+                or self._unit_can_use_visions_of_heresy_stratagem_discount(
+                    unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
+                or self._unit_has_snarling_protector_heroic_intervention(unit)
+                or self._unit_can_use_unit_contains_heroic_intervention(unit)
                 or self._unit_can_use_intraneural_biotech_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
                 or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
                 or self._unit_can_use_grimnars_mark_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
                 or self._unit_can_use_hypersensory_array_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
                 or self._unit_can_use_blackwing_mantle_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
-            ):
+            )
+
+        if target_unit is not None:
+            if not _can_repeat(target_unit):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
             return bool(uid and not ledger.target_already_used_this_phase("HEROIC INTERVENTION", uid))
         for cand in list(candidates or []):
-            if not (
-                self._unit_has_faultless_opportunist(cand)
-                or self._unit_has_beast_handler_heroic_intervention(cand)
-                or self._unit_has_guardians_of_the_machine_heroic_intervention(
-                    cand,
-                    enemy_unit=enemy_unit,
-                )
-                or self._unit_has_snarling_protector_heroic_intervention(cand)
-                or self._unit_can_use_intraneural_biotech_stratagem_discount(
-                    cand,
-                    stratagem_name="HEROIC INTERVENTION",
-                )
-                or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
-                    cand,
-                    stratagem_name="HEROIC INTERVENTION",
-                )
-                or self._unit_can_use_grimnars_mark_stratagem_discount(
-                    cand,
-                    stratagem_name="HEROIC INTERVENTION",
-                )
-                or self._unit_can_use_hypersensory_array_stratagem_discount(
-                    cand,
-                    stratagem_name="HEROIC INTERVENTION",
-                )
-                or self._unit_can_use_blackwing_mantle_stratagem_discount(
-                    cand,
-                    stratagem_name="HEROIC INTERVENTION",
-                )
-            ):
+            if not _can_repeat(cand):
                 continue
             uid = self._heroic_intervention_target_id(cand)
             if uid and not ledger.target_already_used_this_phase("HEROIC INTERVENTION", uid):
@@ -4484,55 +4475,50 @@ class StratagemManager(
 
     def _rapid_ingress_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
         ledger = self._stratagem_application_ledger()
-        if target_unit is not None:
-            if not (
+        can_use_gift_fn = getattr(self.player, "_gift_of_the_prescient_discount_context", None)
+        can_use_beacon_fn = getattr(self.player, "_target_unit_has_beacon_angelis", None)
+        can_use_webway_fn = getattr(self.player, "_webway_awl_rapid_ingress_discount_context", None)
+        can_use_teleport_fn = getattr(self.player, "_target_unit_can_use_teleport_homer_rapid_ingress", None)
+        can_use_homing_fn = getattr(self.player, "_target_unit_can_use_homing_beacon_rapid_ingress", None)
+        can_use_pheromone_fn = getattr(self.player, "_target_unit_can_use_pheromone_trail_rapid_ingress", None)
+
+        def _can_repeat(unit) -> bool:
+            return bool(
                 self._unit_can_use_grimnars_mark_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="RAPID INGRESS",
                 )
                 or self._unit_can_use_hypersensory_array_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="RAPID INGRESS",
                 )
                 or self._unit_can_use_synaptic_strategy_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="RAPID INGRESS",
                 )
                 or self._unit_can_use_infernal_fulgurite_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="RAPID INGRESS",
                 )
                 or self._unit_can_use_blackwing_mantle_stratagem_discount(
-                    target_unit,
+                    unit,
                     stratagem_name="RAPID INGRESS",
                 )
-            ):
+                or (callable(can_use_gift_fn) and can_use_gift_fn(unit, stratagem_name="RAPID INGRESS") is not None)
+                or (callable(can_use_beacon_fn) and bool(can_use_beacon_fn(unit)))
+                or (callable(can_use_webway_fn) and can_use_webway_fn(unit, stratagem_name="RAPID INGRESS") is not None)
+                or (callable(can_use_teleport_fn) and bool(can_use_teleport_fn(unit, stratagem_name="RAPID INGRESS")))
+                or (callable(can_use_homing_fn) and bool(can_use_homing_fn(unit, stratagem_name="RAPID INGRESS")))
+                or (callable(can_use_pheromone_fn) and bool(can_use_pheromone_fn(unit, stratagem_name="RAPID INGRESS")))
+            )
+
+        if target_unit is not None:
+            if not _can_repeat(target_unit):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
             return bool(uid and not ledger.target_already_used_this_phase("RAPID INGRESS", uid))
         for cand in list(candidates or []):
-            if not (
-                self._unit_can_use_grimnars_mark_stratagem_discount(
-                    cand,
-                    stratagem_name="RAPID INGRESS",
-                )
-                or self._unit_can_use_hypersensory_array_stratagem_discount(
-                    cand,
-                    stratagem_name="RAPID INGRESS",
-                )
-                or self._unit_can_use_synaptic_strategy_stratagem_discount(
-                    cand,
-                    stratagem_name="RAPID INGRESS",
-                )
-                or self._unit_can_use_infernal_fulgurite_stratagem_discount(
-                    cand,
-                    stratagem_name="RAPID INGRESS",
-                )
-                or self._unit_can_use_blackwing_mantle_stratagem_discount(
-                    cand,
-                    stratagem_name="RAPID INGRESS",
-                )
-            ):
+            if not _can_repeat(cand):
                 continue
             uid = self._heroic_intervention_target_id(cand)
             if uid and not ledger.target_already_used_this_phase("RAPID INGRESS", uid):
@@ -4826,10 +4812,17 @@ class StratagemManager(
             "_target_unit_can_use_datasheet_command_reroll_stratagem_discount",
             None,
         )
+        has_gof_fn = getattr(self.player, "_target_unit_has_gift_of_foresight", None)
+        battle_round_fn = getattr(self.player, "_battle_round", None)
 
         def _can_repeat(unit) -> bool:
             if unit is None:
                 return False
+            if callable(has_gof_fn) and bool(has_gof_fn(unit)):
+                br = battle_round_fn() if callable(battle_round_fn) else 0
+                used_rounds = getattr(self.player, "_ability_used_battle_round", {})
+                if int(br or 0) > 0 and int(used_rounds.get("GIFT_OF_FORESIGHT", 0) or 0) != int(br or 0):
+                    return True
             if callable(can_use_mirror_fn) and bool(can_use_mirror_fn(unit)):
                 return True
             if callable(can_use_datasheet_fn) and bool(

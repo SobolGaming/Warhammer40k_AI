@@ -247,6 +247,7 @@ def test_blackwing_mantle_grants_free_rapid_ingress_and_heroic_intervention_repe
     assert int(preview.get("cost", 0) or 0) == 0
     assert any("Blackwing Mantle" in str(reason or "") for reason in list(preview.get("reasons", []) or []))
 
+    sm_player.set_next_optional_decision("BLACKWING_MANTLE_STRATAGEM_DISCOUNT", True)
     applied = sm_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=aethon)
     assert int(applied.get("cost", 0) or 0) == 0
 

@@ -3,6 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _ModelStub:
@@ -33,6 +34,71 @@ class _ModelStub:
 
     def set_parent_unit(self, unit) -> None:
         self.parent_unit = unit
+
+
+class _MockDatasheet:
+    def __init__(self, name: str, datasheet_id: str, *, model_count: int = 1):
+        self.name = name
+        self.id = datasheet_id
+        self.faction_data = {"name": "Necrons"}
+        self.keywords = []
+        self.faction_keywords = ["NECRONS"]
+        self.datasheets_unit_composition = [{"description": f"{model_count} Test Models"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": "5",
+                "T": "4",
+                "Sv": "3",
+                "W": "5",
+                "Ld": "7",
+                "OC": "1",
+                "base_size": "32mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "none",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = [
+            {
+                "name": "Reanimation Protocols",
+                "description": (
+                    "At the end of your Command phase, this unit activates its Reanimation Protocols "
+                    "and reanimates D3 wounds."
+                ),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ]
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+        self.attached_to = []
+        self.attached_to_names = []
+
+
+def _make_game_unit(*, name: str, datasheet_id: str, model_count: int = 2):
+    ds = _MockDatasheet(name=name, datasheet_id=datasheet_id, model_count=model_count)
+    unit = Unit(ds)
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    return unit
+
+
+def _build_game_with_unit(unit, *, local: bool):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
+
+    army = Army.with_detachment("Necrons", "Awakened Dynasty")
+    army.faction_id = "NEC"
+    army.add_unit(unit)
+    control = PlayerControl.LOCAL if local else PlayerControl.REMOTE
+    player = Player("P1", control=control, army=army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    game.map.units = [unit]
+    game.rebuild_entity_registry()
+    return game, player
 
 
 class TestReanimationProtocols(unittest.TestCase):
@@ -132,6 +198,112 @@ class TestReanimationProtocols(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(m2.wounds, 2)
         self.assertEqual(m1.wounds, 1)
+
+
+def test_reanimation_provider_path_emits_allocate_damage_request():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+
+    unit = _make_game_unit(name="Warriors", datasheet_id="necron_reanim_local", model_count=2)
+    first, second = unit.models[0], unit.models[1]
+    first.wounds = 3
+    second.wounds = 2
+
+    game, _player = _build_game_with_unit(unit, local=False)
+    captured = []
+
+    def _capture(request):
+        captured.append(request)
+        game.decision_queue.add(request)
+
+    def _apply(command):
+        payload = dict(getattr(command, "payload", {}) or {})
+        request = game.decision_queue.get(str(payload.get("decision_id", "") or ""))
+        option_id = str(payload.get("option_id", "") or "")
+        option = next(
+            opt for opt in list(getattr(request, "options", []) or []) if str(getattr(opt, "option_id", "") or "") == option_id
+        )
+        resolved_payload = dict(getattr(option, "payload", {}) or {})
+        apply_result = SimpleNamespace(ok=True, value=resolved_payload)
+        setattr(request, "_resolved_decision_value", resolved_payload)
+        setattr(request, "_resolved_decision_apply_result", apply_result)
+        game.decision_queue.pop(request.decision_id)
+        return SimpleNamespace(value=apply_result)
+
+    def _provider(_unit, eligible, ctx):
+        assert str((ctx or {}).get("selection_kind", "") or "") == "reanimation_restore_wound"
+        return eligible[1]
+
+    game.request_decision = _capture
+    game.apply_command = _apply
+    game.map.reanimation_allocation_provider = _provider
+
+    result = unit.apply_reanimation_protocols(
+        1,
+        game_map=game.map,
+        is_human=True,
+        provider=game.map.reanimation_allocation_provider,
+    )
+
+    assert result == {"healed": 1, "returned": 0}
+    assert int(first.wounds or 0) == 3
+    assert int(second.wounds or 0) == 3
+    requests = [
+        req
+        for req in captured
+        if str(getattr(req, "decision_type", "") or "") == DECISION_ALLOCATE_DAMAGE
+        and str((getattr(req, "context", {}) or {}).get("selection_kind", "") or "") == "reanimation_restore_wound"
+    ]
+    assert len(requests) == 1
+    option_model_ids = [
+        str((opt.payload or {}).get("model_id", "") or "")
+        for opt in list(requests[0].options or [])
+    ]
+    assert option_model_ids == [str(get_entity_id(first) or ""), str(get_entity_id(second) or "")]
+
+
+def test_reanimation_return_model_emits_allocate_damage_request_and_resolves_same_request():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+
+    unit = _make_game_unit(name="Warriors", datasheet_id="necron_reanim_return", model_count=3)
+    lost_first = unit.models[1]
+    lost_second = unit.models[2]
+    lost_first_id = str(get_entity_id(lost_first) or "")
+    lost_second_id = str(get_entity_id(lost_second) or "")
+    unit.remove_model(lost_first)
+    unit.remove_model(lost_second)
+
+    game, _player = _build_game_with_unit(unit, local=False)
+    captured = []
+    original_request = game.request_decision
+
+    def _capture(request):
+        captured.append(request)
+        return original_request(request)
+
+    game.request_decision = _capture
+
+    result = unit.apply_reanimation_protocols(
+        1,
+        game_map=game.map,
+        is_human=False,
+        provider=None,
+    )
+
+    assert result == {"healed": 0, "returned": 1}
+    assert lost_first in list(unit.models or [])
+    assert lost_second in list(unit.models_lost or [])
+    requests = [
+        req
+        for req in captured
+        if str(getattr(req, "decision_type", "") or "") == DECISION_ALLOCATE_DAMAGE
+        and str((getattr(req, "context", {}) or {}).get("selection_kind", "") or "") == "reanimation_return_model"
+    ]
+    assert len(requests) == 1
+    option_model_ids = [
+        str((opt.payload or {}).get("model_id", "") or "")
+        for opt in list(requests[0].options or [])
+    ]
+    assert option_model_ids == [lost_first_id, lost_second_id]
 
 
 if __name__ == "__main__":

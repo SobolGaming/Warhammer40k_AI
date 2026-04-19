@@ -114,6 +114,45 @@ class TestLopingSpeed(unittest.TestCase):
         rule = prompts[0].get("rule") or {}
         self.assertEqual(int(rule.get("range", 0) or 0), 9)
 
+    def test_loping_speed_local_prompt_also_queues_decision(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game()
+
+        moving_unit = self._make_unit("Enemy Movers", army_move)
+        reacting_unit = self._make_unit("Trail Shaper", army_react, ability_text=LOPING_SPEED_TEXT)
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy Model", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Trail Model", reacting_unit, 8.0, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+
+        game.map.units = [moving_unit, reacting_unit]
+
+        prompts = []
+
+        def _capture(**kwargs):
+            prompts.append(kwargs)
+
+        game.event_system.subscribe("loping_speed_prompt", _capture)
+
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="move",
+        )
+
+        self.assertEqual(len(prompts), 1)
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        self.assertEqual(request.player_id, reacting_player.id)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("reactive_move_kind"), "loping_speed")
+        self.assertEqual(ctx.get("reactive_move_unit_id"), get_entity_id(reacting_unit))
+        self.assertEqual(ctx.get("reactive_move_moving_unit_id"), get_entity_id(moving_unit))
+
     def test_loping_speed_not_triggered_out_of_range(self):
         game, _moving_player, _reacting_player, army_move, army_react = self._build_game()
 

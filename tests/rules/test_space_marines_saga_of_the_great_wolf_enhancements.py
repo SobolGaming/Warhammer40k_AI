@@ -210,6 +210,7 @@ class TestSpaceMarinesSagaOfTheGreatWolfEnhancements(unittest.TestCase):
         self.assertEqual(int(preview.get("cost", 0) or 0), 0)
         self.assertTrue(any("Grimnar's Mark" in str(r) for r in list(preview.get("reasons", []) or [])))
 
+        sm_player.set_next_optional_decision("GRIMNARS_MARK_STRATAGEM_DISCOUNT", True)
         applied = sm_player.apply_stratagem_cp_cost(rapid_ingress, target_unit=bearer)
         self.assertEqual(int(applied.get("cost", 0) or 0), 0)
         second_same_round = sm_player.preview_stratagem_cp_cost(heroic, target_unit=bearer)

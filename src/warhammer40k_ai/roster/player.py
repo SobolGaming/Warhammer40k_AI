@@ -3568,7 +3568,6 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             target_unit=target_unit,
         )
         if fleetmaster:
-            discount = base
             ability_name = "Fleetmaster"
             members = self._attached_members(target_unit)
             for member in members:
@@ -3581,37 +3580,71 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                     sr.get("enhancement_imperialis_fleet_fleetmaster_source", "") or ability_name
                 ).strip() or ability_name
                 break
-            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
-            reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
-            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "FLEETMASTER_FREE_STRATAGEM",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+                reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         gift_of_the_prescient = self._preview_gift_of_the_prescient_discount(
             stratagem=stratagem,
             target_unit=target_unit,
         )
         if gift_of_the_prescient:
-            discount = base
             context = self._gift_of_the_prescient_discount_context(
                 target_unit,
                 stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
             ) or {}
             ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
-            reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
-            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "GIFT_OF_THE_PRESCIENT_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         webway_awl = self._preview_webway_awl_rapid_ingress_discount(
             stratagem=stratagem,
             target_unit=target_unit,
         )
         if webway_awl:
-            discount = base
             context = self._webway_awl_rapid_ingress_discount_context(
                 target_unit,
                 stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
             ) or {}
             ability_name = str(context.get("source", "") or "Webway Awl").strip() or "Webway Awl"
-            reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
-            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "WEBWAY_AWL_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         teleport_homer = self._preview_teleport_homer_rapid_ingress_discount(
             stratagem=stratagem,
@@ -3761,8 +3794,19 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             except Exception:
                 pass
             stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
-            reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
-            return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "BLACKWING_MANTLE_STRATAGEM_DISCOUNT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+                return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
 
         hypersensory = self._preview_hypersensory_array_discount(
             stratagem=stratagem,
@@ -3849,13 +3893,24 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
 
         if grimnars_mark:
-            discount = base
             name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
-            if name_u == "HEROIC INTERVENTION":
-                reasons.append("Grimnar's Mark: Heroic Intervention for 0CP.")
-            else:
-                reasons.append("Grimnar's Mark: Rapid Ingress for 0CP.")
-            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+            ctx = {
+                "ability_name": "Grimnar's Mark",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "GRIMNARS_MARK_STRATAGEM_DISCOUNT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                if name_u == "HEROIC INTERVENTION":
+                    reasons.append("Grimnar's Mark: Heroic Intervention for 0CP.")
+                else:
+                    reasons.append("Grimnar's Mark: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         beacon = self._preview_beacon_angelis_rapid_ingress_discount(
             stratagem=stratagem,
@@ -3916,7 +3971,6 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
 
         cherub_discount = self._preview_datasheet_command_reroll_discount(stratagem=stratagem, target_unit=target_unit)
         if cherub_discount:
-            discount += int(cherub_discount)
             ability_name = "Cherub"
             try:
                 get_rule = getattr(target_unit, "get_datasheet_command_reroll_stratagem_discount_rule", None)
@@ -3925,17 +3979,51 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                     ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
             except Exception:
                 pass
-            reasons.append(f"{ability_name}: Command Re-roll for 0CP.")
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "DATASHEET_COMMAND_REROLL_DISCOUNT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount += int(cherub_discount)
+                reasons.append(f"{ability_name}: Command Re-roll for 0CP.")
 
         gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
         if gof:
-            discount += int(gof)
-            logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
+            ctx = {
+                "ability_name": "Gift of Foresight",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "GIFT_OF_FORESIGHT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount += int(gof)
+                logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
 
         mof = self._preview_mirror_of_fates_discount(stratagem=stratagem, target_unit=target_unit)
         if mof:
-            discount += int(mof)
-            logger.info("Mirror of Fates: %s uses Command Re-roll for 0CP.", self.name)
+            ctx = {
+                "ability_name": "Mirror of Fates",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "MIRROR_OF_FATES",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount += int(mof)
+                logger.info("Mirror of Fates: %s uses Command Re-roll for 0CP.", self.name)
 
         ac = self._preview_ancestral_crest_discount(stratagem=stratagem, target_unit=target_unit)
         if ac:
@@ -3951,8 +4039,19 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
 
         mop = self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit)
         if mop:
-            discount += int(mop)
-            reasons.append("Master of the Pageant: -1CP (once per battle round)")
+            ctx = {
+                "ability_name": "Master of the Pageant",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "MASTER_OF_THE_PAGEANT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount += int(mop)
+                reasons.append("Master of the Pageant: -1CP (once per battle round)")
 
         cost = max(0, base - discount)
         return {"base": base, "discount": discount, "cost": cost, "reasons": reasons}
@@ -3976,6 +4075,32 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 target_root_id = ""
         self._pending_stratagem_target_unit_id = str(target_root_id or "")
         self._pending_stratagem_name = str(getattr(stratagem, "name", "") or "").strip()
+        mgr = getattr(self, "stratagems", None)
+        used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
+        heroic_intervention_used_this_phase = bool(
+            name_u == "HEROIC INTERVENTION" and isinstance(used_this_phase, set) and "HEROIC INTERVENTION" in used_this_phase
+        )
+        if heroic_intervention_used_this_phase:
+            repeat_allowed = getattr(mgr, "_heroic_intervention_repeat_allowed", None)
+            if not callable(repeat_allowed) or not bool(
+                repeat_allowed(target_unit=target_unit, enemy_unit=enemy_unit)
+            ):
+                return {"denied": True, "reason": "Heroic Intervention already used this phase"}
+        rapid_ingress_used_this_phase = bool(
+            name_u == "RAPID INGRESS" and isinstance(used_this_phase, set) and "RAPID INGRESS" in used_this_phase
+        )
+        if rapid_ingress_used_this_phase:
+            repeat_allowed = getattr(mgr, "_rapid_ingress_repeat_allowed", None)
+            if not callable(repeat_allowed) or not bool(repeat_allowed(target_unit=target_unit)):
+                return {"denied": True, "reason": "Rapid Ingress already used this phase"}
+        command_reroll_used_this_phase = bool(
+            name_u == "COMMAND RE-ROLL" and isinstance(used_this_phase, set) and "COMMAND RE-ROLL" in used_this_phase
+        )
+        command_reroll_repeat_bypass_used = False
+        if command_reroll_used_this_phase:
+            repeat_allowed = getattr(mgr, "_command_reroll_repeat_allowed", None)
+            if not callable(repeat_allowed) or not bool(repeat_allowed(target_unit=target_unit)):
+                return {"denied": True, "reason": "Command Re-roll already used this phase"}
         unparalleled = self._preview_unparalleled_tactician_discount(stratagem=stratagem)
         if unparalleled:
             ctx = {
@@ -4088,6 +4213,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 "reasons": ["Faultless Opportunist: Heroic Intervention for 0CP."],
                 "increase": increase,
                 "increase_reasons": increase_reasons,
+                "faultless_opportunist_use": True,
+                "faultless_opportunist_source": "Faultless Opportunist",
             }
         flare_launcher = self._preview_flare_launcher_smokescreen_discount(
             stratagem=stratagem,
@@ -5503,25 +5630,6 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             target_unit=target_unit,
         )
         if fleetmaster:
-            cost = 0
-            increase = 0
-            increase_reasons: list[str] = []
-            opponent = self._get_opponent_player()
-            if opponent is not None:
-                inc_info = opponent.apply_targeted_stratagem_cp_increase(
-                    target_unit=target_unit,
-                    stratagem=stratagem,
-                    current_cost=cost,
-                )
-                increase = int(inc_info.get("increase", 0) or 0)
-                increase_reasons = list(inc_info.get("reasons", []) or [])
-                if increase:
-                    cost = max(0, cost + increase)
-            self._pending_stratagem_cp_increase = {
-                "increase": int(increase or 0),
-                "reasons": increase_reasons,
-                "stratagem_name": getattr(stratagem, "name", None) or "",
-            }
             usage_key = "FLEETMASTER_FREE_STRATAGEM"
             ability_name = "Fleetmaster"
             members = self._attached_members(target_unit)
@@ -5540,20 +5648,46 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                     sr.get("enhancement_imperialis_fleet_fleetmaster_source", "") or ability_name
                 ).strip() or ability_name
                 break
-            br = self._battle_round()
-            if br > 0:
-                self._ability_used_battle_round[usage_key] = br
-            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
-            return {
-                "base": base,
-                "discount": base,
-                "cost": cost,
-                "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
-                "increase": increase,
-                "increase_reasons": increase_reasons,
-                "fleetmaster_use": True,
-                "fleetmaster_source": ability_name,
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
             }
+            if self._should_use_optional_ability("FLEETMASTER_FREE_STRATAGEM", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round[usage_key] = br
+                stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "fleetmaster_use": True,
+                    "fleetmaster_source": ability_name,
+                }
 
         gift_of_the_prescient = self._preview_gift_of_the_prescient_discount(
             stratagem=stratagem,
@@ -5564,58 +5698,65 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 target_unit,
                 stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
             ) or {}
-            cost = 0
-            increase = 0
-            increase_reasons: list[str] = []
-            opponent = self._get_opponent_player()
-            if opponent is not None:
-                inc_info = opponent.apply_targeted_stratagem_cp_increase(
-                    target_unit=target_unit,
-                    stratagem=stratagem,
-                    current_cost=cost,
-                )
-                increase = int(inc_info.get("increase", 0) or 0)
-                increase_reasons = list(inc_info.get("reasons", []) or [])
-                if increase:
-                    cost = max(0, cost + increase)
-            self._pending_stratagem_cp_increase = {
-                "increase": int(increase or 0),
-                "reasons": increase_reasons,
-                "stratagem_name": getattr(stratagem, "name", None) or "",
-            }
-            usage_key = str(
-                context.get("usage_key", "") or "gift_of_the_prescient_rapid_ingress"
-            ).strip().lower()
-            if not usage_key:
-                usage_key = "gift_of_the_prescient_rapid_ingress"
             ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
-            source_unit = context.get("source_unit")
-            if source_unit is not None:
-                mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
-                if callable(mark_used):
-                    mark_used(usage_key, ability_name=ability_name)
-            try:
-                deep_strike_min_distance = float(context.get("deep_strike_min_distance", 3.0) or 3.0)
-            except (TypeError, ValueError):
-                deep_strike_min_distance = 3.0
-            if deep_strike_min_distance <= 0.0:
-                deep_strike_min_distance = 3.0
-            expires_phase = str(context.get("expires_phase", "") or "MOVEMENT_PHASE").strip().upper()
-            if not expires_phase:
-                expires_phase = "MOVEMENT_PHASE"
-            return {
-                "base": base,
-                "discount": base,
-                "cost": cost,
-                "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
-                "increase": increase,
-                "increase_reasons": increase_reasons,
-                "gift_of_the_prescient_use": True,
-                "gift_of_the_prescient_source": ability_name,
-                "gift_of_the_prescient_usage_key": usage_key,
-                "gift_of_the_prescient_deep_strike_min_distance": float(deep_strike_min_distance),
-                "gift_of_the_prescient_expires_phase": expires_phase,
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
             }
+            if self._should_use_optional_ability("GIFT_OF_THE_PRESCIENT_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                usage_key = str(
+                    context.get("usage_key", "") or "gift_of_the_prescient_rapid_ingress"
+                ).strip().lower()
+                if not usage_key:
+                    usage_key = "gift_of_the_prescient_rapid_ingress"
+                source_unit = context.get("source_unit")
+                if source_unit is not None:
+                    mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+                    if callable(mark_used):
+                        mark_used(usage_key, ability_name=ability_name)
+                try:
+                    deep_strike_min_distance = float(context.get("deep_strike_min_distance", 3.0) or 3.0)
+                except (TypeError, ValueError):
+                    deep_strike_min_distance = 3.0
+                if deep_strike_min_distance <= 0.0:
+                    deep_strike_min_distance = 3.0
+                expires_phase = str(context.get("expires_phase", "") or "MOVEMENT_PHASE").strip().upper()
+                if not expires_phase:
+                    expires_phase = "MOVEMENT_PHASE"
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "gift_of_the_prescient_use": True,
+                    "gift_of_the_prescient_source": ability_name,
+                    "gift_of_the_prescient_usage_key": usage_key,
+                    "gift_of_the_prescient_deep_strike_min_distance": float(deep_strike_min_distance),
+                    "gift_of_the_prescient_expires_phase": expires_phase,
+                }
 
         teleport_homer = self._preview_teleport_homer_rapid_ingress_discount(
             stratagem=stratagem,
@@ -5973,12 +6114,21 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             except Exception:
                 pass
             stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
-            return {
-                "base": base,
-                "discount": base,
-                "cost": 0,
-                "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
             }
+            if self._should_use_optional_ability("BLACKWING_MANTLE_STRATAGEM_DISCOUNT", ctx):
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": 0,
+                    "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+                    "blackwing_mantle_use": True,
+                    "blackwing_mantle_source": ability_name,
+                }
 
         hypersensory = self._preview_hypersensory_array_discount(
             stratagem=stratagem,
@@ -6171,25 +6321,6 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             target_unit=target_unit,
         )
         if grimnars_mark:
-            cost = 0
-            increase = 0
-            increase_reasons: list[str] = []
-            opponent = self._get_opponent_player()
-            if opponent is not None:
-                inc_info = opponent.apply_targeted_stratagem_cp_increase(
-                    target_unit=target_unit,
-                    stratagem=stratagem,
-                    current_cost=cost,
-                )
-                increase = int(inc_info.get("increase", 0) or 0)
-                increase_reasons = list(inc_info.get("reasons", []) or [])
-                if increase:
-                    cost = max(0, cost + increase)
-            self._pending_stratagem_cp_increase = {
-                "increase": int(increase or 0),
-                "reasons": increase_reasons,
-                "stratagem_name": getattr(stratagem, "name", None) or "",
-            }
             usage_key = "GRIMNARS_MARK_FREE_STRATAGEM"
             members = self._attached_members(target_unit)
             for member in members:
@@ -6202,22 +6333,49 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 if configured_key:
                     usage_key = configured_key
                 break
-            br = self._battle_round()
-            if br > 0:
-                self._ability_used_battle_round[usage_key] = br
-            stratagem_label = str(getattr(stratagem, "name", "") or "").strip().upper()
-            if stratagem_label == "HEROIC INTERVENTION":
-                reason = "Grimnar's Mark: Heroic Intervention for 0CP."
-            else:
-                reason = "Grimnar's Mark: Rapid Ingress for 0CP."
-            return {
-                "base": base,
-                "discount": base,
-                "cost": cost,
-                "reasons": [reason],
-                "increase": increase,
-                "increase_reasons": increase_reasons,
+            ctx = {
+                "ability_name": "Grimnar's Mark",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
             }
+            if self._should_use_optional_ability("GRIMNARS_MARK_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round[usage_key] = br
+                stratagem_label = str(getattr(stratagem, "name", "") or "").strip().upper()
+                if stratagem_label == "HEROIC INTERVENTION":
+                    reason = "Grimnar's Mark: Heroic Intervention for 0CP."
+                else:
+                    reason = "Grimnar's Mark: Rapid Ingress for 0CP."
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [reason],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "grimnars_mark_use": True,
+                }
 
         webway_awl = self._preview_webway_awl_rapid_ingress_discount(
             stratagem=stratagem,
@@ -6229,35 +6387,42 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
             ) or {}
             ability_name = str(context.get("source", "") or "Webway Awl").strip() or "Webway Awl"
-            cost = 0
-            increase = 0
-            increase_reasons: list[str] = []
-            opponent = self._get_opponent_player()
-            if opponent is not None:
-                inc_info = opponent.apply_targeted_stratagem_cp_increase(
-                    target_unit=target_unit,
-                    stratagem=stratagem,
-                    current_cost=cost,
-                )
-                increase = int(inc_info.get("increase", 0) or 0)
-                increase_reasons = list(inc_info.get("reasons", []) or [])
-                if increase:
-                    cost = max(0, cost + increase)
-            self._pending_stratagem_cp_increase = {
-                "increase": int(increase or 0),
-                "reasons": increase_reasons,
-                "stratagem_name": getattr(stratagem, "name", None) or "",
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
             }
-            return {
-                "base": base,
-                "discount": base,
-                "cost": cost,
-                "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
-                "increase": increase,
-                "increase_reasons": increase_reasons,
-                "webway_awl_rapid_ingress_use": True,
-                "webway_awl_rapid_ingress_source": ability_name,
-            }
+            if self._should_use_optional_ability("WEBWAY_AWL_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "webway_awl_rapid_ingress_use": True,
+                    "webway_awl_rapid_ingress_source": ability_name,
+                }
 
         beacon = self._preview_beacon_angelis_rapid_ingress_discount(
             stratagem=stratagem,
@@ -6290,7 +6455,12 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 "reasons": ["Beacon Angelis: Rapid Ingress for 0CP."],
                 "increase": increase,
                 "increase_reasons": increase_reasons,
+                "beacon_angelis_use": True,
             }
+        if heroic_intervention_used_this_phase:
+            return {"denied": True, "reason": "Heroic Intervention already used this phase"}
+        if rapid_ingress_used_this_phase:
+            return {"denied": True, "reason": "Rapid Ingress already used this phase"}
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(
             stratagem,
@@ -6380,15 +6550,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 "base_cp_cost": base,
             }
             use_cherub = self._should_use_optional_ability("DATASHEET_COMMAND_REROLL_DISCOUNT", ctx)
-            command_reroll_used_this_phase = False
-            mgr = getattr(self, "stratagems", None)
-            if mgr is not None and name_u == "COMMAND RE-ROLL":
-                used_set = getattr(mgr, "_used_stratagems_this_phase", set())
-                if isinstance(used_set, set):
-                    command_reroll_used_this_phase = "COMMAND RE-ROLL" in used_set
-            if command_reroll_used_this_phase:
-                use_cherub = True
-            if use_cherub or getattr(self, "decision_hook", None) is None:
+            if use_cherub:
+                command_reroll_repeat_bypass_used = True
                 applied_discount += int(cherub_discount)
                 reasons.append(f"{ability_name}: Command Re-roll for 0CP (used)")
                 try:
@@ -6412,7 +6575,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 "base_cp_cost": base,
             }
             use_gof = self._should_use_optional_ability("GIFT_OF_FORESIGHT", ctx)
-            if use_gof or getattr(self, "decision_hook", None) is None:
+            if use_gof:
+                command_reroll_repeat_bypass_used = True
                 applied_discount += 1
                 br = self._battle_round()
                 if br > 0:
@@ -6429,7 +6593,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 "base_cp_cost": base,
             }
             use_mof = self._should_use_optional_ability("MIRROR_OF_FATES", ctx)
-            if use_mof or getattr(self, "decision_hook", None) is None:
+            if use_mof:
+                command_reroll_repeat_bypass_used = True
                 applied_discount += int(mof_discount)
                 br = self._battle_round()
                 if br > 0:
@@ -6484,6 +6649,9 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
                 if mgr is not None and br > 0:
                     mgr.master_of_pageant_used_round = br
+
+        if command_reroll_used_this_phase and not command_reroll_repeat_bypass_used:
+            return {"denied": True, "reason": "Command Re-roll already used this phase"}
 
         cost = max(0, base - applied_discount)
         increase = 0

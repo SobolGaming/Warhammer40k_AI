@@ -365,6 +365,49 @@ class TestBattleFocusRemoteDecisions(unittest.TestCase):
         self.assertEqual(move_ctx.get("movement_type"), "reactive")
         self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
 
+    def test_battle_focus_opportunity_local_prompt_also_queues_move_selection(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game(
+            reacting_control=PlayerControl.LOCAL,
+        )
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+        moving_unit = self._make_unit("Falling Back", army_move)
+        reacting_unit = self._make_unit("Defenders", army_react, keywords=["ASURYANI"])
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Aeldari", reacting_unit, 0.5, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+        game.map.units = [moving_unit, reacting_unit]
+        game.rebuild_entity_registry()
+
+        army_react.battle_focus.tokens = 1
+        prompts = []
+        game.event_system.subscribe("battle_focus_opportunity_prompt", lambda **kwargs: prompts.append(kwargs))
+
+        game.event_system.publish(
+            "unit_move_started",
+            unit=moving_unit,
+            action="fall_back",
+        )
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="fall_back",
+        )
+
+        self.assertEqual(len(prompts), 1)
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_SELECT_OVERWATCH_SHOOTER)
+        self.assertEqual(request.player_id, reacting_player.id)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "battle_focus")
+        self.assertEqual(ctx.get("maneuver"), "opportunity")
+
     def test_battle_focus_opportunity_does_not_auto_select_with_optional_choice(self):
         game, moving_player, reacting_player, army_move, army_react = self._build_game()
         game.phase = BattleRoundPhases.MOVEMENT_PHASE
@@ -445,6 +488,44 @@ class TestBattleFocusRemoteDecisions(unittest.TestCase):
         move_ctx = move_request.context or {}
         self.assertEqual(move_ctx.get("movement_type"), "reactive")
         self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
+
+    def test_battle_focus_fade_back_local_prompt_also_queues_move_selection(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game(
+            reacting_control=PlayerControl.LOCAL,
+        )
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+
+        attacker = self._make_unit("Shooter", army_move)
+        target = self._make_unit("Defenders", army_react, keywords=["ASURYANI"])
+        army_move.units = [attacker]
+        army_react.units = [target]
+
+        attacker_model = self._make_model("Shooter", attacker, 0.0, 0.0)
+        target_model = self._make_model("Defender", target, 10.0, 0.0)
+        attacker.models = [attacker_model]
+        target.models = [target_model]
+        game.map.units = [attacker, target]
+        game.rebuild_entity_registry()
+
+        army_react.battle_focus.tokens = 1
+        prompts = []
+        game.event_system.subscribe("battle_focus_fade_back_prompt", lambda **kwargs: prompts.append(kwargs))
+
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={target: 1},
+        )
+
+        self.assertEqual(len(prompts), 1)
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_SELECT_OVERWATCH_SHOOTER)
+        self.assertEqual(request.player_id, reacting_player.id)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "battle_focus")
+        self.assertEqual(ctx.get("maneuver"), "fade_back")
 
 
 if __name__ == "__main__":

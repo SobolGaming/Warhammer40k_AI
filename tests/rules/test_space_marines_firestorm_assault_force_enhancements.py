@@ -338,6 +338,80 @@ class TestSpaceMarinesFirestormAssaultForceEnhancements(unittest.TestCase):
         self.assertIn(DECISION_USE_LEADING_UNMODIFIED_SIX, seen_decisions)
         self.assertEqual(int(hit.get("roll", 0) or 0), 6)
 
+    def test_forged_in_battle_local_provider_still_emits_decision(self):
+        game, sm_army, enemy_army = _build_game()
+        sm_player = sm_army.player
+        sm_player.has_control = lambda: True
+        leader = _make_unit(
+            "Captain",
+            keywords=["CHARACTER", "INFANTRY"],
+            wounds=5,
+            attached_to=["INFANTRY_BODYGUARD"],
+        )
+        bodyguard = _make_unit("Intercessor Squad", keywords=["INFANTRY"], wounds=2)
+        enemy = _make_unit("Enemy", faction_name="Enemy", faction_keywords=["ENEMY"], wounds=6)
+        sm_army.add_unit(leader)
+        sm_army.add_unit(bodyguard)
+        enemy_army.add_unit(enemy)
+        _attach_leader(bodyguard, leader)
+        _apply_enhancement(
+            leader,
+            enhancement_id="000008482004",
+            enhancement_name="Forged in Battle",
+        )
+        game.map.units = [leader, bodyguard, enemy]
+        game.rebuild_entity_registry()
+
+        seen_decisions = []
+
+        def _capture(request):
+            seen_decisions.append(str(getattr(request, "decision_type", "") or ""))
+            game.decision_queue.add(request)
+
+        def _apply(command):
+            payload = dict(getattr(command, "payload", {}) or {})
+            request = game.decision_queue.get(str(payload.get("decision_id", "") or ""))
+            option_id = str(payload.get("option_id", "") or "")
+            option = next(
+                opt for opt in list(getattr(request, "options", []) or []) if str(getattr(opt, "option_id", "") or "") == option_id
+            )
+            resolved_payload = dict(getattr(option, "payload", {}) or {})
+            apply_result = SimpleNamespace(ok=True, value=resolved_payload)
+            setattr(request, "_resolved_decision_value", resolved_payload)
+            setattr(request, "_resolved_decision_apply_result", apply_result)
+            game.decision_queue.pop(request.decision_id)
+            return SimpleNamespace(value=apply_result)
+
+        game.request_decision = _capture
+        game.apply_command = _apply
+        game.map.leading_unmodified_six_provider = lambda **_kwargs: "use"
+
+        profile = _make_profile(is_melee=False)
+        attack_context = {
+            "_aura_attack_mods": SimpleNamespace(
+                hit=0,
+                wound=0,
+                reroll_hit_ones=False,
+                reroll_wound_ones=False,
+                reroll_hit_reasons=(),
+                reroll_wound_reasons=(),
+                target_toughness_delta=0,
+                target_toughness_reasons=(),
+            )
+        }
+
+        hit = profile._hit_target_with_tracking(
+            enemy,
+            bodyguard.models[0],
+            attack_context,
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertIn(DECISION_USE_LEADING_UNMODIFIED_SIX, seen_decisions)
+        self.assertEqual(int(hit.get("roll", 0) or 0), 6)
+
     def test_adamantine_mantle_reduces_damage_and_sets_melta_or_torrent_to_one_for_bearer(self):
         _game, sm_army, enemy_army = _build_game()
         bearer_unit = _make_unit("Captain", keywords=["CHARACTER", "INFANTRY"], wounds=12)

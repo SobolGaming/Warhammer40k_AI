@@ -68,6 +68,33 @@ This note tracks the specific decision-parity regressions audited in this pass.
   strategies where they existed (`below average` attack/damage rolls and the
   reactive `<= 3` distance heuristics) instead of skipping the reroll decision
   entirely in non-local flows.
+- [shooting_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/shooting_mixin.py:3141)
+  now emits and settles `DECISION_ALLOCATE_DAMAGE` for Reanimation Protocols
+  model selection in both local-provider and non-local flows. Restoring a wound
+  to one of several wounded models and returning one of several destroyed models
+  now resolve the same queued allocation request instead of selecting directly
+  through `reanimation_allocation_provider` or defaulting to the first candidate
+  without a decision.
+- [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:9220)
+  now emits and settles `DECISION_USE_LEADING_UNMODIFIED_SIX`,
+  `DECISION_USE_MODEL_UNMODIFIED_SIX`, and `DECISION_CHOOSE_ASPECT` even for the
+  local/provider path. Human-provider answers now settle those emitted requests
+  instead of bypassing them and writing the chosen effect directly.
+- [game.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game.py:3009),
+  [shooting_fight_handlers_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/shooting_fight_handlers_mixin.py:244),
+  and [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:10750)
+  now keep the same request chain for local-human and non-local reactive prompts.
+  `Battle Focus` opportunity/fade-back and `Loping Speed` still publish the local
+  UI prompt, but they now also issue the same queued request first instead of
+  letting the local path run ahead of the engine queue.
+- [voice_of_command.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/voice_of_command.py:2147),
+  [phase_handlers_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/phase_handlers_mixin.py:18391),
+  [abilities.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/decision_handlers/abilities.py:12695),
+  and [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:8622)
+  now normalize `Voice of Command` into an explicit three-step decision chain:
+  choose officer, choose order, choose target. The engine now queues those staged
+  requests for local, remote, and headless play instead of publishing a local-only
+  prompt flow with no backing `DecisionRequest`.
 
 ## Remaining Known Gaps
 
