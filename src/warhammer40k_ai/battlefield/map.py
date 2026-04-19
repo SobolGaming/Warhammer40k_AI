@@ -194,7 +194,11 @@ class Map:
 
         from ..engine.decision_kinds import DECISION_REROLL_ROLL
         from ..engine.decisions import DecisionOption, DecisionRequest
-        from ..utility.decision_utils import decision_request_is_pending, resolve_or_reuse_payload_choice
+        from ..utility.decision_utils import (
+            decision_request_is_pending,
+            require_synchronous_decision_resolution,
+            resolve_or_reuse_payload_choice,
+        )
 
         rt = str(roll_type or "").strip().lower()
         request = DecisionRequest.create(
@@ -225,21 +229,33 @@ class Map:
 
         fallback_choice = None
         if decision_request_is_pending(game, request):
-            fallback_choice = self._fallback_roll_reroll_choice(
-                player=player,
-                unit=unit,
-                roll_type=roll_type,
-                value=value,
-                dice=dice,
-                **fallback_kwargs,
-            )
+            provider = getattr(self, "_roll_reroll_provider", None)
+            if callable(provider):
+                try:
+                    fallback_choice = bool(
+                        provider(
+                            player=player,
+                            unit=unit,
+                            roll_type=roll_type,
+                            value=value,
+                            dice=dice,
+                            **fallback_kwargs,
+                        )
+                    )
+                except Exception:
+                    fallback_choice = None
 
         resolved_choice, apply_result = resolve_or_reuse_payload_choice(
             game,
             request,
             payload_key="reroll",
-            fallback_value=bool(fallback_choice),
+            fallback_value=fallback_choice,
             player_id=getattr(player, "id", None) if player is not None else None,
+        )
+        require_synchronous_decision_resolution(
+            game,
+            request,
+            detail="Reroll decision remained pending without a synchronous decision owner.",
         )
         return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
 

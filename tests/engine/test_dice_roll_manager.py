@@ -188,6 +188,32 @@ def test_auto_pick_reroll_action_uses_reroll_decision_for_remote_player():
     )
 
 
+def test_reroll_decision_without_sync_owner_raises_and_stays_pending():
+    game = _make_game_with_players()
+    player = game.players[0]
+
+    try:
+        game.map.roll_reroll_provider(
+            player=player,
+            unit=None,
+            roll_type="hit",
+            value=1,
+            dice=[1],
+            game=game,
+        )
+    except RuntimeError as exc:
+        assert "Reroll decision remained pending without a synchronous decision owner" in str(exc)
+    else:
+        raise AssertionError("Expected reroll request without a synchronous owner to raise RuntimeError.")
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
+    ]
+    assert len(pending) == 1
+
+
 def test_get_roll_d33_uses_request_roll():
     game = _make_game_with_players()
     game.auto_resolve_dice_rolls = False

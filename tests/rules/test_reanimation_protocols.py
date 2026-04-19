@@ -263,6 +263,7 @@ def test_reanimation_provider_path_emits_allocate_damage_request():
 
 def test_reanimation_return_model_emits_allocate_damage_request_and_resolves_same_request():
     from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
     unit = _make_game_unit(name="Warriors", datasheet_id="necron_reanim_return", model_count=3)
     lost_first = unit.models[1]
@@ -272,15 +273,22 @@ def test_reanimation_return_model_emits_allocate_damage_request_and_resolves_sam
     unit.remove_model(lost_first)
     unit.remove_model(lost_second)
 
-    game, _player = _build_game_with_unit(unit, local=False)
+    game, player = _build_game_with_unit(unit, local=False)
     captured = []
     original_request = game.request_decision
 
-    def _capture(request):
+    def _auto_resolve(request):
         captured.append(request)
-        return original_request(request)
+        original_request(request)
+        option = next(
+            opt
+            for opt in list(getattr(request, "options", []) or [])
+            if str((getattr(opt, "payload", {}) or {}).get("model_id", "") or "") == lost_first_id
+        )
+        applied = resolve_decision_command(game, request, option.option_id, player_id=player.id)
+        assert getattr(applied, "ok", False) is True
 
-    game.request_decision = _capture
+    game.request_decision = _auto_resolve
 
     result = unit.apply_reanimation_protocols(
         1,
@@ -304,6 +312,38 @@ def test_reanimation_return_model_emits_allocate_damage_request_and_resolves_sam
         for opt in list(requests[0].options or [])
     ]
     assert option_model_ids == [lost_first_id, lost_second_id]
+
+
+def test_reanimation_return_model_without_sync_owner_raises_and_stays_pending():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+
+    unit = _make_game_unit(name="Warriors", datasheet_id="necron_reanim_pending", model_count=3)
+    lost_first = unit.models[1]
+    lost_second = unit.models[2]
+    unit.remove_model(lost_first)
+    unit.remove_model(lost_second)
+
+    game, _player = _build_game_with_unit(unit, local=False)
+
+    try:
+        unit.apply_reanimation_protocols(
+            1,
+            game_map=game.map,
+            is_human=False,
+            provider=None,
+        )
+    except RuntimeError as exc:
+        assert "Reanimation allocation decision remained pending without a synchronous decision owner" in str(exc)
+    else:
+        raise AssertionError("Expected reanimation selection without a synchronous owner to raise RuntimeError.")
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_ALLOCATE_DAMAGE
+        and str((getattr(req, "context", {}) or {}).get("selection_kind", "") or "") == "reanimation_return_model"
+    ]
+    assert len(pending) == 1
 
 
 if __name__ == "__main__":

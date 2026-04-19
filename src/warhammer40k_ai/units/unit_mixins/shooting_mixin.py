@@ -3168,6 +3168,7 @@ class ShootingMixin:
                 from ...engine.decisions import DecisionOption, DecisionRequest
                 from ...utility.decision_utils import (
                     decision_request_is_pending,
+                    require_synchronous_decision_resolution,
                     resolve_or_reuse_payload_choice,
                 )
                 from ...utility.entity_ids import get_entity_id
@@ -3218,14 +3219,17 @@ class ShootingMixin:
                                     chosen = None
                                 if chosen is not None and chosen in eligible_models:
                                     fallback_model_id = str(get_entity_id(chosen) or "")
-                            if not fallback_model_id:
-                                fallback_model_id = str(allowed_model_ids[0] or "")
                         chosen_model_id, apply_result = resolve_or_reuse_payload_choice(
                             game,
                             request,
                             payload_key="model_id",
                             fallback_value=fallback_model_id,
                             player_id=getattr(player, "id", None),
+                        )
+                        require_synchronous_decision_resolution(
+                            game,
+                            request,
+                            detail="Reanimation allocation decision remained pending without a synchronous decision owner.",
                         )
                         if apply_result is not None and getattr(apply_result, "ok", False):
                             chosen_model_id = str(chosen_model_id or "")

@@ -863,6 +863,33 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(chosen_indices, [0])
         self.assertEqual(seen_decisions, [DECISION_USE_MIRACLE_DIE, DECISION_USE_MIRACLE_DIE])
 
+    def test_miracle_pool_reroll_without_sync_owner_raises_and_stays_pending(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+
+        game, _player, army, sisters = self._build_authoritative_aof_game(control_name="REMOTE")
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Miracle pool discard decision remained pending without a synchronous decision owner",
+        ):
+            army.acts_of_faith._choose_miracle_pool_indices(
+                unit=sisters,
+                bearer_model=sisters.models[0],
+                game=game,
+                pool=[1, 2, 6],
+                max_select=3,
+                reason="Chaplet of Sacrifice",
+                skip_sixes=True,
+            )
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_USE_MIRACLE_DIE
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "miracle_pool_discard"
+        ]
+        self.assertEqual(len(pending), 1)
+
     def test_charge_roll_uses_miracle(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
         from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
@@ -1024,6 +1051,38 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(total, 7)
         self.assertEqual(dice, [6, 1])
         self.assertEqual(army.acts_of_faith.miracle_dice, [])
+
+    def test_miracle_die_without_sync_owner_raises_and_stays_pending(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        game, _player, army, sisters = self._build_authoritative_aof_game(control_name="REMOTE")
+        army.acts_of_faith.miracle_dice = [6]
+
+        old_get_dice_roll = aof.get_dice_roll
+        aof.get_dice_roll = lambda _faces=6: 1
+        try:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Miracle die decision remained pending without a synchronous decision owner",
+            ):
+                army.acts_of_faith.resolve_roll(
+                    sisters,
+                    roll_type="charge",
+                    game=game,
+                    dice_count=2,
+                    die_faces=6,
+                )
+        finally:
+            aof.get_dice_roll = old_get_dice_roll
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_USE_MIRACLE_DIE
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "acts_of_faith"
+        ]
+        self.assertEqual(len(pending), 1)
 
 
 if __name__ == "__main__":

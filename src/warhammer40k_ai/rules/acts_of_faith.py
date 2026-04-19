@@ -667,7 +667,10 @@ class ActsOfFaithManager:
             try:
                 from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
                 from ..engine.decisions import DecisionOption, DecisionRequest
-                from ..utility.decision_utils import resolve_or_reuse_payload_choice
+                from ..utility.decision_utils import (
+                    require_synchronous_decision_resolution,
+                    resolve_or_reuse_payload_choice,
+                )
             except ImportError:
                 pass
             else:
@@ -702,6 +705,7 @@ class ActsOfFaithManager:
                 game.request_decision(request)
 
                 fallback_value = None
+                fallback_use_skip = False
                 if callable(provider):
                     try:
                         chosen = provider(
@@ -721,13 +725,20 @@ class ActsOfFaithManager:
                         chosen_val = None
                     if chosen_val is not None and chosen_val in pool:
                         fallback_value = chosen_val
+                    else:
+                        fallback_use_skip = True
                 chosen_value, apply_result = resolve_or_reuse_payload_choice(
                     game,
                     request,
                     payload_key="die_value",
                     fallback_value=fallback_value,
-                    use_skip_when_pending=True,
+                    use_skip_when_pending=fallback_use_skip,
                     player_id=getattr(player, "id", None) if player is not None else None,
+                )
+                require_synchronous_decision_resolution(
+                    game,
+                    request,
+                    detail="Miracle die decision remained pending without a synchronous decision owner.",
                 )
                 if apply_result is not None and getattr(apply_result, "ok", False):
                     try:
@@ -1638,7 +1649,11 @@ class ActsOfFaithManager:
             try:
                 from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
                 from ..engine.decisions import DecisionOption, DecisionRequest
-                from ..utility.decision_utils import decision_request_is_pending, resolve_or_reuse_payload_choice
+                from ..utility.decision_utils import (
+                    decision_request_is_pending,
+                    require_synchronous_decision_resolution,
+                    resolve_or_reuse_payload_choice,
+                )
             except ImportError:
                 pass
             else:
@@ -1698,37 +1713,48 @@ class ActsOfFaithManager:
                     game.request_decision(request)
 
                     fallback_value = None
+                    fallback_use_skip = False
                     if decision_request_is_pending(game, request):
-                        if provider_requires_single_pending_request:
-                            current_plan = _build_fallback_plan_values(
-                                current_pool=list(available_values),
-                                current_max_select=1,
-                            )
-                            if current_plan:
-                                fallback_value = int(current_plan[0])
-                        else:
-                            if plan_values is None:
-                                remaining_limit = max(
-                                    0,
-                                    min(
-                                        int(max_select) - len(selected_indices),
-                                        len(remaining_indices),
-                                    ),
-                                )
-                                plan_values = _build_fallback_plan_values(
+                        if callable(provider):
+                            if provider_requires_single_pending_request:
+                                current_plan = _build_fallback_plan_values(
                                     current_pool=list(available_values),
-                                    current_max_select=int(remaining_limit),
+                                    current_max_select=1,
                                 )
-                            if plan_values:
-                                fallback_value = int(plan_values.pop(0))
+                                if current_plan:
+                                    fallback_value = int(current_plan[0])
+                                else:
+                                    fallback_use_skip = True
+                            else:
+                                if plan_values is None:
+                                    remaining_limit = max(
+                                        0,
+                                        min(
+                                            int(max_select) - len(selected_indices),
+                                            len(remaining_indices),
+                                        ),
+                                    )
+                                    plan_values = _build_fallback_plan_values(
+                                        current_pool=list(available_values),
+                                        current_max_select=int(remaining_limit),
+                                    )
+                                if plan_values:
+                                    fallback_value = int(plan_values.pop(0))
+                                else:
+                                    fallback_use_skip = True
 
                     chosen_value, apply_result = resolve_or_reuse_payload_choice(
                         game,
                         request,
                         payload_key="die_value",
                         fallback_value=fallback_value,
-                        use_skip_when_pending=True,
+                        use_skip_when_pending=fallback_use_skip,
                         player_id=getattr(player, "id", None) if player is not None else None,
+                    )
+                    require_synchronous_decision_resolution(
+                        game,
+                        request,
+                        detail="Miracle pool discard decision remained pending without a synchronous decision owner.",
                     )
                     if apply_result is None or not getattr(apply_result, "ok", False):
                         break
