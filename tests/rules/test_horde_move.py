@@ -105,6 +105,13 @@ class TestHordeMove(unittest.TestCase):
         self.assertEqual(len(prompts), 1)
         self.assertIs(prompts[0].get("unit"), target)
         self.assertIs(prompts[0].get("attacker_unit"), attacker)
+        confirm_req = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CONFIRM_YES_NO
+            and str((req.context or {}).get("reactive_move_kind", "")) == "horde_move"
+        )
+        self.assertEqual(str(confirm_req.player_id), str(p2.id))
 
     def test_horde_move_remote_queues_decision(self):
         game, _p1, p2, army_attacker, army_target = self._build_game()

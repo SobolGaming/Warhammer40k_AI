@@ -648,6 +648,37 @@ class FightPhaseManager:
             target_declarations=target_declarations,
         )
 
+    def on_fight_within_3_resolved(self, *, unit_id: str) -> None:
+        sequence = dict(self._pending_fight_sequence or {})
+        if not sequence:
+            return
+        if str(sequence.get("fighting_unit_id", "") or "") != str(unit_id or ""):
+            return
+        if str(sequence.get("step", "") or "").strip().lower() != "fight_within_3":
+            return
+        resolve_unit = getattr(self.game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return
+        fighting_unit = resolve_unit(str(unit_id or ""))
+        if fighting_unit is None:
+            self._pending_fight_sequence = None
+            return
+        target_declarations = self._deserialize_target_declarations(sequence.get("target_declarations", []))
+        self._pending_fight_sequence = {
+            **sequence,
+            "target_declarations": self._serialize_target_declarations(target_declarations),
+            "step": "declare_melee_weapons",
+        }
+        request = self._queue_declare_melee_weapons_request(
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+        )
+        if request is None:
+            self.on_melee_weapons_declared(
+                unit_id=str(unit_id or ""),
+                weapon_declarations=[],
+            )
+
     def on_fight_move_resolved(self, *, unit_id: str, movement_type: str) -> None:
         sequence = dict(self._pending_fight_sequence or {})
         if not sequence:
@@ -688,20 +719,29 @@ class FightPhaseManager:
         first_step = move_steps[0] if move_steps else ""
         if move_tag == first_step:
             logger.info(f"{fighting_unit.name} pile-in resolved via MOVE_UNIT")
+            queue_confirmation = getattr(self.game, "_queue_fight_within_3_confirmation", None)
+            confirmation_request = None
+            if callable(queue_confirmation):
+                target_unit = next((target for target in list(target_declarations or {}) if target is not None), None)
+                confirmation_request = queue_confirmation(
+                    player=self.active_player,
+                    unit=fighting_unit,
+                    target_unit=target_unit,
+                    context={"fight_phase_flow": True},
+                )
+            if str(getattr(confirmation_request, "decision_type", "") or "") == DECISION_CONFIRM_YES_NO:
+                self._pending_fight_sequence = {
+                    **sequence,
+                    "target_declarations": self._serialize_target_declarations(target_declarations),
+                    "step": "fight_within_3",
+                }
+                return
             self._pending_fight_sequence = {
                 **sequence,
                 "target_declarations": self._serialize_target_declarations(target_declarations),
-                "step": "declare_melee_weapons",
+                "step": "fight_within_3",
             }
-            request = self._queue_declare_melee_weapons_request(
-                fighting_unit=fighting_unit,
-                target_declarations=target_declarations,
-            )
-            if request is None:
-                self.on_melee_weapons_declared(
-                    unit_id=str(unit_id or ""),
-                    weapon_declarations=[],
-                )
+            self.on_fight_within_3_resolved(unit_id=str(unit_id or ""))
             return
         final_step = move_steps[-1] if move_steps else "consolidate"
         if move_tag != final_step:

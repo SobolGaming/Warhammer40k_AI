@@ -12681,6 +12681,7 @@ class Game(
             self._maybe_apply_daemonic_patrons_loss_followup(request, result)
             self._maybe_apply_cult_ambush_followup(request, result)
             self._maybe_queue_code_chivalric_followup(request, result)
+            self._maybe_queue_frenzy_followup(request, result)
         else:
             try:
                 dtype = getattr(request, "decision_type", "")

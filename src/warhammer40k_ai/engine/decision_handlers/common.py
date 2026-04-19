@@ -50,6 +50,7 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
         "hover_mode",
         "patrol_squad",
         "combat_squads",
+        "fight_within_3",
         "flickering_reality_reroll",
         "pyrogenesis_flux",
         "extremis_level_threat",
@@ -204,6 +205,36 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
 
     if unit is None or choice is None:
         return None
+
+    if ability == "fight_within_3":
+        root = unit
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return None
+        clear_active = getattr(root, "clear_fight_within_3_active", None)
+        if callable(clear_active):
+            clear_active()
+        else:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                sr.pop("fight_within_3_active", None)
+                sr.pop("fight_within_3_active_source", None)
+        if bool(choice):
+            ability_name = str(ctx.get("ability_name", "") or 'Fight Within 3"').strip() or 'Fight Within 3"'
+            set_active = getattr(root, "set_fight_within_3_active", None)
+            if callable(set_active):
+                set_active(True, source=ability_name)
+            else:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["fight_within_3_active"] = True
+                sr["fight_within_3_active_source"] = ability_name
+                root.special_rules = sr
+        return resolved_payload
 
     if ability in ("patrol_squad", "combat_squads"):
         declared_flag = str(ctx.get("declared_flag", "") or "").strip()

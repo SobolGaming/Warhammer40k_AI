@@ -17344,6 +17344,19 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 player = None
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Blood Surge: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="blood_surge",
+                movement_type="blood_surge",
+                source="Blood Surge",
+                message=msg,
+                attacker_unit=attacker_unit,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("blood_surge_prompt"))
@@ -17357,26 +17370,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            if not is_human:
-                msg = (
-                    "Blood Surge: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
-                    "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
-                )
-                request = self._queue_reactive_move_confirmation(
-                    player=player,
-                    unit=target,
-                    kind="blood_surge",
-                    movement_type="blood_surge",
-                    source="Blood Surge",
-                    message=msg,
-                    attacker_unit=attacker_unit,
-                )
+            if request is not None:
                 continue
-            move_fn = getattr(target, "auto_blood_surge_move", None)
-            if callable(move_fn):
-                max_dist = int(self.roll_blood_surge_distance(target) or 0)
-                move_fn(getattr(self, "map", None), max_dist)
-                target.mark_blood_surge_used(self)
 
     def _on_shooting_targets_selected_unhinged_vengeance(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -17464,6 +17459,20 @@ class GameShootingFightHandlersMixin:
                     continue
             player = target_player
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Unhinged Vengeance: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This model can end this move within Engagement Range of that enemy unit."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="unhinged_vengeance",
+                movement_type="unhinged_vengeance",
+                source="Unhinged Vengeance",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("unhinged_vengeance_prompt"))
@@ -17477,20 +17486,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Unhinged Vengeance: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
-                "This model can end this move within Engagement Range of that enemy unit."
-            )
-            self._queue_reactive_move_confirmation(
-                player=player,
-                unit=target,
-                kind="unhinged_vengeance",
-                movement_type="unhinged_vengeance",
-                source="Unhinged Vengeance",
-                message=msg,
-                attacker_unit=attacker_unit,
-                allow_engagement_range=True,
-            )
+            if request is not None:
+                continue
 
     def _on_shooting_targets_selected_guns_blazing(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18152,6 +18149,19 @@ class GameShootingFightHandlersMixin:
                     continue
             player = target_player
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Brazen Fury: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This unit cannot Brazen Fury while Battle-shocked or within Engagement Range."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="brazen_fury",
+                movement_type="brazen_fury",
+                source="Brazen Fury",
+                message=msg,
+                attacker_unit=attacker_unit,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("brazen_fury_prompt"))
@@ -18165,19 +18175,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Brazen Fury: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
-                "This unit cannot Brazen Fury while Battle-shocked or within Engagement Range."
-            )
-            self._queue_reactive_move_confirmation(
-                player=player,
-                unit=target,
-                kind="brazen_fury",
-                movement_type="brazen_fury",
-                source="Brazen Fury",
-                message=msg,
-                attacker_unit=attacker_unit,
-            )
+            if request is not None:
+                continue
 
     def _on_shooting_targets_selected_horde_move(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18283,19 +18282,6 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 player = None
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-            es = getattr(self, "event_system", None)
-            subs = getattr(es, "subscribers", None) if es is not None else None
-            has_sub = bool(isinstance(subs, dict) and subs.get("horde_move_prompt"))
-            if is_human and es is not None:
-                es.publish(
-                    "horde_move_prompt",
-                    player=player,
-                    unit=target,
-                    attacker_unit=attacker_unit,
-                    game=self,
-                )
-                if has_sub:
-                    continue
             has_righteous_zeal = False
             has_righteous_zeal_fn = getattr(target, "has_righteous_zeal", None)
             if callable(has_righteous_zeal_fn):
@@ -18350,7 +18336,7 @@ class GameShootingFightHandlersMixin:
                     "Horde Move: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
                     "This unit cannot make a Horde move while Battle-shocked."
                 )
-            self._queue_reactive_move_confirmation(
+            request = self._queue_reactive_move_confirmation(
                 player=player,
                 unit=target,
                 kind="horde_move",
@@ -18360,6 +18346,21 @@ class GameShootingFightHandlersMixin:
                 attacker_unit=attacker_unit,
                 allow_engagement_range=bool(rule.get("allow_engagement_range", False)),
             )
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("horde_move_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "horde_move_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            if request is not None:
+                continue
 
     def _on_shooting_targets_selected_blistering_assault(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18431,6 +18432,20 @@ class GameShootingFightHandlersMixin:
                     continue
             player = target_player
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Blistering Assault: Move D6+2\" as close as possible to the closest enemy unit.\n"
+                "This unit can end this move within Engagement Range of that enemy unit."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="blistering_assault",
+                movement_type="blistering_assault",
+                source="Blistering Assault",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("blistering_assault_prompt"))
@@ -18444,20 +18459,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Blistering Assault: Move D6+2\" as close as possible to the closest enemy unit.\n"
-                "This unit can end this move within Engagement Range of that enemy unit."
-            )
-            self._queue_reactive_move_confirmation(
-                player=player,
-                unit=target,
-                kind="blistering_assault",
-                movement_type="blistering_assault",
-                source="Blistering Assault",
-                message=msg,
-                attacker_unit=attacker_unit,
-                allow_engagement_range=True,
-            )
+            if request is not None:
+                continue
 
     def _on_shooting_targets_selected_bestial_rage(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18529,6 +18532,20 @@ class GameShootingFightHandlersMixin:
                     continue
             player = target_player
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Bestial Rage: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This model can end this move within Engagement Range of that enemy unit, and can only make one Bestial Rage move per phase."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="bestial_rage",
+                movement_type="bestial_rage",
+                source="Bestial Rage",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("bestial_rage_prompt"))
@@ -18542,20 +18559,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Bestial Rage: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
-                "This model can end this move within Engagement Range of that enemy unit, and can only make one Bestial Rage move per phase."
-            )
-            self._queue_reactive_move_confirmation(
-                player=player,
-                unit=target,
-                kind="bestial_rage",
-                movement_type="bestial_rage",
-                source="Bestial Rage",
-                message=msg,
-                attacker_unit=attacker_unit,
-                allow_engagement_range=True,
-            )
+            if request is not None:
+                continue
 
     def _on_shooting_targets_selected_aggressive_leader_beast(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18634,6 +18639,21 @@ class GameShootingFightHandlersMixin:
                     continue
             player = target_player
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            msg = (
+                "Aggressive Leader-beast: Roll D6 and make a Surge move up to that distance.\n"
+                "The move must end as close as possible to the closest non-AIRCRAFT enemy unit, "
+                "can end within Engagement Range, and cannot be made while Battle-shocked or already within Engagement Range."
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="aggressive_leader_beast",
+                movement_type="aggressive_leader_beast",
+                source="Aggressive Leader-beast",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("aggressive_leader_beast_prompt"))
@@ -18647,21 +18667,344 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Aggressive Leader-beast: Roll D6 and make a Surge move up to that distance.\n"
-                "The move must end as close as possible to the closest non-AIRCRAFT enemy unit, "
-                "can end within Engagement Range, and cannot be made while Battle-shocked or already within Engagement Range."
+            if request is not None:
+                continue
+
+    def _frenzy_selected_payload(self, request: DecisionRequest, result: DecisionResult) -> dict[str, Any]:
+        payload = {}
+        for option in list(getattr(request, "options", []) or []):
+            if getattr(option, "option_id", None) != getattr(result, "option_id", None):
+                continue
+            payload.update(dict(getattr(option, "payload", {}) or {}))
+            break
+        payload.update(dict(getattr(result, "payload", {}) or {}))
+        return payload
+
+    def _queue_frenzy_choice_request(
+        self,
+        *,
+        player,
+        unit,
+        attacker_unit,
+        options: list[str],
+        phase_name: str | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or attacker_unit is None:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_FRENZY_TARGET
+
+        unit_id = str(get_entity_id(unit) or "").strip()
+        attacker_unit_id = str(get_entity_id(attacker_unit) or "").strip()
+        if not unit_id or not attacker_unit_id:
+            return None
+        normalized = [
+            str(action or "").strip().lower()
+            for action in list(options or [])
+            if str(action or "").strip().lower() in {"shoot", "fight"}
+        ]
+        if not normalized:
+            return None
+        req_options = []
+        if "shoot" in normalized:
+            req_options.append(DecisionOption.create("Shoot", payload={"action": "shoot", "unit_id": unit_id}))
+        if "fight" in normalized:
+            req_options.append(DecisionOption.create("Fight", payload={"action": "fight", "unit_id": unit_id}))
+        req_options.append(DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_FRENZY_TARGET,
+            f"Choose Frenzy response for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "frenzy",
+                "unit_id": unit_id,
+                "attacker_unit_id": attacker_unit_id,
+                "phase_name": str(phase_name or "").strip().upper(),
+                "frenzy_flow": True,
+            },
+        )
+        self.request_decision(request)
+        return request
+
+    def _frenzy_move_distance(self, unit, movement_type: str) -> float:
+        distance = 3.0
+        getter = getattr(unit, "get_fight_phase_move_distance_override", None)
+        if callable(getter):
+            try:
+                override = getter(str(movement_type or "").strip().lower())
+            except Exception:
+                override = None
+            if override is not None:
+                try:
+                    distance = float(override)
+                except (TypeError, ValueError):
+                    distance = 3.0
+        return float(distance)
+
+    def _queue_frenzy_shooting_request(
+        self,
+        *,
+        unit,
+        attacker_unit,
+        phase_name: str | None = None,
+    ) -> DecisionRequest | None:
+        if unit is None or attacker_unit is None:
+            return None
+        from ..decision_requests import queue_declare_shots_request
+
+        unit_id = str(get_entity_id(unit) or "").strip()
+        attacker_unit_id = str(get_entity_id(attacker_unit) or "").strip()
+        if not unit_id or not attacker_unit_id:
+            return None
+        return queue_declare_shots_request(
+            self,
+            unit,
+            prompt=f"Frenzy: Declare shots for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            out_of_phase=True,
+            context={
+                "ability": "frenzy",
+                "frenzy_flow": True,
+                "unit_id": unit_id,
+                "attacker_unit_id": attacker_unit_id,
+                "phase_name": str(phase_name or "").strip().upper(),
+                "force_target_unit_id": attacker_unit_id,
+            },
+        )
+
+    def _queue_frenzy_fight_move_request(
+        self,
+        *,
+        unit,
+        attacker_unit,
+        movement_type: str,
+        phase_name: str | None = None,
+    ) -> DecisionRequest | None:
+        if unit is None or attacker_unit is None:
+            return None
+        from ..decision_requests import queue_move_unit_request
+
+        unit_id = str(get_entity_id(unit) or "").strip()
+        attacker_unit_id = str(get_entity_id(attacker_unit) or "").strip()
+        move_type = str(movement_type or "").strip().lower()
+        if not unit_id or not attacker_unit_id or move_type not in {"pile_in", "consolidate"}:
+            return None
+        return queue_move_unit_request(
+            self,
+            unit,
+            movement_type=move_type,
+            prompt=f"Frenzy: {move_type.replace('_', ' ')} {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            max_distance=self._frenzy_move_distance(unit, move_type),
+            allow_skip=True,
+            context={
+                "ability": "frenzy",
+                "frenzy_flow": True,
+                "frenzy_step": move_type,
+                "phase_name": str(phase_name or "").strip().upper(),
+                "unit_id": unit_id,
+                "attacker_unit_id": attacker_unit_id,
+            },
+        )
+
+    def _queue_frenzy_melee_request(
+        self,
+        *,
+        unit,
+        attacker_unit,
+        phase_name: str | None = None,
+    ) -> DecisionRequest | None:
+        if unit is None or attacker_unit is None:
+            return None
+        from ..decision_requests import queue_declare_melee_weapons_request
+
+        unit_id = str(get_entity_id(unit) or "").strip()
+        attacker_unit_id = str(get_entity_id(attacker_unit) or "").strip()
+        if not unit_id or not attacker_unit_id:
+            return None
+        return queue_declare_melee_weapons_request(
+            self,
+            unit,
+            target_units=[attacker_unit],
+            prompt=f"Frenzy: Declare melee weapons for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            context={
+                "ability": "frenzy",
+                "frenzy_flow": True,
+                "frenzy_step": "declare_melee_weapons",
+                "phase_name": str(phase_name or "").strip().upper(),
+                "unit_id": unit_id,
+                "target_unit_id": attacker_unit_id,
+                "attacker_unit_id": attacker_unit_id,
+            },
+        )
+
+    def _fight_within_3_confirmation_details(self, unit, target_unit) -> dict[str, Any] | None:
+        if unit is None or target_unit is None:
+            return None
+        try:
+            if hasattr(unit, "clear_fight_within_3_active"):
+                unit.clear_fight_within_3_active()
+        except Exception:
+            pass
+        try:
+            if not (hasattr(unit, "has_fight_within_3_ability") and unit.has_fight_within_3_ability()):
+                return None
+        except Exception:
+            return None
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return None
+        try:
+            base_eligible = unit.get_fight_eligible_models_for_target(
+                target_unit,
+                game_map=game_map,
+                allow_within_3=False,
             )
-            self._queue_reactive_move_confirmation(
-                player=player,
-                unit=target,
-                kind="aggressive_leader_beast",
-                movement_type="aggressive_leader_beast",
-                source="Aggressive Leader-beast",
-                message=msg,
-                attacker_unit=attacker_unit,
-                allow_engagement_range=True,
+            expanded_eligible = unit.get_fight_eligible_models_for_target(
+                target_unit,
+                game_map=game_map,
+                allow_within_3=True,
             )
+        except Exception:
+            return None
+        if set(expanded_eligible) == set(base_eligible):
+            return None
+        ability_name = 'Fight Within 3"'
+        try:
+            sources = unit.get_fight_within_3_sources()
+            if sources:
+                ability_name = str(sources[0] or "").strip() or 'Fight Within 3"'
+        except Exception:
+            ability_name = 'Fight Within 3"'
+        return {"ability_name": ability_name}
+
+    def _queue_fight_within_3_confirmation(
+        self,
+        *,
+        player,
+        unit,
+        target_unit,
+        context: dict[str, Any] | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or target_unit is None:
+            return None
+        details = self._fight_within_3_confirmation_details(unit, target_unit)
+        if details is None:
+            return None
+        unit_id = str(get_entity_id(unit) or "").strip()
+        target_id = str(get_entity_id(target_unit) or "").strip()
+        if not unit_id or not target_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                pending_ctx = dict(getattr(request, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "").strip().lower() != "fight_within_3":
+                    continue
+                if str(pending_ctx.get("unit_id", "") or "").strip() != unit_id:
+                    continue
+                if str(pending_ctx.get("target_unit_id", "") or "").strip() != target_id:
+                    continue
+                return request
+        ability_name = str(details.get("ability_name") or 'Fight Within 3"').strip() or 'Fight Within 3"'
+        request_context = {
+            "unit_id": unit_id,
+            "target_unit_id": target_id,
+            "ability": "fight_within_3",
+            "ability_name": ability_name,
+            "message": f'Use {ability_name} to let models within 3" of enemy models fight?',
+        }
+        request_context.update(dict(context or {}))
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            ability_name,
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True, "unit_id": unit_id}),
+                DecisionOption.create("Skip", payload={"choice": False, "unit_id": unit_id}),
+            ],
+            context=request_context,
+        )
+        self.request_decision(request)
+        return request
+
+    def _maybe_queue_frenzy_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        ctx = dict(getattr(request, "context", {}) or {})
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        if decision_type:
+            from ..decision_kinds import DECISION_CHOOSE_FRENZY_TARGET
+
+            if decision_type == DECISION_CHOOSE_FRENZY_TARGET:
+                if str(ctx.get("ability", "") or "").strip().lower() != "frenzy":
+                    return
+                unit = self._resolve_unit_by_id(str(ctx.get("unit_id", "") or ""))
+                attacker_unit = self._resolve_unit_by_id(str(ctx.get("attacker_unit_id", "") or ""))
+                if unit is None or attacker_unit is None:
+                    return
+                payload = self._frenzy_selected_payload(request, result)
+                action = str(payload.get("action", "") or "").strip().lower()
+                if action == "shoot":
+                    self._queue_frenzy_shooting_request(unit=unit, attacker_unit=attacker_unit, phase_name=phase_name)
+                    return
+                if action == "fight":
+                    self._queue_frenzy_fight_move_request(
+                        unit=unit,
+                        attacker_unit=attacker_unit,
+                        movement_type="pile_in",
+                        phase_name=phase_name,
+                    )
+                return
+
+        if not bool(ctx.get("frenzy_flow", False)):
+            return
+        unit = self._resolve_unit_by_id(str(ctx.get("unit_id", "") or ""))
+        attacker_unit = self._resolve_unit_by_id(str(ctx.get("attacker_unit_id", "") or ""))
+        if unit is None or attacker_unit is None:
+            return
+
+        if decision_type == DECISION_CONFIRM_YES_NO:
+            if str(ctx.get("ability", "") or "").strip().lower() != "fight_within_3":
+                return
+            self._queue_frenzy_melee_request(unit=unit, attacker_unit=attacker_unit, phase_name=phase_name)
+            return
+
+        if decision_type == DECISION_MOVE_UNIT:
+            movement_type = str(ctx.get("movement_type", "") or "").strip().lower()
+            if movement_type == "pile_in":
+                confirmation = self._queue_fight_within_3_confirmation(
+                    player=getattr(unit.get_parent_army(), "player", None),
+                    unit=unit,
+                    target_unit=attacker_unit,
+                    context={
+                        "frenzy_flow": True,
+                        "phase_name": phase_name,
+                        "attacker_unit_id": str(get_entity_id(attacker_unit) or ""),
+                    },
+                )
+                if confirmation is None:
+                    self._queue_frenzy_melee_request(unit=unit, attacker_unit=attacker_unit, phase_name=phase_name)
+                return
+            return
+
+        if decision_type != DECISION_DECLARE_MELEE_WEAPONS:
+            return
+
+        declarations = list(getattr(request, "_resolved_decision_value", None) or [])
+        player = getattr(unit.get_parent_army(), "player", None)
+        if not bool(getattr(player, "has_control", lambda: False)()):
+            self.resolve_frenzy_melee_attacks(unit, attacker_unit, declarations)
+        self._queue_frenzy_fight_move_request(
+            unit=unit,
+            attacker_unit=attacker_unit,
+            movement_type="consolidate",
+            phase_name=phase_name,
+        )
 
     def _on_shooting_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18713,6 +19056,13 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 player = None
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            request = self._queue_frenzy_choice_request(
+                player=player,
+                unit=target,
+                attacker_unit=attacker_unit,
+                options=list(options),
+                phase_name=phase_name,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("frenzy_prompt"))
@@ -18727,10 +19077,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            if "shoot" in options:
-                self._execute_frenzy_shooting(target, attacker_unit)
-            elif "fight" in options:
-                self._execute_frenzy_fight(target, attacker_unit, phase_name=phase_name)
+            if request is not None:
+                continue
 
     def _on_fight_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -18933,6 +19281,13 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 player = None
             is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            request = self._queue_frenzy_choice_request(
+                player=player,
+                unit=target,
+                attacker_unit=attacker_unit,
+                options=list(options),
+                phase_name=phase_name,
+            )
             es = getattr(self, "event_system", None)
             subs = getattr(es, "subscribers", None) if es is not None else None
             has_sub = bool(isinstance(subs, dict) and subs.get("frenzy_prompt"))
@@ -18947,10 +19302,8 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            if "shoot" in options:
-                self._execute_frenzy_shooting(target, attacker_unit)
-            elif "fight" in options:
-                self._execute_frenzy_fight(target, attacker_unit, phase_name=phase_name)
+            if request is not None:
+                continue
 
     def _frenzy_has_eligible_shot(self, unit, target_unit) -> bool:
         if unit is None or target_unit is None:

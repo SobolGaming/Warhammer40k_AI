@@ -224,6 +224,75 @@ class TestForTheGreaterGood(unittest.TestCase):
         finally:
             wargear_mod.get_roll = old_get_roll
 
+    def test_phase_start_queues_observer_then_target_requests(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game, BattleRoundPhases
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        tau_army = Army.with_detachment("Tau", detachment_type="Cadre")
+        tau_army.faction_id = "TAU"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        player = Player("Tau", PlayerControl.LOCAL, army=tau_army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        observer_unit = self._make_unit("Pathfinders", markerlight=True)
+        guided_unit = self._make_unit("Strike Team")
+        target_unit = self._make_unit("Enemy Unit")
+
+        for unit, army in ((observer_unit, tau_army), (guided_unit, tau_army), (target_unit, enemy_army)):
+            unit.set_army(army)
+        tau_army.units = [observer_unit, guided_unit]
+        enemy_army.units = [target_unit]
+
+        observer_unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        guided_unit.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+        target_unit.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [observer_unit, guided_unit, target_unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_for_the_greater_good(player=player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+        observer_request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CHOOSE_QUARRY
+            and str((req.context or {}).get("ability", "")) == "for_the_greater_good"
+            and str((req.context or {}).get("step", "")) == "observer"
+        )
+        observer_option = next(
+            opt
+            for opt in list(observer_request.options or [])
+            if str((opt.payload or {}).get("observer_unit_id", "")) == str(get_entity_id(observer_unit))
+        )
+        observer_result = resolve_decision_command(game, observer_request, observer_option.option_id, player_id=player.id)
+        self.assertTrue(observer_result.ok)
+
+        target_request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CHOOSE_QUARRY
+            and str((req.context or {}).get("ability", "")) == "for_the_greater_good"
+            and str((req.context or {}).get("step", "")) == "target"
+            and str((req.context or {}).get("observer_unit_id", "")) == str(get_entity_id(observer_unit))
+        )
+        target_option = next(
+            opt
+            for opt in list(target_request.options or [])
+            if str((opt.payload or {}).get("target_unit_id", "")) == str(get_entity_id(target_unit))
+        )
+        target_result = resolve_decision_command(game, target_request, target_option.option_id, player_id=player.id)
+        self.assertTrue(target_result.ok)
+        self.assertTrue(bool(tau_army.for_the_greater_good.is_spotted(target_unit)))
+
     def test_precise_targeting_guided_attack_rerolls_hit(self):
         from warhammer40k_ai.engine.event.system import EventSystem
         from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager

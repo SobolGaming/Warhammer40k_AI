@@ -87,6 +87,24 @@ This note tracks the specific decision-parity regressions audited in this pass.
   `Battle Focus` opportunity/fade-back and `Loping Speed` still publish the local
   UI prompt, but they now also issue the same queued request first instead of
   letting the local path run ahead of the engine queue.
+- [shooting_fight_handlers_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/shooting_fight_handlers_mixin.py:17318),
+  [fight_phase_manager.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/fight_phase_manager.py:722),
+  [phase_handlers_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/phase_handlers_mixin.py:12298),
+  and [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:11098)
+  now keep the same engine-issued request chain for the audited local reactive
+  prompt flows and their follow-ups. `Blood Surge`, `Unhinged Vengeance`,
+  `Brazen Fury`, `Horde Move`, `Blistering Assault`, `Bestial Rage`,
+  `Aggressive Leader Beast`, `Frenzy`, `Fight Within 3"`, and `For the Greater
+  Good` no longer let the local-human path publish a prompt or continue a follow-up
+  step before the matching `DecisionRequest` exists.
+- [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:12196),
+  [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:13630),
+  [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:13725),
+  and [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:15650)
+  now consume even single-option local selections through the already-queued
+  request instead of shortcutting them in UI code. The audited cases were
+  `Oath of Moment`, single-maneuver `Battle Focus`, and single-choice
+  modifier-ignore prompts.
 - [voice_of_command.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/voice_of_command.py:2147),
   [phase_handlers_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/phase_handlers_mixin.py:18391),
   [abilities.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/decision_handlers/abilities.py:12695),

@@ -655,11 +655,44 @@ class GamePhaseHandlersMixin:
             return
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
             return
-        from ..decision_kinds import DECISION_DECLARE_SHOTS
-
-        if str(getattr(request, "decision_type", "") or "").strip() != DECISION_DECLARE_SHOTS:
-            return
         ctx = dict(getattr(request, "context", {}) or {})
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_DECLARE_SHOTS
+
+        if decision_type == DECISION_CHOOSE_QUARRY:
+            if str(ctx.get("ability", "") or "").strip().lower() != "for_the_greater_good":
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            selected_unit = getattr(request, "_resolved_decision_value", None)
+            step = str(ctx.get("step", "") or "").strip().lower()
+            if step == "observer":
+                observer_unit = selected_unit
+                if observer_unit is None:
+                    return
+                if self._queue_for_the_greater_good_target_request(player=player, observer_unit=observer_unit) is None:
+                    self._queue_for_the_greater_good_observer_request(player=player)
+                return
+            if step != "target":
+                return
+            target_unit = selected_unit
+            if target_unit is None:
+                return
+            observer_unit = self._resolve_unit_by_id(str(ctx.get("observer_unit_id", "") or ""))
+            if observer_unit is None:
+                return
+            army = self._get_player_army(player)
+            mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+            if mgr is None:
+                return
+            if not bool(mgr.mark_spotted(observer_unit, target_unit, game=self, player=player)):
+                return
+            self._queue_for_the_greater_good_observer_request(player=player)
+            return
+
+        if decision_type != DECISION_DECLARE_SHOTS:
+            return
         if bool(ctx.get("out_of_phase", False)):
             return
         if str(ctx.get("phase_name", "") or "").strip().upper() != "SHOOTING_PHASE":
@@ -823,6 +856,8 @@ class GamePhaseHandlersMixin:
             return
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
+            if bool(ctx.get("frenzy_flow", False)):
+                return
             if str(ctx.get("phase_name", "") or "").strip().upper() != "FIGHT_PHASE":
                 return
             movement_type = str(ctx.get("movement_type", "") or "").strip().lower()
@@ -841,7 +876,21 @@ class GamePhaseHandlersMixin:
         if decision_type != DECISION_CONFIRM_YES_NO:
             return
         ctx = dict(getattr(request, "context", {}) or {})
-        if str(ctx.get("ability", "") or "").strip().lower() != "battle_focus_sudden_strike":
+        ability = str(ctx.get("ability", "") or "").strip().lower()
+        if ability == "fight_within_3":
+            if bool(ctx.get("frenzy_flow", False)):
+                return
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is None:
+                return
+            on_resolved = getattr(manager, "on_fight_within_3_resolved", None)
+            if callable(on_resolved):
+                on_resolved(unit_id=unit_id)
+            return
+        if ability != "battle_focus_sudden_strike":
             return
         unit_id = str(ctx.get("unit_id", "") or "").strip()
         if not unit_id:
@@ -12219,6 +12268,119 @@ class GamePhaseHandlersMixin:
                 instance_key=f"{root_id}:{int(getattr(self, 'turn', 0) or 0)}:umbralefic_crystal",
             )
 
+    def _pending_for_the_greater_good_request(
+        self,
+        *,
+        player_id: str | None,
+        step: str,
+        observer_unit_id: str | None = None,
+    ) -> DecisionRequest | None:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            if player_id is not None and str(getattr(request, "player_id", "") or "") != str(player_id):
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "for_the_greater_good":
+                continue
+            if str(ctx.get("step", "") or "").strip().lower() != str(step or "").strip().lower():
+                continue
+            if observer_unit_id is not None and str(ctx.get("observer_unit_id", "") or "") != str(observer_unit_id):
+                continue
+            return request
+        return None
+
+    def _queue_for_the_greater_good_observer_request(self, *, player) -> DecisionRequest | None:
+        if player is None:
+            return None
+        if self._pending_for_the_greater_good_request(player_id=getattr(player, "id", None), step="observer") is not None:
+            return None
+        army = self._get_player_army(player)
+        mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+        if mgr is None:
+            return None
+        observers = []
+        for observer in list(mgr.get_eligible_observers(game=self, player=player) or []):
+            if list(mgr.get_eligible_spotted_targets(observer, game=self, player=player) or []):
+                observers.append(observer)
+        if not observers:
+            return None
+        options = []
+        for observer in list(observers or []):
+            observer_id = str(get_entity_id(observer) or "").strip()
+            if not observer_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(observer, "name", "Observer") or "Observer"),
+                    payload={"target_unit_id": observer_id, "observer_unit_id": observer_id},
+                )
+            )
+        if not options:
+            return None
+        options.append(DecisionOption.create("Stop", payload={"action": "skip"}))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select For the Greater Good observer.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"ability": "for_the_greater_good", "step": "observer"},
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_for_the_greater_good_target_request(self, *, player, observer_unit) -> DecisionRequest | None:
+        if player is None or observer_unit is None:
+            return None
+        observer_unit_id = str(get_entity_id(observer_unit) or "").strip()
+        if not observer_unit_id:
+            return None
+        if self._pending_for_the_greater_good_request(
+            player_id=getattr(player, "id", None),
+            step="target",
+            observer_unit_id=observer_unit_id,
+        ) is not None:
+            return None
+        army = self._get_player_army(player)
+        mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+        if mgr is None:
+            return None
+        targets = list(mgr.get_eligible_spotted_targets(observer_unit, game=self, player=player) or [])
+        if not targets:
+            return None
+        options = []
+        for target in list(targets or []):
+            target_id = str(get_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Target") or "Target"),
+                    payload={"target_unit_id": target_id, "observer_unit_id": observer_unit_id},
+                )
+            )
+        if not options:
+            return None
+        options.append(DecisionOption.create("Stop", payload={"action": "skip", "observer_unit_id": observer_unit_id}))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select For the Greater Good target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "for_the_greater_good",
+                "step": "target",
+                "observer_unit_id": observer_unit_id,
+            },
+        )
+        self.request_decision(request)
+        return request
+
     def _on_phase_start_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Prompt Observer selection at the start of the active player's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -12233,6 +12395,9 @@ class GamePhaseHandlersMixin:
         if mgr is None:
             return
         mgr.on_shooting_phase_start(game=self, player=player)
+        request = self._queue_for_the_greater_good_observer_request(player=player)
+        if request is None:
+            return
         es = getattr(self, "event_system", None)
         if es is None or not hasattr(es, "subscribers"):
             raise RuntimeError("Event system missing for For the Greater Good prompt.")
