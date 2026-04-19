@@ -585,12 +585,18 @@ class DiceRollManager:
                         {
                             "action_id": "command_reroll",
                             "label": "Command Re-roll",
+                            "ability_key": "command_reroll",
+                            "stratagem_name": "COMMAND RE-ROLL",
+                            "tool_id": "stratagem:command_reroll",
+                            "tool_type": "stratagem",
                             "source": "command",
                             "mode": "whole" if cmd_mode in ("whole", "all") else "one",
                             "eligible_die_ids": eligible_cmd,
                             "max_select": 1 if cmd_mode not in ("whole", "all") else None,
+                            "cp_cost": 1,
                             "consume_cp": True,
                             "is_command": True,
+                            "semantic_tags": ["reroll", "command", "resource"],
                         }
                     )
         except Exception:
@@ -760,7 +766,7 @@ class DiceRollManager:
             label = str(opt.get("label", "") or "")
             if not action_id:
                 continue
-            options.append(DecisionOption.create(label, payload={"action_id": action_id}))
+            options.append(DecisionOption.create(label, payload=dict(opt or {})))
         if not options:
             self._finalize_roll(game, state)
             return

@@ -9,7 +9,12 @@ from warhammer40k_ai.engine.decision_handlers.abilities import (
     _apply_select_realm_of_chaos_units,
     _validate_select_realm_of_chaos_units,
 )
-from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+from warhammer40k_ai.engine.decision_handlers.movement import _validate_pick_objective
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_PICK_OBJECTIVE,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+)
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.army import Army
@@ -17,6 +22,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -100,6 +106,35 @@ def _build_game():
     return game, daemon_player, enemy_player, daemon_army, enemy_army
 
 
+def _find_request(game: Game, decision_type: str, *, ability: str) -> DecisionRequest | None:
+    queue = getattr(game, "decision_queue", None)
+    if queue is None or not hasattr(queue, "list"):
+        return None
+    for request in list(queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != str(decision_type):
+            continue
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("ability", "") or "") != str(ability):
+            continue
+        return request
+    return None
+
+
+def _find_option(request: DecisionRequest, **expected_payload) -> DecisionOption | None:
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if all(payload.get(key) == value for key, value in dict(expected_payload or {}).items()):
+            return option
+    return None
+
+
+def _pending_by_name(manager, name: str):
+    for reaction in list(getattr(manager, "_pending_reactions", []) or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == str(name or "").strip().upper():
+            return reaction
+    return None
+
+
 class TestDaemonicIncursionStratagems(unittest.TestCase):
     def test_corrupt_realspace_breaks_only_on_turn_boundary(self):
         game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
@@ -145,6 +180,131 @@ class TestDaemonicIncursionStratagems(unittest.TestCase):
         game._evaluate_corrupt_realspace_turn_boundary(timing="start", player=enemy_player)
         self.assertIs(objective_point.sticky_controller, None)
         self.assertIs(objective_point.controlling_player, enemy_player)
+
+    def test_corrupt_realspace_queues_decisions_and_applies_selected_objective(self):
+        game, daemon_player, _enemy_player, daemon_army, _enemy_army = _build_game()
+        daemon_unit = _make_unit(
+            "Daemon",
+            faction_keywords=["LEGIONES DAEMONICA"],
+        )
+        daemon_army.add_unit(daemon_unit)
+
+        objective_a = Objective(
+            "Marker A",
+            ObjectiveCategory.PRIMARY,
+            0,
+            "",
+            lambda _g: False,
+            location=ObjectivePoint(0.0, 0.0),
+        )
+        objective_b = Objective(
+            "Marker B",
+            ObjectiveCategory.PRIMARY,
+            1,
+            "",
+            lambda _g: False,
+            location=ObjectivePoint(12.0, 0.0),
+        )
+        objective_a.location.controlling_player = daemon_player
+        objective_b.location.controlling_player = daemon_player
+        game.map.add_objective(objective_a)
+        game.map.add_objective(objective_b)
+        game.rebuild_entity_registry()
+
+        daemon_player.stratagems._daemon_incursion_battlefield_unit_candidates = lambda: [daemon_unit]
+        daemon_player.stratagems._corrupting_taint_objective_candidates = lambda _unit: [objective_a, objective_b]
+
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+        game.current_player_index = 0
+        daemon_player.stratagems._on_phase_start(player=daemon_player, phase=game.phase)
+
+        pending = _pending_by_name(daemon_player.stratagems, "CORRUPT REALSPACE")
+        self.assertIsNotNone(pending)
+
+        request = _find_request(game, DECISION_CHOOSE_QUARRY, ability="corrupt_realspace")
+        self.assertIsNotNone(request)
+        skip_option = _find_option(request, action="skip")
+        unit_option = _find_option(request, target_unit_id=str(get_entity_id(daemon_unit) or ""))
+        self.assertIsNotNone(skip_option)
+        self.assertIsNotNone(unit_option)
+
+        result = resolve_decision_command(game, request, unit_option.option_id, player_id=daemon_player.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+
+        objective_request = _find_request(game, DECISION_PICK_OBJECTIVE, ability="corrupt_realspace")
+        self.assertIsNotNone(objective_request)
+        objective_option = _find_option(objective_request, objective_id=str(get_entity_id(objective_b) or ""))
+        self.assertIsNotNone(objective_option)
+
+        objective_result = resolve_decision_command(game, objective_request, objective_option.option_id, player_id=daemon_player.id)
+        self.assertTrue(bool(getattr(objective_result, "ok", False)))
+        self.assertEqual(int(daemon_player.command_points or 0), 2)
+        self.assertEqual(objective_b.location.sticky_source, "corrupt_realspace")
+        self.assertIs(objective_b.location.sticky_controller, daemon_player)
+        self.assertIsNone(_pending_by_name(daemon_player.stratagems, "CORRUPT REALSPACE"))
+
+    def test_corrupt_realspace_objective_validation_rejects_non_candidate(self):
+        game, daemon_player, _enemy_player, daemon_army, _enemy_army = _build_game()
+        daemon_unit = _make_unit(
+            "Daemon",
+            faction_keywords=["LEGIONES DAEMONICA"],
+        )
+        daemon_army.add_unit(daemon_unit)
+
+        objective_a = Objective(
+            "Marker A",
+            ObjectiveCategory.PRIMARY,
+            0,
+            "",
+            lambda _g: False,
+            location=ObjectivePoint(0.0, 0.0),
+        )
+        objective_b = Objective(
+            "Marker B",
+            ObjectiveCategory.PRIMARY,
+            1,
+            "",
+            lambda _g: False,
+            location=ObjectivePoint(12.0, 0.0),
+        )
+        objective_a.location.controlling_player = daemon_player
+        objective_b.location.controlling_player = daemon_player
+        game.map.add_objective(objective_a)
+        game.map.add_objective(objective_b)
+        game.rebuild_entity_registry()
+
+        request = DecisionRequest.create(
+            DECISION_PICK_OBJECTIVE,
+            "Corrupt Realspace objective selection",
+            player_id=daemon_player.id,
+            options=[
+                DecisionOption.create(
+                    "Marker A",
+                    payload={
+                        "objective_id": str(get_entity_id(objective_a) or ""),
+                        "unit_id": str(get_entity_id(daemon_unit) or ""),
+                        "source_unit_id": str(get_entity_id(daemon_unit) or ""),
+                    },
+                )
+            ],
+            context={
+                "ability": "corrupt_realspace",
+                "ability_name": "CORRUPT REALSPACE",
+                "phase_name": "Command phase",
+                "unit_id": str(get_entity_id(daemon_unit) or ""),
+                "source_unit_id": str(get_entity_id(daemon_unit) or ""),
+                "candidate_objective_ids": [str(get_entity_id(objective_a) or "")],
+            },
+        )
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=daemon_player.id,
+            option_id=request.options[0].option_id,
+            payload={"objective_id": str(get_entity_id(objective_b) or "")},
+        )
+
+        errors = _validate_pick_objective(game, request, result)
+        self.assertEqual(errors, ("Corrupt Realspace selected objective marker is not in this request's candidate list.",))
 
 
 def test_daemonic_invulnerability_rerolls_invulnerable_ones(monkeypatch):

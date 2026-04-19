@@ -10251,6 +10251,7 @@ class StratagemManager(
                                         "cp_cost": s.cp_cost,
                                         "candidates": candidates,
                                     }, use_timer=False)
+                                self._queue_corrupt_realspace_decision(phase_name="Command phase")
         except Exception:
             raise
         try:

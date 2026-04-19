@@ -33,6 +33,7 @@ from ._helpers import (
     get_terrain,
     get_unit,
     is_skip_choice,
+    resolve_player,
     validate_model_positions,
     validate_option_choice,
 )
@@ -3951,6 +3952,8 @@ def _validate_pick_objective(game: object, request: DecisionRequest, result: Dec
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "").strip().lower()
     if is_skip_choice(request, result):
         return ()
     payload = dict(result.payload or {})
@@ -3961,13 +3964,58 @@ def _validate_pick_objective(game: object, request: DecisionRequest, result: Dec
         objective_id = opt_payload.get("objective_id")
     if not objective_id:
         return ("Objective selection requires objective_id.",)
+    if ability == "corrupt_realspace":
+        player = resolve_player(game, getattr(request, "player_id", None))
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        if stratagems is None:
+            return ("Corrupt Realspace stratagem manager not found.",)
+        phase_name = str(ctx.get("phase_name", "") or payload.get("phase_name", "") or "Command phase")
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase and current_phase != "COMMAND_PHASE":
+            return ("Corrupt Realspace can only be selected in the Command phase.",)
+        if str(phase_name or "").strip().lower() != "command phase":
+            return ("Corrupt Realspace requires the Command phase.",)
+        source_unit = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+        if source_unit is None:
+            return ("Corrupt Realspace source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Corrupt Realspace source unit was not found.",)
+        objective = get_objective(game, str(objective_id or ""))
+        if objective is None:
+            return ("Corrupt Realspace selected objective marker was not found.",)
+        candidate_objective_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_objective_ids and str(objective_id or "").strip() not in candidate_objective_ids:
+            return ("Corrupt Realspace selected objective marker is not in this request's candidate list.",)
+        live_candidates = list(getattr(stratagems, "_corrupting_taint_objective_candidates", lambda _unit: [])(source_root) or [])
+        live_ids = {
+            str(get_entity_id(candidate) or "").strip()
+            for candidate in list(live_candidates or [])
+            if candidate is not None
+        }
+        if str(objective_id or "").strip() not in live_ids:
+            return ("Corrupt Realspace selected objective marker is no longer eligible.",)
+        return ()
     if get_objective(game, str(objective_id or "")) is None:
         return ("Objective not found.",)
     return ()
 
 
 def _apply_pick_objective(game: object, request: DecisionRequest, result: DecisionResult) -> None:
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "").strip().lower()
     if is_skip_choice(request, result):
+        if ability == "corrupt_realspace":
+            player = resolve_player(game, getattr(request, "player_id", None))
+            stratagems = getattr(player, "stratagems", None) if player is not None else None
+            dequeue = getattr(stratagems, "_dequeue_reaction_by_name", None) if stratagems is not None else None
+            if callable(dequeue):
+                dequeue("CORRUPT REALSPACE")
+            return {"action": "skip"}
         return None
     payload = dict(result.payload or {})
     objective_id = payload.get("objective_id")
@@ -3977,6 +4025,36 @@ def _apply_pick_objective(game: object, request: DecisionRequest, result: Decisi
         objective_id = opt_payload.get("objective_id")
     if not objective_id:
         return None
+    if ability == "corrupt_realspace":
+        player = resolve_player(game, getattr(request, "player_id", None))
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        if stratagems is None:
+            raise RuntimeError("Corrupt Realspace stratagem manager not found.")
+        source_unit = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+        if source_unit is None:
+            raise RuntimeError("Corrupt Realspace source unit was not found.")
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            raise RuntimeError("Corrupt Realspace source unit was not found.")
+        objective = get_objective(game, str(objective_id or ""))
+        if objective is None:
+            raise RuntimeError("Corrupt Realspace selected objective marker was not found.")
+        phase_name = str(payload.get("phase_name", "") or ctx.get("phase_name", "") or "Command phase")
+        if not bool(
+            stratagems.use(
+                "CORRUPT REALSPACE",
+                unit=source_root,
+                target_unit=source_root,
+                objective=objective,
+                phase_name=phase_name,
+                dequeue=True,
+            )
+        ):
+            raise RuntimeError("Corrupt Realspace could not be applied.")
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "objective_id": str(get_entity_id(objective) or ""),
+        }
     return get_objective(game, str(objective_id or ""))
 
 

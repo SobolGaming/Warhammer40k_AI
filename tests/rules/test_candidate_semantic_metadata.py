@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
+from warhammer40k_ai.engine import game_decision_runtime
 from warhammer40k_ai.engine.candidate_semantics import (
     SEMANTIC_NUMERIC_KEYS,
     ensure_candidate_semantic_metadata,
@@ -46,6 +47,35 @@ def test_request_decision_adds_semantic_metadata_keys_to_candidates() -> None:
             assert key in metadata
         assert isinstance(metadata.get("rules_provenance_refs"), list)
         assert request.context["rules_bundle_id"] in metadata["rules_provenance_refs"]
+
+
+def test_request_decision_sets_context_before_semantic_projection(monkeypatch) -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+
+    captured: dict[str, object] = {}
+    original = game_decision_runtime.ensure_candidate_semantic_metadata
+
+    def _spy(request_obj, *, rules_bundle_id, rules_bundle=None):
+        captured["context"] = dict(getattr(request_obj, "context", {}) or {})
+        return original(request_obj, rules_bundle_id=rules_bundle_id, rules_bundle=rules_bundle)
+
+    monkeypatch.setattr(game_decision_runtime, "ensure_candidate_semantic_metadata", _spy)
+    game.request_decision(request)
+
+    observed = dict(captured.get("context", {}) or {})
+    assert isinstance(observed.get("descriptor_ids"), dict)
+    assert str(observed.get("descriptor_bundle_id", "") or "")
+    assert str(observed.get("rules_bundle_id", "") or "")
+    assert "time_budget_ms" in observed
 
 
 def test_semantic_augmenter_preserves_existing_numeric_values() -> None:

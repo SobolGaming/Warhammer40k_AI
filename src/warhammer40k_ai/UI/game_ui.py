@@ -7965,6 +7965,7 @@ class GameView:
             ctx = dict(getattr(request, "context", {}) or {})
             ability_key = str(ctx.get("ability", "") or "")
             if ability_key not in (
+                "corrupt_realspace",
                 "monarch_of_the_hunt",
                 "methodical_destruction",
                 "unearthly_power",
@@ -7999,6 +8000,33 @@ class GameView:
                 return
             self._pending_quarry_queue.append((player, unit, ability_key))
             self._open_next_quarry_prompt()
+            return
+
+        if decision_type == "PICK_OBJECTIVE":
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_key = str(ctx.get("ability", "") or "")
+            if ability_key != "corrupt_realspace":
+                return
+            if not callable(getattr(self, "_resolve_option_selection_dialog", None)):
+                return
+            unit = self._resolve_unit_by_id(ctx.get("source_unit_id") or ctx.get("unit_id"))
+            unit_name = str(getattr(unit, "name", "Unit") or "Unit") if unit is not None else "Unit"
+            self._resolve_option_selection_dialog(
+                player=player,
+                options=list(getattr(request, "options", []) or []),
+                on_chosen=lambda _value: None,
+                decision_type=decision_type,
+                prompt=str(getattr(request, "prompt", "") or "Select an objective marker."),
+                title=str(ctx.get("ability_name", "") or "Corrupt Realspace"),
+                header=f"{unit_name} selects an objective marker to corrupt.",
+                subtitle="The chosen marker remains under your control until your opponent controls it at the start or end of any turn.",
+                context={
+                    "ability": ability_key,
+                    "source_unit_id": str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""),
+                    "phase_name": str(ctx.get("phase_name", "") or ""),
+                },
+                allow_skip=bool(ctx.get("optional", True)),
+            )
 
     def set_game(self, game, game_map, player1, player2) -> None:
         """Swap the underlying game state (used by network resync)."""
@@ -16630,6 +16658,10 @@ class GameView:
             title = ability_name or "Mount Up!"
             subtitle = "Select one nearby friendly Infantry unit to embark, or None."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a unit to embark."
+        elif str(ability_key) == "corrupt_realspace":
+            title = ability_name or "Corrupt Realspace"
+            subtitle = "Select one LEGIONES DAEMONICA unit within range of an objective marker you control."
+            header = "Choose a unit to corrupt an objective marker."
         else:
             title = ability_name or "Select Quarry"
             subtitle = ""

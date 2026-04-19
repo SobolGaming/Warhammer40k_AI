@@ -35,6 +35,266 @@ class ChaosDaemonsStratagemMixin:
         except Exception:
             return ""
 
+    @staticmethod
+    def _chaos_daemons_objective_id(objective: Any) -> str:
+        try:
+            return str(get_entity_id(objective) or "")
+        except Exception:
+            return ""
+
+    def _chaos_daemons_objective_sort_key(self, objective: Any) -> str:
+        objective_id = self._chaos_daemons_objective_id(objective)
+        if objective_id:
+            return objective_id
+        name = str(getattr(objective, "name", "") or "").strip()
+        location = getattr(objective, "location", None)
+        if location is not None:
+            try:
+                return (
+                    f"{name}:{float(getattr(location, 'x', 0.0)):.3f}:"
+                    f"{float(getattr(location, 'y', 0.0)):.3f}:"
+                    f"{float(getattr(location, 'z', 0.0)):.3f}"
+                )
+            except (TypeError, ValueError):
+                return name
+        return name
+
+    def _chaos_daemons_pending_decision_request(self, *, decision_type: str, ability: str, **match_context: Any) -> bool:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        normalized_type = str(decision_type or "")
+        normalized_ability = str(ability or "")
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != normalized_type:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != normalized_ability:
+                continue
+            matches = True
+            for key, value in dict(match_context or {}).items():
+                if isinstance(value, (list, tuple, set)):
+                    expected = [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+                    current = [str(item or "").strip() for item in list(ctx.get(key, []) or []) if str(item or "").strip()]
+                    if current != expected:
+                        matches = False
+                        break
+                    continue
+                if str(ctx.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+    def _chaos_daemons_submit_decision_request(self, request: Any) -> bool:
+        if request is None:
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def _queue_corrupt_realspace_decision(self, *, phase_name: str = "Command phase") -> bool:
+        if self.player is None or self.game is None:
+            return False
+        if not bool(getattr(self.game, "is_authoritative", True)):
+            return False
+        stratagem = self.get_by_name("CORRUPT REALSPACE")
+        if stratagem is None:
+            return False
+        candidates = [
+            unit
+            for unit in list(self._daemon_incursion_battlefield_unit_candidates() or [])
+            if self._corrupting_taint_objective_candidates(unit)
+        ]
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        anchor_unit_id = self._chaos_daemons_sort_key(candidates[0]) if candidates else ""
+        if not anchor_unit_id:
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        phase_label = str(phase_name or "").strip() or "Command phase"
+        if self._chaos_daemons_pending_decision_request(
+            decision_type=DECISION_CHOOSE_QUARRY,
+            ability="corrupt_realspace",
+            source_unit_id=anchor_unit_id,
+            phase_name=phase_label,
+        ):
+            return False
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "ability_key": "corrupt_realspace",
+                    "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                    "stratagem_name": "CORRUPT REALSPACE",
+                    "tool_id": "stratagem:corrupt_realspace",
+                    "tool_type": "stratagem",
+                    "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                },
+            )
+        ]
+        candidate_unit_ids: list[str] = []
+        for candidate in list(candidates or []):
+            unit_id = self._chaos_daemons_sort_key(candidate)
+            if not unit_id:
+                continue
+            candidate_unit_ids.append(unit_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                    payload={
+                        "unit_id": unit_id,
+                        "target_unit_id": unit_id,
+                        "ability_key": "corrupt_realspace",
+                        "ability_name": str(getattr(stratagem, "name", "") or "CORRUPT REALSPACE"),
+                        "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                        "stratagem_name": "CORRUPT REALSPACE",
+                        "tool_id": "stratagem:corrupt_realspace",
+                        "tool_type": "stratagem",
+                        "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return False
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "CORRUPT REALSPACE: select one LEGIONES DAEMONICA unit controlling an objective marker.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "corrupt_realspace",
+                "ability_name": str(getattr(stratagem, "name", "") or "CORRUPT REALSPACE"),
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "unit_id": anchor_unit_id,
+                "source_unit_id": anchor_unit_id,
+                "candidate_unit_ids": list(candidate_unit_ids),
+                "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "stratagem_name": "CORRUPT REALSPACE",
+                "tool_id": "stratagem:corrupt_realspace",
+                "tool_type": "stratagem",
+                "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                "optional": True,
+            },
+        )
+        return self._chaos_daemons_submit_decision_request(request)
+
+    def _queue_corrupt_realspace_objective_decision(
+        self,
+        *,
+        unit: Any,
+        objectives: List[Any],
+        phase_name: str = "Command phase",
+    ) -> bool:
+        if self.player is None or self.game is None:
+            return False
+        if not bool(getattr(self.game, "is_authoritative", True)):
+            return False
+        stratagem = self.get_by_name("CORRUPT REALSPACE")
+        if stratagem is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        unit_id = self._chaos_daemons_sort_key(root)
+        if root is None or not unit_id:
+            return False
+
+        from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        phase_label = str(phase_name or "").strip() or "Command phase"
+        if self._chaos_daemons_pending_decision_request(
+            decision_type=DECISION_PICK_OBJECTIVE,
+            ability="corrupt_realspace",
+            source_unit_id=unit_id,
+            phase_name=phase_label,
+        ):
+            return False
+
+        sorted_objectives = sorted(list(objectives or []), key=self._chaos_daemons_objective_sort_key)
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "unit_id": unit_id,
+                    "source_unit_id": unit_id,
+                    "ability_key": "corrupt_realspace",
+                    "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                    "stratagem_name": "CORRUPT REALSPACE",
+                    "tool_id": "stratagem:corrupt_realspace",
+                    "tool_type": "stratagem",
+                    "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                },
+            )
+        ]
+        candidate_objective_ids: list[str] = []
+        for objective in list(sorted_objectives or []):
+            objective_id = self._chaos_daemons_objective_id(objective)
+            if not objective_id:
+                continue
+            candidate_objective_ids.append(objective_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(objective, "name", "Objective marker") or "Objective marker"),
+                    payload={
+                        "objective_id": objective_id,
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "ability_key": "corrupt_realspace",
+                        "ability_name": str(getattr(stratagem, "name", "") or "CORRUPT REALSPACE"),
+                        "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                        "stratagem_name": "CORRUPT REALSPACE",
+                        "tool_id": "stratagem:corrupt_realspace",
+                        "tool_type": "stratagem",
+                        "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return False
+
+        request = DecisionRequest.create(
+            DECISION_PICK_OBJECTIVE,
+            f"CORRUPT REALSPACE: select one objective marker controlled by {getattr(root, 'name', 'Unit')}.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "corrupt_realspace",
+                "ability_name": str(getattr(stratagem, "name", "") or "CORRUPT REALSPACE"),
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "candidate_objective_ids": list(candidate_objective_ids),
+                "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "stratagem_name": "CORRUPT REALSPACE",
+                "tool_id": "stratagem:corrupt_realspace",
+                "tool_type": "stratagem",
+                "semantic_tags": ["objective", "control", "hold", "shadow_of_chaos"],
+                "optional": True,
+            },
+        )
+        return self._chaos_daemons_submit_decision_request(request)
+
     def _is_legiones_daemonica_unit(self, unit: Any) -> bool:
         if unit is None:
             return False

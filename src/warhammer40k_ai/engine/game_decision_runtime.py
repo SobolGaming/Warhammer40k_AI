@@ -199,11 +199,11 @@ def request_decision(game, request) -> None:
                     fallback_mode,
                 )
 
+    request.context = ctx
     semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
     ensure_candidate_semantic_metadata(
         request,
         rules_bundle_id=semantic_rules_bundle_id,
     )
-    request.context = ctx
     game.decision_queue.add(request)
     game.event_system.publish("decision_requested", request=request, game=game)

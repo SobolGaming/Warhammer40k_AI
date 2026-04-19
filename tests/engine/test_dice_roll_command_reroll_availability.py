@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decisions import DecisionQueue
+from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_DICE_REROLL
 from warhammer40k_ai.engine.dice_rolls import DiceRollManager
 
 
@@ -138,3 +139,27 @@ def test_command_reroll_option_hidden_when_unavailable_or_used() -> None:
     recomputed = game_enabled.roll_manager._compute_reroll_options(game_enabled, state_enabled)
     recomputed_ids = [str(opt.get("action_id", "")) for opt in list(recomputed or [])]
     assert "command_reroll" not in recomputed_ids
+
+
+def test_command_reroll_request_payload_carries_tool_metadata() -> None:
+    player = _PlayerStub("p3", available=True)
+    unit = _UnitStub("u3")
+    game = _GameStub(player=player, unit=unit)
+
+    _resolve_roll_state(game, player, unit)
+    reroll_request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_SELECT_DICE_REROLL
+    )
+    payload = next(
+        dict(getattr(option, "payload", {}) or {})
+        for option in list(getattr(reroll_request, "options", []) or [])
+        if str(getattr(option, "payload", {}).get("action_id", "") or "") == "command_reroll"
+    )
+
+    assert payload["cp_cost"] == 1
+    assert payload["tool_id"] == "stratagem:command_reroll"
+    assert payload["tool_type"] == "stratagem"
+    assert payload["stratagem_name"] == "COMMAND RE-ROLL"
+    assert payload["ability_key"] == "command_reroll"
