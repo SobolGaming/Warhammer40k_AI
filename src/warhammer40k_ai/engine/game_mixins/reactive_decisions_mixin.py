@@ -4936,6 +4936,7 @@ class GameReactiveDecisionsMixin:
                 "enemy_fall_back_end_normal_move",
                 "post_shoot_no_charge",
                 "blood_surge",
+                "blood_surge_berzerkers_wrath",
                 "brazen_fury",
                 "horde_move",
                 "aggressive_leader_beast",
@@ -4957,8 +4958,6 @@ class GameReactiveDecisionsMixin:
                 return
             payload = getattr(opt, "payload", {}) or {}
             choice = bool(payload.get("choice", False))
-            if not choice:
-                return
             unit_id = str(ctx.get("reactive_move_unit_id") or ctx.get("unit_id") or "")
             unit = self._resolve_unit_by_id(unit_id)
             player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
@@ -4966,6 +4965,48 @@ class GameReactiveDecisionsMixin:
                 return
             source = str(ctx.get("reactive_move_source", "") or "Reactive Move").strip() or "Reactive Move"
             movement_type = str(ctx.get("reactive_move_movement_type", "") or "")
+            if kind == "blood_surge_berzerkers_wrath":
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id) if attacker_unit_id else None
+                stratagem_name = str(ctx.get("stratagem_name", "") or "BERZERKER'S WRATH").strip()
+                phase_name = str(ctx.get("phase_name", "") or "").strip() or "Shooting phase"
+                manager = getattr(player, "stratagems", None)
+                if choice and manager is not None:
+                    try:
+                        ok = bool(
+                            manager.use(
+                                stratagem_name,
+                                target_unit=unit,
+                                attacker_unit=attacker_unit,
+                                phase_name=phase_name,
+                                dequeue=True,
+                            )
+                        )
+                    except Exception:
+                        ok = False
+                    if not ok:
+                        logger.error("Berzerker's Wrath failed; using normal Blood Surge.")
+                elif manager is not None:
+                    dequeue = getattr(manager, "_dequeue_reaction_by_name", None)
+                    if callable(dequeue):
+                        dequeue(stratagem_name)
+                if not unit.can_blood_surge(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_blood_surge_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind="blood_surge",
+                    movement_type=movement_type or "blood_surge",
+                    source=source,
+                )
+                return
+            if not choice:
+                return
             if kind == "tactica_obliqua":
                 moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
                 moving_unit = self._resolve_unit_by_id(moving_unit_id)
@@ -5140,11 +5181,58 @@ class GameReactiveDecisionsMixin:
             if kind == "blood_surge":
                 if not unit.can_blood_surge(game=self, game_map=getattr(self, "map", None)):
                     return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                manager = getattr(player, "stratagems", None)
+                pending_wrath = None
+                get_pending = getattr(manager, "get_pending_reactions", None) if manager is not None else None
+                if callable(get_pending):
+                    attacker_root_id = str(maybe_entity_id(attacker_unit) or "")
+                    unit_root_id = str(maybe_entity_id(unit) or "")
+                    for reaction in list(get_pending() or []):
+                        stratagem_name = str(reaction.get("stratagem", "") or "").replace("\u2019", "'").strip().upper()
+                        if stratagem_name != "BERZERKER'S WRATH":
+                            continue
+                        reaction_unit_id = str(maybe_entity_id(reaction.get("unit")) or maybe_entity_id(reaction.get("target_unit")) or "")
+                        reaction_attacker_id = str(maybe_entity_id(reaction.get("attacker_unit")) or "")
+                        if reaction_unit_id != unit_root_id or reaction_attacker_id != attacker_root_id:
+                            continue
+                        pending_wrath = dict(reaction)
+                        break
+                if pending_wrath is not None:
+                    ability_name = str(pending_wrath.get("stratagem", "") or "Berzerker's Wrath").strip() or "Berzerker's Wrath"
+                    cp_cost = int(pending_wrath.get("cp_cost", 0) or 0)
+                    message = (
+                        f"Use {ability_name} to set Blood Surge distance to 8\" (no roll)?\n"
+                        f"CP cost: {int(cp_cost)}"
+                    )
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="berzerkers_wrath_blood_surge",
+                        ability_name=ability_name,
+                        message=message,
+                        context={
+                            "reactive_move_kind": "blood_surge_berzerkers_wrath",
+                            "reactive_move_unit_id": unit_id,
+                            "reactive_move_attacker_unit_id": attacker_unit_id,
+                            "reactive_move_movement_type": movement_type or "blood_surge",
+                            "reactive_move_source": source,
+                            "phase_name": str(pending_wrath.get("phase_name", "") or "Shooting phase"),
+                            "stratagem_name": str(pending_wrath.get("stratagem", "") or "BERZERKER'S WRATH"),
+                            "cp_cost": int(cp_cost),
+                        },
+                        payload={
+                            "unit_id": unit_id,
+                            "attacker_unit_id": attacker_unit_id,
+                            "phase_name": str(pending_wrath.get("phase_name", "") or "Shooting phase"),
+                            "stratagem_name": str(pending_wrath.get("stratagem", "") or "BERZERKER'S WRATH"),
+                        },
+                        instance_key=f"{unit_id}:{attacker_unit_id}:berzerkers_wrath_blood_surge",
+                    )
+                    return
                 max_distance = int(self.roll_blood_surge_distance(unit) or 0)
                 if max_distance <= 0:
                     return
-                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
-                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
                 self._queue_reactive_move_movement_decision(
                     player=player,
                     unit=unit,
@@ -5634,6 +5722,7 @@ class GameReactiveDecisionsMixin:
             "daemonic_patrons",
             "power_from_pain_command",
             "power_from_pain_empower",
+            "drukhari_realspace_instinctive_spite_pain_token",
             "enhancement_fight_first",
             "umbralefic_crystal",
             "opponent_turn_strategic_reserves",
@@ -9781,6 +9870,59 @@ class GameReactiveDecisionsMixin:
             if mgr is None:
                 return
             mgr.empower_unit_for_trigger(unit, trigger=trigger, game=self)
+            return
+
+        if ability_key == "drukhari_realspace_instinctive_spite_pain_token":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            manager = getattr(player, "stratagems", None)
+            if manager is None:
+                return
+            selected_unit_ids = sorted(
+                {
+                    str(uid or "").strip()
+                    for uid in list(payload.get("selected_unit_ids") or ctx.get("selected_unit_ids") or [])
+                    if str(uid or "").strip()
+                }
+            )
+            if not selected_unit_ids:
+                return
+            selected_units = []
+            for unit_id in list(selected_unit_ids or []):
+                unit = self._resolve_unit_by_id(unit_id)
+                if unit is not None:
+                    selected_units.append(unit)
+            if not selected_units:
+                return
+            candidate_unit_ids = sorted(
+                {
+                    str(uid or "").strip()
+                    for uid in list(payload.get("candidate_unit_ids") or ctx.get("candidate_unit_ids") or [])
+                    if str(uid or "").strip()
+                }
+            )
+            candidates = []
+            for unit_id in list(candidate_unit_ids or []):
+                unit = self._resolve_unit_by_id(unit_id)
+                if unit is not None:
+                    candidates.append(unit)
+            phase_name = str(payload.get("phase_name") or ctx.get("phase_name") or "").strip()
+            stratagem_name = str(payload.get("stratagem_name") or ctx.get("stratagem_name") or "INSTINCTIVE SPITE").strip()
+            use_kwargs = {
+                "selected_units": list(selected_units),
+                "units": list(selected_units),
+                "target_units": list(selected_units),
+                "spend_pain_token": bool(choice),
+            }
+            if phase_name:
+                use_kwargs["phase_name"] = phase_name
+            if candidates:
+                use_kwargs["candidates"] = list(candidates)
+            if len(selected_units) == 1:
+                use_kwargs["unit"] = selected_units[0]
+                use_kwargs["target_unit"] = selected_units[0]
+            manager.use(stratagem_name, **use_kwargs)
             return
 
         if ability_key == "enhancement_fight_first":

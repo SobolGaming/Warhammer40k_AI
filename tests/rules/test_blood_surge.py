@@ -23,6 +23,8 @@ class TestBloodSurge(unittest.TestCase):
         unit.parent_army = army
         unit.faction = faction
         unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.embarked_in = None
         unit.models = []
         unit.keywords = []
         unit.faction_keywords = []
@@ -38,6 +40,7 @@ class TestBloodSurge(unittest.TestCase):
             unit.possible_abilities = [
                 Ability("Blood Surge", "WE", "", "")
             ]
+        unit.is_in_reserves = lambda: False
         return unit
 
     def _make_model(self, name, unit, x, y):
@@ -389,6 +392,78 @@ class TestBloodSurge(unittest.TestCase):
         move_ctx = move_request.context or {}
         self.assertEqual(move_ctx.get("movement_type"), "blood_surge")
         self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
+
+    def test_blood_surge_confirm_yes_queues_wrath_confirmation_before_move(self):
+        army1 = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
+        army1.faction_id = "WE"
+        army2 = Army.with_detachment("Other", detachment_type="Other")
+        army2.faction_id = "OT"
+
+        p1 = Player("P1", PlayerControl.REMOTE, army=army1)
+        p2 = Player("P2", PlayerControl.LOCAL, army=army2)
+
+        bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf, players=[p1, p2])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 1
+        p1.command_points = 1
+
+        attacker = self._make_unit("Shooter", army2, blood_surge=False, faction="A")
+        target = self._make_unit("Berzerkers", army1, blood_surge=True, faction="B")
+        target.keywords = ["KHORNE", "BERZERKERS"]
+        army1.units = [target]
+        army2.units = [attacker]
+
+        attacker_model = self._make_model("Shooter", attacker, 0.0, 0.0)
+        target_model_a = self._make_model("Target A", target, 10.0, 0.0)
+        target_model_b = self._make_model("Target B", target, 12.0, 0.0)
+        attacker.models = [attacker_model]
+        target.models = [target_model_a, target_model_b]
+        game.map.units = [attacker, target]
+        p1.stratagems._current_phase_name = "shooting phase"
+
+        game.event_system.publish(
+            "shooting_targets_selected",
+            attacking_unit=attacker,
+            target_units=[target],
+        )
+        target_model_a.wounds = 0
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={target: 1},
+        )
+        game.event_system.publish(
+            "blood_surge_triggered",
+            player=p1,
+            unit=target,
+            attacker_unit=attacker,
+            phase_name="Shooting phase",
+        )
+
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str((req.context or {}).get("reactive_move_kind", "")) == "blood_surge"
+        )
+        yes_option = next(opt for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False)))
+        resolve_decision_command(game, request, yes_option.option_id, player_id=p1.id)
+
+        pending = list(game.decision_queue.list() or [])
+        self.assertEqual(len(pending), 1)
+        wrath_request = pending[0]
+        self.assertEqual(wrath_request.decision_type, DECISION_CONFIRM_YES_NO)
+        wrath_ctx = wrath_request.context or {}
+        self.assertEqual(str(wrath_ctx.get("ability", "")), "berzerkers_wrath_blood_surge")
+
+        wrath_option = next(opt for opt in list(wrath_request.options or []) if bool((opt.payload or {}).get("choice", False)))
+        resolve_decision_command(game, wrath_request, wrath_option.option_id, player_id=p1.id)
+
+        move_request = game.decision_queue.peek()
+        self.assertEqual(move_request.decision_type, DECISION_MOVE_UNIT)
+        move_ctx = move_request.context or {}
+        self.assertEqual(move_ctx.get("movement_type"), "blood_surge")
+        self.assertEqual(int(move_ctx.get("max_distance") or 0), 8)
 
     def test_blood_surge_move_marks_used(self):
         game, _p1, p2, army1, army2 = self._build_game()

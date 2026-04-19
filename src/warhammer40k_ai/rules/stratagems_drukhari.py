@@ -3265,13 +3265,51 @@ class DrukhariStratagemMixin:
             ):
                 logger.error("ERROR: INSTINCTIVE SPITE: selected unit has already fought this phase")
                 return False
+        source_name = str(getattr(stratagem, "name", "INSTINCTIVE SPITE") or "INSTINCTIVE SPITE")
+        spend_pain_explicit = "spend_pain_token" in kwargs
         spend_pain = bool(kwargs.get("spend_pain_token", False))
+        if not spend_pain_explicit and self._drukhari_can_spend_pain_tokens(1):
+            queue_confirmation = getattr(getattr(self, "game", None), "_queue_optional_ability_confirmation", None)
+            if callable(queue_confirmation):
+                selected_unit_ids = sorted(
+                    {
+                        str(get_entity_id(root) or "").strip()
+                        for root in list(selected_roots or [])
+                        if str(get_entity_id(root) or "").strip()
+                    }
+                )
+                candidate_unit_ids = sorted(
+                    {
+                        str(get_entity_id(self._drukhari_root(unit)) or "").strip()
+                        for unit in list(candidates or [])
+                        if self._drukhari_root(unit) is not None and str(get_entity_id(self._drukhari_root(unit)) or "").strip()
+                    }
+                )
+                queue_confirmation(
+                    player=self.player,
+                    ability_key="drukhari_realspace_instinctive_spite_pain_token",
+                    ability_name="Instinctive Spite",
+                    message=(
+                        "Spend 1 Pain token to also gain +1 to wound against Below Half-strength targets?"
+                    ),
+                    context={
+                        "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                        "stratagem_name": source_name,
+                        "selected_unit_ids": list(selected_unit_ids),
+                        "candidate_unit_ids": list(candidate_unit_ids),
+                    },
+                    payload={
+                        "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                        "stratagem_name": source_name,
+                    },
+                    instance_key=f"{phase_name}:{':'.join(selected_unit_ids)}:instinctive_spite",
+                )
+                return True
         if spend_pain and not self._drukhari_can_spend_pain_tokens(1):
             logger.error("ERROR: INSTINCTIVE SPITE: insufficient Pain tokens")
             return False
         if not self._drukhari_spend_cp(stratagem, target_unit=selected_roots[0]):
             return False
-        source_name = str(getattr(stratagem, "name", "INSTINCTIVE SPITE") or "INSTINCTIVE SPITE")
         if spend_pain and not self._drukhari_spend_pain_tokens(1, reason=source_name):
             logger.error("ERROR: INSTINCTIVE SPITE: failed to spend Pain token")
             return False

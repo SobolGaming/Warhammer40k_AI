@@ -16,6 +16,70 @@ from warhammer40k_ai.engine.ui_decision_bridge import (
     require_pending_decision_request as _require_pending_decision_request,
 )
 
+_SPECIALIZED_CONFIRM_ABILITIES = frozenset(
+    {
+        "berzerkers_wrath_blood_surge",
+        "cabal_channel_warp",
+        "combat_squads",
+        "cult_ambush",
+        "death_vision_of_sanguinius",
+        "enhancement_fight_first",
+        "fight_within_3",
+        "hover_mode",
+        "model_allocated_damage_zero",
+        "opponent_turn_strategic_reserves",
+        "patrol_squad",
+        "power_from_pain_empower",
+        "sensational_performance",
+        "shadow_in_the_warp",
+        "waaagh",
+        "warpmeld_dagger",
+        "watcher_in_the_dark",
+    }
+)
+_SPECIALIZED_CONFIRM_REACTIVE_MOVE_KINDS = frozenset(
+    {
+        "blood_surge",
+        "blood_surge_berzerkers_wrath",
+        "brazen_fury",
+        "horde_move",
+        "loping_speed",
+    }
+)
+_SPECIALIZED_MIRACLE_ABILITIES = frozenset({"acts_of_faith", "miracle_pool_discard"})
+
+
+def _request_lookup_context(context: Optional[dict]) -> dict:
+    lookup = dict(context or {})
+    lookup.pop("message", None)
+    lookup.pop("ui_prompted", None)
+    return lookup
+
+
+def _mark_request_ui_prompted(request, *, message: str = "") -> dict:
+    ctx = dict(getattr(request, "context", {}) or {})
+    prompt_message = str(message or "").strip()
+    if prompt_message and not str(ctx.get("message", "") or "").strip():
+        ctx["message"] = prompt_message
+    ctx["ui_prompted"] = True
+    request.context = ctx
+    return ctx
+
+
+def _confirm_request_requires_specialized_ui(request) -> bool:
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
+    if ability in _SPECIALIZED_CONFIRM_ABILITIES:
+        return True
+    reactive_kind = str(ctx.get("reactive_move_kind", "") or "").strip().lower()
+    return reactive_kind in _SPECIALIZED_CONFIRM_REACTIVE_MOVE_KINDS
+
+
+def _miracle_request_requires_specialized_ui(request) -> bool:
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
+    return ability in _SPECIALIZED_MIRACLE_ABILITIES
+
 # Import UI panels
 from .panels.roster_pane import RosterPane
 from .panels.stratagem_pane import StratagemPane
@@ -2872,17 +2936,16 @@ class GameView:
                 DecisionOption.create(yes_label or "Yes", payload={"choice": True}),
                 DecisionOption.create(no_label or "No", payload={"choice": False}),
             ]
-            ctx = dict(context or {})
-            ctx["message"] = message
-            ctx["ui_prompted"] = True
+            req_context = dict(context or {})
             req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CONFIRM_YES_NO,
                 title or "Confirm",
                 player_id=getattr(player, "id", None) if player is not None else (getattr(self.game.get_current_player(), "id", None) if self.game else None),
                 options=options,
-                context=ctx,
+                context=_request_lookup_context(req_context),
 
             )
+            _mark_request_ui_prompted(req, message=message)
             choice_map = {opt.option_id: bool(opt.payload.get("choice", False)) for opt in options}
 
             def _on_confirm(option_id: str):
@@ -4013,6 +4076,8 @@ class GameView:
             ctx = dict(getattr(request, "context", {}) or {})
             if bool(ctx.get("ui_prompted", False)):
                 return
+            if _confirm_request_requires_specialized_ui(request):
+                return
             player = self._resolve_player_by_id(getattr(request, "player_id", None))
             if player is None:
                 return
@@ -4068,6 +4133,8 @@ class GameView:
         if decision_type == DECISION_USE_MIRACLE_DIE:
             ctx = dict(getattr(request, "context", {}) or {})
             if bool(ctx.get("ui_prompted", False)):
+                return
+            if _miracle_request_requires_specialized_ui(request):
                 return
             player = self._resolve_player_by_id(getattr(request, "player_id", None))
             if player is None:
@@ -8288,7 +8355,18 @@ class GameView:
             self._process_next_optional_ability_prompt(player)
 
         try:
-            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Use",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "ability": "enhancement_fight_first",
+                    "unit_id": get_entity_id(unit),
+                },
+            )
         except Exception:
             _done(False)
 
@@ -9332,7 +9410,19 @@ class GameView:
             self._open_next_opponent_turn_strategic_reserves_prompt(game)
 
         try:
-            self._request_yes_no(title, msg, "Yes", "No", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Yes",
+                "No",
+                _done,
+                player=player,
+                context={
+                    "ability": "opponent_turn_strategic_reserves",
+                    "unit_id": get_entity_id(unit),
+                    "ability_key": str((ability or {}).get("ability_key", "") or ""),
+                },
+            )
         except Exception:
             _done(False)
 
@@ -9987,7 +10077,18 @@ class GameView:
 
         try:
             self._emperors_children_sensational_flow_active = True
-            self._request_yes_no(title, msg, "Use", "Skip", _done)
+            self._request_yes_no(
+                title,
+                msg,
+                "Use",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "ability": "sensational_performance",
+                    "unit_id": get_entity_id(unit),
+                },
+            )
         except Exception:
             self._emperors_children_sensational_flow_active = False
             self._open_next_emperors_children_sensational_prompt(game_ctx)
@@ -10232,7 +10333,19 @@ class GameView:
 
         self._pain_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Use",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "ability": "power_from_pain_empower",
+                    "unit_id": get_entity_id(unit),
+                    "trigger": str(trigger or ""),
+                },
+            )
         except Exception:
             self._pain_flow_active = False
             self._open_next_pain_prompt(game_ctx)
@@ -10374,7 +10487,19 @@ class GameView:
                 _start_blood_surge_move()
 
             try:
-                self._request_yes_no(title2, msg2, "Wrath", "Normal", _wrath_done, player=player)
+                self._request_yes_no(
+                    title2,
+                    msg2,
+                    "Wrath",
+                    "Normal",
+                    _wrath_done,
+                    player=player,
+                    context={
+                        "ability": "berzerkers_wrath_blood_surge",
+                        "unit_id": get_entity_id(unit),
+                        "attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else "",
+                    },
+                )
             except Exception:
                 _start_blood_surge_move()
 
@@ -10389,7 +10514,19 @@ class GameView:
             _start_blood_surge_move()
             return
         try:
-            self._request_yes_no(title, msg, "Surge", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Surge",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "reactive_move_kind": "blood_surge",
+                    "reactive_move_unit_id": get_entity_id(unit),
+                    "reactive_move_attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else "",
+                },
+            )
         except Exception:
             _finish_and_next()
 
@@ -10479,7 +10616,19 @@ class GameView:
 
         self._brazen_fury_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Fury", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Fury",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "reactive_move_kind": "brazen_fury",
+                    "reactive_move_unit_id": get_entity_id(unit),
+                    "reactive_move_attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else "",
+                },
+            )
         except Exception:
             _finish_and_next()
 
@@ -10564,7 +10713,19 @@ class GameView:
 
         self._horde_move_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Move", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Move",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "reactive_move_kind": "horde_move",
+                    "reactive_move_unit_id": get_entity_id(unit),
+                    "reactive_move_attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else "",
+                },
+            )
         except Exception:
             _finish_and_next()
 
@@ -12957,7 +13118,15 @@ class GameView:
 
         self._shadow_in_the_warp_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Use",
+                "Skip",
+                _done,
+                player=player,
+                context={"ability": "shadow_in_the_warp"},
+            )
         except Exception:
             self._shadow_in_the_warp_flow_active = False
             self._open_next_shadow_in_the_warp_prompt(game)
@@ -13025,7 +13194,15 @@ class GameView:
 
         self._waaagh_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Call", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Call",
+                "Skip",
+                _done,
+                player=player,
+                context={"ability": "waaagh"},
+            )
         except Exception:
             self._waaagh_flow_active = False
 
@@ -13183,7 +13360,18 @@ class GameView:
 
         self._cult_ambush_flow_active = True
         try:
-            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
+            self._request_yes_no(
+                title,
+                msg,
+                "Use",
+                "Skip",
+                _done,
+                player=player,
+                context={
+                    "ability": "cult_ambush",
+                    "unit_id": get_entity_id(unit),
+                },
+            )
         except Exception:
             self._cult_ambush_flow_active = False
             self._open_next_cult_ambush_prompt(game_ctx)
@@ -15935,7 +16123,7 @@ class GameView:
             for val in list(values_sorted or [])
         ]
         options.append(DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}))
-        context = {
+        req_context = {
             "unit_id": unit_id,
             "roll_type": str(roll_type or ""),
             "dice_count": int(dice_count or 1),
@@ -15943,20 +16131,19 @@ class GameView:
             "pool": list(values_sorted or []),
             "ability": "acts_of_faith",
             "ability_name": "Acts of Faith",
-            "message": msg,
-            "ui_prompted": True,
         }
         needed = _kwargs.get("needed", None)
         if needed is not None:
-            context["needed"] = int(needed)
+            req_context["needed"] = int(needed)
         req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_USE_MIRACLE_DIE,
             "Select Miracle Die",
             player_id=getattr(player, "id", None),
             options=options,
-            context=context,
+            context=_request_lookup_context(req_context),
 
         )
+        _mark_request_ui_prompted(req, message=msg)
 
         dlg = self.miracle_dice_dialog
         choice_holder = {"choice": None, "done": False}
@@ -22380,50 +22567,7 @@ class GameView:
         context: Dict[str, Any],
         units,
     ) -> None:
-        selected_units = [unit for unit in list(units or []) if unit is not None]
-        if not selected_units:
-            logger.info("Instinctive Spite: no units selected")
-            return
-        pain_mgr = self._get_power_from_pain_manager(player)
-        tokens = int(getattr(pain_mgr, "tokens", 0) or 0) if pain_mgr is not None else 0
-        if tokens <= 0 or not callable(getattr(self, "_request_yes_no", None)):
-            self._finalize_multi_unit_stratagem(
-                player,
-                name,
-                context,
-                selected_units,
-                spend_pain_token=False,
-            )
-            return
-
-        title = "Instinctive Spite"
-        msg = (
-            f"Spend 1 Pain token to also gain +1 to wound against Below Half-strength targets?\n\n"
-            f"Tokens available: {tokens}"
-        )
-
-        def _done(chosen: bool):
-            self._finalize_multi_unit_stratagem(
-                player,
-                name,
-                context,
-                selected_units,
-                spend_pain_token=bool(chosen),
-            )
-
-        self._request_yes_no(
-            title,
-            msg,
-            "Spend",
-            "Skip",
-            _done,
-            player=player,
-            context={
-                "ability": "drukhari_realspace_instinctive_spite_pain_token",
-                "ability_name": "Instinctive Spite",
-                "optional": True,
-            },
-        )
+        self._finalize_multi_unit_stratagem(player, name, context, units)
 
     def _finalize_unit_and_enemy_stratagem(
         self,

@@ -1,13 +1,14 @@
 import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
 class _MockDatasheet:
@@ -279,6 +280,53 @@ class TestDrukhariRealspaceRaidersStratagems(unittest.TestCase):
         )
         self.assertFalse(bool(after_hit.get("hit", False)))
         self.assertFalse(bool(after_wound.get("wound", False)))
+
+    def test_instinctive_spite_queues_pain_token_confirmation_before_applying(self):
+        game, p1, _p2, drukhari_army, enemy_army = _build_game()
+        kabalites = _make_unit(
+            "Kabalite Warriors",
+            keywords=["INFANTRY", "KABAL", "BATTLELINE", "DRUKHARI"],
+            faction_keywords=["DRUKHARI"],
+        )
+        enemy = _make_unit(
+            "Enemy Infantry",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        enemy.is_below_half_strength = lambda: True
+        drukhari_army.add_unit(kabalites)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, kabalites, 10.0, 10.0)
+        _place_unit(game, enemy, 18.0, 10.0)
+        game.rebuild_entity_registry()
+
+        drukhari_army.power_from_pain.tokens = 1
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+
+        ok = p1.stratagems.use(
+            "INSTINCTIVE SPITE",
+            unit=kabalites,
+            phase_name="Shooting phase",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 10)
+        self.assertEqual(int(drukhari_army.power_from_pain.tokens or 0), 1)
+        self.assertFalse(bool(getattr(kabalites, "special_rules", {}).get("drukhari_realspace_instinctive_spite_active", False)))
+
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CONFIRM_YES_NO
+            and str((req.context or {}).get("ability", "") or "") == "drukhari_realspace_instinctive_spite_pain_token"
+        )
+        use_option = next(opt for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False)))
+        resolve_decision_command(game, request, use_option.option_id, player_id=p1.id)
+
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertEqual(int(drukhari_army.power_from_pain.tokens or 0), 0)
+        self.assertTrue(bool(getattr(kabalites, "special_rules", {}).get("drukhari_realspace_instinctive_spite_active", False)))
+        self.assertEqual(int(getattr(kabalites, "special_rules", {}).get("drukhari_realspace_instinctive_spite_wound_bonus", 0) or 0), 1)
 
     def test_dark_harvest_grants_lethal_hits_to_melee_weapons_until_phase_end(self):
         game, p1, _p2, drukhari_army, enemy_army = _build_game()

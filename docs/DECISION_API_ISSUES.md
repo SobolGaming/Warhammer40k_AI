@@ -113,6 +113,27 @@ This note tracks the specific decision-parity regressions audited in this pass.
   choose officer, choose order, choose target. The engine now queues those staged
   requests for local, remote, and headless play instead of publishing a local-only
   prompt flow with no backing `DecisionRequest`.
+- [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:2857)
+  now consumes pending local yes/no and Miracle-die requests by matching only the
+  engine-issued lookup context and then marking the request as `ui_prompted`
+  afterward. The generic `decision_requested` UI path also now stays out of
+  provider-owned and custom local prompt flows (`Blood Surge`, `Brazen Fury`,
+  `Horde Move`, `Hover Mode`, `Fight Within 3"`, `Acts of Faith`, and similar
+  blocking/custom dialogs), so local-human handling no longer races or bypasses
+  those already-issued requests.
+- [reactive_decisions_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/reactive_decisions_mixin.py:4926)
+  now preserves the full local/headless/remote request chain for `Blood Surge`
+  when `BERZERKER'S WRATH` is available. Confirming Blood Surge now emits and
+  settles a second `DECISION_CONFIRM_YES_NO` for the stratagem before the move
+  request is queued, instead of letting local UI ask an unbacked nested question.
+- [stratagems_drukhari.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/stratagems_drukhari.py:3223),
+  [reactive_decisions_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/reactive_decisions_mixin.py:5674),
+  and [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:22563)
+  now keep `Instinctive Spite` on the same engine-owned request chain in every
+  audited path. Selecting the affected Drukhari unit(s) now leads to an emitted
+  `DECISION_CONFIRM_YES_NO` for the optional Pain token spend before the
+  stratagem is applied, instead of the local UI asking that question itself
+  after selection with no backing request.
 
 ## Remaining Known Gaps
 

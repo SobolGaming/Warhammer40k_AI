@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from types import MethodType, SimpleNamespace
 
-from warhammer40k_ai.UI.game_ui import GameView
+from warhammer40k_ai.UI.game_ui import (
+    GameView,
+    _confirm_request_requires_specialized_ui,
+    _mark_request_ui_prompted,
+    _miracle_request_requires_specialized_ui,
+    _request_lookup_context,
+)
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.event.system import EventSystem
 
 
@@ -53,3 +60,103 @@ def test_subscribe_event_hooks_detaches_old_game_on_swap():
 
     assert _subscriber_count(game_one.event_system) == 0
     assert _subscriber_count(game_two.event_system) == first
+
+
+def test_request_lookup_context_strips_ui_only_fields():
+    ctx = {
+        "ability": "shadow_in_the_warp",
+        "unit_id": "u1",
+        "message": "Use it now?",
+        "ui_prompted": True,
+    }
+
+    assert _request_lookup_context(ctx) == {
+        "ability": "shadow_in_the_warp",
+        "unit_id": "u1",
+    }
+
+
+def test_mark_request_ui_prompted_preserves_existing_message():
+    request = DecisionRequest.create(
+        "decision.confirm_yes_no",
+        "Confirm",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Use", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"ability": "shadow_in_the_warp", "message": "Existing"},
+    )
+
+    ctx = _mark_request_ui_prompted(request, message="Replacement")
+
+    assert ctx["message"] == "Existing"
+    assert ctx["ui_prompted"] is True
+    assert request.context["ui_prompted"] is True
+
+
+def test_confirm_request_requires_specialized_ui_for_custom_flows():
+    request = DecisionRequest.create(
+        "decision.confirm_yes_no",
+        "Blood Surge",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Move", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"reactive_move_kind": "blood_surge"},
+    )
+    assert _confirm_request_requires_specialized_ui(request) is True
+
+    request = DecisionRequest.create(
+        "decision.confirm_yes_no",
+        "Hover Mode",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Hover", payload={"choice": True}),
+            DecisionOption.create("Aircraft", payload={"choice": False}),
+        ],
+        context={"ability": "hover_mode", "unit_id": "u1"},
+    )
+    assert _confirm_request_requires_specialized_ui(request) is True
+
+    generic = DecisionRequest.create(
+        "decision.confirm_yes_no",
+        "Generic",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Use", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"ability": "generic_optional"},
+    )
+    assert _confirm_request_requires_specialized_ui(generic) is False
+
+
+def test_miracle_request_requires_specialized_ui_for_provider_owned_flows():
+    acts = DecisionRequest.create(
+        "decision.use_miracle_die",
+        "Select Miracle Die",
+        player_id="p1",
+        options=[DecisionOption.create("6", payload={"die_value": 6})],
+        context={"ability": "acts_of_faith"},
+    )
+    assert _miracle_request_requires_specialized_ui(acts) is True
+
+    discard = DecisionRequest.create(
+        "decision.use_miracle_die",
+        "Discard Miracle Die",
+        player_id="p1",
+        options=[DecisionOption.create("Skip", payload={"action": "skip"})],
+        context={"ability": "miracle_pool_discard"},
+    )
+    assert _miracle_request_requires_specialized_ui(discard) is True
+
+    generic = DecisionRequest.create(
+        "decision.use_miracle_die",
+        "Generic Miracle",
+        player_id="p1",
+        options=[DecisionOption.create("Skip", payload={"action": "skip"})],
+        context={"ability": "generic"},
+    )
+    assert _miracle_request_requires_specialized_ui(generic) is False
