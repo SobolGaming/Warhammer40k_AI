@@ -12437,6 +12437,10 @@ class Game(
                 payload=payload,
                 validate_payload=False,
             )
+            recorder = getattr(self, "_decision_replay_recorder", None)
+            record_post_command = getattr(recorder, "record_post_command", None)
+            if callable(record_post_command):
+                record_post_command(self, command, result)
         return result
 
     def process_command_queue(self, *, limit: int | None = None):

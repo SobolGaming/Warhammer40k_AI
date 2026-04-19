@@ -35,6 +35,10 @@ Canonical runtime module:
   - full DecisionRecord blob (compressed JSON)
 - Step rows are persisted at `decision_resolved`, so nested follow-up decisions keep
   the same parent-before-child ordering that the engine validated at runtime.
+- Successful `RESOLVE_DECISION` commands extend the matching step's `event_end_id`
+  after the authoritative command event is recorded, so the originating
+  `command_applied` event stays attached to the decision it resolved instead of
+  spilling into the next step.
 
 ### `events`
 - Deterministic event log rows referenced by `decision_steps`.

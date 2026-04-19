@@ -138,6 +138,7 @@ class ReplayStoreRecorder:
         self.last_event_id = 0
         self.last_decision_idx = 0
         self._pending_keyframes: dict[str, int] = {}
+        self._pending_command_events: set[str] = set()
         self._ensure_schema()
         self._refresh_offsets()
 
@@ -322,6 +323,22 @@ class ReplayStoreRecorder:
             )
         return True
 
+    def _update_decision_step_event_end(self, decision_id: str, event_end_id: int | None) -> None:
+        if not decision_id or event_end_id is None:
+            return
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE decision_steps
+                SET event_end_id = CASE
+                    WHEN event_end_id IS NULL OR event_end_id < ? THEN ?
+                    ELSE event_end_id
+                END
+                WHERE decision_id = ?
+                """,
+                (int(event_end_id), int(event_end_id), str(decision_id)),
+            )
+
     def record_resolution(
         self,
         game: Game,
@@ -401,6 +418,8 @@ class ReplayStoreRecorder:
         if decision_idx <= 0:
             raise RuntimeError("Failed to persist replay decision step.")
         self.last_decision_idx = max(self.last_decision_idx, decision_idx)
+        if bool(getattr(game, "in_command_context", lambda: False)()):
+            self._pending_command_events.add(str(record.get("decision_id", "") or ""))
         if (decision_idx % self.keyframe_interval) == 0:
             decision_id = str(record.get("decision_id", "") or getattr(request, "decision_id", "") or "")
             if defer_keyframe and decision_id:
@@ -427,6 +446,24 @@ class ReplayStoreRecorder:
             return
         self._write_keyframe(game, decision_idx=int(decision_idx), event_id=int(self.last_event_id))
         self._set_meta({"updated_at": _utc_now()})
+
+    def record_post_command(self, game: Game, command: GameCommand | None, result: Any | None) -> None:
+        if game is None or command is None:
+            return
+        _event_start_id, event_end_id, _events = self._capture_new_events(game)
+        if str(getattr(command, "kind", "") or "") != CMD_RESOLVE_DECISION:
+            return
+        payload = dict(getattr(command, "payload", {}) or {})
+        decision_id = str(payload.get("decision_id", "") or "")
+        if not decision_id:
+            return
+        if not bool(getattr(result, "ok", False)):
+            self._pending_command_events.discard(decision_id)
+            return
+        if decision_id not in self._pending_command_events:
+            return
+        self._pending_command_events.discard(decision_id)
+        self._update_decision_step_event_end(decision_id, event_end_id)
 
     def decision_count(self) -> int:
         with self._connect() as conn:

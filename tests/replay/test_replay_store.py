@@ -377,21 +377,66 @@ def test_replay_store_reconstructs_steps_with_leading_command_events(tmp_path) -
     second_events = reader.get_events_for_decision(2)
 
     assert [str(entry.get("type", "") or "") for entry in first_events[:3]] == [
+        "decision_requested",
+        "decision_resolved",
         "command_applied",
+    ]
+    assert [str(entry.get("type", "") or "") for entry in second_events[:2]] == [
         "decision_requested",
         "decision_resolved",
     ]
-    assert [str(entry.get("type", "") or "") for entry in second_events[:3]] == [
-        "command_applied",
-        "decision_requested",
-        "decision_resolved",
-    ]
+    assert first_events[-1]["payload"]["kind"] == CMD_RESOLVE_DECISION
+    assert first_events[-1]["payload"]["payload"]["decision_id"] == first.decision_id
+    assert all(
+        str(dict(entry.get("payload", {}) or {}).get("kind", "") or "") != TEST_REPLAY_NOP_COMMAND
+        for entry in first_events
+    )
 
     replayed_after_first = reader.reconstruct_game_at_decision(1, strict=True)
     replayed_after_second = reader.reconstruct_game_at_decision(2, strict=True)
 
     assert _canonical_snapshot(replayed_after_first.save_snapshot()) == _canonical_snapshot(expected_after_first)
     assert _canonical_snapshot(replayed_after_second.save_snapshot()) == _canonical_snapshot(expected_after_second)
+
+
+def test_replay_store_persists_trailing_resolve_command_for_final_decision(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "final_resolve_command.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-final-resolve-command",
+        label="Replay Final Resolve Command",
+    )
+
+    request = _queue_confirmation(game, player)
+    result = game.apply_command(
+        GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player.id,
+            payload={
+                "decision_id": request.decision_id,
+                "option_id": request.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+    )
+    assert bool(getattr(result, "ok", False))
+
+    reader = ReplayStoreReader(replay_path)
+    step = reader.get_step(1)
+    events = reader.get_events_for_decision(1)
+
+    assert step.event_end_id is not None
+    assert [str(entry.get("type", "") or "") for entry in events] == [
+        "decision_requested",
+        "decision_resolved",
+        "command_applied",
+    ]
+    assert events[-1]["event_id"] == step.event_end_id
+    assert events[-1]["payload"]["kind"] == CMD_RESOLVE_DECISION
+    assert events[-1]["payload"]["payload"]["decision_id"] == request.decision_id
 
 
 def test_replay_store_preserves_nested_decision_order_for_strict_replay(tmp_path) -> None:
