@@ -357,34 +357,6 @@ class BattleFocusManager:
             except Exception:
                 pass
 
-    def _should_use(self, player, key: str, ctx: dict) -> bool:
-        try:
-            return bool(player._should_use_optional_ability(key, ctx))
-        except Exception:
-            return False
-
-    def _choose_from_options(self, player, key: str, options: list, ctx: dict):
-        try:
-            chooser = getattr(player, "_choose_optional_value", None)
-            if callable(chooser):
-                choice = chooser(key, list(options), dict(ctx or {}))
-                if isinstance(choice, bool):
-                    return None
-                if choice in options:
-                    return choice
-                # Allow selecting by unit name or index if options are units.
-                if isinstance(choice, str):
-                    for opt in options:
-                        if str(getattr(opt, "name", "") or "").strip().lower() == choice.strip().lower():
-                            return opt
-                if isinstance(choice, int):
-                    idx = int(choice)
-                    if 0 <= idx < len(options):
-                        return options[idx]
-        except Exception:
-            pass
-        return None
-
     # ---------------- Query helpers (UI/agents) ----------------
 
     def get_move_maneuver_options(self, unit, action: str, game) -> list[str]:
