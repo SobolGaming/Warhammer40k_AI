@@ -1069,6 +1069,21 @@ class ChaosDaemonsStratagemMixin:
         candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
         return candidates
 
+    def _daemon_incursion_attack_phase_candidates(self, *, phase_name: str) -> List[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in ("shooting phase", "fight phase"):
+            return []
+        candidates: List[Any] = []
+        for unit in list(self._daemon_incursion_battlefield_unit_candidates() or []):
+            round_state = getattr(unit, "round_state", None)
+            if phase_key == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if phase_key == "fight phase" and bool(getattr(round_state, "fought_this_round", False)):
+                continue
+            candidates.append(unit)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
     def _unit_within_shadow_of_chaos(self, unit: Any) -> bool:
         if unit is None or self.game is None:
             return False

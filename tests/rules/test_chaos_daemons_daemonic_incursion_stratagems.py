@@ -1,3 +1,4 @@
+import logging
 import unittest
 from types import SimpleNamespace
 
@@ -389,6 +390,33 @@ def test_denizens_of_the_warp_sets_min_distance_and_expires():
     assert daemon_unit.get_deep_strike_min_distance_override() is None
 
 
+def test_denizens_of_the_warp_phase_only_context_is_not_available():
+    game, daemon_player, _enemy_player, daemon_army, _enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Daemon",
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    daemon_unit.special_rules = {"bearer_unit_deep_strike": True}
+    daemon_unit._ability_cache = {}
+    daemon_unit.reserve_status = "reserves"
+    daemon_unit.deployed = False
+    daemon_army.add_unit(daemon_unit)
+
+    game.turn = 2
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.current_player_index = 0
+
+    stratagem = daemon_player.stratagems.get_by_name("DENIZENS OF THE WARP")
+    availability = daemon_player.stratagems._evaluate_availability(
+        stratagem,
+        {"phase_name": "Movement phase"},
+        is_active_turn=True,
+    )
+
+    assert availability["available"] is False
+    assert availability["reason"] == "Requires valid trigger or target"
+
+
 def test_draught_of_terror_ap_bonus_and_battleshock_rerolls():
     game, daemon_player, _enemy_player, daemon_army, enemy_army = _build_game()
     daemon_unit = _make_unit(
@@ -439,6 +467,57 @@ def test_draught_of_terror_ap_bonus_and_battleshock_rerolls():
         log_roll=False,
     )
     assert "Draught of Terror" in wound_result.get("reroll_full_reasons", [])
+
+
+def test_draught_of_terror_logs_at_info_not_error(caplog):
+    game, daemon_player, _enemy_player, daemon_army, _enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Flesh Hounds",
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    daemon_army.add_unit(daemon_unit)
+
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 0
+
+    with caplog.at_level(logging.INFO, logger="warhammer40k_ai.rules.stratagems"):
+        ok = daemon_player.stratagems.use(
+            "DRAUGHT OF TERROR",
+            unit=daemon_unit,
+            phase_name="Shooting phase",
+        )
+
+    assert ok is True
+    draught_records = [
+        record
+        for record in list(caplog.records or [])
+        if "DRAUGHT OF TERROR:" in str(record.getMessage() or "")
+    ]
+    assert draught_records
+    assert all(record.levelno == logging.INFO for record in draught_records)
+
+
+def test_warp_surge_phase_only_context_is_not_available():
+    game, daemon_player, _enemy_player, daemon_army, _enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Daemon",
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    daemon_army.add_unit(daemon_unit)
+
+    game.phase = SimpleNamespace(name="CHARGE_PHASE")
+    game.current_player_index = 0
+
+    daemon_player.stratagems._unit_within_shadow_of_chaos = lambda unit: unit is daemon_unit
+    stratagem = daemon_player.stratagems.get_by_name("WARP SURGE")
+    availability = daemon_player.stratagems._evaluate_availability(
+        stratagem,
+        {"phase_name": "Charge phase"},
+        is_active_turn=True,
+    )
+
+    assert availability["available"] is False
+    assert availability["reason"] == "Requires valid trigger or target"
 
 
 def test_realm_of_chaos_allows_two_units_within_shadow(monkeypatch):

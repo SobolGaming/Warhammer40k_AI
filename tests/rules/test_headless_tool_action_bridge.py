@@ -59,6 +59,50 @@ def _build_remote_tool_manager():
     return manager, player, game, target_unit
 
 
+def _build_generic_tool_manager(*, stratagem_name: str, descriptor_target: str, context: dict, can_use) -> tuple:
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+        turn=2,
+    )
+    player = SimpleNamespace(
+        id="player:remote",
+        active_secondaries=[],
+        has_control=lambda: False,
+        _has_attached_decision_controller=lambda: True,
+    )
+    stratagem = SimpleNamespace(
+        id=f"stratagem:{stratagem_name.lower().replace(' ', '_')}",
+        name=stratagem_name,
+        description=f"{stratagem_name} test",
+        tool_descriptor=SimpleNamespace(
+            target=descriptor_target,
+            effect="test",
+            effect_params={},
+        ),
+    )
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = game
+    manager.player = player
+    manager._current_phase_name = str(context.get("phase_name", "Shooting phase") or "Shooting phase")
+    manager._skipped_tool_action_signatures = set()
+    manager.get_phase_stratagem_items = lambda: [
+        {
+            "name": stratagem_name,
+            "available": True,
+            "is_reaction": True,
+            "context": dict(context),
+        }
+    ]
+    manager.get_by_name = lambda _name: stratagem
+    manager.can_use = can_use
+    manager._effective_cp_cost = lambda _stratagem, _kwargs=None: 1
+    player.stratagems = manager
+    return manager, player, game, stratagem
+
+
 def test_queue_headless_tool_action_decision_builds_select_tool_action_request() -> None:
     manager, _player, game, target_unit = _build_remote_tool_manager()
 
@@ -77,6 +121,181 @@ def test_queue_headless_tool_action_decision_builds_select_tool_action_request()
     assert payloads[0]["tool_family"] == "stratagem"
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
     assert payloads[1]["action"] == "skip"
+
+
+def test_queue_headless_tool_action_decision_skips_explicit_command_reroll_bridge() -> None:
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="COMMAND RE-ROLL",
+        descriptor_target="target_unit",
+        context={"phase_name": "Fight phase"},
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+
+
+def test_queue_headless_tool_action_decision_skips_under_specified_base_probe_for_targeted_stratagem() -> None:
+    target_unit = SimpleNamespace(id="unit:target", name="Target Unit")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="DENIZENS OF THE WARP",
+        descriptor_target="target_unit",
+        context={
+            "phase_name": "Movement phase",
+            "candidates": [target_unit],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    assert len(payloads) == 2
+    assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
+
+
+def test_queue_headless_tool_action_decision_builds_model_target_from_reaction_context() -> None:
+    unit = SimpleNamespace(id="unit:source", name="Champion Unit")
+    model = SimpleNamespace(id="model:hero", name="Hero", parent_unit=unit)
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="EPIC CHALLENGE",
+        descriptor_target="target_model",
+        context={
+            "phase_name": "Fight phase",
+            "unit": unit,
+            "eligible_models": [model],
+        },
+        can_use=lambda _name, **kwargs: kwargs.get("unit") is unit and kwargs.get("model") is model,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    assert len(payloads) == 2
+    resolved = payloads[0]["resolved_kwargs"]
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == unit.id
+    assert resolved["target_model"]["__entity_ref__"]["id"] == model.id
+
+
+def test_manager_can_use_denizens_requires_selected_unit_context() -> None:
+    reserve_unit = SimpleNamespace(id="unit:reserve", name="Reserve Unit")
+    reserve_unit.get_attached_unit_root = lambda: reserve_unit
+    player = SimpleNamespace(id="player:daemon")
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = player
+    manager.game = SimpleNamespace(get_current_player=lambda: player, turn=2)
+    manager._current_phase_name = "Movement phase"
+    manager._pending_reactions = []
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="DENIZENS OF THE WARP",
+        can_use=lambda *_args, **_kwargs: True,
+    )
+    manager._daemon_incursion_reserve_deep_strike_candidates = lambda: [reserve_unit]
+
+    assert manager.can_use("DENIZENS OF THE WARP", phase_name="Movement phase") is False
+    assert manager.can_use("DENIZENS OF THE WARP", phase_name="Movement phase", unit=reserve_unit) is True
+
+
+def test_manager_can_use_epic_challenge_requires_explicit_model_when_multiple_are_eligible() -> None:
+    unit = SimpleNamespace(id="unit:source", name="Champion Unit", models=[])
+    model_a = SimpleNamespace(id="model:a", name="Hero A", parent_unit=unit, is_character=True)
+    model_b = SimpleNamespace(id="model:b", name="Hero B", parent_unit=unit, is_character=True)
+    unit.models = [model_a, model_b]
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = SimpleNamespace(id="player:champion")
+    manager.game = SimpleNamespace()
+    manager._current_phase_name = "Fight phase"
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="EPIC CHALLENGE",
+        can_use=lambda *_args, **_kwargs: True,
+    )
+    manager._pending_reactions = [
+        {
+            "stratagem": "EPIC CHALLENGE",
+            "phase_name": "Fight phase",
+            "unit": unit,
+            "target_unit": unit,
+            "eligible_models": [model_a, model_b],
+            "model_candidates": [model_a, model_b],
+        }
+    ]
+
+    assert manager.can_use("EPIC CHALLENGE", phase_name="Fight phase") is False
+    assert manager.can_use("EPIC CHALLENGE", phase_name="Fight phase", unit=unit, model=model_a) is True
+
+
+def test_manager_can_use_grenade_requires_unit_and_enemy_context() -> None:
+    grenadier = SimpleNamespace(id="unit:grenadier", name="Grenadier")
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy")
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = SimpleNamespace(id="player:grenade")
+    manager.game = SimpleNamespace()
+    manager._current_phase_name = "Shooting phase"
+    manager._pending_reactions = []
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="GRENADE",
+        can_use=lambda *_args, **_kwargs: True,
+    )
+    manager._grenade_phase_action_context = lambda: {
+        "candidates": [grenadier],
+        "enemy_candidates": [enemy],
+        "enemy_candidates_by_unit": {grenadier.id: [enemy]},
+    }
+
+    assert manager.can_use("GRENADE", phase_name="Shooting phase") is False
+    assert manager.can_use("GRENADE", phase_name="Shooting phase", unit=grenadier) is False
+    assert manager.can_use("GRENADE", phase_name="Shooting phase", unit=grenadier, enemy_unit=enemy) is True
+
+
+def test_manager_can_use_tank_shock_requires_vehicle_and_enemy_context() -> None:
+    charger = SimpleNamespace(id="unit:charger", name="Tank", is_vehicle=True)
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy", is_alive=lambda: True)
+    player = SimpleNamespace(id="player:tank")
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = player
+    manager.game = SimpleNamespace(
+        get_current_player=lambda: player,
+        map=SimpleNamespace(is_within_engagement_range=lambda left, right: left is charger and right is enemy),
+    )
+    manager._current_phase_name = "Charge phase"
+    manager._pending_reactions = []
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="TANK SHOCK",
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.can_use("TANK SHOCK", phase_name="Charge phase") is False
+    assert manager.can_use("TANK SHOCK", phase_name="Charge phase", unit=charger) is False
+    assert manager.can_use(
+        "TANK SHOCK",
+        phase_name="Charge phase",
+        unit=charger,
+        enemy_unit=enemy,
+        eligible_enemy_units=[enemy],
+    ) is True
+
+
+def test_manager_can_use_warp_surge_requires_selected_unit_context() -> None:
+    daemon = SimpleNamespace(id="unit:daemon", name="Daemon")
+    daemon.get_attached_unit_root = lambda: daemon
+    player = SimpleNamespace(id="player:warp")
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = player
+    manager.game = SimpleNamespace(get_current_player=lambda: player)
+    manager._current_phase_name = "Charge phase"
+    manager._pending_reactions = []
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="WARP SURGE",
+        can_use=lambda *_args, **_kwargs: True,
+    )
+    manager._is_legiones_daemonica_unit = lambda unit: unit is daemon
+    manager._unit_within_shadow_of_chaos = lambda unit: unit is daemon
+    manager._daemon_incursion_battlefield_unit_candidates = lambda: [daemon]
+
+    assert manager.can_use("WARP SURGE", phase_name="Charge phase") is False
+    assert manager.can_use("WARP SURGE", phase_name="Charge phase", unit=daemon) is True
 
 
 def test_apply_select_tool_action_uses_stratagem_and_clears_skip_marker() -> None:

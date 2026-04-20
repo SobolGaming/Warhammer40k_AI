@@ -3529,14 +3529,28 @@ class StratagemManager(
         return bool(has_controller()) if callable(has_controller) else False
 
     @staticmethod
+    def _tool_action_is_explicitly_supported(item: Dict[str, Any]) -> bool:
+        name_u = str(item.get("name", "") or "").strip().upper()
+        return name_u in {
+            "COMMAND RE-ROLL",
+            "CORRUPT REALSPACE",
+            "FIRE OVERWATCH",
+            "NEW ORDERS",
+        }
+
+    @staticmethod
     def _tool_action_helper_context_keys() -> set[str]:
         return {
             "candidates",
             "source_candidates",
             "enemy_candidates",
+            "eligible_enemy_units",
             "objective_candidates",
             "objective_candidates_by_unit",
             "enemy_candidates_by_unit",
+            "model_candidates",
+            "model_candidates_by_unit",
+            "eligible_models",
             "support_candidates_by_unit",
             "transport_candidates_by_unit",
             "war_dog_candidates",
@@ -3751,6 +3765,66 @@ class StratagemManager(
                 raise
         return str(value)
 
+    @staticmethod
+    def _tool_action_base_probe_allowed(
+        *,
+        base_ctx: Dict[str, Any],
+        original_ctx: Dict[str, Any],
+        explicit_unit: Any,
+        explicit_enemy: Any,
+        explicit_objective: Any,
+        explicit_transport: Any,
+        explicit_terrain: Any,
+        explicit_choice: Any,
+        explicit_secondary: Any,
+        explicit_model: Any,
+        descriptor_target: str,
+    ) -> bool:
+        target_text = str(descriptor_target or "").strip().lower()
+        descriptor_candidates = bool(original_ctx.get("candidates") or original_ctx.get("source_candidates"))
+        enemy_candidates = bool(original_ctx.get("enemy_candidates") or original_ctx.get("enemy_candidates_by_unit"))
+        objective_candidates = bool(original_ctx.get("objective_candidates") or original_ctx.get("objective_candidates_by_unit"))
+        transport_candidates = bool(original_ctx.get("transport_candidates") or original_ctx.get("transport_candidates_by_unit"))
+        terrain_candidates = bool(original_ctx.get("terrain_candidates"))
+        model_candidates = bool(original_ctx.get("model_candidates") or original_ctx.get("model_candidates_by_unit") or original_ctx.get("eligible_models"))
+        needs_unit = explicit_unit is None and (
+            descriptor_candidates
+            or "target_unit" in target_text
+            or "source_unit" in target_text
+            or target_text in {"unit", "friendly_unit"}
+        )
+        needs_enemy = explicit_enemy is None and (
+            enemy_candidates
+            or "enemy_unit" in target_text
+            or "target_enemy_unit" in target_text
+            or "attacker_unit" in target_text
+        )
+        needs_objective = explicit_objective is None and (objective_candidates or "objective" in target_text)
+        needs_transport = explicit_transport is None and (transport_candidates or "transport" in target_text or "embarked" in target_text)
+        needs_terrain = explicit_terrain is None and (terrain_candidates or "terrain" in target_text)
+        needs_secondary = explicit_secondary is None and bool(original_ctx.get("secondary_candidates"))
+        needs_choice = explicit_choice in (None, "") and (
+            bool(original_ctx.get("allowed_choice_keys") or [])
+        )
+        needs_model = explicit_model is None and (model_candidates or "model" in target_text)
+        needs_miracle_discard = (
+            bool(original_ctx.get("requires_miracle_dice_discard"))
+            and not bool(base_ctx.get("miracle_dice_to_discard"))
+        )
+        return not any(
+            (
+                needs_unit,
+                needs_enemy,
+                needs_objective,
+                needs_transport,
+                needs_terrain,
+                needs_secondary,
+                needs_choice,
+                needs_model,
+                needs_miracle_discard,
+            )
+        )
+
     def _tool_action_add_probe(
         self,
         *,
@@ -3820,14 +3894,7 @@ class StratagemManager(
 
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
-
-        self._tool_action_add_probe(
-            specs=specs,
-            seen=seen,
-            stratagem=stratagem,
-            item=item,
-            kwargs=base_ctx,
-        )
+        descriptor_target = str(getattr(getattr(stratagem, "tool_descriptor", None), "target", "") or "")
 
         explicit_unit = base_ctx.get("unit") or base_ctx.get("target_unit")
         explicit_enemy = base_ctx.get("enemy_unit") or base_ctx.get("target_enemy_unit")
@@ -3836,37 +3903,38 @@ class StratagemManager(
         explicit_terrain = base_ctx.get("terrain_feature") or base_ctx.get("terrain")
         explicit_choice = base_ctx.get("choice_key") or base_ctx.get("override_key")
         explicit_secondary = base_ctx.get("secondary_card")
+        explicit_model = base_ctx.get("model") or base_ctx.get("target_model")
 
         friendly_units = self._tool_action_root_units(
             list(original_ctx.get("candidates") or [])
             or list(original_ctx.get("source_candidates") or [])
-            or self._tool_action_friendly_units()
+            or ([explicit_unit] if explicit_unit is not None else [])
         )
         source_units = self._tool_action_root_units(
             list(original_ctx.get("source_candidates") or [])
             or ([explicit_unit] if explicit_unit is not None else [])
-            or friendly_units
         )
         enemy_units = self._tool_action_root_units(
             list(original_ctx.get("enemy_candidates") or [])
             or ([explicit_enemy] if explicit_enemy is not None else [])
-            or self._tool_action_enemy_units()
         )
         objectives = list(original_ctx.get("objective_candidates") or [])
         if not objectives and explicit_objective is not None:
             objectives = [explicit_objective]
-        if not objectives:
-            objectives = self._tool_action_objectives()
         objectives = [objective for objective in objectives if objective is not None]
         objectives.sort(key=self._tool_action_sort_key)
-        terrains = [explicit_terrain] if explicit_terrain is not None else self._tool_action_terrain_features()
+        terrains = [explicit_terrain] if explicit_terrain is not None else list(original_ctx.get("terrain_candidates") or [])
         terrains = [terrain for terrain in terrains if terrain is not None]
         terrains.sort(key=self._tool_action_sort_key)
-        transports = [explicit_transport] if explicit_transport is not None else self._tool_action_transports()
+        transports = [explicit_transport] if explicit_transport is not None else list(original_ctx.get("transport_candidates") or [])
         transports = [transport for transport in transports if transport is not None]
         transports.sort(key=self._tool_action_sort_key)
-        embarked_units = self._tool_action_embarked_units()
-        secondary_cards = [explicit_secondary] if explicit_secondary is not None else self._tool_action_secondary_cards()
+        embarked_units = list(original_ctx.get("embarked_candidates") or [])
+        secondary_cards = [explicit_secondary] if explicit_secondary is not None else list(original_ctx.get("secondary_candidates") or [])
+        model_candidates = list(original_ctx.get("model_candidates") or original_ctx.get("eligible_models") or [])
+        model_candidates_by_unit = dict(original_ctx.get("model_candidates_by_unit") or {})
+        if explicit_unit is not None and not model_candidates and hasattr(model_candidates_by_unit, "get"):
+            model_candidates = list(model_candidates_by_unit.get(self._tool_action_sort_key(explicit_unit)) or [])
         miracle_pool = self._tool_action_miracle_dice_pool(original_ctx)
 
         objective_by_unit = dict(original_ctx.get("objective_candidates_by_unit") or {})
@@ -3874,6 +3942,27 @@ class StratagemManager(
         support_by_unit = dict(original_ctx.get("support_candidates_by_unit") or {})
         transport_by_unit = dict(original_ctx.get("transport_candidates_by_unit") or {})
         allowed_choice_keys = list(original_ctx.get("allowed_choice_keys") or [])
+
+        if self._tool_action_base_probe_allowed(
+            base_ctx=base_ctx,
+            original_ctx=original_ctx,
+            explicit_unit=explicit_unit,
+            explicit_enemy=explicit_enemy,
+            explicit_objective=explicit_objective,
+            explicit_transport=explicit_transport,
+            explicit_terrain=explicit_terrain,
+            explicit_choice=explicit_choice,
+            explicit_secondary=explicit_secondary,
+            explicit_model=explicit_model,
+            descriptor_target=descriptor_target,
+        ):
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs=base_ctx,
+            )
 
         if explicit_unit is None:
             for unit in friendly_units:
@@ -3889,6 +3978,27 @@ class StratagemManager(
                         "target_unit": unit,
                     },
                     label_suffix=label_suffix,
+                )
+
+        for unit_key, unit_model_candidates in model_candidates_by_unit.items():
+            unit_id = self._tool_action_sort_key(unit_key)
+            unit = next((candidate for candidate in friendly_units if self._tool_action_sort_key(candidate) == unit_id), None)
+            if unit is None:
+                continue
+            for model in list(unit_model_candidates or []):
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                        "model": model,
+                        "target_model": model,
+                    },
+                    label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(model)}",
                 )
 
         for unit_key, unit_objective_candidates in objective_by_unit.items():
@@ -3981,19 +4091,23 @@ class StratagemManager(
                     label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(transport)}",
                 )
 
-        needs_enemy = explicit_enemy is None and (
-            "enemy" in text_blob or "opponent" in text_blob or "attacker" in text_blob or "target_enemy_unit" in text_blob
+        target_text = descriptor_target.strip().lower()
+        needs_enemy = explicit_enemy is None and bool(enemy_units) and (
+            bool(original_ctx.get("enemy_candidates") or []) or bool(enemy_by_unit) or "enemy" in target_text or "attacker" in target_text
         )
-        needs_objective = explicit_objective is None and "objective" in text_blob
-        needs_terrain = explicit_terrain is None and "terrain" in text_blob
-        needs_transport = explicit_transport is None and (
-            "transport" in text_blob or "embarked" in text_blob or "passenger" in text_blob
+        needs_objective = explicit_objective is None and bool(objectives) and (
+            bool(original_ctx.get("objective_candidates") or []) or bool(objective_by_unit) or "objective" in target_text
         )
-        needs_secondary = explicit_secondary is None and "secondary" in text_blob
-        needs_choice = explicit_choice in (None, "") and (
-            bool(allowed_choice_keys) or "choice_key" in text_blob or "override" in text_blob or "halo" in text_blob
+        needs_terrain = explicit_terrain is None and bool(terrains) and (
+            bool(original_ctx.get("terrain_candidates") or []) or "terrain" in target_text
         )
-        needs_miracle_discard = "miracle" in text_blob and "discard" in text_blob
+        needs_transport = explicit_transport is None and bool(transports) and (
+            bool(original_ctx.get("transport_candidates") or []) or bool(transport_by_unit) or "transport" in target_text or "embarked" in target_text
+        )
+        needs_secondary = explicit_secondary is None and bool(secondary_cards) and bool(original_ctx.get("secondary_candidates"))
+        needs_choice = explicit_choice in (None, "") and bool(allowed_choice_keys)
+        needs_model = explicit_model is None and bool(model_candidates)
+        needs_miracle_discard = bool(original_ctx.get("requires_miracle_dice_discard")) and bool(miracle_pool)
 
         candidate_units = [explicit_unit] if explicit_unit is not None else friendly_units
         candidate_sources = [explicit_unit] if explicit_unit is not None else source_units
@@ -4149,6 +4263,25 @@ class StratagemManager(
                     label_suffix=choice_key.replace("_", " ").title(),
                 )
 
+        if needs_model:
+            for model in list(model_candidates or []):
+                probe_kwargs = {
+                    **base_ctx,
+                    "model": model,
+                    "target_model": model,
+                }
+                if explicit_unit is not None:
+                    probe_kwargs["unit"] = explicit_unit
+                    probe_kwargs["target_unit"] = explicit_unit
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs=probe_kwargs,
+                    label_suffix=self._tool_action_label_value(model),
+                )
+
         if needs_miracle_discard and miracle_pool:
             max_pick = min(3, len(miracle_pool))
             seen_dice: set[tuple[int, ...]] = set()
@@ -4259,6 +4392,7 @@ class StratagemManager(
             item
             for item in list(self.get_phase_stratagem_items() or [])
             if bool(item.get("available", False))
+            and not self._tool_action_is_explicitly_supported(item)
             and (not reactions_only or bool(item.get("is_reaction", False)))
         ]
         if not items:
@@ -6059,6 +6193,214 @@ class StratagemManager(
                 member_threshold = 3
             threshold = min(int(threshold), int(max(2, member_threshold)))
         return int(max(2, threshold))
+
+    def _grenade_unit_is_eligible(self, unit) -> bool:
+        if unit is None:
+            return False
+        alive_attr = getattr(unit, "is_alive", None)
+        if callable(alive_attr):
+            if not bool(alive_attr()):
+                return False
+        elif not bool(getattr(unit, "is_alive", True)):
+            return False
+        if not bool(getattr(unit, "deployed", False)):
+            return False
+        has_keyword = getattr(unit, "has_keyword", None)
+        if not callable(has_keyword) or not bool(has_keyword("Grenades")):
+            return False
+        round_state = getattr(unit, "round_state", None)
+        if bool(getattr(round_state, "advanced_this_round", False)):
+            return False
+        if bool(getattr(round_state, "fell_back_this_round", False)):
+            return False
+        if bool(getattr(round_state, "shot_this_round", False)):
+            return False
+        special_rules = getattr(unit, "special_rules", None)
+        if isinstance(special_rules, dict) and special_rules.get("grenade_pack_flyover_no_grenade_turn_owner"):
+            owner = str(special_rules.get("grenade_pack_flyover_no_grenade_turn_owner") or "")
+            turn = int(special_rules.get("grenade_pack_flyover_no_grenade_turn", 0) or 0)
+            current_player = getattr(self, "player", None)
+            if owner and current_player is not None:
+                current_player_id = str(getattr(current_player, "id", "") or "")
+                if owner == current_player_id and int(getattr(self.game, "turn", 0) or 0) == turn:
+                    return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return True
+        for enemy in list(game_map.get_enemy_units(unit) or []):
+            if enemy is None:
+                continue
+            enemy_alive = getattr(enemy, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    continue
+            elif not bool(getattr(enemy, "is_alive", True)):
+                continue
+            if game_map.is_within_engagement_range(unit, enemy):
+                return False
+        return True
+
+    def _grenade_enemy_within_friendly_engagement(self, enemy_unit) -> bool:
+        if enemy_unit is None or self.player is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return False
+        army = self.player.get_army()
+        if army is None:
+            return False
+        seen: set[str] = set()
+        for friendly in list(getattr(army, "units", []) or []):
+            get_root = getattr(friendly, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else friendly
+            if root is None:
+                continue
+            uid = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            alive_attr = getattr(root, "is_alive", None)
+            if callable(alive_attr):
+                if not bool(alive_attr()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            if game_map.is_within_engagement_range(root, enemy_unit):
+                return True
+        return False
+
+    def _grenade_enemy_visible_from_unit(self, unit, enemy_unit) -> bool:
+        if unit is None or enemy_unit is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return True
+        get_source_models = getattr(unit, "get_models_for_collision", None)
+        source_models = list(get_source_models() or []) if callable(get_source_models) else list(getattr(unit, "models", []) or [])
+        get_enemy_models = getattr(enemy_unit, "get_models_for_collision", None)
+        enemy_models = list(get_enemy_models() or []) if callable(get_enemy_models) else list(getattr(enemy_unit, "models", []) or [])
+        for model in list(source_models or []):
+            model_alive = getattr(model, "is_alive", None)
+            if callable(model_alive):
+                if not bool(model_alive()):
+                    continue
+            elif not bool(getattr(model, "is_alive", True)):
+                continue
+            for target_model in list(enemy_models or []):
+                target_alive = getattr(target_model, "is_alive", None)
+                if callable(target_alive):
+                    if not bool(target_alive()):
+                        continue
+                elif not bool(getattr(target_model, "is_alive", True)):
+                    continue
+                if game_map.can_model_see_model(model, target_model):
+                    return True
+        return False
+
+    def _grenade_enemy_within_range(self, unit, enemy_unit, *, max_range: float) -> bool:
+        if unit is None or enemy_unit is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return True
+        distance = float(game_map.get_distance_between_units(unit, enemy_unit) or 0.0)
+        return distance <= float(max_range)
+
+    def _grenade_extended_range_profile(self, unit) -> tuple[bool, float, str]:
+        gheistskull_available = self._unit_can_use_gheistskull_grenade_range_override(
+            unit,
+            stratagem_name="GRENADE",
+        )
+        gheistskull_rule = self._unit_gheistskull_grenade_rule(unit) if gheistskull_available else None
+        gheistskull_range = 18.0
+        gheistskull_source = ""
+        if isinstance(gheistskull_rule, dict):
+            raw_range = gheistskull_rule.get("range", 18.0)
+            if isinstance(raw_range, (int, float)):
+                gheistskull_range = float(raw_range)
+            gheistskull_source = str(gheistskull_rule.get("source", "") or "Gheistskull").strip() or "Gheistskull"
+        if gheistskull_range <= 8.0:
+            gheistskull_available = False
+        return bool(gheistskull_available), float(gheistskull_range), gheistskull_source
+
+    def _grenade_enemy_candidates_for_unit(self, unit) -> List[Any]:
+        if not self._grenade_unit_is_eligible(unit):
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        gheistskull_available, gheistskull_range, _gheistskull_source = self._grenade_extended_range_profile(unit)
+        valid_enemies: List[Any] = []
+        for enemy in list(game_map.get_enemy_units(unit) or []):
+            if enemy is None:
+                continue
+            enemy_alive = getattr(enemy, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    continue
+            elif not bool(getattr(enemy, "is_alive", True)):
+                continue
+            if self._grenade_enemy_within_friendly_engagement(enemy):
+                continue
+            if not self._grenade_enemy_visible_from_unit(unit, enemy):
+                continue
+            if self._grenade_enemy_within_range(unit, enemy, max_range=8.0):
+                valid_enemies.append(enemy)
+                continue
+            if gheistskull_available and self._grenade_enemy_within_range(unit, enemy, max_range=gheistskull_range):
+                valid_enemies.append(enemy)
+        valid_enemies.sort(key=lambda enemy: str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or ""))
+        return valid_enemies
+
+    def _grenade_phase_action_context(self) -> Dict[str, Any]:
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            return {}
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player or self.player is None:
+            return {}
+        army = self.player.get_army()
+        if army is None:
+            return {}
+        candidates: List[Any] = []
+        enemy_candidates_by_unit: Dict[str, List[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            uid = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            enemy_candidates = self._grenade_enemy_candidates_for_unit(root)
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            if uid:
+                enemy_candidates_by_unit[uid] = list(enemy_candidates)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or getattr(unit, "id", getattr(unit, "_id", "")) or ""))
+        enemy_union: List[Any] = []
+        seen_enemy: set[str] = set()
+        for enemy_list in list(enemy_candidates_by_unit.values() or []):
+            for enemy in list(enemy_list or []):
+                enemy_id = str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or "")
+                if enemy_id and enemy_id in seen_enemy:
+                    continue
+                if enemy_id:
+                    seen_enemy.add(enemy_id)
+                enemy_union.append(enemy)
+        enemy_union.sort(key=lambda enemy: str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or ""))
+        return {
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_candidates_by_unit,
+            "enemy_candidates": enemy_union,
+        }
 
     def _evaluate_availability(
         self,
@@ -10306,7 +10648,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a visible non-TITANIC enemy unit within 36\" of the selected source unit"
             return result
-        if stratagem.can_use(self.player, self.game, **context):
+        if self.can_use(stratagem.name, **context):
             result["available"] = True
             result["reason"] = None
             return result
@@ -17755,7 +18097,17 @@ class StratagemManager(
                 "stratagem": s.name,
                 "cp_cost": s.cp_cost,
                 "unit": unit,
+                "target_unit": unit,
                 "eligible_models": models,
+                "model_candidates": models,
+                **(
+                    {
+                        "model": models[0],
+                        "target_model": models[0],
+                    }
+                    if len(models) == 1
+                    else {}
+                ),
             })
 
         def _queue_peerless_warrior() -> None:
@@ -21422,11 +21774,248 @@ class StratagemManager(
                 return s
         return None
 
+    @staticmethod
+    def _can_use_context_unit(kwargs: Dict[str, Any]) -> Any:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        if unit is not None:
+            return unit
+        candidates = list(kwargs.get("candidates") or [])
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    @staticmethod
+    def _can_use_context_enemy(kwargs: Dict[str, Any], *, unit: Any = None) -> Any:
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        if enemy_unit is not None:
+            return enemy_unit
+        enemy_candidates_by_unit = dict(kwargs.get("enemy_candidates_by_unit") or {})
+        if unit is not None:
+            unit_id = str(get_entity_id(unit) or getattr(unit, "id", getattr(unit, "_id", "")) or "")
+            if unit_id:
+                unit_enemy_candidates = list(enemy_candidates_by_unit.get(unit_id) or [])
+                if len(unit_enemy_candidates) == 1:
+                    return unit_enemy_candidates[0]
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        if len(enemy_candidates) == 1:
+            return enemy_candidates[0]
+        return None
+
+    @staticmethod
+    def _can_use_context_root(unit: Any) -> Any:
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            return get_root()
+        return unit
+
+    @staticmethod
+    def _can_use_context_matches(left: Any, right: Any) -> bool:
+        if left is None or right is None:
+            return False
+        left_id = str(get_entity_id(left) or getattr(left, "id", getattr(left, "_id", "")) or "")
+        right_id = str(get_entity_id(right) or getattr(right, "id", getattr(right, "_id", "")) or "")
+        if left_id and right_id:
+            return left_id == right_id
+        return left is right
+
+    def _can_use_denizens_of_warp(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        unit = self._can_use_context_unit(kwargs)
+        root = self._can_use_context_root(unit)
+        if root is None:
+            return False
+        for candidate in list(self._daemon_incursion_reserve_deep_strike_candidates() or []):
+            if self._can_use_context_matches(candidate, root):
+                return True
+        return False
+
+    def _can_use_draught_of_terror(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        phase_key = phase_name.lower()
+        if phase_key not in ("shooting phase", "fight phase"):
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "shooting phase" and active_player is not self.player:
+            return False
+        unit = self._can_use_context_unit(kwargs)
+        root = self._can_use_context_root(unit)
+        if root is None:
+            return False
+        for candidate in list(self._daemon_incursion_attack_phase_candidates(phase_name=phase_name) or []):
+            if self._can_use_context_matches(candidate, root):
+                return True
+        return False
+
+    def _can_use_epic_challenge(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        model = kwargs.get("model") or kwargs.get("target_model")
+        matching_reaction = None
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "EPIC CHALLENGE":
+                continue
+            reaction_unit = reaction.get("unit") or reaction.get("target_unit")
+            if unit is not None and reaction_unit is not None and not self._can_use_context_matches(reaction_unit, unit):
+                continue
+            matching_reaction = reaction
+            if unit is None:
+                unit = reaction_unit
+            if model is None:
+                reaction_model = reaction.get("model") or reaction.get("target_model")
+                if reaction_model is not None:
+                    model = reaction_model
+                else:
+                    eligible_models = list(reaction.get("eligible_models") or reaction.get("model_candidates") or [])
+                    if len(eligible_models) == 1:
+                        model = eligible_models[0]
+            break
+        if matching_reaction is None or unit is None or model is None:
+            return False
+        try:
+            if getattr(model, "parent_unit", None) is not unit and model not in list(getattr(unit, "models", []) or []):
+                return False
+        except Exception:
+            raise
+        try:
+            if bool(getattr(model, "is_character", False)):
+                return True
+            parent_unit = getattr(model, "parent_unit", None)
+            has_keyword_local = getattr(parent_unit, "has_keyword_local", None)
+            if callable(has_keyword_local):
+                return bool(has_keyword_local("Character"))
+            keywords = list(getattr(parent_unit, "keywords", []) or [])
+            if keywords:
+                return "character" in [str(keyword).lower() for keyword in keywords]
+            return bool(getattr(parent_unit, "is_character", False))
+        except Exception:
+            raise
+
+    def _can_use_grenade(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            return False
+        context = dict(self._grenade_phase_action_context() or {})
+        unit = self._can_use_context_root(self._can_use_context_unit(kwargs))
+        if unit is None:
+            return False
+        candidates = list(context.get("candidates") or [])
+        selected_unit = None
+        for candidate in candidates:
+            if self._can_use_context_matches(candidate, unit):
+                selected_unit = candidate
+                break
+        if selected_unit is None:
+            if not self._grenade_unit_is_eligible(unit):
+                return False
+            selected_unit = unit
+        enemy_unit = self._can_use_context_enemy(kwargs, unit=selected_unit)
+        if enemy_unit is None:
+            return False
+        unit_id = str(get_entity_id(selected_unit) or getattr(selected_unit, "id", getattr(selected_unit, "_id", "")) or "")
+        valid_enemies = list(dict(context.get("enemy_candidates_by_unit") or {}).get(unit_id) or [])
+        if not valid_enemies:
+            valid_enemies = list(context.get("enemy_candidates") or [])
+        if not valid_enemies:
+            valid_enemies = list(self._grenade_enemy_candidates_for_unit(selected_unit) or [])
+        if not valid_enemies:
+            enemy_alive = getattr(enemy_unit, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    return False
+            elif not bool(getattr(enemy_unit, "is_alive", True)):
+                return False
+            if self._grenade_enemy_within_friendly_engagement(enemy_unit):
+                return False
+            if not self._grenade_enemy_visible_from_unit(selected_unit, enemy_unit):
+                return False
+            if self._grenade_enemy_within_range(selected_unit, enemy_unit, max_range=8.0):
+                return True
+            gheistskull_available, gheistskull_range, _gheistskull_source = self._grenade_extended_range_profile(selected_unit)
+            return bool(gheistskull_available and self._grenade_enemy_within_range(selected_unit, enemy_unit, max_range=gheistskull_range))
+        for candidate in valid_enemies:
+            if self._can_use_context_matches(candidate, enemy_unit):
+                return True
+        return False
+
+    def _can_use_tank_shock(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        unit = self._can_use_context_root(self._can_use_context_unit(kwargs))
+        if unit is None or not bool(getattr(unit, "is_vehicle", False)):
+            return False
+        enemy_unit = self._can_use_context_enemy(kwargs, unit=unit)
+        eligible_enemies = list(kwargs.get("eligible_enemy_units") or [])
+        if not eligible_enemies and enemy_unit is not None:
+            eligible_enemies = [enemy_unit]
+        if enemy_unit is None:
+            if len(eligible_enemies) == 1:
+                enemy_unit = eligible_enemies[0]
+            else:
+                return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return False
+        for candidate in list(eligible_enemies or []):
+            if not self._can_use_context_matches(candidate, enemy_unit):
+                continue
+            enemy_alive = getattr(candidate, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    return False
+            elif not bool(getattr(candidate, "is_alive", True)):
+                return False
+            return bool(game_map.is_within_engagement_range(unit, candidate))
+        return False
+
+    def _can_use_warp_surge(self, kwargs: Dict[str, Any]) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        unit = self._can_use_context_root(self._can_use_context_unit(kwargs))
+        if unit is None:
+            return False
+        if not self._is_legiones_daemonica_unit(unit):
+            return False
+        if not self._unit_within_shadow_of_chaos(unit):
+            return False
+        for candidate in list(self._daemon_incursion_battlefield_unit_candidates() or []):
+            if self._can_use_context_matches(candidate, unit):
+                return True
+        return False
+
     def can_use(self, name: str, **kwargs) -> bool:
         s = self.get_by_name(name)
         if not s:
             return False
         name_u = self._normalize_stratagem_name(s.name or "")
+        if name_u == "DENIZENS OF THE WARP" and not self._can_use_denizens_of_warp(kwargs):
+            return False
+        if name_u == "DRAUGHT OF TERROR" and not self._can_use_draught_of_terror(kwargs):
+            return False
+        if name_u == "EPIC CHALLENGE" and not self._can_use_epic_challenge(kwargs):
+            return False
+        if name_u == "GRENADE" and not self._can_use_grenade(kwargs):
+            return False
+        if name_u == "TANK SHOCK" and not self._can_use_tank_shock(kwargs):
+            return False
+        if name_u == "WARP SURGE" and not self._can_use_warp_surge(kwargs):
+            return False
         if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
@@ -23535,102 +24124,21 @@ class StratagemManager(
             enemy = kwargs.get("enemy_unit")
             game_map = getattr(self.game, "map", None) if self.game is not None else None
 
-            def _grenade_unit_eligible(u) -> bool:
-                try:
-                    if u is None or not u.is_alive() or not getattr(u, "deployed", False):
-                        return False
-                    if not u.has_keyword("Grenades"):
-                        return False
-                    rs = getattr(u, "round_state", None)
-                    if (
-                        getattr(rs, "advanced_this_round", False)
-                        or getattr(rs, "fell_back_this_round", False)
-                        or getattr(rs, "shot_this_round", False)
-                    ):
-                        return False
-                    sr = getattr(u, "special_rules", None)
-                    if isinstance(sr, dict) and sr.get("grenade_pack_flyover_no_grenade_turn_owner"):
-                        owner = str(sr.get("grenade_pack_flyover_no_grenade_turn_owner") or "")
-                        turn = int(sr.get("grenade_pack_flyover_no_grenade_turn", 0) or 0)
-                        current_player = getattr(self, "player", None)
-                        if owner and current_player is not None:
-                            if owner == str(getattr(current_player, "id", "") or "") and int(getattr(self.game, "turn", 0) or 0) == turn:
-                                return False
-                    if game_map is not None:
-                        if any(
-                            game_map.is_within_engagement_range(u, e)
-                            for e in (game_map.get_enemy_units(u) or [])
-                            if e.is_alive()
-                        ):
-                            return False
-                except Exception:
-                    raise
-                return True
-
-            def _enemy_within_friendly_engagement(enemy_unit) -> bool:
-                if enemy_unit is None or game_map is None:
-                    return False
-                for friendly in list(getattr(self.player.get_army(), "units", []) or []):
-                    if friendly is None or not getattr(friendly, "deployed", False) or not friendly.is_alive():
-                        continue
-                    if game_map.is_within_engagement_range(friendly, enemy_unit):
-                        return True
-                return False
-
-            def _enemy_visible_from_unit(enemy_unit) -> bool:
-                if enemy_unit is None:
-                    return False
-                if game_map is None:
-                    return True
-                for model in (unit.get_models_for_collision() or []):
-                    if not getattr(model, "is_alive", False):
-                        continue
-                    for target_model in (enemy_unit.get_models_for_collision() or []):
-                        if not getattr(target_model, "is_alive", False):
-                            continue
-                        if game_map.can_model_see_model(model, target_model):
-                            return True
-                return False
-
-            def _enemy_within_range(enemy_unit, *, max_range: float) -> bool:
-                if enemy_unit is None:
-                    return False
-                if game_map is None:
-                    return True
-                try:
-                    return float(game_map.get_distance_between_units(unit, enemy_unit) or 0.0) <= float(max_range)
-                except Exception:
-                    raise
-
             if unit is None:
                 # Best-effort pick: first eligible GRENADES unit from your army
                 for u in list(getattr(self.player.get_army(), "units", []) or []):
-                    if _grenade_unit_eligible(u):
+                    if self._grenade_unit_is_eligible(u):
                         unit = u
                         break
             if unit is None:
                 logger.error("ERROR: GRENADE: no eligible friendly GRENADES unit")
                 return False
-            if not _grenade_unit_eligible(unit):
+            if not self._grenade_unit_is_eligible(unit):
                 logger.error("ERROR: GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
                 return False
             use_gheistskull = False
-            gheistskull_source = ""
             base_range = 8.0
-            gheistskull_available = self._unit_can_use_gheistskull_grenade_range_override(
-                unit,
-                stratagem_name="GRENADE",
-            )
-            gheistskull_rule = self._unit_gheistskull_grenade_rule(unit) if gheistskull_available else None
-            gheistskull_range = 18.0
-            if isinstance(gheistskull_rule, dict):
-                try:
-                    gheistskull_range = float(gheistskull_rule.get("range", 18.0) or 18.0)
-                except Exception:
-                    gheistskull_range = 18.0
-                gheistskull_source = str(gheistskull_rule.get("source", "") or "Gheistskull").strip() or "Gheistskull"
-            if gheistskull_range <= base_range:
-                gheistskull_available = False
+            gheistskull_available, gheistskull_range, gheistskull_source = self._grenade_extended_range_profile(unit)
 
             if enemy is None and game_map is not None:
                 # Best-effort: prefer base-range legal targets; only use Gheistskull range if needed.
@@ -23642,11 +24150,11 @@ class StratagemManager(
                     try:
                         if e is None or not e.is_alive():
                             continue
-                        if _enemy_within_friendly_engagement(e):
+                        if self._grenade_enemy_within_friendly_engagement(e):
                             continue
-                        if not _enemy_within_range(e, max_range=base_range):
+                        if not self._grenade_enemy_within_range(unit, e, max_range=base_range):
                             continue
-                        if not _enemy_visible_from_unit(e):
+                        if not self._grenade_enemy_visible_from_unit(unit, e):
                             continue
                         enemy = e
                         use_gheistskull = False
@@ -23658,13 +24166,13 @@ class StratagemManager(
                         try:
                             if e is None or not e.is_alive():
                                 continue
-                            if _enemy_within_friendly_engagement(e):
+                            if self._grenade_enemy_within_friendly_engagement(e):
                                 continue
-                            if not _enemy_within_range(e, max_range=gheistskull_range):
+                            if not self._grenade_enemy_within_range(unit, e, max_range=gheistskull_range):
                                 continue
-                            if not _enemy_visible_from_unit(e):
+                            if not self._grenade_enemy_visible_from_unit(unit, e):
                                 continue
-                            if _enemy_within_range(e, max_range=base_range):
+                            if self._grenade_enemy_within_range(unit, e, max_range=base_range):
                                 continue
                             enemy = e
                             use_gheistskull = True
@@ -23680,15 +24188,15 @@ class StratagemManager(
                 if not enemy_alive:
                     logger.error("ERROR: GRENADE: target enemy unit is not alive")
                     return False
-                if _enemy_within_friendly_engagement(enemy):
+                if self._grenade_enemy_within_friendly_engagement(enemy):
                     logger.error("ERROR: GRENADE: target enemy unit is within Engagement Range of a friendly unit")
                     return False
-                if not _enemy_visible_from_unit(enemy):
+                if not self._grenade_enemy_visible_from_unit(unit, enemy):
                     logger.error("ERROR: GRENADE: target enemy unit is not visible")
                     return False
-                if _enemy_within_range(enemy, max_range=base_range):
+                if self._grenade_enemy_within_range(unit, enemy, max_range=base_range):
                     use_gheistskull = False
-                elif gheistskull_available and _enemy_within_range(enemy, max_range=gheistskull_range):
+                elif gheistskull_available and self._grenade_enemy_within_range(unit, enemy, max_range=gheistskull_range):
                     use_gheistskull = True
                 else:
                     logger.error("ERROR: GRENADE: target enemy unit is outside legal range")
@@ -29237,7 +29745,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            logger.error(f"INFO: DRAUGHT OF TERROR: {getattr(root, 'name', 'Unit')} gains +1 AP and wound rerolls vs Battle-shocked this phase.")
+            logger.info(f"INFO: DRAUGHT OF TERROR: {getattr(root, 'name', 'Unit')} gains +1 AP and wound rerolls vs Battle-shocked this phase.")
             return True
 
         # Chaos Daemons: THE REALM OF CHAOS (end of opponent's turn)
@@ -30205,6 +30713,76 @@ class StratagemManager(
                 raise
         return ok
 
+    def _normalize_phase_item_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(context or {})
+        candidates = list(normalized.get("candidates") or [])
+        if len(candidates) == 1:
+            normalized.setdefault("unit", candidates[0])
+            normalized.setdefault("target_unit", candidates[0])
+        eligible_enemy_units = list(normalized.get("eligible_enemy_units") or [])
+        if eligible_enemy_units and "enemy_candidates" not in normalized:
+            normalized["enemy_candidates"] = list(eligible_enemy_units)
+        selected_unit = normalized.get("target_unit") or normalized.get("unit")
+        if selected_unit is not None and eligible_enemy_units and "enemy_candidates_by_unit" not in normalized:
+            unit_id = str(get_entity_id(selected_unit) or getattr(selected_unit, "id", getattr(selected_unit, "_id", "")) or "")
+            if unit_id:
+                normalized["enemy_candidates_by_unit"] = {unit_id: list(eligible_enemy_units)}
+        model_candidates = list(normalized.get("model_candidates") or normalized.get("eligible_models") or [])
+        if model_candidates and "model_candidates" not in normalized:
+            normalized["model_candidates"] = list(model_candidates)
+        if len(model_candidates) == 1:
+            normalized.setdefault("model", model_candidates[0])
+            normalized.setdefault("target_model", model_candidates[0])
+        if len(candidates) == 1 and "enemy_unit" not in normalized:
+            enemy_candidates_by_unit = dict(normalized.get("enemy_candidates_by_unit") or {})
+            candidate_id = str(get_entity_id(candidates[0]) or getattr(candidates[0], "id", getattr(candidates[0], "_id", "")) or "")
+            enemy_candidates = list(enemy_candidates_by_unit.get(candidate_id) or normalized.get("enemy_candidates") or [])
+            if len(enemy_candidates) == 1:
+                normalized["enemy_unit"] = enemy_candidates[0]
+                normalized["target_enemy_unit"] = enemy_candidates[0]
+        return normalized
+
+    def _phase_available_stratagem_context(
+        self,
+        stratagem: Stratagem,
+        *,
+        phase_name: str,
+        is_active_turn: bool,
+    ) -> Dict[str, Any]:
+        phase_label = str(phase_name or "").strip()
+        if not phase_label:
+            return {}
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if not is_active_turn:
+            return {}
+        if name_u == "DENIZENS OF THE WARP":
+            if phase_label.lower() != "movement phase":
+                return {}
+            return {
+                "candidates": list(self._daemon_incursion_reserve_deep_strike_candidates() or []),
+            }
+        if name_u == "DRAUGHT OF TERROR":
+            if phase_label.lower() not in {"shooting phase", "fight phase"}:
+                return {}
+            return {
+                "candidates": list(self._daemon_incursion_attack_phase_candidates(phase_name=phase_label) or []),
+            }
+        if name_u == "GRENADE":
+            if phase_label.lower() != "shooting phase":
+                return {}
+            return dict(self._grenade_phase_action_context() or {})
+        if name_u == "WARP SURGE":
+            if phase_label.lower() != "charge phase":
+                return {}
+            candidates = [
+                unit
+                for unit in list(self._daemon_incursion_battlefield_unit_candidates() or [])
+                if self._unit_within_shadow_of_chaos(unit)
+            ]
+            candidates.sort(key=self._tool_action_sort_key)
+            return {"candidates": candidates}
+        return {}
+
     # -------- UI helpers for non-disruptive prompts --------
     def get_phase_stratagem_items(self) -> List[Dict[str, Any]]:
         self._prune_expired_reactions()
@@ -30221,7 +30799,7 @@ class StratagemManager(
             s = self.get_by_name(str(r.get("stratagem", "")))
             if not s or not self._is_implemented_stratagem(s):
                 continue
-            ctx = dict(r)
+            ctx = self._normalize_phase_item_context(r)
             if "phase_name" not in ctx and phase_name:
                 ctx["phase_name"] = phase_name
             try:
@@ -30321,6 +30899,8 @@ class StratagemManager(
             if name_u in pending_names and is_reaction_only:
                 continue
             ctx = {"phase_name": phase_name}
+            ctx.update(self._phase_available_stratagem_context(s, phase_name=phase_name, is_active_turn=is_active_turn))
+            ctx = self._normalize_phase_item_context(ctx)
             availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)
             if is_reaction_only:
                 if availability["available"]:

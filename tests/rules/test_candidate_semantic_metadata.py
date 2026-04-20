@@ -14,6 +14,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_DICE_REROLL,
     DECISION_USE_GILDED_CHAMPION,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -76,6 +77,63 @@ def test_request_decision_sets_context_before_semantic_projection(monkeypatch) -
     assert str(observed.get("descriptor_bundle_id", "") or "")
     assert str(observed.get("rules_bundle_id", "") or "")
     assert "time_budget_ms" in observed
+
+
+def test_command_reroll_request_gets_tool_semantic_projection_metadata() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Select dice to reroll",
+        player_id=player.id,
+        context={
+            "roll_id": 1,
+            "roll_spec": {
+                "dice_count": 1,
+                "faces": 6,
+                "reason": "Hit roll (1D6)",
+                "command_reroll_allowed": True,
+                "command_reroll_mode": "one",
+            },
+        },
+        options=[
+            DecisionOption.create("Keep", payload={"action_id": "none", "label": "Keep"}),
+            DecisionOption.create(
+                "Command Re-roll",
+                payload={
+                    "action_id": "command_reroll",
+                    "label": "Command Re-roll",
+                    "ability_key": "command_reroll",
+                    "stratagem_name": "COMMAND RE-ROLL",
+                    "tool_id": "stratagem:command_reroll",
+                    "tool_type": "stratagem",
+                    "source": "command",
+                    "mode": "one",
+                    "eligible_die_ids": ["1:0"],
+                    "max_select": 1,
+                    "cp_cost": 1,
+                    "consume_cp": True,
+                    "is_command": True,
+                    "semantic_tags": ["reroll", "command", "resource"],
+                },
+            ),
+        ],
+    )
+
+    game.request_decision(request)
+
+    command_reroll_candidate = next(
+        candidate
+        for candidate in list(request.candidates or [])
+        if str(candidate.params.get("ability_key", "") or "") == "command_reroll"
+    )
+    metadata = dict(command_reroll_candidate.metadata or {})
+    context = dict(request.context or {})
+
+    assert metadata["semantic_projection_kind"] == "tool"
+    assert str(context.get("rules_bundle_id", "") or "")
+    assert isinstance(context.get("descriptor_ids"), dict)
+    assert metadata["rules_provenance_refs"] == [context["rules_bundle_id"]]
+    assert any(abs(float(metadata.get(key, 0.0) or 0.0)) > 0.0 for key in SEMANTIC_NUMERIC_KEYS)
 
 
 def test_semantic_augmenter_preserves_existing_numeric_values() -> None:
