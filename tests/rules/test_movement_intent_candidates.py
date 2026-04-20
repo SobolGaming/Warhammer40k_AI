@@ -42,6 +42,12 @@ class _DummyUnit:
             _DummyModel("model-a", 10.0, 10.0),
             _DummyModel("model-b", 11.0, 10.0),
         ]
+        self.parent_army = None
+        for model in self.models:
+            model.parent_unit = self
+
+    def get_parent_army(self):
+        return self.parent_army
 
 
 class _DummyArmy:
@@ -50,6 +56,8 @@ class _DummyArmy:
         self.id = army_id
         self.units = list(units)
         self.player = None
+        for unit in self.units:
+            unit.parent_army = self
 
     def set_player(self, player: object) -> None:
         self.player = player

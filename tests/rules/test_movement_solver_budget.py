@@ -69,6 +69,8 @@ class _UnitStub:
         self._id = unit_id
         self.models = list(models)
         self.parent_army = army
+        for model in self.models:
+            model.parent_unit = self
 
     def get_parent_army(self):
         return self.parent_army

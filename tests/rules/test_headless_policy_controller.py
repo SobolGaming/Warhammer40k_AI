@@ -446,40 +446,120 @@ def test_headless_policy_controller_deprioritizes_reinforcements_pass_option() -
     assert dict(payload.get("result_payload", {}) or {}) == {"unit_id": "unit-a"}
 
 
-def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_candidate_is_invalid() -> None:
+def _build_reserves_arrival_controller_fixture(
+    *,
+    include_skip: bool,
+    include_confirm_candidate: bool,
+    allow_skip: bool,
+) -> tuple[object, DecisionRequest]:
     class _Base:
+        has_circular_base = True
+
+        def __init__(self, x: float = 0.0, y: float = 0.0, *, radius: float = 0.5, z: float = 0.0) -> None:
+            self.x = float(x)
+            self.y = float(y)
+            self.z = float(z)
+            self.facing = 0.0
+            self._radius = float(radius)
+
         def get_radius(self) -> float:
-            return 0.5
+            return self._radius
+
+        def get_longest_radius(self) -> float:
+            return self._radius
 
     class _Model:
         def __init__(self, model_id: str) -> None:
             self._id = model_id
             self.id = model_id
             self.model_base = _Base()
+            self.is_alive = True
+            self.parent_unit = None
+
+        def get_location(self) -> tuple[float, float, float, float]:
+            return (float(self.model_base.x), float(self.model_base.y), float(self.model_base.z), float(self.model_base.facing))
+
+        def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+            self.model_base.x = float(x)
+            self.model_base.y = float(y)
+            self.model_base.z = float(z)
+            self.model_base.facing = float(facing)
 
     class _Unit:
         def __init__(self, unit_id: str, model_id: str) -> None:
             self._id = unit_id
             self.id = unit_id
             self.models = [_Model(model_id)]
+            self.name = unit_id
+            self.reserve_status = "strategic_reserves"
+            self.deployed = False
+            self.embarked_in = None
+            self.is_embarked = False
+            self.parent_army = None
+            for model in self.models:
+                model.parent_unit = self
+
+        def get_parent_army(self):
+            return self.parent_army
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def is_in_reserves(self) -> bool:
+            return True
+
+        def can_arrive_from_reserves(self, _turn: int) -> bool:
+            return True
 
         def is_in_strategic_reserves(self) -> bool:
             return True
 
+        def has_deep_strike(self) -> bool:
+            return False
+
         def calculate_model_positions(self, x, y, _game_map, avoid_friendly_units=False, boundary_repulsors=None):
             return [(float(x), float(y), 0.0, 0.0)]
 
+        def _create_potential_base(self, x: float, y: float, z: float, facing: float, *, model: _Model | None = None) -> _Base:
+            radius = float(model.model_base.get_radius()) if model is not None else 0.5
+            base = _Base(float(x), float(y), radius=radius, z=float(z))
+            base.facing = float(facing)
+            return base
+
     class _Army:
         def __init__(self, unit) -> None:
+            self.player = None
             self.units = [unit]
 
     class _Player:
-        def __init__(self, army) -> None:
+        def __init__(self, army, player_id: str = "p1") -> None:
+            self.id = player_id
             self.army = army
 
     class _Map:
         width = 4.0
         height = 4.0
+        terrain_features: list[object] = []
+
+        def __init__(self, units) -> None:
+            self.units = list(units)
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def is_within_boundary(_model: object, destination: tuple[float, float]) -> bool:
+            x, y = destination
+            return 0.0 <= float(x) <= 4.0 and 0.0 <= float(y) <= 4.0
+
+        @staticmethod
+        def check_collision_with_obstacles(_model: object, destination: tuple[float, float]) -> bool:
+            del destination
+            return False
 
     class _Battlefield:
         width = 4.0
@@ -489,8 +569,14 @@ def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_can
         def __init__(self, unit) -> None:
             self.is_authoritative = True
             self.commands = []
-            self.players = [_Player(_Army(unit))]
-            self.map = _Map()
+            self.turn = 2
+            self.phase = type("Phase", (), {"name": "MOVEMENT_PHASE"})()
+            self.current_player_index = 0
+            army = _Army(unit)
+            self.players = [_Player(army)]
+            army.player = self.players[0]
+            unit.parent_army = army
+            self.map = _Map([unit])
             self.battlefield = _Battlefield()
 
         def _resolve_unit_by_id(self, unit_id: str):
@@ -502,6 +588,12 @@ def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_can
 
         def get_boundary_repulsors(self, _unit, context=""):
             return None
+
+        def get_current_player(self):
+            return self.players[self.current_player_index]
+
+        def get_enemy_units(self, _player):
+            return []
 
         def apply_command(self, command):
             self.commands.append(command)
@@ -515,25 +607,17 @@ def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_can
                 return _ApplyResult(ok=False)
             x = float(pos[0])
             y = float(pos[1])
-            return _ApplyResult(ok=(abs(x - 0.0) < 1e-6 and abs(y - 0.0) < 1e-6))
+            return _ApplyResult(ok=(abs(x - 0.0) < 1e-6 and abs(y - 0.75) < 1e-6))
 
     unit = _Unit("unit:1", "model:1")
     game = _ReservesGame(unit)
-    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
     options = [
         DecisionOption(option_id="confirm", label="Confirm", payload={"action": "confirm", "action_id": "confirm"}),
     ]
-    request = DecisionRequest.create(
-        DECISION_MOVE_UNIT,
-        "Arrive from Reserves",
-        player_id="p1",
-        options=options,
-        context={
-            "placement_kind": "reserves_arrival",
-            "unit_id": "unit:1",
-            "allow_skip": False,
-        },
-        candidates=[
+    candidates: list[CandidateAction] = []
+    mask: list[bool] = []
+    if include_confirm_candidate:
+        candidates.append(
             CandidateAction(
                 action_id="confirm",
                 params={
@@ -542,19 +626,103 @@ def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_can
                 },
                 metadata={"projected_score_delta_next_window": 1.0},
             )
-        ],
-        mask=[True],
+        )
+        mask.append(True)
+    if include_skip:
+        options.append(DecisionOption(option_id="skip", label="Skip", payload={"action": "skip", "action_id": "skip"}))
+        candidates.append(
+            CandidateAction(
+                action_id="skip",
+                params={"action": "skip"},
+                metadata={"projected_score_delta_next_window": -1.0},
+            )
+        )
+        mask.append(True)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Arrive from Reserves",
+        player_id="p1",
+        options=options,
+        context={
+            "placement_kind": "reserves_arrival",
+            "unit_id": "unit:1",
+            "allow_skip": bool(allow_skip),
+        },
+        candidates=candidates,
+        mask=mask,
     )
+    return game, request
+
+
+def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_candidate_is_invalid() -> None:
+    game, request = _build_reserves_arrival_controller_fixture(
+        include_skip=False,
+        include_confirm_candidate=False,
+        allow_skip=False,
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
 
     controller.on_decision_requested(game, request)
 
-    assert len(game.commands) >= 2
-    last_payload = dict(game.commands[-1].payload or {})
+    assert len(game.commands) == 1
+    last_payload = dict(game.commands[0].payload or {})
+    assert str(last_payload.get("option_id", "")) == "confirm"
     last_result_payload = dict(last_payload.get("result_payload", {}) or {})
     pos = list(last_result_payload.get("model_positions", [{}])[0].get("position", []) or [])
     assert len(pos) >= 2
     assert abs(float(pos[0]) - 0.0) < 1e-6
-    assert abs(float(pos[1]) - 0.0) < 1e-6
+    assert abs(float(pos[1]) - 0.75) < 1e-6
+
+
+def test_headless_policy_controller_bruteforces_reserves_arrival_before_skip_fallback() -> None:
+    game, request = _build_reserves_arrival_controller_fixture(
+        include_skip=True,
+        include_confirm_candidate=False,
+        allow_skip=True,
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == "confirm"
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    assert bool(result_payload.get("skipped", False)) is False
+    pos = list(result_payload.get("model_positions", [{}])[0].get("position", []) or [])
+    assert len(pos) >= 2
+    assert abs(float(pos[0]) - 0.0) < 1e-6
+    assert abs(float(pos[1]) - 0.75) < 1e-6
+
+
+def test_headless_policy_controller_prevalidates_reserves_bruteforce_candidates_before_submit() -> None:
+    game, request = _build_reserves_arrival_controller_fixture(
+        include_skip=False,
+        include_confirm_candidate=False,
+        allow_skip=False,
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    controller._reserves_arrival_anchor_candidate_groups = lambda *_args, **_kwargs: [("test", [(0.0, 0.0), (1.0, 1.0)])]  # type: ignore[method-assign]
+    built_positions = iter(
+        [
+            [{"model_id": "model:1", "position": [9.0, 9.0, 0.0], "facing": 0.0}],
+            [{"model_id": "model:1", "position": [0.0, 0.75, 0.0], "facing": 0.0}],
+        ]
+    )
+    controller._build_model_positions_from_anchor = lambda *_args, **_kwargs: next(built_positions)  # type: ignore[method-assign]
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    pos = list(result_payload.get("model_positions", [{}])[0].get("position", []) or [])
+    assert len(pos) >= 2
+    assert abs(float(pos[0]) - 0.0) < 1e-6
+    assert abs(float(pos[1]) - 0.75) < 1e-6
+    metric = controller.get_reserves_arrival_search_metrics()[-1]
+    assert int(metric.get("validation_rejects", 0) or 0) == 1
+    assert int(metric.get("resolve_attempts", 0) or 0) == 1
 
 
 def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget() -> None:
@@ -696,15 +864,32 @@ def test_headless_policy_controller_records_bounded_non_exhaustive_deep_strike_s
             self.embarked_in = None
             self.is_embarked = False
             self.models = [_Model(f"{unit_id}:model", x=float(x), y=float(y))]
+            for model in self.models:
+                model.parent_unit = self
 
         def get_parent_army(self):
             return self.parent_army
 
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
         def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return str(self.reserve_status or "").strip().lower() != "deployed"
+
+        def can_arrive_from_reserves(self, _turn: int) -> bool:
             return True
 
         def is_in_strategic_reserves(self) -> bool:
             return False
+
+        def has_deep_strike(self) -> bool:
+            return True
 
         def calculate_model_positions(
             self,
@@ -718,6 +903,10 @@ def test_headless_policy_controller_records_bounded_non_exhaustive_deep_strike_s
         ) -> list[tuple[float, float, float, float]]:
             del avoid_friendly_units, boundary_repulsors, search_context
             return [(float(x), float(y), 0.0, 0.0)]
+
+        def _create_potential_base(self, x: float, y: float, z: float, _facing: float, *, model: _Model | None = None) -> _Base:
+            radius = float(model.model_base.get_radius()) if model is not None else 0.5
+            return _Base(x=float(x), y=float(y), radius=radius)
 
     class _Army:
         def __init__(self, player, units) -> None:
@@ -735,7 +924,19 @@ def test_headless_policy_controller_records_bounded_non_exhaustive_deep_strike_s
             self.turn = 2
             self.phase = type("Phase", (), {"name": "MOVEMENT_PHASE"})()
             self.ruleset_bundle = None
-            self.map = type("Map", (), {"width": 60.0, "height": 44.0})()
+            self.current_player_index = 0
+            self.map = type(
+                "Map",
+                (),
+                {
+                    "width": 60.0,
+                    "height": 44.0,
+                    "units": [arriving] + list(enemies),
+                    "terrain_features": [],
+                    "is_within_boundary": staticmethod(lambda _model, destination: 0.0 <= float(destination[0]) <= 60.0 and 0.0 <= float(destination[1]) <= 44.0),
+                    "check_collision_with_obstacles": staticmethod(lambda _model, destination: False),
+                },
+            )()
             self.battlefield = type("Battlefield", (), {"width": 60.0, "height": 44.0})()
             self.players = [arriving.parent_army.player, enemies[0].parent_army.player]
             self.commands = []
@@ -751,6 +952,14 @@ def test_headless_policy_controller_records_bounded_non_exhaustive_deep_strike_s
         def get_boundary_repulsors(self, _unit, context=""):
             del context
             return []
+
+        def get_current_player(self):
+            return self.players[self.current_player_index]
+
+        def get_enemy_units(self, player):
+            if player is self.players[0]:
+                return list(self.players[1].army.units)
+            return list(self.players[0].army.units)
 
         def apply_command(self, command):
             self.commands.append(command)
@@ -836,15 +1045,32 @@ def test_headless_policy_controller_prefers_strategic_edge_band_before_exhaustiv
             self.embarked_in = None
             self.is_embarked = False
             self.models = [_Model("model:strategic")]
+            for model in self.models:
+                model.parent_unit = self
 
         def get_parent_army(self):
             return self.parent_army
 
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
         def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return True
+
+        def can_arrive_from_reserves(self, _turn: int) -> bool:
             return True
 
         def is_in_strategic_reserves(self) -> bool:
             return True
+
+        def has_deep_strike(self) -> bool:
+            return False
 
         def calculate_model_positions(
             self,
@@ -858,6 +1084,14 @@ def test_headless_policy_controller_prefers_strategic_edge_band_before_exhaustiv
         ) -> list[tuple[float, float, float, float]]:
             del avoid_friendly_units, boundary_repulsors, search_context
             return [(float(x), float(y), 0.0, 0.0)]
+
+        def _create_potential_base(self, x: float, y: float, z: float, _facing: float, *, model: _Model | None = None) -> _Base:
+            radius = float(model.model_base.get_radius()) if model is not None else 0.5
+            base = _Base(radius=radius)
+            base.x = float(x)
+            base.y = float(y)
+            base.z = float(z)
+            return base
 
     class _Army:
         def __init__(self, player, units) -> None:
@@ -875,7 +1109,19 @@ def test_headless_policy_controller_prefers_strategic_edge_band_before_exhaustiv
             self.turn = 2
             self.phase = type("Phase", (), {"name": "MOVEMENT_PHASE"})()
             self.ruleset_bundle = None
-            self.map = type("Map", (), {"width": 60.0, "height": 44.0})()
+            self.current_player_index = 0
+            self.map = type(
+                "Map",
+                (),
+                {
+                    "width": 60.0,
+                    "height": 44.0,
+                    "units": [unit],
+                    "terrain_features": [],
+                    "is_within_boundary": staticmethod(lambda _model, destination: 0.0 <= float(destination[0]) <= 60.0 and 0.0 <= float(destination[1]) <= 44.0),
+                    "check_collision_with_obstacles": staticmethod(lambda _model, destination: False),
+                },
+            )()
             self.battlefield = type("Battlefield", (), {"width": 60.0, "height": 44.0})()
             self.players = [unit.parent_army.player]
             self.commands = []
@@ -890,6 +1136,12 @@ def test_headless_policy_controller_prefers_strategic_edge_band_before_exhaustiv
 
         def get_boundary_repulsors(self, _unit, context=""):
             del context
+            return []
+
+        def get_current_player(self):
+            return self.players[self.current_player_index]
+
+        def get_enemy_units(self, _player):
             return []
 
         def apply_command(self, command):

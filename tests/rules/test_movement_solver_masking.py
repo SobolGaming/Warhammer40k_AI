@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.movement_intent import MovementIntent
+from warhammer40k_ai.engine.movement_solver import generate_move_unit_candidates
+from warhammer40k_ai.engine.path_witness import PathWitnessStore
+from warhammer40k_ai.engine.time_manager import TimeManager
+
+
+class _BaseStub:
+    has_circular_base = True
+
+    def __init__(self, x: float, y: float, *, radius: float = 0.5, z: float = 0.0) -> None:
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+        self.facing = 0.0
+        self._radius = float(radius)
+
+    def get_radius(self) -> float:
+        return self._radius
+
+    def get_longest_radius(self) -> float:
+        return self._radius
+
+
+class _ModelStub:
+    def __init__(self, model_id: str, *, x: float, y: float) -> None:
+        self.id = model_id
+        self._id = model_id
+        self.model_base = _BaseStub(x, y)
+        self.is_alive = True
+
+    def get_location(self) -> tuple[float, float, float, float]:
+        return (float(self.model_base.x), float(self.model_base.y), float(self.model_base.z), 0.0)
+
+    def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+        self.model_base.x = float(x)
+        self.model_base.y = float(y)
+        self.model_base.z = float(z)
+        self.model_base.facing = float(facing)
+
+
+class _ArmyStub:
+    def __init__(self, player: object | None = None) -> None:
+        self.player = player
+        self.units: list[object] = []
+
+
+class _PlayerStub:
+    def __init__(self, player_id: str, army: _ArmyStub) -> None:
+        self.id = player_id
+        self.army = army
+
+    def get_army(self):
+        return self.army
+
+
+class _UnitStub:
+    def __init__(self, unit_id: str, *, army: _ArmyStub, reserve_status: str) -> None:
+        self.id = unit_id
+        self._id = unit_id
+        self.parent_army = army
+        self.reserve_status = reserve_status
+        self.deployed = reserve_status == "deployed"
+        self.embarked_in = None
+        self.is_embarked = False
+        self.models = [_ModelStub(f"{unit_id}:model-1", x=0.0, y=0.0)]
+
+    def get_parent_army(self):
+        return self.parent_army
+
+    def get_attached_unit_root(self):
+        return self
+
+    def get_attached_unit_models(self):
+        return list(self.models)
+
+    def is_in_reserves(self) -> bool:
+        return str(self.reserve_status or "").strip().lower() != "deployed"
+
+    def can_arrive_from_reserves(self, _turn: int) -> bool:
+        return True
+
+    def is_in_strategic_reserves(self) -> bool:
+        return False
+
+    def has_deep_strike(self) -> bool:
+        return True
+
+    def is_alive(self) -> bool:
+        return True
+
+    def _create_potential_base(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        *,
+        model: _ModelStub | None = None,
+    ) -> _BaseStub:
+        radius = float(model.model_base.get_radius()) if model is not None else 0.5
+        base = _BaseStub(float(x), float(y), radius=radius, z=float(z))
+        base.facing = float(facing)
+        return base
+
+
+class _MapStub:
+    width = 60.0
+    height = 44.0
+
+    def __init__(self, units: list[object]) -> None:
+        self.units = list(units)
+        self.terrain_features: list[object] = []
+
+    @staticmethod
+    def get_height_at_point(_x: float, _y: float) -> float:
+        return 0.0
+
+    @staticmethod
+    def is_within_boundary(_model: object, destination: tuple[float, float]) -> bool:
+        x, y = destination
+        return 0.0 <= float(x) <= 60.0 and 0.0 <= float(y) <= 44.0
+
+    @staticmethod
+    def check_collision_with_obstacles(_model: object, destination: tuple[float, float]) -> bool:
+        del destination
+        return False
+
+
+class _GameStub:
+    def __init__(self) -> None:
+        arriving_army = _ArmyStub()
+        enemy_army = _ArmyStub()
+        self.arriving = _UnitStub("unit:arriving", army=arriving_army, reserve_status="reserves")
+        self.enemy = _UnitStub("unit:enemy", army=enemy_army, reserve_status="deployed")
+        self.enemy.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        arriving_army.units = [self.arriving]
+        enemy_army.units = [self.enemy]
+        self.players = [
+            _PlayerStub("player:arriving", arriving_army),
+            _PlayerStub("player:enemy", enemy_army),
+        ]
+        arriving_army.player = self.players[0]
+        enemy_army.player = self.players[1]
+        self.turn = 2
+        self.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        self.current_player_index = 0
+        self.time_manager = TimeManager()
+        self.path_witness_store = PathWitnessStore()
+        self.objectives: list[object] = []
+        self.battlefield = SimpleNamespace(width=60.0, height=44.0)
+        self.map = _MapStub([self.arriving, self.enemy])
+
+    def _resolve_unit_by_id(self, unit_id: str):
+        for player in self.players:
+            for unit in list(player.army.units or []):
+                if str(getattr(unit, "id", "") or "") == str(unit_id or ""):
+                    return unit
+        return None
+
+    def get_current_player(self):
+        return self.players[self.current_player_index]
+
+    def get_enemy_units(self, player: object):
+        if player is self.players[0]:
+            return [self.enemy]
+        return [self.arriving]
+
+
+def test_move_solver_replaces_illegal_reserves_arrival_candidate_with_freeform_confirm(monkeypatch) -> None:
+    game = _GameStub()
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Arrive from reserves",
+        player_id="player:arriving",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:arriving", "movement_type": "move", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:arriving", "movement_type": "move", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:arriving",
+            "movement_type": "move",
+            "placement_kind": "reserves_arrival",
+            "allow_skip": True,
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    def _invalid_reserves_translation(*_args, **_kwargs):
+        return (
+            [
+                {
+                    "model_id": "unit:arriving:model-1",
+                    "position": [18.0, 10.0, 0.0],
+                    "facing": 0.0,
+                }
+            ],
+            {
+                "movement_distance": 6.0,
+                "enemy_distance_delta": 1.0,
+                "objective_distance_delta": 0.0,
+            },
+        )
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.engine.movement_solver._translate_model_positions",
+        _invalid_reserves_translation,
+    )
+
+    candidates, mask, _wall_clock_ms, fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    assert fallback_mode is False
+    action_mask = {str(dict(candidate.params or {}).get("action", "") or ""): bool(mask[idx]) for idx, candidate in enumerate(list(candidates or []))}
+    assert action_mask == {"confirm": True, "skip": True}
+    confirm_candidate = next(
+        candidate
+        for candidate in list(candidates or [])
+        if str(dict(candidate.params or {}).get("action", "") or "") == "confirm"
+    )
+    assert "model_positions" not in dict(confirm_candidate.params or {})
+    assert str(dict(confirm_candidate.metadata or {}).get("candidate_kind", "") or "") == "freeform_confirm"

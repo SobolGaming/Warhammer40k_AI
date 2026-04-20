@@ -706,10 +706,14 @@ def evaluate_reserves_arrival_positions(
     is_subterranean_tunnel_network = placement_kind == "subterranean_tunnel_network"
     if unit is None:
         return {"errors": ["Reserves arrival requires a unit."]}
+    in_reserves_fn = getattr(unit, "is_in_reserves", None)
+    in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+        str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower() in {"reserves", "strategic_reserves"}
+    )
     if (
         not is_hyperphasic_recall
         and not is_subterranean_tunnel_network
-        and not bool(getattr(unit, "is_in_reserves", lambda: False)())
+        and not in_reserves
     ):
         return {"errors": ["Unit is not in reserves."]}
     ignore_turn_requirement = bool(context.get("reserves_arrival_ignore_turn_requirement", False))

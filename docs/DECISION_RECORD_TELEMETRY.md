@@ -46,6 +46,8 @@ Determinism fields:
 - `decision_seed`
 - deterministically ordered `candidates`
 - `mask` aligned to `candidates`
+  - `true` means the runtime prevalidated the candidate payload against the same non-mutating legality checks used by authoritative resolution.
+  - `false` means the candidate must not be auto-submitted by headless/UI controllers.
 
 Relabel tooling:
 - Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`

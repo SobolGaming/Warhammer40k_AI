@@ -1386,13 +1386,21 @@ def _resolve_charge_targets(game: object, ctx: dict | None) -> list[object]:
     return resolved
 
 
-def _validate_move_unit(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
-    errors = list(validate_option_choice(request, result))
-    if errors:
-        return errors
-    opt = find_option(request, result.option_id)
-    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-    unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
+def validate_move_unit_payload(
+    game: object,
+    request: DecisionRequest,
+    *,
+    option_payload: dict | None = None,
+    result_payload: dict | None = None,
+) -> Sequence[str]:
+    payload = dict(option_payload or {})
+    resolved_payload = dict(result_payload or {})
+    unit_id = str(
+        resolved_payload.get("unit_id", "")
+        or payload.get("unit_id", "")
+        or request.context.get("unit_id", "")
+        or ""
+    )
     if not unit_id:
         return ("Move unit requires unit_id.",)
     unit = get_unit(game, unit_id)
@@ -1400,11 +1408,25 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         return ("Move unit: unit not found.",)
     ctx = dict(getattr(request, "context", {}) or {})
     allow_skip = bool(ctx.get("allow_skip", True))
-    if is_skip_choice(request, result):
+    action = str(
+        resolved_payload.get("action", "")
+        or payload.get("action", "")
+        or ""
+    ).strip().lower()
+    is_skip = bool(
+        resolved_payload.get("skipped", False)
+        or resolved_payload.get("skip", False)
+        or payload.get("skipped", False)
+        or payload.get("skip", False)
+        or action in {"skip", "pass"}
+    )
+    if is_skip:
         if not allow_skip:
             return ("Move unit: skipping is not allowed for this placement.",)
         return ()
-    model_positions = result.payload.get("model_positions")
+    model_positions = resolved_payload.get("model_positions")
+    if model_positions is None:
+        model_positions = payload.get("model_positions")
     errors = validate_model_positions(game, unit, model_positions, context="Move unit")
     if errors:
         return errors
@@ -1435,7 +1457,12 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         )
         if placement_errors:
             return placement_errors
-    movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "move").strip().lower()
+    movement_type = str(
+        resolved_payload.get("movement_type", "")
+        or payload.get("movement_type", "")
+        or ctx.get("movement_type", "")
+        or "move"
+    ).strip().lower()
     if movement_type in ("pile_in", "consolidate"):
         fight_move_errors = validate_fight_move_positions(
             game,
@@ -1455,7 +1482,11 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         advance_denial_errors = _validate_advance_start_end_denial(game, unit, model_positions)
         if advance_denial_errors:
             return advance_denial_errors
-    path_witness_ref = str(result.payload.get("path_witness_ref", "") or payload.get("path_witness_ref", "") or "")
+    path_witness_ref = str(
+        resolved_payload.get("path_witness_ref", "")
+        or payload.get("path_witness_ref", "")
+        or ""
+    )
     if path_witness_ref:
         store = getattr(game, "path_witness_store", None)
         if store is None:
@@ -1638,6 +1669,20 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         if not ok:
             return (str(reason or "Move unit: charge must end in a legal engagement state."),)
     return ()
+
+
+def _validate_move_unit(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    opt = find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    return validate_move_unit_payload(
+        game,
+        request,
+        option_payload=payload,
+        result_payload=dict(getattr(result, "payload", {}) or {}),
+    )
 
 
 def _wraithlike_retreat_transport_requirement(

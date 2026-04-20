@@ -4,6 +4,7 @@ import math
 import time
 from typing import Any
 
+from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
 from .fight_move import plan_deterministic_fight_move
 from .movement_intent import MovementIntent
@@ -783,6 +784,63 @@ def _fallback_candidates(request: DecisionRequest) -> tuple[list[CandidateAction
     return fallback, mask
 
 
+def _option_payload_by_action_id(request: DecisionRequest) -> dict[str, dict[str, Any]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    for option in list(getattr(request, "options", []) or []):
+        option_id = str(getattr(option, "option_id", "") or "")
+        if not option_id:
+            continue
+        action_id = str(request.action_id_for_option_id(option_id) or "")
+        if not action_id:
+            continue
+        payloads[action_id] = dict(getattr(option, "payload", {}) or {})
+    return payloads
+
+
+def _freeform_confirm_candidate(action_id: str, option_payload: dict[str, Any]) -> CandidateAction | None:
+    payload = dict(option_payload or {})
+    action = str(payload.get("action", "") or "").strip().lower()
+    if action in {"skip", "pass"} or bool(payload.get("skip", False)) or bool(payload.get("skipped", False)):
+        return None
+    params = dict(payload)
+    params.pop("action_id", None)
+    return CandidateAction(
+        action_id=str(action_id or ""),
+        params=params,
+        metadata={
+            "candidate_kind": "freeform_confirm",
+            "source": "option_payload",
+        },
+    )
+
+
+def _filter_legal_move_candidates(
+    game: object,
+    request: DecisionRequest,
+    candidates: list[CandidateAction],
+) -> tuple[list[CandidateAction], list[bool]]:
+    option_payloads = _option_payload_by_action_id(request)
+    legal_candidates: list[CandidateAction] = []
+    seen_action_ids: set[str] = set()
+    for candidate in list(candidates or []):
+        action_id = str(getattr(candidate, "action_id", "") or "")
+        validation_errors = validate_move_unit_payload(
+            game,
+            request,
+            option_payload=option_payloads.get(action_id, {}),
+            result_payload=dict(getattr(candidate, "params", {}) or {}),
+        )
+        if validation_errors:
+            placeholder = _freeform_confirm_candidate(action_id, option_payloads.get(action_id, {}))
+            if placeholder is not None and action_id not in seen_action_ids:
+                legal_candidates.append(placeholder)
+                seen_action_ids.add(action_id)
+            continue
+        legal_candidates.append(candidate)
+        seen_action_ids.add(action_id)
+    return legal_candidates, [True] * len(legal_candidates)
+
+
 def _solver_candidates(
     game: object,
     request: DecisionRequest,
@@ -974,10 +1032,11 @@ def _solver_candidates(
             )
 
     candidates.sort(key=lambda candidate: str(candidate.action_id))
+    candidates, mask = _filter_legal_move_candidates(game, request, candidates)
     top_k = int(ctx.get("movement_top_k", 2) or 2)
     if top_k > 0:
         candidates = candidates[:top_k]
-    mask = [True] * len(candidates)
+        mask = mask[:top_k]
     return candidates, mask
 
 

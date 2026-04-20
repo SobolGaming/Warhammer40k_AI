@@ -20,6 +20,7 @@ from .decision_kinds import (
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
+from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
 from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
 from ..utility.call_utils import call_with_supported_kwargs
@@ -127,6 +128,20 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
 
         ranked = self._rank_legal_candidates(request)
+        if self._is_reserves_arrival_request(request):
+            ranked_move = [candidate for candidate in ranked if not self._candidate_requests_skip(candidate)]
+            ranked_skip = [candidate for candidate in ranked if self._candidate_requests_skip(candidate)]
+            for candidate in ranked_move:
+                if self._try_resolve_candidate(resolution_game, request, candidate):
+                    return
+            if self._try_resolve_reserves_arrival_bruteforce(resolution_game, request):
+                return
+            for candidate in ranked_skip:
+                if self._try_resolve_candidate(resolution_game, request, candidate):
+                    return
+            self._resolve_first_legal_option(resolution_game, request)
+            return
+
         if not ranked:
             self._resolve_first_legal_option(resolution_game, request)
             return
@@ -178,6 +193,15 @@ class HeadlessPolicyDecisionController(DecisionController):
             payload["skipped"] = True
         if str(payload.get("action", "") or "").strip().lower() == "skip":
             payload["skipped"] = True
+        if self._is_reserves_arrival_request(request):
+            validation_errors = validate_move_unit_payload(
+                game,
+                request,
+                option_payload=self._option_payload(request, option_id),
+                result_payload=payload,
+            )
+            if validation_errors:
+                return False
         apply_result = self._safe_resolve_decision_command(
             game,
             request,
@@ -228,6 +252,35 @@ class HeadlessPolicyDecisionController(DecisionController):
             if model_ids:
                 normalized["model_ids"] = model_ids
         return normalized
+
+    @staticmethod
+    def _candidate_requests_skip(candidate: CandidateAction | None) -> bool:
+        if candidate is None:
+            return False
+        params = dict(getattr(candidate, "params", {}) or {})
+        return bool(
+            params.get("skipped", False)
+            or params.get("skip", False)
+            or str(params.get("action", "") or "").strip().lower() in {"skip", "pass"}
+        )
+
+    @staticmethod
+    def _is_reserves_arrival_request(request: DecisionRequest) -> bool:
+        if str(getattr(request, "decision_type", "") or "") != DECISION_MOVE_UNIT:
+            return False
+        context = dict(getattr(request, "context", {}) or {})
+        return str(context.get("placement_kind", "") or "") in {
+            "reserves_arrival",
+            "hyperphasic_recall",
+            "subterranean_tunnel_network",
+        }
+
+    @staticmethod
+    def _option_payload(request: DecisionRequest, option_id: str) -> dict[str, Any]:
+        for option in list(getattr(request, "options", []) or []):
+            if str(getattr(option, "option_id", "") or "") == str(option_id or ""):
+                return dict(getattr(option, "payload", {}) or {})
+        return {}
 
     def _option_id_for_action_id(self, request: DecisionRequest, action_id: str) -> str:
         if not action_id:
@@ -318,6 +371,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 confirm_action_id = request.action_id_for_option_id(option_id)
         if not confirm_option_id:
             return False
+        confirm_option_payload = self._option_payload(request, confirm_option_id)
 
         unit_id = str(context.get("unit_id", "") or "")
         unit = self._resolve_unit_by_id(game, unit_id)
@@ -370,6 +424,16 @@ class HeadlessPolicyDecisionController(DecisionController):
                     search_context=search_context,
                 )
                 if not model_positions:
+                    continue
+                validation_errors = validate_move_unit_payload(
+                    game,
+                    request,
+                    option_payload=confirm_option_payload,
+                    result_payload={"model_positions": model_positions},
+                )
+                if validation_errors:
+                    metric["validation_rejects"] = int(metric.get("validation_rejects", 0) or 0) + 1
+                    self._bump_metric_counter(metric, "source_validation_rejects", str(source))
                     continue
                 metric["resolve_attempts"] = int(metric.get("resolve_attempts", 0) or 0) + 1
                 apply_result = self._safe_resolve_decision_command(
@@ -489,6 +553,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             "anchor_attempts": 0,
             "quick_rejects": 0,
             "build_calls": 0,
+            "validation_rejects": 0,
             "resolve_attempts": 0,
             "calls_to_first_valid": None,
             "first_valid_source": "",
@@ -497,6 +562,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             "source_attempt_counts": {},
             "source_quick_rejects": {},
             "source_build_calls": {},
+            "source_validation_rejects": {},
             "exhaustive_fallback_used": False,
             "footprint_width": float(footprint["width"]),
             "footprint_depth": float(footprint["depth"]),
