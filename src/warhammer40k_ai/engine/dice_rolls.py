@@ -779,6 +779,7 @@ class DiceRollManager:
             context={
                 "roll_id": int(state.roll_id),
                 "roll_spec": dict(state.spec or {}),
+                "roll_state": state.to_dict(),
             },
         )
         self.link_decision(req.decision_id, state.roll_id)

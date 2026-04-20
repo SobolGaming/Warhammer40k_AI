@@ -18,7 +18,9 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_USE_GILDED_CHAMPION,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.roster.player import Player
 
 
@@ -197,6 +199,100 @@ def _single_candidate_request(
     )
 
 
+def _roll_die(roll_id: int, index: int, value: int, *, faces: int = 6) -> dict[str, object]:
+    return {
+        "die_id": f"{int(roll_id)}:{int(index)}",
+        "value": int(value),
+        "faces": int(faces),
+        "raw_value": int(value),
+        "raw_faces": int(faces),
+        "is_derived": False,
+        "derived_kind": None,
+        "reroll_count": 0,
+        "rerolled_from": None,
+    }
+
+
+def _build_roll_state(
+    *,
+    roll_id: int,
+    player_id: str,
+    spec: dict,
+    dice_values: list[int],
+    per_die_success: dict[str, bool | None],
+    sum_success: bool | None,
+) -> DiceRollState:
+    dice = [_roll_die(roll_id, index, value) for index, value in enumerate(list(dice_values or []))]
+    return DiceRollState(
+        roll_id=int(roll_id),
+        player_id=str(player_id),
+        spec=dict(spec or {}),
+        status="rolled",
+        dice=dice,
+        total=int(sum(int(value) for value in list(dice_values or []))),
+        sorted_ids=[str(die["die_id"]) for die in list(dice or [])],
+        per_die_success=dict(per_die_success or {}),
+        sum_success=sum_success,
+        reroll_options=[],
+        reroll_history=[],
+        final=False,
+    )
+
+
+def _reroll_request_from_roll_state(
+    *,
+    game: Game,
+    player: Player,
+    roll_state: DiceRollState,
+    command_mode: str,
+    eligible_die_ids: list[str],
+) -> DecisionRequest:
+    game.roll_manager.rolls[int(roll_state.roll_id)] = roll_state
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Select dice to reroll",
+        player_id=player.id,
+        context={"roll_id": int(roll_state.roll_id)},
+        options=[
+            DecisionOption.create(
+                "Keep",
+                payload={
+                    "action_id": "none",
+                    "label": "Keep",
+                    "source": "none",
+                    "mode": "none",
+                },
+            ),
+            DecisionOption.create(
+                "Command Re-roll",
+                payload={
+                    "action_id": "command_reroll",
+                    "label": "Command Re-roll",
+                    "ability_key": "command_reroll",
+                    "ability_name": "COMMAND RE-ROLL",
+                    "stratagem_name": "COMMAND RE-ROLL",
+                    "tool_id": "stratagem:command_reroll",
+                    "tool_type": "stratagem",
+                    "source": "command",
+                    "mode": str(command_mode),
+                    "eligible_die_ids": list(eligible_die_ids or []),
+                    "max_select": None if str(command_mode) in {"whole", "all"} else 1,
+                    "cp_cost": 1,
+                    "consume_cp": True,
+                    "is_command": True,
+                    "semantic_tags": ["reroll", "command", "resource"],
+                },
+            ),
+        ],
+    )
+    game.request_decision(request)
+    return request
+
+
+def _candidate_by_action_id(request: DecisionRequest, action_id: str) -> CandidateAction:
+    return next(candidate for candidate in list(request.candidates or []) if str(candidate.action_id or "") == str(action_id))
+
+
 @pytest.mark.parametrize(
     ("decision_type", "params", "context", "expected_kind"),
     [
@@ -319,3 +415,135 @@ def test_semantic_projection_value_shifts_with_bundle_change(
         for key in SEMANTIC_NUMERIC_KEYS
     ]
     assert any(old_value != new_value for old_value, new_value in value_pairs)
+
+
+def test_reroll_request_backfills_roll_state_before_semantic_projection() -> None:
+    game, player = _build_game()
+    roll_state = _build_roll_state(
+        roll_id=17,
+        player_id=player.id,
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "reason": "Hit roll pool",
+            "roll_type": "hit",
+            "target": 3,
+            "target_op": "gte",
+        },
+        dice_values=[1, 5],
+        per_die_success={"17:0": False, "17:1": True},
+        sum_success=None,
+    )
+    request = _reroll_request_from_roll_state(
+        game=game,
+        player=player,
+        roll_state=roll_state,
+        command_mode="one",
+        eligible_die_ids=["17:0", "17:1"],
+    )
+
+    context = dict(request.context or {})
+    command_candidate = _candidate_by_action_id(request, "command_reroll")
+    command_metadata = dict(command_candidate.metadata or {})
+
+    assert context["roll_state"]["total"] == 6
+    assert context["roll_spec"]["roll_type"] == "hit"
+    assert context["roll_state"]["per_die_success"]["17:0"] is False
+    assert command_metadata["semantic_projection_kind"] == "tool"
+    assert float(command_metadata["projected_trade_ev"]) > 0.0
+
+
+def test_command_reroll_semantics_prefer_bad_single_die_reroll_over_none() -> None:
+    game, player = _build_game()
+    roll_state = _build_roll_state(
+        roll_id=21,
+        player_id=player.id,
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "reason": "Hit roll pool",
+            "roll_type": "hit",
+            "target": 3,
+            "target_op": "gte",
+        },
+        dice_values=[1, 5],
+        per_die_success={"21:0": False, "21:1": True},
+        sum_success=None,
+    )
+    request = _reroll_request_from_roll_state(
+        game=game,
+        player=player,
+        roll_state=roll_state,
+        command_mode="one",
+        eligible_die_ids=["21:0", "21:1"],
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    keep_candidate = _candidate_by_action_id(request, "none")
+    command_candidate = _candidate_by_action_id(request, "command_reroll")
+
+    assert controller._semantic_score(request, command_candidate) > controller._semantic_score(request, keep_candidate)
+
+
+def test_command_reroll_semantics_avoid_already_successful_whole_rolls() -> None:
+    game, player = _build_game()
+    roll_state = _build_roll_state(
+        roll_id=31,
+        player_id=player.id,
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "reason": "Charge roll",
+            "roll_type": "charge",
+            "sum_target": 7,
+            "sum_op": "gte",
+        },
+        dice_values=[6, 5],
+        per_die_success={"31:0": None, "31:1": None},
+        sum_success=True,
+    )
+    request = _reroll_request_from_roll_state(
+        game=game,
+        player=player,
+        roll_state=roll_state,
+        command_mode="whole",
+        eligible_die_ids=["31:0", "31:1"],
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    keep_candidate = _candidate_by_action_id(request, "none")
+    command_candidate = _candidate_by_action_id(request, "command_reroll")
+
+    assert controller._semantic_score(request, keep_candidate) > controller._semantic_score(request, command_candidate)
+
+
+def test_command_reroll_semantics_handle_low_is_better_whole_rolls() -> None:
+    game, player = _build_game()
+    roll_state = _build_roll_state(
+        roll_id=41,
+        player_id=player.id,
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "reason": "Battle-shock test",
+            "roll_type": "battle_shock",
+            "sum_target": 6,
+            "sum_op": "lte",
+        },
+        dice_values=[5, 4],
+        per_die_success={"41:0": None, "41:1": None},
+        sum_success=False,
+    )
+    request = _reroll_request_from_roll_state(
+        game=game,
+        player=player,
+        roll_state=roll_state,
+        command_mode="whole",
+        eligible_die_ids=["41:0", "41:1"],
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    keep_candidate = _candidate_by_action_id(request, "none")
+    command_candidate = _candidate_by_action_id(request, "command_reroll")
+
+    assert controller._semantic_score(request, command_candidate) > controller._semantic_score(request, keep_candidate)

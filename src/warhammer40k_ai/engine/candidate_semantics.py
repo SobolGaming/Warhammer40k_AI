@@ -14,7 +14,9 @@ from .decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_PICK_OBJECTIVE,
     DECISION_PICK_POINT,
+    DECISION_REROLL_ROLL,
     DECISION_PICK_TERRAIN_FEATURE,
+    DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_UNIT,
     DECISION_SELECT_TARGET_MODEL,
@@ -62,6 +64,13 @@ _FIGHT_DECISION_TYPES = frozenset(
         DECISION_ALLOCATE_MELEE_TARGETS,
         DECISION_SPLIT_ATTACKS,
         DECISION_ALLOCATE_DAMAGE,
+    )
+)
+
+_REROLL_DECISION_TYPES = frozenset(
+    (
+        DECISION_REROLL_ROLL,
+        DECISION_SELECT_DICE_REROLL,
     )
 )
 
@@ -257,6 +266,307 @@ def _tool_descriptor_ids(context: Mapping[str, Any]) -> list[str]:
         if isinstance(nested, list):
             return [str(item) for item in nested if str(item)]
     return []
+
+
+def _roll_state_data(context: Mapping[str, Any]) -> dict[str, Any]:
+    state = context.get("roll_state")
+    return dict(state or {}) if isinstance(state, dict) else {}
+
+
+def _roll_spec_data(context: Mapping[str, Any]) -> dict[str, Any]:
+    spec: dict[str, Any] = {}
+    state = _roll_state_data(context)
+    state_spec = state.get("spec")
+    if isinstance(state_spec, dict):
+        spec.update(dict(state_spec or {}))
+    context_spec = context.get("roll_spec")
+    if isinstance(context_spec, dict):
+        for key, value in dict(context_spec or {}).items():
+            spec.setdefault(str(key), value)
+    return spec
+
+
+def _base_roll_dice(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    state = _roll_state_data(context)
+    dice = state.get("dice")
+    if not isinstance(dice, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for entry in list(dice or []):
+        if not isinstance(entry, dict):
+            continue
+        if bool(entry.get("is_derived", False)):
+            continue
+        result.append(dict(entry or {}))
+    return result
+
+
+def _die_directional_rank(die: Mapping[str, Any], *, higher_is_better: bool) -> float:
+    value = _safe_float(die.get("value"), 0.0)
+    return -value if higher_is_better else value
+
+
+def _success_from_op(value: float, target: float, op: str) -> bool:
+    operator = str(op or "gte").strip().lower()
+    if operator == "gt":
+        return float(value) > float(target)
+    if operator == "gte":
+        return float(value) >= float(target)
+    if operator == "lt":
+        return float(value) < float(target)
+    if operator == "lte":
+        return float(value) <= float(target)
+    if operator == "eq":
+        return float(value) == float(target)
+    return False
+
+
+def _higher_is_better_for_roll(spec: Mapping[str, Any]) -> bool:
+    sum_op = str(spec.get("sum_op", "") or "").strip().lower()
+    if sum_op in {"lt", "lte"}:
+        return False
+    if sum_op in {"gt", "gte"}:
+        return True
+    target_op = str(spec.get("target_op", "") or "").strip().lower()
+    if target_op in {"lt", "lte"}:
+        return False
+    if target_op in {"gt", "gte"}:
+        return True
+    roll_type = str(spec.get("roll_type", "") or "").strip().lower()
+    if roll_type in {"battle_shock", "desperate_escape"}:
+        return False
+    return True
+
+
+def _selected_reroll_dice(
+    params: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    mode = str(params.get("mode", "") or "").strip().lower()
+    source = str(params.get("source", "") or "").strip().lower()
+    if mode in {"", "none"} or source == "none":
+        return []
+    dice = _base_roll_dice(context)
+    if not dice:
+        return []
+    dice_by_id = {
+        str(die.get("die_id", "") or ""): die
+        for die in dice
+        if str(die.get("die_id", "") or "")
+    }
+    eligible_ids = [
+        str(die_id or "")
+        for die_id in list(params.get("eligible_die_ids", []) or [])
+        if str(die_id or "")
+    ]
+    eligible_dice = [dice_by_id[die_id] for die_id in eligible_ids if die_id in dice_by_id]
+    if not eligible_dice:
+        eligible_dice = list(dice)
+    if mode in {"all", "whole"}:
+        return eligible_dice
+
+    spec = _roll_spec_data(context)
+    higher_is_better = _higher_is_better_for_roll(spec)
+    per_die_success = dict(_roll_state_data(context).get("per_die_success", {}) or {})
+    failed = [
+        die
+        for die in eligible_dice
+        if per_die_success.get(str(die.get("die_id", "") or ""), None) is False
+    ]
+    candidate_pool = failed or eligible_dice
+    if mode in {"values", "ones", "any"}:
+        return sorted(candidate_pool, key=lambda die: _die_directional_rank(die, higher_is_better=higher_is_better))
+    if mode in {"one", "single", "select"}:
+        chosen = min(candidate_pool, key=lambda die: _die_directional_rank(die, higher_is_better=higher_is_better))
+        return [chosen]
+    return eligible_dice
+
+
+def _expected_single_die_success_probability(faces: int, *, target: float, op: str) -> float:
+    face_count = max(1, int(faces or 1))
+    success = 0
+    for value in range(1, face_count + 1):
+        if _success_from_op(float(value), float(target), op):
+            success += 1
+    return float(success) / float(face_count)
+
+
+def _expected_sum_success_probability(
+    *,
+    fixed_total: float,
+    reroll_faces: list[int],
+    target: float,
+    op: str,
+    modifier: float,
+) -> float:
+    if not reroll_faces:
+        return 1.0 if _success_from_op(float(fixed_total + modifier), float(target), op) else 0.0
+    distribution: dict[int, float] = {0: 1.0}
+    for faces in list(reroll_faces or []):
+        face_count = max(1, int(faces or 1))
+        next_distribution: dict[int, float] = {}
+        for subtotal, probability in distribution.items():
+            for value in range(1, face_count + 1):
+                new_total = int(subtotal + value)
+                next_distribution[new_total] = float(next_distribution.get(new_total, 0.0) + probability / float(face_count))
+        distribution = next_distribution
+    success_probability = 0.0
+    for subtotal, probability in distribution.items():
+        final_total = float(fixed_total + subtotal + modifier)
+        if _success_from_op(final_total, float(target), op):
+            success_probability += float(probability)
+    return float(success_probability)
+
+
+def _normalized_progress(total: float, *, low: float, high: float, higher_is_better: bool) -> float:
+    if float(high) <= float(low):
+        return 0.0
+    if higher_is_better:
+        return _clamp((float(total) - float(low)) / (float(high) - float(low)), low=0.0, high=1.0)
+    return _clamp((float(high) - float(total)) / (float(high) - float(low)), low=0.0, high=1.0)
+
+
+def _projection_for_reroll(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    context: Mapping[str, Any],
+    scalars: Mapping[str, float],
+) -> dict[str, float]:
+    del metadata  # Reroll projection is driven by the concrete roll snapshot.
+    mode = str(params.get("mode", "") or "").strip().lower()
+    source = str(params.get("source", "") or "").strip().lower()
+    cp_cost = max(0.0, _extract_resource_cost(params, {}, context))
+    if mode in {"", "none"} or source == "none":
+        return {
+            "projected_score_delta_next_window": 0.0,
+            "projected_score_delta_round": 0.0,
+            "projected_deny_delta_next_window": 0.0,
+            "projected_control_delta": 0.0,
+            "projected_action_enablement_delta": 0.0,
+            "projected_exposure_delta": 0.0,
+            "projected_trade_ev": 0.0,
+            "cover_delta": 0.0,
+            "los_delta": 0.0,
+            "resource_delta": 0.0,
+        }
+
+    spec = _roll_spec_data(context)
+    roll_state = _roll_state_data(context)
+    selected_dice = _selected_reroll_dice(params, context)
+    if not selected_dice:
+        return {
+            "projected_score_delta_next_window": 0.0,
+            "projected_score_delta_round": 0.0,
+            "projected_deny_delta_next_window": 0.0,
+            "projected_control_delta": 0.0,
+            "projected_action_enablement_delta": 0.0,
+            "projected_exposure_delta": 0.0,
+            "projected_trade_ev": 0.0,
+            "cover_delta": 0.0,
+            "los_delta": 0.0,
+            "resource_delta": _round6(_clamp(-cp_cost, low=-3.0, high=0.0)),
+        }
+
+    higher_is_better = _higher_is_better_for_roll(spec)
+    sum_modifier = _safe_float(spec.get("sum_modifier"), 0.0)
+    current_total = _safe_float(roll_state.get("total"), 0.0)
+    if current_total == 0.0:
+        current_total = sum(_safe_float(die.get("value"), 0.0) for die in _base_roll_dice(context))
+    current_total_effective = float(current_total + sum_modifier)
+
+    success_delta = 0.0
+    progress_delta = 0.0
+    sum_target = spec.get("sum_target")
+    sum_op = str(spec.get("sum_op", "") or "").strip().lower()
+    if sum_target is not None and sum_op:
+        selected_ids = {str(die.get("die_id", "") or "") for die in list(selected_dice or [])}
+        fixed_total = sum(
+            _safe_float(die.get("value"), 0.0)
+            for die in _base_roll_dice(context)
+            if str(die.get("die_id", "") or "") not in selected_ids
+        )
+        reroll_faces = [max(1, _safe_int(die.get("faces"), 6)) for die in list(selected_dice or [])]
+        expected_success = _expected_sum_success_probability(
+            fixed_total=fixed_total,
+            reroll_faces=reroll_faces,
+            target=_safe_float(sum_target, 0.0),
+            op=sum_op,
+            modifier=sum_modifier,
+        )
+        current_success = roll_state.get("sum_success")
+        if current_success is None:
+            current_success = _success_from_op(current_total_effective, _safe_float(sum_target, 0.0), sum_op)
+        success_delta = float(expected_success) - (1.0 if bool(current_success) else 0.0)
+        expected_selected_total = sum((float(max(1, _safe_int(die.get("faces"), 6))) + 1.0) / 2.0 for die in list(selected_dice or []))
+        expected_total = float(fixed_total + expected_selected_total + sum_modifier)
+        min_total = float(fixed_total + len(reroll_faces) + sum_modifier)
+        max_total = float(fixed_total + sum(reroll_faces) + sum_modifier)
+        progress_delta = _normalized_progress(
+            expected_total,
+            low=min_total,
+            high=max_total,
+            higher_is_better=higher_is_better,
+        ) - _normalized_progress(
+            current_total_effective,
+            low=min_total,
+            high=max_total,
+            higher_is_better=higher_is_better,
+        )
+    else:
+        target = spec.get("target")
+        target_op = str(spec.get("target_op", "") or "").strip().lower()
+        current_successes = 0.0
+        expected_successes = 0.0
+        current_progress = 0.0
+        expected_progress = 0.0
+        for die in list(selected_dice or []):
+            faces = max(1, _safe_int(die.get("faces"), 6))
+            current_value = _safe_float(die.get("value"), 0.0)
+            current_progress += _normalized_progress(
+                current_value,
+                low=1.0,
+                high=float(faces),
+                higher_is_better=higher_is_better,
+            )
+            expected_progress += _normalized_progress(
+                (float(faces) + 1.0) / 2.0,
+                low=1.0,
+                high=float(faces),
+                higher_is_better=higher_is_better,
+            )
+            if target is not None and target_op:
+                current_successes += 1.0 if _success_from_op(current_value, _safe_float(target, 0.0), target_op) else 0.0
+                expected_successes += _expected_single_die_success_probability(
+                    faces,
+                    target=_safe_float(target, 0.0),
+                    op=target_op,
+                )
+        selected_count = float(max(1, len(selected_dice)))
+        success_delta = float(expected_successes - current_successes) / selected_count
+        progress_delta = float(expected_progress - current_progress) / selected_count
+
+    benefit = _clamp(success_delta * 1.6 + progress_delta * 0.9, low=-2.0, high=2.0)
+    roll_type = str(spec.get("roll_type", "") or "").strip().lower()
+    action_enable = benefit * (0.7 if roll_type in {"advance", "charge"} else 0.25)
+    control = benefit * (0.65 if roll_type == "battle_shock" else 0.15)
+    deny = benefit * (0.45 if roll_type == "battle_shock" else 0.0)
+    trade = benefit * (0.8 if roll_type in {"hit", "wound", "damage", "save", "charge"} else 0.45)
+    score_next = benefit * (1.0 if roll_type != "battle_shock" else 0.8)
+    score_round = benefit * 0.85
+    resource = -cp_cost
+    return {
+        "projected_score_delta_next_window": _round6(_clamp(score_next, low=-3.0, high=3.0)),
+        "projected_score_delta_round": _round6(_clamp(score_round, low=-3.0, high=3.0)),
+        "projected_deny_delta_next_window": _round6(_clamp(deny, low=-3.0, high=3.0)),
+        "projected_control_delta": _round6(_clamp(control, low=-3.0, high=3.0)),
+        "projected_action_enablement_delta": _round6(_clamp(action_enable, low=-3.0, high=3.0)),
+        "projected_exposure_delta": 0.0,
+        "projected_trade_ev": _round6(_clamp(trade, low=-3.0, high=3.0)),
+        "cover_delta": 0.0,
+        "los_delta": 0.0,
+        "resource_delta": _round6(_clamp(resource, low=-3.0, high=0.0)),
+    }
 
 
 def _projection_for_movement(
@@ -613,6 +923,16 @@ def _computed_projections(
                 scalars=scalars,
             ),
             kind,
+        )
+    if decision_type in _REROLL_DECISION_TYPES:
+        return (
+            _projection_for_reroll(
+                params=params,
+                metadata=metadata,
+                context=context,
+                scalars=scalars,
+            ),
+            "tool",
         )
     if kind == "tool":
         return (

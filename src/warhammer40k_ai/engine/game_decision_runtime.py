@@ -6,6 +6,7 @@ from .decision_kinds import (
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
+    DECISION_REROLL_ROLL,
     DECISION_SCOUT_MOVE,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
@@ -47,20 +48,26 @@ def request_decision(game, request) -> None:
     if request is None:
         return
     request.finalize_candidates()
-
-    if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
-        ctx = dict(getattr(request, "context", {}) or {})
-        roll_id = ctx.get("roll_id")
-        if roll_id is not None and game.roll_manager is not None and game.roll_manager.get_roll(int(roll_id)) is None:
-            spec = dict(ctx.get("roll_spec", {}) or {})
-            game.roll_manager.rolls[int(roll_id)] = DiceRollState(
-                roll_id=int(roll_id),
-                player_id=request.player_id,
-                spec=spec,
-                status="pending",
-            )
-
     ctx = dict(getattr(request, "context", {}) or {})
+    if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
+        roll_id = ctx.get("roll_id")
+        if roll_id is not None and game.roll_manager is not None:
+            roll_state = game.roll_manager.get_roll(int(roll_id))
+            if roll_state is None:
+                spec = dict(ctx.get("roll_spec", {}) or {})
+                roll_state = DiceRollState(
+                    roll_id=int(roll_id),
+                    player_id=request.player_id,
+                    spec=spec,
+                    status="pending",
+                )
+                game.roll_manager.rolls[int(roll_id)] = roll_state
+            if request.decision_type in (DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
+                if "roll_spec" not in ctx:
+                    ctx["roll_spec"] = dict(getattr(roll_state, "spec", {}) or {})
+                if "roll_state" not in ctx:
+                    ctx["roll_state"] = roll_state.to_dict()
+
     ruleset_ctx = game.get_ruleset_context()
     if "rules_bundle" not in ctx:
         ctx["rules_bundle"] = dict(ruleset_ctx or {})
