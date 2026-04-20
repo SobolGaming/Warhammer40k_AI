@@ -11,7 +11,9 @@ from .combat_timing import geometry_profile_for_game
 from .decision_controller import DecisionController
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CHOOSE_MISSION,
     DECISION_DECLARE_RESERVES,
+    DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
@@ -32,6 +34,10 @@ from ..utility.placement_search import (
 _DEFAULT_SKIPPED_DECISION_TYPES = {
     DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_DICE_REROLL,
+}
+
+_DRIVER_MANAGED_DECISION_TYPES = {
+    DECISION_CHOOSE_MISSION,
 }
 
 logger = logging.getLogger(__name__)
@@ -142,6 +148,11 @@ class HeadlessPolicyDecisionController(DecisionController):
             if masked is False:
                 continue
             option_payload = dict(getattr(option, "payload", {}) or {})
+            candidate = self._candidate_for_action_id(request, action_id)
+            if candidate is None:
+                candidate = self._candidate_from_option_payload(action_id, option_payload)
+            if not self._candidate_is_structurally_resolvable(request, candidate):
+                continue
             result_payload = self._normalized_result_payload(request, option_payload)
             if bool(option_payload.get("skip", False)):
                 result_payload["skipped"] = True
@@ -153,6 +164,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 option_id,
                 result_payload=result_payload,
                 player_id=getattr(request, "player_id", None),
+                metadata=self._command_metadata_for_candidate(candidate, strategy="first_legal_option"),
             )
             if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                 return
@@ -172,6 +184,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             option_id,
             result_payload=payload,
             player_id=getattr(request, "player_id", None),
+            metadata=self._command_metadata_for_candidate(candidate, strategy="ranked_candidate"),
         )
         return bool(apply_result is not None and getattr(apply_result, "ok", False))
 
@@ -183,6 +196,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         *,
         result_payload: dict[str, Any],
         player_id: str | None,
+        metadata: dict[str, Any] | None = None,
     ):
         try:
             return resolve_decision_command(
@@ -191,6 +205,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 option_id,
                 result_payload=result_payload,
                 player_id=player_id,
+                metadata=metadata,
             )
         except (RuntimeError, ValueError) as exc:
             logger.debug(
@@ -225,6 +240,57 @@ class HeadlessPolicyDecisionController(DecisionController):
                 return option_id
         return ""
 
+    @staticmethod
+    def _candidate_from_option_payload(action_id: str, option_payload: dict[str, Any]) -> CandidateAction:
+        params = dict(option_payload or {})
+        params.pop("action_id", None)
+        return CandidateAction(action_id=str(action_id or ""), params=params, metadata={})
+
+    @staticmethod
+    def _candidate_is_structurally_resolvable(request: DecisionRequest, candidate: CandidateAction | None) -> bool:
+        if candidate is None:
+            return False
+        params = dict(getattr(candidate, "params", {}) or {})
+        action = str(params.get("action", "") or "").strip().lower()
+        if action in {"pass", "skip"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+            return True
+        if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
+            model_positions = params.get("model_positions")
+            return isinstance(model_positions, list) and bool(model_positions)
+        if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_SHOTS:
+            declarations = params.get("declarations")
+            return isinstance(declarations, list) and bool(declarations)
+        return True
+
+    @staticmethod
+    def _command_metadata_for_candidate(candidate: CandidateAction | None, *, strategy: str) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "controller": "headless_policy",
+            "resolution_strategy": str(strategy or ""),
+        }
+        if candidate is None:
+            return metadata
+        candidate_metadata = dict(getattr(candidate, "metadata", {}) or {})
+        candidate_action_id = str(getattr(candidate, "action_id", "") or "")
+        if candidate_action_id:
+            metadata["candidate_action_id"] = candidate_action_id
+        candidate_kind = str(candidate_metadata.get("candidate_kind", "") or "").strip()
+        if candidate_kind:
+            metadata["candidate_kind"] = candidate_kind
+        candidate_source = str(candidate_metadata.get("source", "") or "").strip()
+        if candidate_source:
+            metadata["candidate_source"] = candidate_source
+        return metadata
+
+    @staticmethod
+    def _candidate_for_action_id(request: DecisionRequest, action_id: str) -> CandidateAction | None:
+        if not action_id:
+            return None
+        for candidate in list(getattr(request, "candidates", []) or []):
+            if str(getattr(candidate, "action_id", "") or "") == action_id:
+                return candidate
+        return None
+
     def _try_resolve_reserves_arrival_bruteforce(self, game: object, request: DecisionRequest) -> bool:
         if str(getattr(request, "decision_type", "") or "") != DECISION_MOVE_UNIT:
             return False
@@ -239,6 +305,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         options = list(getattr(request, "options", []) or [])
         confirm_option_id = ""
         skip_option_id = ""
+        confirm_action_id = ""
         for option in options:
             option_id = str(getattr(option, "option_id", "") or "")
             if not option_id:
@@ -248,6 +315,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 skip_option_id = option_id
             else:
                 confirm_option_id = option_id
+                confirm_action_id = request.action_id_for_option_id(option_id)
         if not confirm_option_id:
             return False
 
@@ -310,6 +378,12 @@ class HeadlessPolicyDecisionController(DecisionController):
                     confirm_option_id,
                     result_payload={"model_positions": model_positions},
                     player_id=getattr(request, "player_id", None),
+                    metadata={
+                        "controller": "headless_policy",
+                        "resolution_strategy": "reserves_arrival_bruteforce",
+                        "candidate_action_id": str(confirm_action_id or ""),
+                        "candidate_kind": "reserves_arrival_bruteforce",
+                    },
                 )
                 if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                     metric["consumed_anchor_count"] = int(consumed)
@@ -442,10 +516,12 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     @staticmethod
     def _should_skip_request(request: DecisionRequest) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type in _DRIVER_MANAGED_DECISION_TYPES:
+            return True
         context = dict(getattr(request, "context", {}) or {})
         if str(context.get("decision_owner", "") or "").strip().lower() != "deployment_manager":
             return False
-        decision_type = str(getattr(request, "decision_type", "") or "")
         if decision_type in {
             DECISION_CHOOSE_DEPLOYMENT_ZONE,
             DECISION_DECLARE_RESERVES,
@@ -1094,6 +1170,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             if idx < len(mask):
                 allowed = bool(mask[idx])
             if not allowed:
+                continue
+            if not self._candidate_is_structurally_resolvable(request, candidate):
                 continue
             legal.append(candidate)
         if not legal:

@@ -36,6 +36,7 @@ def resolve_decision_command(
     *,
     result_payload: Optional[dict] = None,
     player_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
 ):
     if request is None:
         raise ValueError("Decision request is required.")
@@ -44,7 +45,12 @@ def resolve_decision_command(
         "option_id": option_id,
         "result_payload": dict(result_payload or {}),
     }
-    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=player_id or request.player_id, payload=payload)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player_id or request.player_id,
+        payload=payload,
+        metadata=dict(metadata or {}),
+    )
     return game.apply_command(cmd)
 
 

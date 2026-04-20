@@ -104,6 +104,7 @@ Events include:
 - event_id (monotonic int), type, actor_id
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
+- `command_rejected` payloads include validator `errors`; rejected `RESOLVE_DECISION` events also include compact decision diagnostics (`decision_id`, `option_id`, `decision_type`, optional candidate probe ids/kinds, `payload_keys`, and counts/checksums for large arrays such as `model_positions` or `declarations`).
 
 Note: The deterministic event log is separate from the UI EventSystem; UI-only signals
 are not persisted or replayed.

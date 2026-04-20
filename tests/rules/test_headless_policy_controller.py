@@ -7,8 +7,10 @@ from shapely.geometry import Point
 
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CHOOSE_MISSION,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
+    DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
@@ -143,6 +145,29 @@ def test_headless_policy_controller_skips_deployment_manager_owned_setup_request
     assert game.commands == []
 
 
+def test_headless_policy_controller_skips_driver_managed_mission_selection() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    combo = {
+        "id": "take_and_hold",
+        "combination_id": "take_and_hold",
+        "pack_id": "chapter_approved_2025_2026",
+        "primary": "Take and Hold",
+        "deployment": "Crucible of Battle",
+        "layouts": [2],
+    }
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_MISSION,
+        "Select a mission-pack entry and terrain layout.",
+        player_id="p1",
+        options=[DecisionOption.create("Take and Hold", payload={"combination": combo})],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert game.commands == []
+
+
 def test_headless_policy_controller_skips_non_authoritative_game_by_default() -> None:
     class _ObservedGame:
         is_authoritative = False
@@ -233,6 +258,118 @@ def test_headless_policy_controller_marks_skip_payload_when_falling_back_to_skip
             found_skip = True
             break
     assert found_skip
+
+
+def test_headless_policy_controller_prunes_structurally_invalid_declare_shots_candidates() -> None:
+    class _SkipGame(_FakeGame):
+        def apply_command(self, command):
+            self.commands.append(command)
+            payload = dict(command.payload or {})
+            result_payload = dict(payload.get("result_payload", {}) or {})
+            return _ApplyResult(ok=bool(result_payload.get("skipped", False)))
+
+    game = _SkipGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption(
+            option_id="opt:confirm",
+            label="Confirm",
+            payload={"action": "confirm", "action_id": "shoot:confirm"},
+        ),
+        DecisionOption(
+            option_id="opt:skip",
+            label="Skip",
+            payload={"action": "skip", "action_id": "shoot:skip"},
+        ),
+    ]
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        player_id="p1",
+        options=options,
+        context={"unit_id": "unit:1"},
+        candidates=[
+            CandidateAction(
+                action_id="shoot:confirm",
+                params={"action": "confirm"},
+                metadata={"projected_score_delta_next_window": 5.0, "candidate_kind": "confirm"},
+            ),
+            CandidateAction(
+                action_id="shoot:skip",
+                params={"action": "skip"},
+                metadata={"projected_score_delta_next_window": 0.0, "candidate_kind": "skip"},
+            ),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    metadata = dict(game.commands[0].metadata or {})
+    assert str(payload.get("option_id", "")) == "opt:skip"
+    assert result_payload == {"action": "skip", "skipped": True}
+    assert metadata["candidate_action_id"] == "shoot:skip"
+    assert metadata["candidate_kind"] == "skip"
+    assert metadata["resolution_strategy"] == "ranked_candidate"
+
+
+def test_headless_policy_controller_prunes_move_candidates_without_model_positions() -> None:
+    class _SkipGame(_FakeGame):
+        def apply_command(self, command):
+            self.commands.append(command)
+            payload = dict(command.payload or {})
+            result_payload = dict(payload.get("result_payload", {}) or {})
+            return _ApplyResult(ok=bool(result_payload.get("skipped", False)))
+
+    game = _SkipGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption(
+            option_id="opt:confirm",
+            label="Confirm",
+            payload={"action": "confirm", "action_id": "move:confirm"},
+        ),
+        DecisionOption(
+            option_id="opt:skip",
+            label="Skip",
+            payload={"action": "skip", "action_id": "move:skip"},
+        ),
+    ]
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id="p1",
+        options=options,
+        context={"unit_id": "unit:1", "allow_skip": True},
+        candidates=[
+            CandidateAction(
+                action_id="move:confirm",
+                params={"action": "confirm", "movement_type": "move", "unit_id": "unit:1"},
+                metadata={"projected_score_delta_next_window": 5.0, "candidate_kind": "move"},
+            ),
+            CandidateAction(
+                action_id="move:skip",
+                params={"action": "skip"},
+                metadata={"projected_score_delta_next_window": 0.0, "candidate_kind": "skip"},
+            ),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    metadata = dict(game.commands[0].metadata or {})
+    assert str(payload.get("option_id", "")) == "opt:skip"
+    assert result_payload == {"action": "skip", "skipped": True}
+    assert metadata["candidate_action_id"] == "move:skip"
+    assert metadata["candidate_kind"] == "skip"
+    assert metadata["resolution_strategy"] == "ranked_candidate"
 
 
 def test_headless_policy_controller_resolves_coherency_with_model_ids_payload() -> None:

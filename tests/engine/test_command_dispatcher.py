@@ -9,7 +9,7 @@ from warhammer40k_ai.engine.command_kinds import (
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from warhammer40k_ai.engine.commands import GameCommand
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game, SetupPhase
 from warhammer40k_ai.engine.mission_selection import default_mission_selection
@@ -68,6 +68,24 @@ def test_execute_setup_phase_rejects_unknown_payload_keys():
     )
     result = game.apply_command(cmd)
     assert result.ok is False
+
+
+def test_command_rejected_event_includes_validator_errors() -> None:
+    game = _make_game()
+    cmd = GameCommand.create(
+        CMD_SET_DEPLOYMENT_WAITING,
+        player_id=game.get_current_player().id,
+        payload={},
+    )
+
+    result = game.apply_command(cmd)
+
+    assert result.ok is False
+    rejection_events = [event for event in game.event_log.events if event.event_type == "command_rejected"]
+    assert rejection_events
+    payload = dict(rejection_events[-1].payload or {})
+    assert payload["command_kind"] == CMD_SET_DEPLOYMENT_WAITING
+    assert payload["errors"] == ["deployment waiting command requires 'value'."]
 
 
 def test_select_mission_sets_primary_cards():
@@ -154,6 +172,51 @@ def test_resolve_decision_rejects_invalid_option():
     result = game.apply_command(cmd)
     assert result.ok is False
     assert game.decision_queue.peek() is request
+
+
+def test_command_rejected_resolve_decision_event_includes_compact_diagnostics() -> None:
+    game = _make_game()
+    player_id = game.get_current_player().id
+    option = DecisionOption.create("Confirm", payload={"action": "confirm"})
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id=player_id,
+        options=[option],
+    )
+    game.request_decision(request)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player_id,
+        payload={
+            "decision_id": request.decision_id,
+            "option_id": "bad-option",
+            "result_payload": {
+                "model_positions": [
+                    {"model_id": "model:1", "position": [1.0, 2.0, 0.0], "facing": 0.0},
+                ]
+            },
+        },
+        metadata={"candidate_action_id": "candidate:probe", "candidate_kind": "probe"},
+    )
+
+    result = game.apply_command(cmd)
+
+    assert result.ok is False
+    rejection_events = [event for event in game.event_log.events if event.event_type == "command_rejected"]
+    assert rejection_events
+    payload = dict(rejection_events[-1].payload or {})
+    assert payload["command_kind"] == CMD_RESOLVE_DECISION
+    assert payload["decision_id"] == request.decision_id
+    assert payload["option_id"] == "bad-option"
+    assert payload["decision_type"] == DECISION_MOVE_UNIT
+    assert payload["candidate_action_id"] == "candidate:probe"
+    assert payload["candidate_kind"] == "probe"
+    assert payload["payload_keys"] == ["model_positions"]
+    assert payload["model_positions_count"] == 1
+    assert isinstance(payload["model_positions_checksum"], str)
+    assert len(payload["model_positions_checksum"]) == 64
+    assert payload["errors"] == ["Selected option_id is not valid for this decision."]
 
 
 def test_resolve_decision_rejects_wrong_player():

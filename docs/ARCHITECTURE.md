@@ -103,8 +103,9 @@ Use case:
 
 Current headless flow:
 - `scripts/run_headless_self_play.py` drives setup and phase progression through the same authoritative runtime/driver shell as local interactive play, then drains pending decisions until the game ends or the configured phase-step cap is reached.
+- Driver-managed mission selection stays in `AuthoritativeSessionDriver`; the generic `HeadlessPolicyDecisionController` skips `CHOOSE_MISSION` rather than trying to resolve setup-owned mission/layout requests itself.
 - Deployment is not a special UI-only path in headless mode. Zone selection, reserve declarations, next-unit selection, and placement are resolved by `DeterministicDeploymentDecisionMaker`, optionally with a deployment ranking model.
-- Non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates and falls back to first-legal resolution or bounded reserves-arrival brute force when needed.
+- Other non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates, prunes structurally incomplete payloads before submission (for example non-skip `DECLARE_SHOTS` candidates without declarations), and falls back to first-legal resolution or bounded reserves-arrival brute force when needed.
 - Time-budgeted solvers feed candidate metadata into `DecisionRecord`s, so headless runs capture candidates, masks, chosen actions, wall-clock timing, and fallback mode for replay/training use.
 - Fight-phase pile-in and consolidate now continue through the same authoritative `MOVE_UNIT` pipeline as other movement decisions, with shared planning/validation instead of legacy UI-only movement hooks.
 

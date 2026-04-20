@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+import hashlib
 import html
+import json
 import re
 import logging
 import copy
@@ -20,6 +22,7 @@ from .command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
     CMD_NEXT_PHASE,
+    CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
     CMD_START_COMMAND_PHASE,
     CMD_SET_DEPLOYMENT_WAITING,
@@ -92,6 +95,56 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..roster.army_muster import ArmyMusterRequest
+
+
+def _canonical_command_event_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _command_event_digest(value: Any) -> str:
+    return hashlib.sha256(_canonical_command_event_json(value).encode("utf-8")).hexdigest()
+
+
+def _command_rejection_diagnostics(
+    game: "Game",
+    command: GameCommand | None,
+    *,
+    encoded_payload: dict[str, Any],
+    encoded_metadata: dict[str, Any],
+    result: object | None,
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {}
+    errors = [str(err or "") for err in list(getattr(result, "errors", ()) or ()) if str(err or "")]
+    if errors:
+        diagnostics["errors"] = errors
+    if str(getattr(command, "kind", "") or "") != CMD_RESOLVE_DECISION:
+        return diagnostics
+    decision_id = str(encoded_payload.get("decision_id", "") or "")
+    option_id = str(encoded_payload.get("option_id", "") or "")
+    diagnostics["decision_id"] = decision_id
+    diagnostics["option_id"] = option_id
+    queue = getattr(game, "decision_queue", None)
+    request = queue.get(decision_id) if queue is not None and hasattr(queue, "get") and decision_id else None
+    decision_type = str(getattr(request, "decision_type", "") or "")
+    if decision_type:
+        diagnostics["decision_type"] = decision_type
+    candidate_action_id = str(encoded_metadata.get("candidate_action_id", "") or "")
+    if candidate_action_id:
+        diagnostics["candidate_action_id"] = candidate_action_id
+    candidate_kind = str(encoded_metadata.get("candidate_kind", "") or "")
+    if candidate_kind:
+        diagnostics["candidate_kind"] = candidate_kind
+    result_payload = dict(encoded_payload.get("result_payload", {}) or {})
+    diagnostics["payload_keys"] = sorted(str(key) for key in result_payload.keys())
+    model_positions = result_payload.get("model_positions")
+    if isinstance(model_positions, list):
+        diagnostics["model_positions_count"] = int(len(model_positions))
+        diagnostics["model_positions_checksum"] = _command_event_digest(model_positions)
+    declarations = result_payload.get("declarations")
+    if isinstance(declarations, list):
+        diagnostics["declarations_count"] = int(len(declarations))
+        diagnostics["declarations_checksum"] = _command_event_digest(declarations)
+    return diagnostics
 
 class Game(
     GameSetupDeploymentReservesMixin,
@@ -12461,14 +12514,27 @@ class Game(
             result = dispatch_command(self, command)
         event_log = getattr(self, "event_log", None)
         if event_log is not None and command is not None:
+            encoded_payload = encode_refs(getattr(command, "payload", {}) or {})
+            encoded_metadata = encode_refs(getattr(command, "metadata", {}) or {})
             payload = {
                 "command_id": getattr(command, "command_id", ""),
                 "kind": getattr(command, "kind", ""),
+                "command_kind": getattr(command, "kind", ""),
                 "player_id": getattr(command, "player_id", None),
-                "payload": encode_refs(getattr(command, "payload", {}) or {}),
-                "metadata": encode_refs(getattr(command, "metadata", {}) or {}),
+                "payload": encoded_payload,
+                "metadata": encoded_metadata,
             }
             event_type = "command_applied" if getattr(result, "ok", False) else "command_rejected"
+            if event_type == "command_rejected":
+                payload.update(
+                    _command_rejection_diagnostics(
+                        self,
+                        command,
+                        encoded_payload=encoded_payload,
+                        encoded_metadata=encoded_metadata,
+                        result=result,
+                    )
+                )
             event_log.record(
                 event_type,
                 actor_id=payload.get("player_id"),
