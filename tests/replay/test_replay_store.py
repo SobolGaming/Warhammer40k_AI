@@ -439,6 +439,95 @@ def test_replay_store_persists_trailing_resolve_command_for_final_decision(tmp_p
     assert events[-1]["payload"]["payload"]["decision_id"] == request.decision_id
 
 
+def test_replay_store_flushes_current_command_before_post_command_followups(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "post_command_followup.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-post-command-followup",
+        label="Replay Post Command Followup",
+    )
+
+    followup_state: dict[str, str | bool] = {"queued": False, "decision_id": ""}
+
+    def _queue_post_command_followup(self, command, result) -> bool:
+        if bool(followup_state["queued"]):
+            return False
+        if str(getattr(command, "kind", "") or "") != CMD_RESOLVE_DECISION:
+            return False
+        if not bool(getattr(result, "ok", False)):
+            return False
+        followup_state["queued"] = True
+        followup = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Resolve follow-up?",
+            player_id=player.id,
+            options=[
+                DecisionOption.create("Yes", payload={"choice": True}),
+                DecisionOption.create("No", payload={"choice": False}),
+            ],
+        )
+        followup_state["decision_id"] = str(followup.decision_id)
+        self.request_decision(followup)
+        followup_result = self.apply_command(
+            GameCommand.create(
+                CMD_RESOLVE_DECISION,
+                player_id=player.id,
+                payload={
+                    "decision_id": followup.decision_id,
+                    "option_id": followup.options[0].option_id,
+                    "result_payload": {},
+                },
+            )
+        )
+        assert bool(getattr(followup_result, "ok", False))
+        return True
+
+    game._maybe_queue_post_command_tool_decisions = MethodType(_queue_post_command_followup, game)
+
+    request = _queue_confirmation(game, player)
+    result = game.apply_command(
+        GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player.id,
+            payload={
+                "decision_id": request.decision_id,
+                "option_id": request.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+    )
+    assert bool(getattr(result, "ok", False))
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+    assert [step.decision_type for step in steps] == [
+        DECISION_CONFIRM_YES_NO,
+        DECISION_CONFIRM_YES_NO,
+    ]
+    assert steps[0].event_end_id is not None
+    assert steps[1].event_start_id is not None
+    assert int(steps[0].event_end_id) < int(steps[1].event_start_id)
+
+    first_events = reader.get_events_for_decision(1)
+    second_events = reader.get_events_for_decision(2)
+
+    assert [str(entry.get("type", "") or "") for entry in first_events] == [
+        "decision_requested",
+        "decision_resolved",
+        "command_applied",
+    ]
+    assert [str(entry.get("type", "") or "") for entry in second_events] == [
+        "decision_requested",
+        "decision_resolved",
+        "command_applied",
+    ]
+    assert first_events[-1]["payload"]["payload"]["decision_id"] == request.decision_id
+    assert second_events[-1]["payload"]["payload"]["decision_id"] == str(followup_state["decision_id"] or "")
+
+
 def test_replay_store_preserves_nested_decision_order_for_strict_replay(tmp_path) -> None:
     _register_test_chained_decision_handlers()
     game, player = _build_game()

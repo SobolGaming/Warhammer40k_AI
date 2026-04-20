@@ -36,9 +36,11 @@ Canonical runtime module:
 - Step rows are persisted at `decision_resolved`, so nested follow-up decisions keep
   the same parent-before-child ordering that the engine validated at runtime.
 - Successful `RESOLVE_DECISION` commands extend the matching step's `event_end_id`
-  after the authoritative command event is recorded, so the originating
+  immediately after the authoritative command event is recorded and before any
+  post-command tool windows are queued, so the originating
   `command_applied` event stays attached to the decision it resolved instead of
-  spilling into the next step.
+  spilling into the next step. The extension is bound to the exact recorded
+  command event for that `command_id`, not just a later event tail watermark.
 
 ### `events`
 - Deterministic event log rows referenced by `decision_steps`.

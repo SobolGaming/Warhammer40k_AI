@@ -12475,11 +12475,11 @@ class Game(
                 payload=payload,
                 validate_payload=False,
             )
-        self._maybe_queue_post_command_tool_decisions(command, result)
         recorder = getattr(self, "_decision_replay_recorder", None)
         record_post_command = getattr(recorder, "record_post_command", None)
         if callable(record_post_command):
             record_post_command(self, command, result)
+        self._maybe_queue_post_command_tool_decisions(command, result)
         return result
 
     def process_command_queue(self, *, limit: int | None = None):

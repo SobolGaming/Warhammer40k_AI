@@ -450,7 +450,7 @@ class ReplayStoreRecorder:
     def record_post_command(self, game: Game, command: GameCommand | None, result: Any | None) -> None:
         if game is None or command is None:
             return
-        _event_start_id, event_end_id, _events = self._capture_new_events(game)
+        _event_start_id, event_end_id, events = self._capture_new_events(game)
         if str(getattr(command, "kind", "") or "") != CMD_RESOLVE_DECISION:
             return
         payload = dict(getattr(command, "payload", {}) or {})
@@ -463,7 +463,19 @@ class ReplayStoreRecorder:
         if decision_id not in self._pending_command_events:
             return
         self._pending_command_events.discard(decision_id)
-        self._update_decision_step_event_end(decision_id, event_end_id)
+        command_id = str(getattr(command, "command_id", "") or "")
+        command_event_id = None
+        for entry in list(events or []):
+            payload = dict(entry.get("payload", {}) or {})
+            if str(payload.get("command_id", "") or "") != command_id:
+                continue
+            if str(entry.get("type", entry.get("event_type", "")) or "") not in {"command_applied", "command_rejected"}:
+                continue
+            command_event_id = int(entry.get("event_id", 0) or 0)
+            break
+        if command_event_id is None:
+            command_event_id = event_end_id
+        self._update_decision_step_event_end(decision_id, command_event_id)
 
     def decision_count(self) -> int:
         with self._connect() as conn:
