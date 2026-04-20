@@ -36,6 +36,284 @@ class _FakeGame:
         return _ApplyResult(ok=True)
 
 
+class _ReserveSearchBase:
+    has_circular_base = True
+
+    def __init__(self, x: float = 0.0, y: float = 0.0, *, radius: float = 0.5, z: float = 0.0) -> None:
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+        self.facing = 0.0
+        self._radius = float(radius)
+
+    def get_radius(self) -> float:
+        return float(self._radius)
+
+    def get_longest_radius(self) -> float:
+        return float(self._radius)
+
+    def get_base_shape(self):
+        return Point(float(self.x), float(self.y)).buffer(float(self._radius))
+
+
+class _ReserveSearchModel:
+    def __init__(self, model_id: str, *, x: float = 0.0, y: float = 0.0, radius: float = 0.5) -> None:
+        self._id = model_id
+        self.id = model_id
+        self.model_base = _ReserveSearchBase(x=float(x), y=float(y), radius=radius)
+        self.is_alive = True
+        self.parent_unit = None
+
+    def get_location(self) -> tuple[float, float, float, float]:
+        return (
+            float(self.model_base.x),
+            float(self.model_base.y),
+            float(self.model_base.z),
+            float(self.model_base.facing),
+        )
+
+    def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+        self.model_base.x = float(x)
+        self.model_base.y = float(y)
+        self.model_base.z = float(z)
+        self.model_base.facing = float(facing)
+
+
+class _ReserveSearchUnit:
+    def __init__(
+        self,
+        unit_id: str,
+        *,
+        reserve_status: str,
+        strategic: bool,
+        deep_strike: bool,
+        x: float = 0.0,
+        y: float = 0.0,
+    ) -> None:
+        self._id = unit_id
+        self.id = unit_id
+        self.name = unit_id
+        self.reserve_status = reserve_status
+        self.deployed = reserve_status == "deployed"
+        self.embarked_in = None
+        self.is_embarked = False
+        self.parent_army = None
+        self._strategic = bool(strategic)
+        self._deep_strike = bool(deep_strike)
+        self.models = [_ReserveSearchModel(f"{unit_id}:model", x=float(x), y=float(y))]
+        for model in self.models:
+            model.parent_unit = self
+
+    def get_parent_army(self):
+        return self.parent_army
+
+    def get_attached_unit_root(self):
+        return self
+
+    def get_attached_unit_models(self):
+        return list(self.models)
+
+    def is_alive(self) -> bool:
+        return True
+
+    def is_in_reserves(self) -> bool:
+        return str(self.reserve_status or "").strip().lower() != "deployed"
+
+    def can_arrive_from_reserves(self, _turn: int) -> bool:
+        return True
+
+    def is_in_strategic_reserves(self) -> bool:
+        return bool(self._strategic)
+
+    def has_deep_strike(self) -> bool:
+        return bool(self._deep_strike)
+
+    def calculate_model_positions(
+        self,
+        x: float,
+        y: float,
+        _game_map: object,
+        *,
+        avoid_friendly_units: bool = False,
+        boundary_repulsors: object | None = None,
+        search_context: object | None = None,
+    ) -> list[tuple[float, float, float, float]]:
+        del avoid_friendly_units, boundary_repulsors, search_context
+        return [(float(x), float(y), 0.0, 0.0)]
+
+    def _create_potential_base(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        *,
+        model: _ReserveSearchModel | None = None,
+    ) -> _ReserveSearchBase:
+        radius = float(model.model_base.get_radius()) if model is not None else 0.5
+        base = _ReserveSearchBase(float(x), float(y), radius=radius, z=float(z))
+        base.facing = float(facing)
+        return base
+
+
+class _ReserveSearchArmy:
+    def __init__(self, player, units) -> None:
+        self.player = player
+        self.units = list(units)
+
+
+class _ReserveSearchPlayer:
+    def __init__(self, player_id: str) -> None:
+        self.id = player_id
+        self.army = None
+
+
+class _ReserveSearchMap:
+    terrain_features: list[object] = []
+
+    def __init__(self, width: float, height: float, units: list[object]) -> None:
+        self.width = float(width)
+        self.height = float(height)
+        self.units = list(units)
+
+    def get_height_at_point(self, _x: float, _y: float) -> float:
+        return 0.0
+
+    def is_within_boundary(self, _model: object, destination: tuple[float, float]) -> bool:
+        x, y = destination
+        return 0.0 <= float(x) <= float(self.width) and 0.0 <= float(y) <= float(self.height)
+
+    def check_collision_with_obstacles(self, _model: object, destination: tuple[float, float]) -> bool:
+        del destination
+        return False
+
+
+class _ReserveSearchGame:
+    def __init__(
+        self,
+        arriving_unit: _ReserveSearchUnit,
+        *,
+        success_xy: tuple[float, float],
+        friendly_units: list[_ReserveSearchUnit] | None = None,
+        enemy_units: list[_ReserveSearchUnit] | None = None,
+        width: float = 60.0,
+        height: float = 44.0,
+    ) -> None:
+        self.is_authoritative = True
+        self.turn = 2
+        self.phase = type("Phase", (), {"name": "MOVEMENT_PHASE"})()
+        self.current_player_index = 0
+        self.commands: list[object] = []
+        self._success_xy = (float(success_xy[0]), float(success_xy[1]))
+
+        self.players = [_ReserveSearchPlayer("player:arriving"), _ReserveSearchPlayer("player:enemy")]
+        own_units = [arriving_unit] + list(friendly_units or [])
+        enemy_pool = list(enemy_units or [])
+        own_army = _ReserveSearchArmy(self.players[0], own_units)
+        enemy_army = _ReserveSearchArmy(self.players[1], enemy_pool)
+        self.players[0].army = own_army
+        self.players[1].army = enemy_army
+        for unit in own_units:
+            unit.parent_army = own_army
+        for unit in enemy_pool:
+            unit.parent_army = enemy_army
+
+        self.map = _ReserveSearchMap(float(width), float(height), own_units + enemy_pool)
+        self.battlefield = type("Battlefield", (), {"width": float(width), "height": float(height)})()
+
+    def _resolve_unit_by_id(self, unit_id: str):
+        for player in self.players:
+            for candidate in player.army.units:
+                if str(getattr(candidate, "id", "")) == str(unit_id):
+                    return candidate
+        return None
+
+    def get_boundary_repulsors(self, _unit, context=""):
+        del context
+        return []
+
+    def get_current_player(self):
+        return self.players[self.current_player_index]
+
+    def get_enemy_units(self, player):
+        if player is self.players[0]:
+            return list(self.players[1].army.units)
+        return list(self.players[0].army.units)
+
+    def is_valid_strategic_reserves_edge(self, edge: str, *, turn: int | None = None) -> bool:
+        del edge, turn
+        return True
+
+    def apply_command(self, command):
+        self.commands.append(command)
+        payload = dict(command.payload or {})
+        result_payload = dict(payload.get("result_payload", {}) or {})
+        model_positions = list(result_payload.get("model_positions", []) or [])
+        if not model_positions:
+            return _ApplyResult(ok=False)
+        pos = list(model_positions[0].get("position", []) or [])
+        if len(pos) < 2:
+            return _ApplyResult(ok=False)
+        return _ApplyResult(
+            ok=(
+                abs(float(pos[0]) - self._success_xy[0]) < 1e-6
+                and abs(float(pos[1]) - self._success_xy[1]) < 1e-6
+            )
+        )
+
+
+def _build_reserves_search_fixture(
+    *,
+    strategic: bool,
+    deep_strike: bool,
+    success_xy: tuple[float, float],
+    friendly_positions: tuple[tuple[float, float], ...] = (),
+    enemy_positions: tuple[tuple[float, float], ...] = (),
+) -> tuple[_ReserveSearchGame, _ReserveSearchUnit, DecisionRequest]:
+    arriving = _ReserveSearchUnit(
+        "unit:arriving",
+        reserve_status="strategic_reserves" if strategic else "reserves",
+        strategic=bool(strategic),
+        deep_strike=bool(deep_strike),
+    )
+    friendly_units = [
+        _ReserveSearchUnit(
+            f"unit:friendly:{idx}",
+            reserve_status="deployed",
+            strategic=False,
+            deep_strike=False,
+            x=float(x),
+            y=float(y),
+        )
+        for idx, (x, y) in enumerate(list(friendly_positions or ()))
+    ]
+    enemy_units = [
+        _ReserveSearchUnit(
+            f"unit:enemy:{idx}",
+            reserve_status="deployed",
+            strategic=False,
+            deep_strike=False,
+            x=float(x),
+            y=float(y),
+        )
+        for idx, (x, y) in enumerate(list(enemy_positions or ()))
+    ]
+    game = _ReserveSearchGame(
+        arriving,
+        success_xy=(float(success_xy[0]), float(success_xy[1])),
+        friendly_units=friendly_units,
+        enemy_units=enemy_units,
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Arrive from Reserves",
+        player_id="player:arriving",
+        options=[DecisionOption(option_id="confirm", label="Confirm", payload={"action": "confirm", "action_id": "confirm"})],
+        context={"placement_kind": "reserves_arrival", "unit_id": arriving.id, "allow_skip": False},
+    )
+    return game, arriving, request
+
+
 def test_headless_policy_controller_picks_best_legal_candidate_and_applies_candidate_payload() -> None:
     game = _FakeGame()
     controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
@@ -1182,3 +1460,60 @@ def test_headless_policy_controller_prefers_strategic_edge_band_before_exhaustiv
     metric = controller.get_reserves_arrival_search_metrics()[-1]
     assert str(metric.get("first_valid_source", "") or "") == "strategic_edge_band"
     assert bool(metric.get("exhaustive_fallback_used", False)) is False
+
+
+def test_headless_policy_controller_uses_zone_packer_rows_for_deep_strike_before_coarse_scan() -> None:
+    game, unit, request = _build_reserves_search_fixture(
+        strategic=False,
+        deep_strike=True,
+        success_xy=(0.75, 0.75),
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    sources = [
+        source
+        for source, _anchors in controller._reserves_arrival_anchor_candidate_groups(
+            game,
+            unit,
+            context={"placement_kind": "reserves_arrival"},
+        )
+    ]
+
+    assert "zone_packer_rows:own_half" in sources
+    assert sources.index("zone_packer_rows:own_half") < sources.index("deep_strike_coarse")
+
+    resolved = controller._try_resolve_reserves_arrival_bruteforce(game, request)
+
+    assert resolved is True
+    metric = controller.get_reserves_arrival_search_metrics()[-1]
+    assert str(metric.get("first_valid_source", "") or "") == "zone_packer_rows:own_half"
+    assert int(metric.get("build_calls", 0) or 0) < 20
+
+
+def test_headless_policy_controller_places_strategic_zone_packers_after_primary_edge_band() -> None:
+    game, unit, request = _build_reserves_search_fixture(
+        strategic=True,
+        deep_strike=False,
+        success_xy=(0.75, 0.75),
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    sources = [
+        source
+        for source, _anchors in controller._reserves_arrival_anchor_candidate_groups(
+            game,
+            unit,
+            context={"placement_kind": "reserves_arrival"},
+        )
+    ]
+
+    assert sources[0] == "strategic_edge_band"
+    assert "zone_packer_rows:edge_own" in sources
+    assert sources.index("zone_packer_rows:edge_own") < sources.index("strategic_edge_staggered")
+
+    resolved = controller._try_resolve_reserves_arrival_bruteforce(game, request)
+
+    assert resolved is True
+    metric = controller.get_reserves_arrival_search_metrics()[-1]
+    assert str(metric.get("first_valid_source", "") or "") == "zone_packer_rows:edge_own"
+    assert int(metric.get("build_calls", 0) or 0) < 600

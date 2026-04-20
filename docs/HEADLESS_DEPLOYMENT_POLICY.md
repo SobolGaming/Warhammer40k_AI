@@ -54,12 +54,22 @@ This document describes deterministic headless placement behavior for deployment
 ## Reserves Arrival Candidate Generation
 
 - `HeadlessPolicyDecisionController` now uses an adaptive, deterministic fast-packer anchor strategy:
+  - preserve the strongest reserve-specific anchors first:
+    - Deep Strike / non-strategic arrivals still probe board landmarks before broader scans;
+    - Strategic reserves still probe the primary edge-band anchors before broader scans.
+  - then reuse the same zone-based packing heuristics used by pre-game deployment, but against reserve-legal search zones:
+    - Deep Strike search applies deployment-style row packers over battlefield sectors plus a bounded battlefield lattice;
+    - Strategic reserves apply deployment-style row packers over legal edge-band zones;
+    - units in Strategic Reserves that can also Deep Strike search edge-band zones first, then battlefield Deep Strike zones.
   - Strategic reserves:
     - edge-biased anchors around preferred edge offsets;
+    - deployment-style row packers over legal edge bands;
     - staggered along-edge scans;
     - sparse fallback edge bands and guaranteed corner anchors.
   - Non-strategic reserves arrival:
-    - board landmarks, open-gap anchors, then adaptive coarse-to-fine board scans with staggered lattices.
+    - board landmarks first;
+    - deployment-style row packers over battlefield sectors plus a bounded battlefield lattice;
+    - open-gap anchors, then adaptive coarse-to-fine board scans with staggered lattices.
 - A cheap prefilter rejects clearly impossible anchors before expensive placement synthesis.
   - board bounds;
   - strategic edge-band depth;

@@ -9,6 +9,19 @@ from .decision_kinds import DECISION_MOVE_UNIT
 from .decisions import DecisionOption, DecisionRequest, DecisionResult
 from .deployment import DeploymentDecisionMaker
 from .deployment_ranker import DeploymentCandidateRanker
+from .placement_zone_heuristics import (
+    axis_points as _axis_points_shared,
+    back_to_front_axis_points as _back_to_front_axis_points_shared,
+    edge_first_axis_points as _edge_first_axis_points_shared,
+    exhaustive_lattice_candidate_positions as _exhaustive_lattice_candidate_positions_shared,
+    gap_anchor_candidates as _gap_anchor_candidates_shared,
+    lattice_candidate_positions as _lattice_candidate_positions_shared,
+    ordered_offsets as _ordered_offsets_shared,
+    packing_row_anchor_candidates as _packing_row_anchor_candidates_shared,
+    point_in_zone as _point_in_zone_shared,
+    zone_bounds as _zone_bounds_shared,
+    zone_center as _zone_center_shared,
+)
 from .pregame_deployment_agent import PregameDeploymentAgent
 from .prospective_positions import calculate_prospective_model_positions
 from ..roster.player import Player
@@ -652,59 +665,17 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         footprint: dict[str, float],
     ) -> list[tuple[float, float]]:
         del already_deployed
-        bounds = self._zone_bounds(deployment_zone)
-        if bounds is None:
-            return []
-        min_x, max_x, min_y, max_y = bounds
-        center_x, center_y = self._zone_center(deployment_zone)
         battlefield = getattr(self.game, "battlefield", None)
         board_width = float(getattr(battlefield, "width", 60.0) or 60.0)
         board_height = float(getattr(battlefield, "height", 44.0) or 44.0)
-        forward_dx = (board_width * 0.5) - float(center_x)
-        forward_dy = (board_height * 0.5) - float(center_y)
-        depth_is_x = abs(forward_dx) >= abs(forward_dy)
-        forward_positive = forward_dx >= 0.0 if depth_is_x else forward_dy >= 0.0
-        depth_margin = max(0.5, float(footprint["largest_radius"]) + 0.25)
-        frontage_margin = max(0.5, float(footprint["largest_radius"]) + 0.25)
-        depth_step = max(float(self.lattice_step), float(footprint["depth"]) * 0.9)
-        frontage_step = max(float(self.lattice_step), float(footprint["width"]) * 0.9)
-        if depth_is_x:
-            depth_values = self._back_to_front_axis_points(
-                min_x,
-                max_x,
-                step=depth_step,
-                margin=depth_margin,
-                forward_positive=forward_positive,
-            )
-            frontage_values = self._edge_first_axis_points(min_y, max_y, step=frontage_step, margin=frontage_margin)
-        else:
-            depth_values = self._back_to_front_axis_points(
-                min_y,
-                max_y,
-                step=depth_step,
-                margin=depth_margin,
-                forward_positive=forward_positive,
-            )
-            frontage_values = self._edge_first_axis_points(min_x, max_x, step=frontage_step, margin=frontage_margin)
-        candidates: list[tuple[float, float]] = []
-        seen: set[tuple[float, float]] = set()
-        for row_idx, depth in enumerate(list(depth_values or [])):
-            along_values = list(frontage_values or [])
-            if row_idx % 2 == 1:
-                along_values.reverse()
-            for along in along_values:
-                if depth_is_x:
-                    anchor = (float(depth), float(along))
-                else:
-                    anchor = (float(along), float(depth))
-                key = (round(anchor[0], 3), round(anchor[1], 3))
-                if key in seen:
-                    continue
-                seen.add(key)
-                if not self._point_in_zone(deployment_zone, anchor[0], anchor[1]):
-                    continue
-                candidates.append(anchor)
-        return candidates
+        return _packing_row_anchor_candidates_shared(
+            deployment_zone,
+            board_width=board_width,
+            board_height=board_height,
+            footprint=footprint,
+            lattice_step=float(self.lattice_step),
+            default_bounds=(0.0, board_width, 0.0, board_height),
+        )
 
     def _gap_anchor_candidates(
         self,
@@ -716,69 +687,18 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
     ) -> list[tuple[float, float]]:
         if not already_deployed:
             return []
-        bounds = self._zone_bounds(deployment_zone)
-        if bounds is None:
-            return []
-        min_x, max_x, min_y, max_y = bounds
-        clearance = max(0.75, float(footprint["largest_radius"]) + 0.5)
-        center_x, center_y = self._zone_center(deployment_zone)
-        candidates: list[tuple[float, float]] = []
-        seen: set[tuple[float, float]] = set()
-        for deployed_unit in list(already_deployed or []):
-            unit_bounds = deployed_unit_bounds(deployed_unit)
-            if unit_bounds is None:
-                continue
-            bx0, by0, bx1, by1 = unit_bounds
-            cx = (float(bx0) + float(bx1)) * 0.5
-            cy = (float(by0) + float(by1)) * 0.5
-            options = (
-                (float(bx0) - clearance, cy),
-                (float(bx1) + clearance, cy),
-                (cx, float(by0) - clearance),
-                (cx, float(by1) + clearance),
-                (float(bx0) - clearance, float(by0) - clearance),
-                (float(bx0) - clearance, float(by1) + clearance),
-                (float(bx1) + clearance, float(by0) - clearance),
-                (float(bx1) + clearance, float(by1) + clearance),
-            )
-            for x, y in options:
-                clamped = (
-                    float(max(min_x, min(max_x, float(x)))),
-                    float(max(min_y, min(max_y, float(y)))),
-                )
-                key = (round(clamped[0], 3), round(clamped[1], 3))
-                if key in seen:
-                    continue
-                seen.add(key)
-                if not self._point_in_zone(deployment_zone, clamped[0], clamped[1]):
-                    continue
-                candidates.append(clamped)
-        candidates.sort(
-            key=lambda point: (
-                (float(point[0]) - float(center_x)) ** 2 + (float(point[1]) - float(center_y)) ** 2,
-                point[0],
-                point[1],
-            )
+        battlefield = getattr(self.game, "battlefield", None)
+        board_width = float(getattr(battlefield, "width", 60.0) or 60.0)
+        board_height = float(getattr(battlefield, "height", 44.0) or 44.0)
+        return _gap_anchor_candidates_shared(
+            deployment_zone,
+            occupied_units=list(already_deployed or []),
+            footprint=footprint,
+            default_bounds=(0.0, board_width, 0.0, board_height),
         )
-        return candidates
 
     def _edge_first_axis_points(self, lo: float, hi: float, *, step: float, margin: float) -> list[float]:
-        start = float(lo) + float(margin)
-        end = float(hi) - float(margin)
-        if end < start:
-            return [float((lo + hi) * 0.5)]
-        values: list[float] = []
-        seen: set[float] = set()
-        for offset in (0.0, float(step) * 0.5):
-            for value in self._axis_points(start, end, step=float(step), offset=float(offset)):
-                key = round(float(value), 4)
-                if key in seen:
-                    continue
-                seen.add(key)
-                values.append(float(value))
-        mid = (float(start) + float(end)) * 0.5
-        values.sort(key=lambda value: (min(abs(value - start), abs(end - value)), abs(value - mid), value))
-        return values
+        return _edge_first_axis_points_shared(lo, hi, step=step, margin=margin)
 
     @staticmethod
     def _back_to_front_axis_points(
@@ -789,24 +709,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         margin: float,
         forward_positive: bool,
     ) -> list[float]:
-        start = float(lo) + float(margin)
-        end = float(hi) - float(margin)
-        if end < start:
-            return [float((lo + hi) * 0.5)]
-        values: list[float] = []
-        if forward_positive:
-            cursor = float(start)
-            while cursor <= end + 1e-6:
-                values.append(round(float(cursor), 4))
-                cursor += float(step)
-        else:
-            cursor = float(end)
-            while cursor >= start - 1e-6:
-                values.append(round(float(cursor), 4))
-                cursor -= float(step)
-        if not values:
-            values = [round(float((lo + hi) * 0.5), 4)]
-        return [float(value) for value in values]
+        return _back_to_front_axis_points_shared(
+            lo,
+            hi,
+            step=step,
+            margin=margin,
+            forward_positive=forward_positive,
+        )
 
     def _select_valid_deployment_payload(
         self,
@@ -1260,27 +1169,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return str(getattr(player, "id", "") or "")
 
     def _zone_center(self, deployment_zone: dict) -> tuple[float, float]:
-        mission_zones = list(deployment_zone.get("mission_zones", []) or [])
-        if mission_zones:
-            xs: list[float] = []
-            ys: list[float] = []
-            for mission_zone in mission_zones:
-                vertices = list(getattr(mission_zone, "vertices", []) or [])
-                for vertex in vertices:
-                    if len(vertex) >= 2:
-                        xs.append(float(vertex[0]))
-                        ys.append(float(vertex[1]))
-            if xs and ys:
-                return (sum(xs) / float(len(xs)), sum(ys) / float(len(ys)))
-        x_range = deployment_zone.get("x_range")
-        y_range = deployment_zone.get("y_range")
-        if isinstance(x_range, (list, tuple)) and isinstance(y_range, (list, tuple)) and len(x_range) >= 2 and len(y_range) >= 2:
-            return (float(x_range[0] + x_range[1]) / 2.0, float(y_range[0] + y_range[1]) / 2.0)
-        game = self.game
-        battlefield = getattr(game, "battlefield", None)
+        battlefield = getattr(self.game, "battlefield", None)
         width = float(getattr(battlefield, "width", 60.0) or 60.0)
         height = float(getattr(battlefield, "height", 44.0) or 44.0)
-        return (width / 2.0, height / 2.0)
+        return _zone_center_shared(
+            deployment_zone,
+            default_bounds=(0.0, width, 0.0, height),
+        )
 
     def _candidate_positions(
         self,
@@ -1288,167 +1183,49 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         deployment_zone: dict,
         already_deployed: list[object],
     ) -> list[tuple[float, float]]:
-        center_x, center_y = self._zone_center(deployment_zone)
-        offsets = self._ordered_offsets(unit=unit, already_deployed=already_deployed)
-        candidates: list[tuple[float, float]] = []
-        seen: set[tuple[float, float]] = set()
-        mission_zones = list(deployment_zone.get("mission_zones", []) or [])
-
-        for dx, dy in offsets:
-            x = float(center_x + dx)
-            y = float(center_y + dy)
-            key = (round(x, 3), round(y, 3))
-            if key in seen:
-                continue
-            if not self._point_in_zone(deployment_zone, x, y):
-                    continue
-            seen.add(key)
-            candidates.append((x, y))
-
-        if candidates:
-            return candidates
-        return [(center_x, center_y)]
+        battlefield = getattr(self.game, "battlefield", None)
+        width = float(getattr(battlefield, "width", 60.0) or 60.0)
+        height = float(getattr(battlefield, "height", 44.0) or 44.0)
+        return _lattice_candidate_positions_shared(
+            deployment_zone,
+            unit_id=str(get_entity_id(unit) or ""),
+            occupied_count=int(len(list(already_deployed or []))),
+            lattice_step=float(self.lattice_step),
+            default_bounds=(0.0, width, 0.0, height),
+        )
 
     def _candidate_positions_exhaustive(self, unit: object, deployment_zone: dict) -> list[tuple[float, float]]:
-        bounds = self._zone_bounds(deployment_zone)
-        if bounds is None:
-            return []
-        min_x, max_x, min_y, max_y = bounds
-        if min_x > max_x or min_y > max_y:
-            return []
-
-        center_x, center_y = self._zone_center(deployment_zone)
-        unit_id = str(get_entity_id(unit) or "")
-        candidates: list[tuple[float, float]] = []
-        seen: set[tuple[float, float]] = set()
-        step_primary = float(self.exhaustive_lattice_step)
-        step_secondary = max(0.25, step_primary / 2.0)
-        for step in (step_primary, step_secondary):
-            offsets = (0.0, step / 2.0)
-            for off_y in offsets:
-                ys = self._axis_points(min_y, max_y, step=step, offset=off_y)
-                if not ys:
-                    continue
-                for off_x in offsets:
-                    xs = self._axis_points(min_x, max_x, step=step, offset=off_x)
-                    if not xs:
-                        continue
-                    for y in ys:
-                        for x in xs:
-                            key = (round(float(x), 3), round(float(y), 3))
-                            if key in seen:
-                                continue
-                            seen.add(key)
-                            candidates.append((float(x), float(y)))
-
-        def _scan_sort_key(point: tuple[float, float]) -> tuple[float, str]:
-            x, y = point
-            dist_sq = (float(x) - float(center_x)) ** 2 + (float(y) - float(center_y)) ** 2
-            token = f"{unit_id}:{x:.3f}:{y:.3f}"
-            tie = hashlib.sha256(token.encode("utf-8")).hexdigest()
-            return (float(dist_sq), tie)
-
-        candidates.sort(key=_scan_sort_key)
-        return candidates[: int(self._exhaustive_anchor_limit)]
+        battlefield = getattr(self.game, "battlefield", None)
+        width = float(getattr(battlefield, "width", 60.0) or 60.0)
+        height = float(getattr(battlefield, "height", 44.0) or 44.0)
+        return _exhaustive_lattice_candidate_positions_shared(
+            deployment_zone,
+            unit_id=str(get_entity_id(unit) or ""),
+            exhaustive_lattice_step=float(self.exhaustive_lattice_step),
+            exhaustive_anchor_limit=int(self._exhaustive_anchor_limit),
+            default_bounds=(0.0, width, 0.0, height),
+        )
 
     @staticmethod
     def _axis_points(start: float, end: float, *, step: float, offset: float) -> list[float]:
-        lo = float(min(start, end))
-        hi = float(max(start, end))
-        if hi - lo <= 1e-6:
-            return [lo]
-        values: list[float] = []
-        first = lo + float(offset)
-        if first > hi:
-            first = lo
-        cursor = first
-        while cursor <= hi + 1e-6:
-            values.append(round(float(cursor), 4))
-            cursor += float(step)
-        if not values:
-            values = [round((lo + hi) / 2.0, 4)]
-        return values
+        return _axis_points_shared(start, end, step=step, offset=offset)
 
     def _zone_bounds(self, deployment_zone: dict) -> tuple[float, float, float, float] | None:
-        mission_zones = list(deployment_zone.get("mission_zones", []) or [])
-        xs: list[float] = []
-        ys: list[float] = []
-        for mission_zone in mission_zones:
-            vertices = list(getattr(mission_zone, "vertices", []) or [])
-            for vertex in vertices:
-                if isinstance(vertex, (list, tuple)) and len(vertex) >= 2:
-                    xs.append(float(vertex[0]))
-                    ys.append(float(vertex[1]))
-        if xs and ys:
-            return (min(xs), max(xs), min(ys), max(ys))
-        x_range = deployment_zone.get("x_range")
-        y_range = deployment_zone.get("y_range")
-        if (
-            isinstance(x_range, (list, tuple))
-            and isinstance(y_range, (list, tuple))
-            and len(x_range) >= 2
-            and len(y_range) >= 2
-        ):
-            return (
-                float(min(x_range[0], x_range[1])),
-                float(max(x_range[0], x_range[1])),
-                float(min(y_range[0], y_range[1])),
-                float(max(y_range[0], y_range[1])),
-            )
         battlefield = getattr(self.game, "battlefield", None)
         width = float(getattr(battlefield, "width", 0.0) or 0.0)
         height = float(getattr(battlefield, "height", 0.0) or 0.0)
-        if width > 0.0 and height > 0.0:
-            return (0.0, width, 0.0, height)
-        return None
+        default_bounds = (0.0, width, 0.0, height) if width > 0.0 and height > 0.0 else None
+        return _zone_bounds_shared(deployment_zone, default_bounds=default_bounds)
 
     def _point_in_zone(self, deployment_zone: dict, x: float, y: float) -> bool:
-        mission_zones = list(deployment_zone.get("mission_zones", []) or [])
-        if mission_zones:
-            for mission_zone in mission_zones:
-                contains_fn = getattr(mission_zone, "contains_point", None)
-                if callable(contains_fn) and bool(contains_fn(float(x), float(y))):
-                    return True
-            return False
-        x_range = deployment_zone.get("x_range")
-        y_range = deployment_zone.get("y_range")
-        if (
-            isinstance(x_range, (list, tuple))
-            and isinstance(y_range, (list, tuple))
-            and len(x_range) >= 2
-            and len(y_range) >= 2
-        ):
-            lo_x = float(min(x_range[0], x_range[1]))
-            hi_x = float(max(x_range[0], x_range[1]))
-            lo_y = float(min(y_range[0], y_range[1]))
-            hi_y = float(max(y_range[0], y_range[1]))
-            return lo_x <= float(x) <= hi_x and lo_y <= float(y) <= hi_y
-        return True
+        return _point_in_zone_shared(deployment_zone, x, y)
 
     def _ordered_offsets(self, *, unit: object, already_deployed: Iterable[object]) -> list[tuple[float, float]]:
-        base: list[tuple[float, float]] = [(0.0, 0.0)]
-        rings = [1, 2, 3, 4, 5, 6, 8, 10, 12]
-        for ring in rings:
-            step = float(ring) * self.lattice_step
-            base.extend(
-                [
-                    (step, 0.0),
-                    (-step, 0.0),
-                    (0.0, step),
-                    (0.0, -step),
-                    (step, step),
-                    (step, -step),
-                    (-step, step),
-                    (-step, -step),
-                ]
-            )
-
-        unit_id = str(get_entity_id(unit) or "")
-        deployed_count = int(len(list(already_deployed or [])))
-        seed = f"{unit_id}:{deployed_count}"
-        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-        rotate_by = int(digest[:8], 16) % max(1, len(base))
-        return base[rotate_by:] + base[:rotate_by]
+        return _ordered_offsets_shared(
+            unit_id=str(get_entity_id(unit) or ""),
+            occupied_count=int(len(list(already_deployed or []))),
+            lattice_step=float(self.lattice_step),
+        )
 
     def _resolve_player_by_id(self, player_id: str) -> Optional[Player]:
         player_key = str(player_id or "")

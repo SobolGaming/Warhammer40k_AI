@@ -22,7 +22,18 @@ from .decision_kinds import (
 )
 from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
+from .placement_zone_heuristics import (
+    exhaustive_lattice_candidate_positions as _exhaustive_lattice_candidate_positions_shared,
+    gap_anchor_candidates as _gap_anchor_candidates_shared,
+    lattice_candidate_positions as _lattice_candidate_positions_shared,
+    packing_row_anchor_candidates as _packing_row_anchor_candidates_shared,
+)
 from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
+from .reserve_entry_geometry import (
+    is_valid_strategic_reserves_edge as _is_valid_strategic_reserves_edge,
+    strategic_reserves_edges as _strategic_reserves_edges,
+)
+from .reserve_entry_rules import masters_of_void_enemy_dz_override_active
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id
@@ -660,7 +671,19 @@ class HeadlessPolicyDecisionController(DecisionController):
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            groups.extend(self._strategic_edge_anchor_groups(unit, width=width, height=height))
+            strategic_edge_groups = list(self._strategic_edge_anchor_groups(unit, width=width, height=height) or [])
+            if strategic_edge_groups:
+                groups.append(strategic_edge_groups[0])
+            groups.extend(
+                self._reserves_zone_anchor_candidate_groups(
+                    game,
+                    unit,
+                    context=ctx,
+                    width=width,
+                    height=height,
+                )
+            )
+            groups.extend(strategic_edge_groups[1:])
             if self._strategic_reserves_can_use_gap_search(ctx, unit):
                 gap_points = self._reserves_gap_anchor_points(game, unit, context=ctx)
                 if gap_points:
@@ -668,6 +691,15 @@ class HeadlessPolicyDecisionController(DecisionController):
                 groups.extend(self._deep_strike_scan_anchor_groups(unit, width=width, height=height))
         else:
             groups.append(("board_landmarks", self._board_landmark_anchor_points(width=width, height=height)))
+            groups.extend(
+                self._reserves_zone_anchor_candidate_groups(
+                    game,
+                    unit,
+                    context=ctx,
+                    width=width,
+                    height=height,
+                )
+            )
             gap_points = self._reserves_gap_anchor_points(game, unit, context=ctx)
             if gap_points:
                 groups.append(("gap_openings", gap_points))
@@ -692,6 +724,254 @@ class HeadlessPolicyDecisionController(DecisionController):
             if consumed >= int(self._max_reserves_anchor_points):
                 break
         return trimmed
+
+    def _reserves_zone_anchor_candidate_groups(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict[str, object],
+        width: float,
+        height: float,
+    ) -> list[tuple[str, list[tuple[float, float]]]]:
+        footprint = estimate_unit_pack_footprint(unit)
+        occupied_units = list(self._iter_deployed_units(game, exclude_unit=unit) or [])
+        zone_sets = self._reserves_zone_heuristic_zones(
+            game,
+            unit,
+            context=context,
+            width=width,
+            height=height,
+            footprint=footprint,
+        )
+        default_bounds = (0.0, float(width), 0.0, float(height))
+        occupied_count = int(len(occupied_units))
+        unit_id = str(get_entity_id(unit) or "")
+        groups: list[tuple[str, list[tuple[float, float]]]] = []
+
+        for zone_name, zone in list(zone_sets.get("gap", []) or []):
+            anchors = _gap_anchor_candidates_shared(
+                zone,
+                occupied_units=occupied_units,
+                footprint=footprint,
+                default_bounds=default_bounds,
+            )
+            if anchors:
+                groups.append((f"zone_packer_gap:{zone_name}", anchors))
+
+        for zone_name, zone in list(zone_sets.get("rows", []) or []):
+            anchors = _packing_row_anchor_candidates_shared(
+                zone,
+                board_width=float(width),
+                board_height=float(height),
+                footprint=footprint,
+                lattice_step=2.0,
+                default_bounds=default_bounds,
+            )
+            if anchors:
+                groups.append((f"zone_packer_rows:{zone_name}", anchors))
+
+        for zone_name, zone in list(zone_sets.get("lattice", []) or []):
+            anchors = _lattice_candidate_positions_shared(
+                zone,
+                unit_id=unit_id,
+                occupied_count=occupied_count,
+                lattice_step=2.0,
+                default_bounds=default_bounds,
+            )
+            if anchors:
+                groups.append((f"zone_lattice:{zone_name}", anchors))
+
+        for zone_name, zone in list(zone_sets.get("exhaustive", []) or []):
+            anchors = _exhaustive_lattice_candidate_positions_shared(
+                zone,
+                unit_id=unit_id,
+                exhaustive_lattice_step=1.0,
+                exhaustive_anchor_limit=int(self._reserves_exhaustive_anchor_limit),
+                default_bounds=default_bounds,
+            )
+            if anchors:
+                groups.append((f"zone_lattice_exhaustive:{zone_name}", anchors))
+        return groups
+
+    def _reserves_zone_heuristic_zones(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict[str, object],
+        width: float,
+        height: float,
+        footprint: dict[str, float],
+    ) -> dict[str, list[tuple[str, dict[str, object]]]]:
+        in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
+        in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
+        if not in_strategic:
+            return self._deep_strike_zone_heuristic_zones(width=width, height=height)
+
+        strategic = self._strategic_edge_zone_heuristic_zones(
+            game,
+            unit,
+            context=context,
+            width=width,
+            height=height,
+            footprint=footprint,
+        )
+        if not self._strategic_reserves_can_use_gap_search(context, unit):
+            return strategic
+
+        deep_strike = self._deep_strike_zone_heuristic_zones(width=width, height=height)
+        merged: dict[str, list[tuple[str, dict[str, object]]]] = {}
+        for key in ("gap", "rows", "lattice", "exhaustive"):
+            merged[key] = list(strategic.get(key, []) or []) + [
+                (f"deep_strike_{name}", dict(zone or {}))
+                for name, zone in list(deep_strike.get(key, []) or [])
+            ]
+        return merged
+
+    @staticmethod
+    def _deep_strike_zone_heuristic_zones(
+        *,
+        width: float,
+        height: float,
+    ) -> dict[str, list[tuple[str, dict[str, object]]]]:
+        battlefield_zone = {
+            "name": "battlefield",
+            "x_range": [0.0, float(width)],
+            "y_range": [0.0, float(height)],
+        }
+        mid_x = float(width) * 0.5
+        mid_y = float(height) * 0.5
+        row_zones = [
+            (
+                "own_half",
+                {
+                    "name": "own_half",
+                    "x_range": [0.0, float(width)],
+                    "y_range": [0.0, mid_y],
+                    "forward_axis": "y",
+                    "forward_positive": True,
+                },
+            ),
+            (
+                "enemy_half",
+                {
+                    "name": "enemy_half",
+                    "x_range": [0.0, float(width)],
+                    "y_range": [mid_y, float(height)],
+                    "forward_axis": "y",
+                    "forward_positive": False,
+                },
+            ),
+            (
+                "left_half",
+                {
+                    "name": "left_half",
+                    "x_range": [0.0, mid_x],
+                    "y_range": [0.0, float(height)],
+                    "forward_axis": "x",
+                    "forward_positive": True,
+                },
+            ),
+            (
+                "right_half",
+                {
+                    "name": "right_half",
+                    "x_range": [mid_x, float(width)],
+                    "y_range": [0.0, float(height)],
+                    "forward_axis": "x",
+                    "forward_positive": False,
+                },
+            ),
+        ]
+        return {
+            "gap": [("battlefield", dict(battlefield_zone))],
+            "rows": row_zones,
+            "lattice": [("battlefield", dict(battlefield_zone))],
+            "exhaustive": [],
+        }
+
+    def _strategic_edge_zone_heuristic_zones(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict[str, object],
+        width: float,
+        height: float,
+        footprint: dict[str, float],
+    ) -> dict[str, list[tuple[str, dict[str, object]]]]:
+        del context
+        band = max(6.0, min(max(float(width), float(height)), 8.0 + float(footprint["radius"])))
+        zones: list[tuple[str, dict[str, object]]] = []
+        for edge in self._strategic_reserves_search_edges(game, unit):
+            if edge == "own":
+                zone = {
+                    "name": "edge_own",
+                    "x_range": [0.0, float(width)],
+                    "y_range": [0.0, min(float(height), float(band))],
+                    "forward_axis": "y",
+                    "forward_positive": True,
+                }
+            elif edge == "enemy":
+                zone = {
+                    "name": "edge_enemy",
+                    "x_range": [0.0, float(width)],
+                    "y_range": [max(0.0, float(height) - float(band)), float(height)],
+                    "forward_axis": "y",
+                    "forward_positive": False,
+                }
+            elif edge == "left":
+                zone = {
+                    "name": "edge_left",
+                    "x_range": [0.0, min(float(width), float(band))],
+                    "y_range": [0.0, float(height)],
+                    "forward_axis": "x",
+                    "forward_positive": True,
+                }
+            else:
+                zone = {
+                    "name": "edge_right",
+                    "x_range": [max(0.0, float(width) - float(band)), float(width)],
+                    "y_range": [0.0, float(height)],
+                    "forward_axis": "x",
+                    "forward_positive": False,
+                }
+            zones.append((str(zone["name"]), zone))
+        return {
+            "gap": list(zones),
+            "rows": list(zones),
+            "lattice": [],
+            "exhaustive": [],
+        }
+
+    def _strategic_reserves_search_edges(self, game: object, unit: object) -> list[str]:
+        try:
+            effective_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            effective_turn = 0
+        strategic_setup_turn = getattr(unit, "get_strategic_reserves_setup_turn", None)
+        if callable(strategic_setup_turn):
+            try:
+                effective_turn = int(strategic_setup_turn(game=game, current_turn=effective_turn))
+            except (TypeError, ValueError):
+                pass
+
+        valid_edges: list[str] = []
+        checker = getattr(game, "is_valid_strategic_reserves_edge", None)
+        for edge in list(_strategic_reserves_edges()):
+            if callable(checker):
+                try:
+                    if not bool(checker(edge, turn=effective_turn)):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+            elif not _is_valid_strategic_reserves_edge(game, edge, turn=effective_turn):
+                continue
+            if edge == "enemy" and effective_turn == 2 and not masters_of_void_enemy_dz_override_active(unit, game):
+                continue
+            valid_edges.append(str(edge))
+        return valid_edges
 
     def _anchor_unit_ring_points(self, game: object, *, context: dict[str, object]) -> list[tuple[float, float]]:
         anchor_unit_id = str(context.get("reserves_arrival_anchor_unit_id", "") or "").strip()
