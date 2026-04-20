@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 from ..decision_dispatcher import register_decision_handler
 from ..decision_kinds import (
     DECISION_CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE,
+    DECISION_SELECT_TOOL_ACTION,
     DECISION_USE_CAREEN,
     DECISION_USE_GILDED_CHAMPION,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
     is_skip_choice,
+    resolve_entity,
     resolve_model,
     resolve_player,
     resolve_unit,
@@ -23,6 +25,113 @@ def _option_payload(request: DecisionRequest, result: DecisionResult) -> dict:
         if opt.option_id == result.option_id:
             return dict(getattr(opt, "payload", {}) or {})
     return {}
+
+
+def _resolve_tool_action_value(game: object, value: Any) -> Any:
+    if isinstance(value, dict):
+        entity_ref = value.get("__entity_ref__")
+        if isinstance(entity_ref, dict):
+            entity_id = str(entity_ref.get("id", "") or "")
+            entity_kind = str(entity_ref.get("kind", "") or "").strip().lower()
+            if not entity_id:
+                return None
+            if entity_kind:
+                resolved = resolve_entity(game, entity_id, kind=entity_kind)
+                if resolved is not None:
+                    return resolved
+            for fallback_kind in ("unit", "model", "objective", "terrain", "player", "army", "wargear"):
+                resolved = resolve_entity(game, entity_id, kind=fallback_kind)
+                if resolved is not None:
+                    return resolved
+            return None
+        return {str(key): _resolve_tool_action_value(game, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_tool_action_value(game, item) for item in value]
+    return value
+
+
+def _resolve_tool_action_kwargs(game: object, payload: dict[str, Any]) -> dict[str, Any]:
+    raw_kwargs = payload.get("resolved_kwargs")
+    if not isinstance(raw_kwargs, dict):
+        raise RuntimeError("Tool action payload missing resolved_kwargs.")
+    return {
+        str(key): _resolve_tool_action_value(game, value)
+        for key, value in dict(raw_kwargs or {}).items()
+    }
+
+
+def _resolve_tool_action_manager(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    player = resolve_player(game, payload.get("player_id") or request.player_id)
+    if player is None:
+        raise RuntimeError("Tool action player not found.")
+    manager = getattr(player, "stratagems", None)
+    if manager is None:
+        raise RuntimeError("Tool action stratagem manager not found.")
+    return manager, payload
+
+
+def _prepare_tool_action(game: object, request: DecisionRequest, result: DecisionResult):
+    manager, payload = _resolve_tool_action_manager(game, request, result)
+    tool_family = str(payload.get("tool_family", "") or "stratagem").strip().lower()
+    if tool_family != "stratagem":
+        raise RuntimeError(f"Unsupported tool action family: {tool_family}")
+    tool_name = str(payload.get("tool_name", "") or payload.get("stratagem_name", "") or "").strip()
+    if not tool_name:
+        raise RuntimeError("Tool action missing tool_name.")
+    kwargs = _resolve_tool_action_kwargs(game, payload)
+    return manager, tool_name, kwargs, payload
+
+
+def _validate_select_tool_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        try:
+            _resolve_tool_action_manager(game, request, result)
+        except RuntimeError as exc:
+            return (str(exc),)
+        return ()
+    try:
+        manager, tool_name, kwargs, payload = _prepare_tool_action(game, request, result)
+    except RuntimeError as exc:
+        return (str(exc),)
+    if not bool(getattr(manager, "can_use", None) and manager.can_use(tool_name, **kwargs)):
+        return (f"{tool_name} is no longer a valid tool action.",)
+    return ()
+
+
+def _apply_select_tool_action(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        manager, payload = _resolve_tool_action_manager(game, request, result)
+        tool_name = ""
+        kwargs = {}
+    else:
+        manager, tool_name, kwargs, payload = _prepare_tool_action(game, request, result)
+    signature = str(dict(getattr(request, "context", {}) or {}).get("tool_action_signature", "") or "")
+    if is_skip_choice(request, result):
+        mark_skipped = getattr(manager, "_mark_tool_action_signature_skipped", None)
+        if callable(mark_skipped) and signature:
+            mark_skipped(signature)
+        return None
+    clear_skipped = getattr(manager, "_clear_tool_action_signature_skip", None)
+    if callable(clear_skipped) and signature:
+        clear_skipped(signature)
+    ok = manager.use(tool_name, **kwargs)
+    if not ok:
+        raise RuntimeError(f"{tool_name} could not be applied.")
+    return {
+        "tool_family": str(payload.get("tool_family", "") or "stratagem"),
+        "tool_name": tool_name,
+    }
+
+
+register_decision_handler(
+    DECISION_SELECT_TOOL_ACTION,
+    validate=_validate_select_tool_action,
+    apply=_apply_select_tool_action,
+)
 
 
 def _prepare_gilded_champion(game: object, request: DecisionRequest, result: DecisionResult):

@@ -103,6 +103,9 @@ class HeadlessPolicyDecisionController(DecisionController):
         add_controller(self)
         self._attached = True
 
+    def supports_generic_tool_decisions(self) -> bool:
+        return True
+
     def on_decision_requested(self, game: object, request: DecisionRequest) -> None:
         if request is None:
             return

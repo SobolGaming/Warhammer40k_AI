@@ -1,8 +1,11 @@
 import time
 import copy
+import hashlib
 import html
+import json
 import logging
 import re
+from itertools import combinations
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
@@ -2312,6 +2315,9 @@ class StratagemManager(
         self._gilded_champion_used_models: set[str] = set()
         # Auric Champions: Superhuman Reserves cannot extend the same model/ability pair twice.
         self._auric_superhuman_reserves_granted_pairs: set[str] = set()
+        # Headless/non-local controllers should not be re-prompted for the same optional tool window
+        # after explicitly skipping it.
+        self._skipped_tool_action_signatures: set[str] = set()
 
     def _unit_cannot_be_target_of_stratagem(self, unit: Any) -> bool:
         return _unit_cannot_be_target_of_stratagem(unit)
@@ -2339,6 +2345,10 @@ class StratagemManager(
             self._vessels_gory_dedication_units = {}
         if not isinstance(getattr(self, "_a_challenge_met_enemy_units", None), dict):
             self._a_challenge_met_enemy_units = {}
+        if not isinstance(getattr(self, "_skipped_tool_action_signatures", None), set):
+            self._skipped_tool_action_signatures = set(
+                getattr(self, "_skipped_tool_action_signatures", []) or []
+            )
         self._defensive_reaction_cache.clear()
         self._charge_melee_ap_cache.clear()
         self._consolidate_move_cache.clear()
@@ -3392,13 +3402,37 @@ class StratagemManager(
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
+        self._dequeue_reaction_by_name_and_context(stratagem_name)
+
+    def _dequeue_reaction_by_name_and_context(
+        self,
+        stratagem_name: str,
+        *,
+        event: str = "",
+        phase_name: str = "",
+        enemy_unit: Any = None,
+    ) -> None:
         target = (stratagem_name or "").strip().lower()
         if not target:
             return
+        event_key = str(event or "").strip().lower()
+        phase_key = str(phase_name or "").strip().lower()
+        enemy_unit_id = str(get_entity_id(enemy_unit) or "") if enemy_unit is not None else ""
         for i, r in enumerate(list(self._pending_reactions)):
-            if str(r.get("stratagem", "")).strip().lower() == target:
-                self._pending_reactions.pop(i)
-                return
+            if str(r.get("stratagem", "")).strip().lower() != target:
+                continue
+            if event_key and str(r.get("event", "")).strip().lower() != event_key:
+                continue
+            reaction_phase = str(r.get("phase_name") or r.get("phase") or "").strip().lower()
+            if phase_key and reaction_phase != phase_key:
+                continue
+            if enemy_unit is not None:
+                reaction_enemy = r.get("enemy_unit")
+                reaction_enemy_id = str(get_entity_id(reaction_enemy) or "") if reaction_enemy is not None else ""
+                if reaction_enemy is not enemy_unit and reaction_enemy_id != enemy_unit_id:
+                    continue
+            self._pending_reactions.pop(i)
+            return
 
     def _has_pending_decision_request(
         self,
@@ -3406,6 +3440,7 @@ class StratagemManager(
         decision_type: str,
         ability: str,
         phase_name: str = "",
+        **match_context: Any,
     ) -> bool:
         game = getattr(self, "game", None)
         queue = getattr(game, "decision_queue", None)
@@ -3426,6 +3461,13 @@ class StratagemManager(
                 continue
             if player_id and str(getattr(request, "player_id", "") or "").strip() != player_id:
                 continue
+            matched = True
+            for key, value in dict(match_context or {}).items():
+                if str(context.get(str(key), "") or "").strip() != str(value or "").strip():
+                    matched = False
+                    break
+            if not matched:
+                continue
             return True
         return False
 
@@ -3444,6 +3486,868 @@ class StratagemManager(
             return False
         queue.add(request)
         return True
+
+    def _mark_tool_action_signature_skipped(self, signature: str) -> None:
+        normalized = str(signature or "").strip()
+        if normalized:
+            self._skipped_tool_action_signatures.add(normalized)
+
+    def _clear_tool_action_signature_skip(self, signature: str) -> None:
+        normalized = str(signature or "").strip()
+        if normalized:
+            self._skipped_tool_action_signatures.discard(normalized)
+
+    def _tool_action_signature_was_skipped(self, signature: str) -> bool:
+        normalized = str(signature or "").strip()
+        if not normalized:
+            return False
+        return normalized in set(getattr(self, "_skipped_tool_action_signatures", set()) or set())
+
+    def _player_can_accept_tool_action_decisions(self) -> bool:
+        if self.player is None:
+            return False
+        if bool(getattr(self.player, "has_control", lambda: False)()):
+            return False
+        game = getattr(self, "game", None)
+        hub = getattr(game, "decision_controller_hub", None) if game is not None else None
+        controllers = getattr(hub, "_controllers", None)
+        if isinstance(controllers, list):
+            player_id = getattr(self.player, "id", None)
+            for controller in list(controllers or []):
+                handles_player = getattr(controller, "handles_player", None)
+                if callable(handles_player) and not bool(handles_player(player_id)):
+                    continue
+                supports_tool_decisions = getattr(controller, "supports_generic_tool_decisions", None)
+                if callable(supports_tool_decisions):
+                    if bool(supports_tool_decisions()):
+                        return True
+                    continue
+                if bool(supports_tool_decisions):
+                    return True
+            return False
+        has_controller = getattr(self.player, "_has_attached_decision_controller", None)
+        return bool(has_controller()) if callable(has_controller) else False
+
+    @staticmethod
+    def _tool_action_helper_context_keys() -> set[str]:
+        return {
+            "candidates",
+            "source_candidates",
+            "enemy_candidates",
+            "objective_candidates",
+            "objective_candidates_by_unit",
+            "enemy_candidates_by_unit",
+            "support_candidates_by_unit",
+            "transport_candidates_by_unit",
+            "war_dog_candidates",
+            "miracle_dice_pool",
+            "candidates_outside_shadow",
+        }
+
+    def _tool_action_base_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        helper_keys = self._tool_action_helper_context_keys()
+        base: Dict[str, Any] = {}
+        for key, value in dict(context or {}).items():
+            key_text = str(key or "")
+            if key_text in helper_keys:
+                continue
+            if key_text.endswith("_candidates") or key_text.endswith("_candidates_by_unit"):
+                continue
+            if key_text in {"available_choice_keys", "stratagem"}:
+                continue
+            base[key_text] = value
+        return base
+
+    @staticmethod
+    def _tool_action_sort_key(value: Any) -> str:
+        return str(get_entity_id(value) or getattr(value, "id", "") or getattr(value, "_id", "") or "")
+
+    def _tool_action_root_units(self, units: List[Any]) -> List[Any]:
+        deduped: Dict[str, Any] = {}
+        for unit in list(units or []):
+            if unit is None:
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            entity_id = self._tool_action_sort_key(root)
+            if not entity_id:
+                continue
+            if entity_id in deduped:
+                continue
+            alive_attr = getattr(root, "is_alive", None)
+            if callable(alive_attr):
+                try:
+                    if not bool(alive_attr()):
+                        continue
+                except Exception:
+                    raise
+            deduped[entity_id] = root
+        return [deduped[key] for key in sorted(deduped.keys())]
+
+    def _tool_action_friendly_units(self) -> List[Any]:
+        if self.player is None:
+            return []
+        army = getattr(self.player, "get_army", lambda: None)()
+        if army is None:
+            return []
+        return self._tool_action_root_units(list(getattr(army, "units", []) or []))
+
+    def _tool_action_enemy_units(self) -> List[Any]:
+        game = getattr(self, "game", None)
+        if game is None or self.player is None:
+            return []
+        units: List[Any] = []
+        for player in list(getattr(game, "players", []) or []):
+            if player is self.player:
+                continue
+            army = getattr(player, "get_army", lambda: None)()
+            if army is None:
+                continue
+            units.extend(list(getattr(army, "units", []) or []))
+        return self._tool_action_root_units(units)
+
+    def _tool_action_objectives(self) -> List[Any]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        objectives = [objective for objective in objectives if objective is not None]
+        objectives.sort(key=self._tool_action_sort_key)
+        return objectives
+
+    def _tool_action_terrain_features(self) -> List[Any]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        features = list(getattr(game_map, "terrain_features", []) or [])
+        features = [feature for feature in features if feature is not None]
+        features.sort(key=self._tool_action_sort_key)
+        return features
+
+    def _tool_action_transports(self) -> List[Any]:
+        return [
+            unit
+            for unit in self._tool_action_friendly_units()
+            if bool(getattr(unit, "is_transport", False))
+        ]
+
+    def _tool_action_embarked_units(self) -> List[Any]:
+        embarked = [
+            unit
+            for unit in self._tool_action_friendly_units()
+            if getattr(unit, "embarked_in", None) is not None
+        ]
+        embarked.sort(key=self._tool_action_sort_key)
+        return embarked
+
+    def _tool_action_secondary_cards(self) -> List[Any]:
+        cards = list(getattr(self.player, "active_secondaries", []) or []) if self.player is not None else []
+        cards.sort(key=lambda card: str(getattr(card, "name", "") or ""))
+        return cards
+
+    def _tool_action_miracle_dice_pool(self, context: Dict[str, Any]) -> List[int]:
+        raw_pool = list(context.get("miracle_dice_pool") or [])
+        if not raw_pool and hasattr(self, "_as_miracle_dice_manager"):
+            try:
+                acts_mgr = self._as_miracle_dice_manager()
+            except Exception:
+                acts_mgr = None
+            if acts_mgr is not None:
+                raw_pool = list(getattr(acts_mgr, "miracle_dice", []) or [])
+        pool: List[int] = []
+        for value in raw_pool:
+            try:
+                pool.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        pool.sort()
+        return pool
+
+    @staticmethod
+    def _tool_action_entity_kind(value: Any) -> str:
+        class_name = str(getattr(getattr(value, "__class__", None), "__name__", "") or "").strip().lower()
+        if hasattr(value, "get_parent_army") and hasattr(value, "models"):
+            return "unit"
+        if hasattr(value, "parent_unit"):
+            return "model"
+        if "objective" in class_name:
+            return "objective"
+        if "terrain" in class_name:
+            return "terrain"
+        if hasattr(value, "command_points") and hasattr(value, "stratagems"):
+            return "player"
+        if hasattr(value, "faction_id") and hasattr(value, "units"):
+            return "army"
+        if "wargear" in class_name or "weapon" in class_name:
+            return "wargear"
+        return ""
+
+    def _serialize_tool_action_value(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {
+                str(key): self._serialize_tool_action_value(item)
+                for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+            }
+        if isinstance(value, (list, tuple)):
+            return [self._serialize_tool_action_value(item) for item in value]
+        if isinstance(value, set):
+            serialized = [self._serialize_tool_action_value(item) for item in value]
+            serialized.sort(key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True))
+            return serialized
+        entity_id = str(get_entity_id(value) or "")
+        if entity_id:
+            return {
+                "__entity_ref__": {
+                    "id": entity_id,
+                    "kind": self._tool_action_entity_kind(value),
+                }
+            }
+        return str(value)
+
+    @staticmethod
+    def _tool_action_max_unit_count(stratagem: Stratagem, context: Dict[str, Any]) -> int:
+        raw_max = context.get("max_units")
+        if raw_max is None:
+            descriptor = getattr(stratagem, "tool_descriptor", None)
+            params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
+            raw_max = params.get("max_units", params.get("max_targets"))
+            if raw_max is None and descriptor is not None:
+                target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+                if "one_or_two" in target_text or "one or two" in target_text or "up to two" in target_text:
+                    raw_max = 2
+                elif "up to three" in target_text or "three " in target_text:
+                    raw_max = 3
+        try:
+            value = int(raw_max or 0)
+        except (TypeError, ValueError):
+            value = 0
+        return max(0, min(value, 3))
+
+    @staticmethod
+    def _tool_action_text_blob(stratagem: Stratagem, context: Dict[str, Any]) -> str:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        parts = [
+            str(getattr(stratagem, "name", "") or ""),
+            str(getattr(stratagem, "description", "") or ""),
+            str(getattr(descriptor, "target", "") or "") if descriptor is not None else "",
+            str(getattr(descriptor, "effect", "") or "") if descriptor is not None else "",
+            str(dict(getattr(descriptor, "effect_params", {}) or {})) if descriptor is not None else "",
+            str(dict(context or {})),
+        ]
+        return " ".join(part for part in parts if part).strip().lower()
+
+    @staticmethod
+    def _tool_action_label_value(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (list, tuple)):
+            parts = [StratagemManager._tool_action_label_value(item) for item in value]
+            return ", ".join(part for part in parts if part)
+        name = str(getattr(value, "name", "") or "").strip()
+        if name:
+            return name
+        if hasattr(value, "x") and hasattr(value, "y"):
+            try:
+                return f"({float(getattr(value, 'x')):.1f}\", {float(getattr(value, 'y')):.1f}\")"
+            except Exception:
+                raise
+        return str(value)
+
+    def _tool_action_add_probe(
+        self,
+        *,
+        specs: List[Dict[str, Any]],
+        seen: set[str],
+        stratagem: Stratagem,
+        item: Dict[str, Any],
+        kwargs: Dict[str, Any],
+        label_suffix: str = "",
+    ) -> None:
+        probe = dict(kwargs or {})
+        if not self.can_use(str(getattr(stratagem, "name", "") or ""), **probe):
+            return
+        serialized_kwargs = self._serialize_tool_action_value(probe)
+        stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        if stable_payload in seen:
+            return
+        seen.add(stable_payload)
+        tool_id = str(getattr(stratagem, "id", "") or "")
+        descriptor_id = f"tool_descriptor:stratagem:{tool_id}" if tool_id else ""
+        label = str(getattr(stratagem, "name", "") or "Tool")
+        suffix = str(label_suffix or "").strip()
+        if suffix:
+            label = f"{label}: {suffix}"
+        cp_cost = int(self._effective_cp_cost(stratagem, probe) or 0)
+        text_blob = self._tool_action_text_blob(stratagem, probe)
+        semantic_tags: List[str] = []
+        if bool(item.get("is_reaction", False)):
+            semantic_tags.append("reaction")
+        if "objective" in text_blob or "secondary" in text_blob:
+            semantic_tags.append("score")
+        if "enemy" in text_blob or "battleshock" in text_blob or "suppression" in text_blob:
+            semantic_tags.append("deny")
+        if any(token in text_blob for token in ("hit", "wound", "fight", "shoot", "attack")):
+            semantic_tags.append("combat")
+        if any(token in text_blob for token in ("move", "advance", "charge", "fallback", "reposition")):
+            semantic_tags.append("move")
+        specs.append(
+            {
+                "label": label,
+                "payload": {
+                    "tool_family": "stratagem",
+                    "tool_type": "stratagem",
+                    "tool_name": str(getattr(stratagem, "name", "") or ""),
+                    "stratagem_name": str(getattr(stratagem, "name", "") or ""),
+                    "tool_id": tool_id,
+                    "tool_descriptor_id": descriptor_id,
+                    "cp_cost": cp_cost,
+                    "semantic_tags": semantic_tags,
+                    "is_reaction": bool(item.get("is_reaction", False)),
+                    "resolved_kwargs": serialized_kwargs,
+                },
+            }
+        )
+
+    def _build_tool_action_specs_for_item(self, item: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if not bool(item.get("available", False)):
+            return []
+        stratagem = self.get_by_name(str(item.get("name", "") or ""))
+        if stratagem is None:
+            return []
+
+        original_ctx = dict(item.get("context", {}) or {})
+        base_ctx = self._tool_action_base_context(original_ctx)
+        specs: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        text_blob = self._tool_action_text_blob(stratagem, original_ctx)
+        max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
+
+        self._tool_action_add_probe(
+            specs=specs,
+            seen=seen,
+            stratagem=stratagem,
+            item=item,
+            kwargs=base_ctx,
+        )
+
+        explicit_unit = base_ctx.get("unit") or base_ctx.get("target_unit")
+        explicit_enemy = base_ctx.get("enemy_unit") or base_ctx.get("target_enemy_unit")
+        explicit_objective = base_ctx.get("objective") or base_ctx.get("objective_marker")
+        explicit_transport = base_ctx.get("transport_unit") or base_ctx.get("transport")
+        explicit_terrain = base_ctx.get("terrain_feature") or base_ctx.get("terrain")
+        explicit_choice = base_ctx.get("choice_key") or base_ctx.get("override_key")
+        explicit_secondary = base_ctx.get("secondary_card")
+
+        friendly_units = self._tool_action_root_units(
+            list(original_ctx.get("candidates") or [])
+            or list(original_ctx.get("source_candidates") or [])
+            or self._tool_action_friendly_units()
+        )
+        source_units = self._tool_action_root_units(
+            list(original_ctx.get("source_candidates") or [])
+            or ([explicit_unit] if explicit_unit is not None else [])
+            or friendly_units
+        )
+        enemy_units = self._tool_action_root_units(
+            list(original_ctx.get("enemy_candidates") or [])
+            or ([explicit_enemy] if explicit_enemy is not None else [])
+            or self._tool_action_enemy_units()
+        )
+        objectives = list(original_ctx.get("objective_candidates") or [])
+        if not objectives and explicit_objective is not None:
+            objectives = [explicit_objective]
+        if not objectives:
+            objectives = self._tool_action_objectives()
+        objectives = [objective for objective in objectives if objective is not None]
+        objectives.sort(key=self._tool_action_sort_key)
+        terrains = [explicit_terrain] if explicit_terrain is not None else self._tool_action_terrain_features()
+        terrains = [terrain for terrain in terrains if terrain is not None]
+        terrains.sort(key=self._tool_action_sort_key)
+        transports = [explicit_transport] if explicit_transport is not None else self._tool_action_transports()
+        transports = [transport for transport in transports if transport is not None]
+        transports.sort(key=self._tool_action_sort_key)
+        embarked_units = self._tool_action_embarked_units()
+        secondary_cards = [explicit_secondary] if explicit_secondary is not None else self._tool_action_secondary_cards()
+        miracle_pool = self._tool_action_miracle_dice_pool(original_ctx)
+
+        objective_by_unit = dict(original_ctx.get("objective_candidates_by_unit") or {})
+        enemy_by_unit = dict(original_ctx.get("enemy_candidates_by_unit") or {})
+        support_by_unit = dict(original_ctx.get("support_candidates_by_unit") or {})
+        transport_by_unit = dict(original_ctx.get("transport_candidates_by_unit") or {})
+        allowed_choice_keys = list(original_ctx.get("allowed_choice_keys") or [])
+
+        if explicit_unit is None:
+            for unit in friendly_units:
+                label_suffix = self._tool_action_label_value(unit)
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                    },
+                    label_suffix=label_suffix,
+                )
+
+        for unit_key, unit_objective_candidates in objective_by_unit.items():
+            unit_id = self._tool_action_sort_key(unit_key)
+            unit = next((candidate for candidate in friendly_units if self._tool_action_sort_key(candidate) == unit_id), None)
+            if unit is None:
+                continue
+            for objective in list(unit_objective_candidates or []):
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                        "objective": objective,
+                        "objective_marker": objective,
+                    },
+                    label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(objective)}",
+                )
+
+        for unit_key, unit_enemy_candidates in enemy_by_unit.items():
+            unit_id = self._tool_action_sort_key(unit_key)
+            unit = next((candidate for candidate in friendly_units if self._tool_action_sort_key(candidate) == unit_id), None)
+            if unit is None:
+                continue
+            for enemy_unit in list(unit_enemy_candidates or []):
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                        "enemy_unit": enemy_unit,
+                        "target_enemy_unit": enemy_unit,
+                    },
+                    label_suffix=f"{self._tool_action_label_value(unit)} vs {self._tool_action_label_value(enemy_unit)}",
+                )
+
+        for unit_key, support_candidates in support_by_unit.items():
+            unit_id = self._tool_action_sort_key(unit_key)
+            unit = next((candidate for candidate in friendly_units if self._tool_action_sort_key(candidate) == unit_id), None)
+            if unit is None:
+                continue
+            for support_unit in list(support_candidates or []):
+                if support_unit is unit:
+                    continue
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                        "secondary_unit": support_unit,
+                        "support_unit": support_unit,
+                        "battle_shocked_unit": support_unit,
+                    },
+                    label_suffix=f"{self._tool_action_label_value(unit)} + {self._tool_action_label_value(support_unit)}",
+                )
+
+        for unit_key, transport_candidates in transport_by_unit.items():
+            unit_id = self._tool_action_sort_key(unit_key)
+            unit = next((candidate for candidate in friendly_units if self._tool_action_sort_key(candidate) == unit_id), None)
+            if unit is None:
+                continue
+            for transport in list(transport_candidates or []):
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                        "transport_unit": transport,
+                        "transport": transport,
+                        "passenger_unit": unit,
+                        "selected_embarked_unit": unit,
+                        "embarked_unit": unit,
+                    },
+                    label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(transport)}",
+                )
+
+        needs_enemy = explicit_enemy is None and (
+            "enemy" in text_blob or "opponent" in text_blob or "attacker" in text_blob or "target_enemy_unit" in text_blob
+        )
+        needs_objective = explicit_objective is None and "objective" in text_blob
+        needs_terrain = explicit_terrain is None and "terrain" in text_blob
+        needs_transport = explicit_transport is None and (
+            "transport" in text_blob or "embarked" in text_blob or "passenger" in text_blob
+        )
+        needs_secondary = explicit_secondary is None and "secondary" in text_blob
+        needs_choice = explicit_choice in (None, "") and (
+            bool(allowed_choice_keys) or "choice_key" in text_blob or "override" in text_blob or "halo" in text_blob
+        )
+        needs_miracle_discard = "miracle" in text_blob and "discard" in text_blob
+
+        candidate_units = [explicit_unit] if explicit_unit is not None else friendly_units
+        candidate_sources = [explicit_unit] if explicit_unit is not None else source_units
+
+        if needs_objective:
+            for objective in objectives:
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={**base_ctx, "objective": objective, "objective_marker": objective},
+                    label_suffix=self._tool_action_label_value(objective),
+                )
+                for unit in candidate_units:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": unit,
+                            "target_unit": unit,
+                            "objective": objective,
+                            "objective_marker": objective,
+                        },
+                        label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(objective)}",
+                    )
+
+        if needs_terrain:
+            for unit in candidate_units:
+                for terrain in terrains:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": unit,
+                            "target_unit": unit,
+                            "terrain_feature": terrain,
+                            "terrain": terrain,
+                        },
+                        label_suffix=f"{self._tool_action_label_value(unit)} @ {self._tool_action_label_value(terrain)}",
+                    )
+
+        if needs_enemy:
+            for enemy_unit in enemy_units:
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "enemy_unit": enemy_unit,
+                        "target_enemy_unit": enemy_unit,
+                    },
+                    label_suffix=self._tool_action_label_value(enemy_unit),
+                )
+                for unit in candidate_units:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": unit,
+                            "target_unit": unit,
+                            "enemy_unit": enemy_unit,
+                            "target_enemy_unit": enemy_unit,
+                        },
+                        label_suffix=f"{self._tool_action_label_value(unit)} vs {self._tool_action_label_value(enemy_unit)}",
+                    )
+
+        if needs_transport:
+            for unit in candidate_units:
+                for transport in transports:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": unit,
+                            "target_unit": unit,
+                            "transport_unit": transport,
+                            "transport": transport,
+                        },
+                        label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(transport)}",
+                    )
+            for embarked_unit in embarked_units:
+                for transport in transports:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "transport_unit": transport,
+                            "transport": transport,
+                            "passenger_unit": embarked_unit,
+                            "selected_embarked_unit": embarked_unit,
+                            "embarked_unit": embarked_unit,
+                        },
+                        label_suffix=f"{self._tool_action_label_value(embarked_unit)} in {self._tool_action_label_value(transport)}",
+                    )
+
+        if needs_secondary:
+            for card in secondary_cards:
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "secondary_card": card,
+                    },
+                    label_suffix=self._tool_action_label_value(card),
+                )
+
+        if needs_choice:
+            for raw_choice in allowed_choice_keys:
+                choice_key = str(raw_choice or "").strip().upper()
+                if not choice_key:
+                    continue
+                if explicit_unit is not None:
+                    probe_kwargs = {
+                        **base_ctx,
+                        "unit": explicit_unit,
+                        "target_unit": explicit_unit,
+                        "choice_key": choice_key,
+                        "override_key": choice_key,
+                    }
+                else:
+                    probe_kwargs = {
+                        **base_ctx,
+                        "choice_key": choice_key,
+                        "override_key": choice_key,
+                    }
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs=probe_kwargs,
+                    label_suffix=choice_key.replace("_", " ").title(),
+                )
+
+        if needs_miracle_discard and miracle_pool:
+            max_pick = min(3, len(miracle_pool))
+            seen_dice: set[tuple[int, ...]] = set()
+            for pick_count in range(1, max_pick + 1):
+                for combo in combinations(range(len(miracle_pool)), pick_count):
+                    values = tuple(sorted(int(miracle_pool[index]) for index in combo))
+                    if values in seen_dice:
+                        continue
+                    seen_dice.add(values)
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "miracle_dice_to_discard": list(values),
+                            "discard_count": int(len(values)),
+                        },
+                        label_suffix=f"Discard {', '.join(str(value) for value in values)}",
+                    )
+
+        if max_units > 1:
+            combo_pool = list(original_ctx.get("war_dog_candidates") or []) or friendly_units
+            combo_pool = self._tool_action_root_units(combo_pool)
+            max_actions = 48
+            for pick_count in range(1, max_units + 1):
+                for selected_units in combinations(combo_pool, pick_count):
+                    selected_list = [unit for unit in list(selected_units or []) if unit is not None]
+                    if not selected_list:
+                        continue
+                    kwargs = {
+                        **base_ctx,
+                        "units": list(selected_list),
+                        "selected_units": list(selected_list),
+                        "target_units": list(selected_list),
+                        "unit": selected_list[0],
+                        "target_unit": selected_list[0],
+                    }
+                    if len(selected_list) >= 2:
+                        kwargs["secondary_unit"] = selected_list[1]
+                        kwargs["support_unit"] = selected_list[1]
+                        kwargs["battle_shocked_unit"] = selected_list[1]
+                    label_suffix = self._tool_action_label_value(selected_list)
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs=kwargs,
+                        label_suffix=label_suffix,
+                    )
+                    for source_unit in candidate_sources:
+                        self._tool_action_add_probe(
+                            specs=specs,
+                            seen=seen,
+                            stratagem=stratagem,
+                            item=item,
+                            kwargs={
+                                **kwargs,
+                                "source_unit": source_unit,
+                            },
+                            label_suffix=f"{self._tool_action_label_value(source_unit)} -> {label_suffix}",
+                        )
+                        for enemy_unit in enemy_units:
+                            self._tool_action_add_probe(
+                                specs=specs,
+                                seen=seen,
+                                stratagem=stratagem,
+                                item=item,
+                                kwargs={
+                                    **kwargs,
+                                    "source_unit": source_unit,
+                                    "enemy_unit": enemy_unit,
+                                    "target_enemy_unit": enemy_unit,
+                                },
+                                label_suffix=(
+                                    f"{self._tool_action_label_value(source_unit)} -> "
+                                    f"{label_suffix} vs {self._tool_action_label_value(enemy_unit)}"
+                                ),
+                            )
+                    if len(specs) >= max_actions:
+                        break
+                if len(specs) >= max_actions:
+                    break
+
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("payload", {}).get("tool_name", "") or ""),
+                str(spec.get("label", "") or ""),
+                json.dumps(spec.get("payload", {}).get("resolved_kwargs", {}), sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+            )
+        )
+        return specs
+
+    def _build_tool_action_request(self, *, reactions_only: bool) -> Any:
+        if not self._player_can_accept_tool_action_decisions():
+            return None
+        game = getattr(self, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        queue = getattr(game, "decision_queue", None)
+        list_fn = getattr(queue, "list", None) if queue is not None else None
+        if callable(list_fn) and list(list_fn() or []):
+            return None
+
+        items = [
+            item
+            for item in list(self.get_phase_stratagem_items() or [])
+            if bool(item.get("available", False))
+            and (not reactions_only or bool(item.get("is_reaction", False)))
+        ]
+        if not items:
+            return None
+
+        specs: List[Dict[str, Any]] = []
+        for item in items:
+            specs.extend(self._build_tool_action_specs_for_item(item))
+        if not specs:
+            return None
+
+        payload_signature = [
+            {
+                "label": str(spec.get("label", "") or ""),
+                "payload": dict(spec.get("payload", {}) or {}),
+            }
+            for spec in specs
+        ]
+        phase_name = str(self._current_phase_name or "").strip()
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        signature_blob = json.dumps(
+            {
+                "phase_name": phase_name,
+                "battle_round": battle_round,
+                "player_id": str(getattr(self.player, "id", "") or ""),
+                "reactions_only": bool(reactions_only),
+                "actions": payload_signature,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        signature = hashlib.sha256(signature_blob.encode("utf-8")).hexdigest()
+        if self._tool_action_signature_was_skipped(signature):
+            return None
+
+        from ..engine.decision_kinds import DECISION_SELECT_TOOL_ACTION
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if self._has_pending_decision_request(
+            decision_type=DECISION_SELECT_TOOL_ACTION,
+            ability="tool_action",
+            phase_name=phase_name,
+            tool_action_signature=signature,
+        ):
+            return None
+
+        options = [
+            DecisionOption.create(
+                str(spec.get("label", "") or "Tool action"),
+                payload=dict(spec.get("payload", {}) or {}),
+            )
+            for spec in specs
+        ]
+        options.append(
+            DecisionOption.create(
+                "Do not use",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "tool_family": "stratagem",
+                    "tool_type": "stratagem",
+                    "tool_name": "",
+                    "resolved_kwargs": {},
+                },
+            )
+        )
+        return DecisionRequest.create(
+            DECISION_SELECT_TOOL_ACTION,
+            "Select an available stratagem tool action or skip.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "tool_action",
+                "ability_name": "Stratagem tool actions",
+                "phase_name": phase_name,
+                "optional": True,
+                "skip_label": "Do not use",
+                "tool_action_signature": signature,
+                "tool_action_count": int(len(specs)),
+                "reactions_only": bool(reactions_only),
+            },
+        )
+
+    def queue_headless_tool_action_decision(self, *, reactions_only: bool = False) -> bool:
+        request = self._build_tool_action_request(reactions_only=bool(reactions_only))
+        if request is None:
+            return False
+        return self._submit_decision_request(request)
 
     def _queue_new_orders_decision(self, *, phase_name: str = "Command phase") -> bool:
         if self.player is None or self.game is None:
@@ -3523,6 +4427,105 @@ class StratagemManager(
                 "tool_id": "stratagem:new_orders",
                 "tool_type": "stratagem",
                 "semantic_tags": ["secondary", "mission", "discard", "draw", "resource"],
+                "optional": True,
+                "skip_label": "Do not use",
+            },
+        )
+        return self._submit_decision_request(request)
+
+    def _queue_overwatch_decision(
+        self,
+        *,
+        moving_unit: Any,
+        action: str,
+        when: str,
+        phase_name: str,
+        candidates: list[Any],
+        stratagem: Any,
+    ) -> bool:
+        if self.player is None or self.game is None:
+            return False
+        if not bool(getattr(self.game, "is_authoritative", True)):
+            return False
+        enemy_unit_id = str(get_entity_id(moving_unit) or "")
+        phase_label = str(phase_name or "").strip()
+        if not enemy_unit_id or not phase_label:
+            return False
+
+        from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if self._has_pending_decision_request(
+            decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+            ability="fire_overwatch",
+            phase_name=phase_label,
+            enemy_unit_id=enemy_unit_id,
+            when=str(when or "").strip().lower(),
+            action=str(action or "").strip().lower(),
+        ):
+            return False
+
+        sorted_candidates = sorted(
+            [unit for unit in list(candidates or []) if unit is not None],
+            key=lambda unit: str(get_entity_id(unit) or ""),
+        )
+        if not sorted_candidates:
+            return False
+
+        options: list[DecisionOption] = []
+        for unit in sorted_candidates:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={
+                        "unit_id": unit_id,
+                        "ability_key": "fire_overwatch",
+                        "ability_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                        "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                        "stratagem_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                        "tool_id": "stratagem:fire_overwatch",
+                        "tool_type": "stratagem",
+                        "semantic_tags": ["reaction", "shooting", "overwatch", "interrupt"],
+                    },
+                )
+            )
+        options.append(
+            DecisionOption.create(
+                "Do not use",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "ability_key": "fire_overwatch",
+                    "ability_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                    "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                    "stratagem_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                    "tool_id": "stratagem:fire_overwatch",
+                    "tool_type": "stratagem",
+                    "semantic_tags": ["reaction", "shooting", "overwatch", "interrupt"],
+                },
+            )
+        )
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_OVERWATCH_SHOOTER,
+            "FIRE OVERWATCH: select a unit to shoot the enemy mover.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "fire_overwatch",
+                "ability_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                "phase_name": phase_label,
+                "enemy_unit_id": enemy_unit_id,
+                "action": str(action or "").strip().lower(),
+                "when": str(when or "").strip().lower(),
+                "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "stratagem_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
+                "tool_id": "stratagem:fire_overwatch",
+                "tool_type": "stratagem",
+                "semantic_tags": ["reaction", "shooting", "overwatch", "interrupt"],
                 "optional": True,
                 "skip_label": "Do not use",
             },
@@ -10310,6 +11313,14 @@ class StratagemManager(
             raise
         try:
             self._used_stratagems_this_phase.clear()
+        except Exception:
+            raise
+        try:
+            if not isinstance(getattr(self, "_skipped_tool_action_signatures", None), set):
+                self._skipped_tool_action_signatures = set(
+                    getattr(self, "_skipped_tool_action_signatures", []) or []
+                )
+            self._skipped_tool_action_signatures.clear()
         except Exception:
             raise
         try:
@@ -18498,6 +19509,83 @@ class StratagemManager(
                 return False
         return True
 
+    def _unit_can_fire_overwatch_at_enemy(self, unit: Any, enemy_unit: Any) -> bool:
+        if unit is None or enemy_unit is None or self.game is None:
+            return False
+        setup_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None)
+        if callable(setup_can_shoot):
+            return bool(setup_can_shoot(unit, enemy_unit))
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        can_shoot = getattr(unit, "can_shoot_out_of_phase_at_target", None)
+        if not callable(can_shoot):
+            return False
+        return bool(can_shoot(enemy_unit, game_map))
+
+    def _build_fire_overwatch_declarations(self, shooter: Any, enemy_unit: Any) -> list[dict[str, Any]]:
+        if shooter is None or enemy_unit is None or self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        validate_declaration = getattr(shooter, "_validate_shooting_declaration", None)
+        can_shoot_profile = getattr(shooter, "_can_model_shoot_weapon_at_target", None)
+        get_models = getattr(shooter, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(shooter, "models", []) or [])
+        models = sorted(models, key=lambda model: str(get_entity_id(model) or ""))
+        declarations: list[dict[str, Any]] = []
+        for model in models:
+            alive_value = getattr(model, "is_alive", False)
+            alive = bool(alive_value() if callable(alive_value) else alive_value)
+            if not alive:
+                continue
+            best_profile = None
+            best_score = float("-inf")
+            wargear_items = sorted(
+                [w for w in list(getattr(model, "wargear", []) or []) if w is not None],
+                key=lambda wargear: (str(get_entity_id(wargear) or ""), str(getattr(wargear, "name", "") or "")),
+            )
+            for wargear in wargear_items:
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                profiles = getattr(wargear, "profiles", {}) or {}
+                profile_items = sorted(
+                    [profile for profile in list(profiles.values()) if profile is not None],
+                    key=lambda profile: str(getattr(profile, "name", "") or ""),
+                )
+                for profile in profile_items:
+                    valid = False
+                    if callable(validate_declaration):
+                        validation = validate_declaration(profile, enemy_unit, [model], game_map)
+                        valid = bool((validation or {}).get("valid", False))
+                    elif callable(can_shoot_profile):
+                        valid = bool(can_shoot_profile(model, profile, enemy_unit, game_map))
+                    if not valid:
+                        continue
+                    score_fn = getattr(profile, "get_damage_potential", None)
+                    if callable(score_fn):
+                        try:
+                            score = float(score_fn(enemy_unit) or 0.0)
+                        except (TypeError, ValueError):
+                            score = 0.0
+                    else:
+                        score = 0.0
+                    if score > best_score:
+                        best_score = score
+                        best_profile = profile
+            if best_profile is None:
+                continue
+            declarations.append(
+                {
+                    "weapon_profile": best_profile,
+                    "target_unit": enemy_unit,
+                    "models": [model],
+                }
+            )
+        return declarations
+
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
         try:
@@ -18560,7 +19648,7 @@ class StratagemManager(
                         dist = self.game.map.get_distance_between_units(unit, moving_unit)
                 except Exception:
                     raise
-                if dist is not None and dist <= 24.0:
+                if dist is not None and dist <= 24.0 and self._unit_can_fire_overwatch_at_enemy(unit, moving_unit):
                     candidates.append(unit)
             if not candidates:
                 return
@@ -18593,7 +19681,7 @@ class StratagemManager(
         can_free = self._overwatch_zero_cp_available(candidates=candidates)
         if self.player.command_points < s.cp_cost and not can_free:
             return
-        # Queue opportunity with minimal context; UI will choose shooter before resolving
+        # Queue opportunity with minimal context; UI/HUD still see the reaction item.
         # Deduplicate if same enemy move reaction is already queued
         already = False
         for r in self._pending_reactions:
@@ -18611,6 +19699,14 @@ class StratagemManager(
                 'cp_cost': s.cp_cost,
                 'candidates': candidates,
             })
+        self._queue_overwatch_decision(
+            moving_unit=moving_unit,
+            action=action,
+            when=when,
+            phase_name=phase_name,
+            candidates=candidates,
+            stratagem=s,
+        )
 
     def _maybe_queue_apoplectic_frenzy(self, unit, action: str) -> None:
         try:
@@ -20938,7 +22034,12 @@ class StratagemManager(
             except Exception:
                 raise
             if kwargs.get('dequeue') is True:
-                self._dequeue_reaction_by_name(s.name)
+                self._dequeue_reaction_by_name_and_context(
+                    s.name,
+                    event="enemy_move",
+                    phase_name=str(kwargs.get("phase_name", "") or self._current_phase_name or ""),
+                    enemy_unit=enemy_unit,
+                )
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
@@ -21176,7 +22277,7 @@ class StratagemManager(
                                 dist = self.game.map.get_distance_between_units(unit, enemy_unit)
                         except Exception:
                             raise
-                        if dist is not None and dist <= 24.0:
+                        if dist is not None and dist <= 24.0 and self._unit_can_fire_overwatch_at_enemy(unit, enemy_unit):
                             candidates.append(unit)
                 except Exception:
                     raise
@@ -21201,6 +22302,9 @@ class StratagemManager(
                         return False
                 except Exception:
                     raise
+            if not self._unit_can_fire_overwatch_at_enemy(shooter, enemy_unit):
+                logger.error("ERROR: Overwatch: selected unit has no legal out-of-phase shots")
+                return False
             eff_cost = s.cp_cost
             apply_info = {}
             try:
@@ -21240,29 +22344,7 @@ class StratagemManager(
                 if destroyed_model is None:
                     logger.error("ERROR: Overwatch: Brutal Example could not destroy a Bodyguard model")
                     return False
-            # Build declarations: group best ranged profile per model for target
-            declarations = []
-            profile_to_models = {}
-            for model in shooter.models:
-                if not getattr(model, 'is_alive', False):
-                    continue
-                best_profile = None
-                best_score = -1.0
-                for wargear in getattr(model, 'wargear', []) or []:
-                    if not getattr(wargear, 'is_ranged', lambda: False)():
-                        continue
-                    for _, profile in getattr(wargear, 'profiles', {}).items():
-                        try:
-                            score = float(profile.get_damage_potential(enemy_unit))
-                        except Exception:
-                            raise
-                        if score > best_score:
-                            best_score = score
-                            best_profile = profile
-                if best_profile is not None:
-                    profile_to_models.setdefault(best_profile, []).append(model)
-            for profile, models in profile_to_models.items():
-                declarations.append({'weapon_profile': profile, 'target_unit': enemy_unit, 'models': models})
+            declarations = self._build_fire_overwatch_declarations(shooter, enemy_unit)
             if not declarations:
                 logger.error("ERROR: Overwatch: no ranged weapons eligible")
                 return False

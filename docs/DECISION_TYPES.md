@@ -11,7 +11,7 @@ network UI, a headless policy, or a future AI policy.
 
 Reachability audit:
 - Reviewed against `src/warhammer40k_ai/engine/decision_kinds.py` on April 18, 2026.
-- All 118 decision kinds in that module have live `src/warhammer40k_ai/` references.
+- All 119 decision kinds in that module have live `src/warhammer40k_ai/` references.
 - The catalog below therefore covers the full current decision-kind surface, including
   faction-, datasheet-, detachment-, and weapon-specific windows that only appear under
   the right rules conditions.
@@ -77,6 +77,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 ## Shooting And Ranged Attacks
 
+- `SELECT_TOOL_ACTION` - Choose a generic stratagem tool action or skip.
 - `SELECT_WEAPON` - Choose a weapon or profile to use.
 - `DECLARE_SHOTS` - Declare shooting targets and split-fire assignments.
 - `DECLARE_FIRING_DECK` - Select firing-deck participants.
@@ -232,10 +233,11 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `PICK_POINT` | A rule requires an exact battlefield point. | UI | `Policy` | `T3` |
 | `PICK_OBJECTIVE` | A rule requires an objective marker. | UI | `Policy` | `T2` |
 | `PICK_TERRAIN_FEATURE` | A rule requires a terrain feature. | UI | `Policy` | `T2` |
+| `SELECT_TOOL_ACTION` | A generic headless/non-local stratagem window exposes one or more legal tool actions plus skip. | UI | `Policy` | `T2/T3` |
 | `SELECT_WEAPON` | An activation needs a weapon or profile choice. | UI | `Policy` | `T3` |
 | `DECLARE_SHOTS` | A shooting unit must declare targets and split fire. | UI | `Policy` | `T3` |
 | `DECLARE_FIRING_DECK` | A transport must choose firing-deck participants. | UI | `Policy` | `T3` |
-| `SELECT_OVERWATCH_SHOOTER` | Overwatch or equivalent reaction needs a shooter choice. | UI | `Policy` | `T3` |
+| `SELECT_OVERWATCH_SHOOTER` | Overwatch or equivalent reaction needs a shooter choice, including authoritative `FIRE OVERWATCH` windows. | UI | `Policy` | `T3` |
 | `SELECT_RISE_TO_CHALLENGE` | Rise to Challenge target window opens. | UI | `Policy` | `T3` |
 | `SELECT_SETUP_REACTIVE_TARGET` | Setup-reactive rules produce eligible enemy targets. | UI | `Policy` | `T3` |
 | `REROLL_ROLL` | A generic reroll-choice window opens. | UI | `Policy` | `T3` |

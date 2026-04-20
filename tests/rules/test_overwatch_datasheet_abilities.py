@@ -378,6 +378,7 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
 
         moving_unit = self._make_unit("Boss Snikrot", moving_army)
         shooter = self._make_unit("Overwatch Unit", defending_army)
+        shooter.can_shoot_out_of_phase_at_target = lambda _enemy, _game_map: True
         defending_army.units = [shooter]
 
         game = SimpleNamespace(

@@ -12,7 +12,7 @@ from ..decision_kinds import (
     DECISION_SELECT_WEAPON,
 )
 from ..decisions import DecisionRequest, DecisionResult
-from ._helpers import find_option, get_model, get_unit, get_wargear, validate_option_choice
+from ._helpers import find_option, get_model, get_unit, get_wargear, resolve_player, validate_option_choice
 from ...utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
@@ -55,6 +55,12 @@ def _validate_select_overwatch(game: object, request: DecisionRequest, result: D
         return errors
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    ability = str(
+        request.context.get("ability", "")
+        or payload.get("ability", "")
+        or payload.get("ability_key", "")
+        or ""
+    ).strip().lower()
     if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
         return ()
     unit_id = str(payload.get("unit_id", "") or "")
@@ -62,15 +68,65 @@ def _validate_select_overwatch(game: object, request: DecisionRequest, result: D
         return ("Overwatch selection requires unit_id.",)
     if get_unit(game, unit_id) is None:
         return ("Overwatch unit not found.",)
+    if ability != "fire_overwatch":
+        return ()
+    player = resolve_player(game, getattr(request, "player_id", None))
+    if player is None:
+        return ("Overwatch player not found.",)
+    if getattr(player, "stratagems", None) is None:
+        return ("Overwatch stratagem manager not found.",)
+    enemy_unit_id = str(request.context.get("enemy_unit_id", "") or payload.get("enemy_unit_id", "") or "")
+    if not enemy_unit_id:
+        return ("Overwatch selection requires enemy_unit_id.",)
+    if get_unit(game, enemy_unit_id) is None:
+        return ("Overwatch enemy unit not found.",)
     return ()
 
 
 def _apply_select_overwatch(game: object, request: DecisionRequest, result: DecisionResult):
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    ability = str(
+        request.context.get("ability", "")
+        or payload.get("ability", "")
+        or payload.get("ability_key", "")
+        or ""
+    ).strip().lower()
     if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
+        if ability == "fire_overwatch":
+            player = resolve_player(game, getattr(request, "player_id", None))
+            manager = getattr(player, "stratagems", None) if player is not None else None
+            if manager is not None:
+                phase_name = str(request.context.get("phase_name", "") or "")
+                enemy_unit = get_unit(game, str(request.context.get("enemy_unit_id", "") or ""))
+                dequeue_reaction = getattr(manager, "_dequeue_reaction_by_name_and_context", None)
+                if callable(dequeue_reaction):
+                    dequeue_reaction(
+                        str(request.context.get("stratagem_name", "") or "FIRE OVERWATCH"),
+                        event="enemy_move",
+                        phase_name=phase_name,
+                        enemy_unit=enemy_unit,
+                    )
         return None
-    return get_unit(game, str(payload.get("unit_id", "") or ""))
+    unit = get_unit(game, str(payload.get("unit_id", "") or ""))
+    if ability != "fire_overwatch":
+        return unit
+    if unit is None:
+        raise RuntimeError("Overwatch unit not found.")
+    player = resolve_player(game, getattr(request, "player_id", None))
+    if player is None:
+        raise RuntimeError("Overwatch player not found.")
+    manager = getattr(player, "stratagems", None)
+    if manager is None:
+        raise RuntimeError("Overwatch stratagem manager not found.")
+    enemy_unit = get_unit(game, str(request.context.get("enemy_unit_id", "") or payload.get("enemy_unit_id", "") or ""))
+    if enemy_unit is None:
+        raise RuntimeError("Overwatch enemy unit not found.")
+    phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "")
+    stratagem_name = str(request.context.get("stratagem_name", "") or payload.get("stratagem_name", "") or "FIRE OVERWATCH")
+    if not bool(manager.use(stratagem_name, shooter_unit=unit, enemy_unit=enemy_unit, phase_name=phase_name, dequeue=True)):
+        raise RuntimeError("Fire Overwatch could not be applied.")
+    return unit
 
 
 def _validate_declare_shots(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

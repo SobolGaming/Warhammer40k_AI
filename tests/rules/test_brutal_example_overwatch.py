@@ -126,12 +126,14 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
 
     def test_overwatch_queue_allows_brutal_example_after_used(self):
         moving_unit = SimpleNamespace(
+            id="unit:enemy",
             get_parent_army=lambda: SimpleNamespace(player=SimpleNamespace(name="Attacker", id="attacker-player")),
             special_rules={},
         )
         moving_unit.is_overwatch_prevented_against = lambda _target, game=None: False
 
         shooter = SimpleNamespace(
+            id="unit:shooter",
             name="Traitor Enforcer Unit",
             is_alive=lambda: True,
             deployed=True,
@@ -142,6 +144,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
             is_battle_shocked=lambda: False,
         )
         shooter.can_use_traitor_enforcer_overwatch = lambda game=None: True
+        shooter.can_shoot_out_of_phase_at_target = lambda _enemy, _game_map: True
 
         defender_player = SimpleNamespace(
             name="Defender",
@@ -163,6 +166,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         stratagem_mgr._current_phase_name = "Charge phase"
         stratagem_mgr._pending_reactions = []
         stratagem_mgr._queue_reaction = lambda reaction: stratagem_mgr._pending_reactions.append(reaction)
+        stratagem_mgr._queue_overwatch_decision = lambda **_kwargs: True
 
         stratagem_mgr.get_by_name = lambda name: SimpleNamespace(
             name="FIRE OVERWATCH",
@@ -222,6 +226,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         bodyguard.get_traitor_enforcer_overwatch_rule = lambda: {"leader_id": leader._id}
         bodyguard.is_battle_shocked = lambda: False
         bodyguard.can_use_traitor_enforcer_overwatch = lambda game=None: True
+        bodyguard.can_shoot_out_of_phase_at_target = lambda _enemy, _game_map: True
 
         defender_player = SimpleNamespace(
             name="Defender",
@@ -257,6 +262,9 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         stratagem_mgr._queue_reaction = lambda reaction: stratagem_mgr._pending_reactions.append(reaction)
         stratagem_mgr._dequeue_reaction_by_name = lambda _name: None
         stratagem_mgr._is_overwatch_shooter_blocked_this_turn = lambda _unit: False
+        stratagem_mgr._build_fire_overwatch_declarations = lambda _shooter, _enemy: [
+            {"weapon_profile": SimpleNamespace(name="Lasgun"), "target_unit": _enemy, "models": [bodyguard.models[0]]}
+        ]
         stratagem_mgr.get_by_name = lambda _name: SimpleNamespace(
             name="FIRE OVERWATCH",
             is_phase_allowed=lambda _phase: True,

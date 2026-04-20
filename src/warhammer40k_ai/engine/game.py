@@ -12415,6 +12415,44 @@ class Game(
     def in_command_context(self) -> bool:
         return int(getattr(self, "_command_context_depth", 0) or 0) > 0
 
+    def _maybe_queue_post_command_tool_decisions(self, command: GameCommand, result) -> bool:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return False
+        if not bool(getattr(result, "ok", False)):
+            return False
+        queue = getattr(self, "decision_queue", None)
+        list_fn = getattr(queue, "list", None) if queue is not None else None
+        if callable(list_fn) and list(list_fn() or []):
+            return False
+
+        current_player = None
+        if list(getattr(self, "players", []) or []):
+            current_player = self.get_current_player()
+
+        non_current_players = [
+            player
+            for player in list(getattr(self, "players", []) or [])
+            if player is not None and player is not current_player
+        ]
+        current_then_others = ([] if current_player is None else [current_player]) + non_current_players
+        others_then_current = non_current_players + ([] if current_player is None else [current_player])
+
+        def _queue_for_players(players, *, reactions_only: bool) -> bool:
+            for player in list(players or []):
+                manager = getattr(player, "stratagems", None)
+                queue_tool_actions = getattr(manager, "queue_headless_tool_action_decision", None)
+                if not callable(queue_tool_actions):
+                    continue
+                if bool(queue_tool_actions(reactions_only=bool(reactions_only))):
+                    return True
+            return False
+
+        if _queue_for_players(others_then_current, reactions_only=True):
+            return True
+        if callable(list_fn) and list(list_fn() or []):
+            return True
+        return _queue_for_players(current_then_others, reactions_only=False)
+
     def apply_command(self, command: GameCommand):
         """Validate and apply a command; returns CommandResult."""
         from .command_dispatcher import dispatch_command
@@ -12437,10 +12475,11 @@ class Game(
                 payload=payload,
                 validate_payload=False,
             )
-            recorder = getattr(self, "_decision_replay_recorder", None)
-            record_post_command = getattr(recorder, "record_post_command", None)
-            if callable(record_post_command):
-                record_post_command(self, command, result)
+        self._maybe_queue_post_command_tool_decisions(command, result)
+        recorder = getattr(self, "_decision_replay_recorder", None)
+        record_post_command = getattr(recorder, "record_post_command", None)
+        if callable(record_post_command):
+            record_post_command(self, command, result)
         return result
 
     def process_command_queue(self, *, limit: int | None = None):

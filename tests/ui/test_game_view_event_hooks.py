@@ -272,3 +272,61 @@ def test_on_decision_requested_secondary_discard_cancel_resolves_skip() -> None:
     assert commands[0].kind == "RESOLVE_DECISION"
     assert commands[0].payload["decision_id"] == request.decision_id
     assert commands[0].payload["result_payload"] == {"skipped": True}
+
+
+def test_on_decision_requested_fire_overwatch_cancel_resolves_skip() -> None:
+    commands = []
+    player = SimpleNamespace(id="p1", has_control=lambda: True)
+    enemy_unit = SimpleNamespace(id="unit:enemy", name="Enemy")
+    shooter_unit = SimpleNamespace(id="unit:shooter", name="Shooter")
+    game = SimpleNamespace(
+        event_system=EventSystem(),
+        players=[player],
+        apply_command=lambda command: commands.append(command) or SimpleNamespace(
+            value=SimpleNamespace(ok=True, value=None)
+        ),
+    )
+    harness = _HookHarness(game)
+
+    class _DialogStub:
+        def __init__(self):
+            self.calls = []
+
+        def show(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+        def hide(self):
+            return None
+
+    harness.overwatch_shooter_dialog = _DialogStub()
+    harness.dialog_manager = SimpleNamespace(open=lambda *_args, **_kwargs: None)
+    harness._resolve_player_by_id = lambda player_id: player if str(player_id or "") == "p1" else None
+    harness._resolve_unit_by_id = lambda unit_id: {
+        enemy_unit.id: enemy_unit,
+        shooter_unit.id: shooter_unit,
+    }.get(str(unit_id or ""))
+
+    request = DecisionRequest.create(
+        "SELECT_OVERWATCH_SHOOTER",
+        "FIRE OVERWATCH",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Shooter", payload={"unit_id": shooter_unit.id}),
+            DecisionOption.create("Do not use", payload={"action": "skip", "skip": True}),
+        ],
+        context={"ability": "fire_overwatch", "enemy_unit_id": enemy_unit.id},
+    )
+
+    GameView._on_decision_requested(harness, request=request, game=game)
+
+    assert len(harness.overwatch_shooter_dialog.calls) == 1
+    _, kwargs = harness.overwatch_shooter_dialog.calls[0]
+    on_cancel = kwargs["on_cancel"]
+    assert callable(on_cancel)
+
+    on_cancel()
+
+    assert len(commands) == 1
+    assert commands[0].kind == "RESOLVE_DECISION"
+    assert commands[0].payload["decision_id"] == request.decision_id
+    assert commands[0].payload["result_payload"] == {"skipped": True}

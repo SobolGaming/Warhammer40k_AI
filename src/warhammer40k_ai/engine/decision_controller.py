@@ -17,6 +17,9 @@ class DecisionController(ABC):
             return True
         return str(self._player_id) == str(player_id or "")
 
+    def supports_generic_tool_decisions(self) -> bool:
+        return False
+
     @abstractmethod
     def on_decision_requested(self, game: object, request: DecisionRequest) -> None:
         raise NotImplementedError

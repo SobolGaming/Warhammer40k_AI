@@ -3823,6 +3823,91 @@ class GameView:
             return
 
         try:
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+        except Exception:
+            DECISION_SELECT_OVERWATCH_SHOOTER = ""
+
+        if decision_type == DECISION_SELECT_OVERWATCH_SHOOTER:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "fire_overwatch":
+                pass
+            else:
+                player = self._resolve_player_by_id(getattr(request, "player_id", None))
+                if player is None:
+                    return
+                try:
+                    if not player.has_control():
+                        return
+                except Exception:
+                    return
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action
+
+                dlg = getattr(self, "overwatch_shooter_dialog", None)
+                if dlg is None:
+                    return
+
+                enemy_unit = None
+                try:
+                    enemy_unit = self._resolve_unit_by_id(ctx.get("enemy_unit_id"))
+                except Exception:
+                    enemy_unit = None
+                units = []
+                for option in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(option, "payload", {}) or {})
+                    if bool(payload.get("skip", False)) or str(payload.get("action", "") or "").strip().lower() == "skip":
+                        continue
+                    unit = self._resolve_unit_by_id(payload.get("unit_id"))
+                    if unit is not None:
+                        units.append(unit)
+                if not units:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    skip_id = option_id_for_action(request, "skip")
+                    if not skip_id:
+                        return
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        skip_id,
+                        result_payload={"skipped": True},
+                        player_id=getattr(player, "id", None),
+                    )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit is not None else "enemy unit"
+                dlg.show(
+                    units,
+                    enemy_unit,
+                    _on_confirm,
+                    title="Select Overwatch Shooter",
+                    subtitle=f"Choose a unit to fire at {enemy_name}",
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+        try:
             from ..engine.decision_kinds import (
                 DECISION_ALLOCATE_DAMAGE,
                 DECISION_RESOLVE_COHERENCY,
@@ -18888,7 +18973,7 @@ class GameView:
                     player,
                     self.game,
                     enemy,
-                    lambda shooter: self._finalize_overwatch(player, name, context, shooter),
+                    lambda _shooter: None,
                     candidates=candidates,
                 )
             return
