@@ -2379,6 +2379,34 @@ class StratagemManager(
         text = text.replace("\u0192?T", "'")
         return text.strip().upper()
 
+    @classmethod
+    def _stratagem_ability_key(cls, name: str) -> str:
+        normalized = cls._normalize_stratagem_name(name)
+        collapsed = re.sub(r"[^A-Z0-9]+", "_", normalized).strip("_")
+        return str(collapsed or "").lower()
+
+    @classmethod
+    def _stratagem_tool_payload_identity(cls, stratagem: Any) -> Dict[str, str]:
+        stratagem_name = str(getattr(stratagem, "name", "") or "")
+        ability_key = cls._stratagem_ability_key(stratagem_name)
+        stratagem_id = str(getattr(stratagem, "id", "") or "")
+        descriptor_suffix = stratagem_id.split(":", 1)[1] if stratagem_id.startswith("stratagem:") else stratagem_id
+        descriptor_id = f"tool_descriptor:stratagem:{descriptor_suffix}" if descriptor_suffix else ""
+        tool_id = stratagem_id if stratagem_id.startswith("stratagem:") else ""
+        if not tool_id and ability_key:
+            tool_id = f"stratagem:{ability_key}"
+        identity = {
+            "ability_key": ability_key,
+            "ability_name": stratagem_name,
+            "tool_id": tool_id,
+            "tool_descriptor_id": descriptor_id,
+            "tool_name": stratagem_name,
+            "stratagem_name": stratagem_name,
+        }
+        if stratagem_id:
+            identity["stratagem_id"] = stratagem_id
+        return {key: value for key, value in identity.items() if str(value or "").strip()}
+
     def _available_name_set(self) -> set[str]:
         names: set[str] = set()
         for s in list(self.available or []):
@@ -3843,9 +3871,8 @@ class StratagemManager(
         if stable_payload in seen:
             return
         seen.add(stable_payload)
-        tool_id = str(getattr(stratagem, "id", "") or "")
-        descriptor_id = f"tool_descriptor:stratagem:{tool_id}" if tool_id else ""
-        label = str(getattr(stratagem, "name", "") or "Tool")
+        identity = self._stratagem_tool_payload_identity(stratagem)
+        label = str(identity.get("tool_name", "") or "Tool")
         suffix = str(label_suffix or "").strip()
         if suffix:
             label = f"{label}: {suffix}"
@@ -3868,10 +3895,7 @@ class StratagemManager(
                 "payload": {
                     "tool_family": "stratagem",
                     "tool_type": "stratagem",
-                    "tool_name": str(getattr(stratagem, "name", "") or ""),
-                    "stratagem_name": str(getattr(stratagem, "name", "") or ""),
-                    "tool_id": tool_id,
-                    "tool_descriptor_id": descriptor_id,
+                    **identity,
                     "cp_cost": cp_cost,
                     "semantic_tags": semantic_tags,
                     "is_reaction": bool(item.get("is_reaction", False)),

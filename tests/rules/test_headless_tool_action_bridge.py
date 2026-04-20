@@ -59,7 +59,14 @@ def _build_remote_tool_manager():
     return manager, player, game, target_unit
 
 
-def _build_generic_tool_manager(*, stratagem_name: str, descriptor_target: str, context: dict, can_use) -> tuple:
+def _build_generic_tool_manager(
+    *,
+    stratagem_name: str,
+    descriptor_target: str,
+    context: dict,
+    can_use,
+    stratagem_id: str | None = None,
+) -> tuple:
     decision_queue = DecisionQueue()
     game = SimpleNamespace(
         is_authoritative=True,
@@ -74,7 +81,7 @@ def _build_generic_tool_manager(*, stratagem_name: str, descriptor_target: str, 
         _has_attached_decision_controller=lambda: True,
     )
     stratagem = SimpleNamespace(
-        id=f"stratagem:{stratagem_name.lower().replace(' ', '_')}",
+        id=str(stratagem_id or f"stratagem:{stratagem_name.lower().replace(' ', '_')}"),
         name=stratagem_name,
         description=f"{stratagem_name} test",
         tool_descriptor=SimpleNamespace(
@@ -118,9 +125,37 @@ def test_queue_headless_tool_action_decision_builds_select_tool_action_request()
     payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
     assert len(payloads) == 2
     assert payloads[0]["tool_name"] == "GO TO GROUND"
+    assert payloads[0]["ability_key"] == "go_to_ground"
+    assert payloads[0]["ability_name"] == "GO TO GROUND"
     assert payloads[0]["tool_family"] == "stratagem"
+    assert payloads[0]["tool_id"] == "stratagem:go_to_ground"
+    assert payloads[0]["stratagem_id"] == "stratagem:go_to_ground"
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
     assert payloads[1]["action"] == "skip"
+
+
+def test_queue_headless_tool_action_decision_normalizes_generic_stratagem_identity_payload() -> None:
+    target_unit = SimpleNamespace(id="unit:target", name="Target Unit")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="SOULSIGHT",
+        stratagem_id="000009770006",
+        descriptor_target="target_unit",
+        context={
+            "phase_name": "Shooting phase",
+            "target_unit": target_unit,
+        },
+        can_use=lambda _name, **kwargs: kwargs.get("target_unit") is target_unit,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payload = dict(getattr(request.options[0], "payload", {}) or {})
+    assert payload["ability_key"] == "soulsight"
+    assert payload["ability_name"] == "SOULSIGHT"
+    assert payload["tool_id"] == "stratagem:soulsight"
+    assert payload["stratagem_id"] == "000009770006"
+    assert payload["tool_descriptor_id"] == "tool_descriptor:stratagem:000009770006"
 
 
 def test_queue_headless_tool_action_decision_skips_explicit_command_reroll_bridge() -> None:

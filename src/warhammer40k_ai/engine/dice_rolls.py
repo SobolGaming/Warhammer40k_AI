@@ -586,6 +586,7 @@ class DiceRollManager:
                             "action_id": "command_reroll",
                             "label": "Command Re-roll",
                             "ability_key": "command_reroll",
+                            "ability_name": "COMMAND RE-ROLL",
                             "stratagem_name": "COMMAND RE-ROLL",
                             "tool_id": "stratagem:command_reroll",
                             "tool_type": "stratagem",

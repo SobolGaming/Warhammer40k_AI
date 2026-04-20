@@ -163,3 +163,4 @@ def test_command_reroll_request_payload_carries_tool_metadata() -> None:
     assert payload["tool_type"] == "stratagem"
     assert payload["stratagem_name"] == "COMMAND RE-ROLL"
     assert payload["ability_key"] == "command_reroll"
+    assert payload["ability_name"] == "COMMAND RE-ROLL"
