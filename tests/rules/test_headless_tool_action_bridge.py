@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from warhammer40k_ai.engine.decision_handlers.stratagems import (
     _apply_select_tool_action,
     _validate_select_tool_action,
@@ -168,6 +170,35 @@ def test_queue_headless_tool_action_decision_skips_explicit_command_reroll_bridg
 
     assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
     assert list(game.decision_queue.list() or []) == []
+
+
+@pytest.mark.parametrize(
+    "stratagem_name",
+    [
+        "DUTY AND HONOUR",
+        "ETHEREAL PHANTASM",
+        "FRACTAL DISJUNCTION",
+        "HEROES OF THE CHAPTER",
+        "LEGENDARY FORTITUDE",
+        "ORBITAL TELEPORTARIUM",
+        "TERRIFYING PROFICIENCY",
+    ],
+)
+def test_queue_headless_tool_action_decision_skips_bespoke_context_stratagems(stratagem_name: str) -> None:
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name=stratagem_name,
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase"},
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+
+
+def test_tool_action_sort_key_accepts_string_helper_map_keys() -> None:
+    assert StratagemManager._tool_action_sort_key("unit:one") == "unit:one"
+    assert StratagemManager._tool_action_sort_key({"id": "unit:two"}) == "unit:two"
 
 
 def test_queue_headless_tool_action_decision_skips_under_specified_base_probe_for_targeted_stratagem() -> None:

@@ -2417,6 +2417,7 @@ class GameSetupDeploymentReservesMixin:
         from ..decisions import DecisionOption, DecisionRequest
         from ...utility.entity_ids import get_entity_id
         unit_id = get_entity_id(unit)
+        forced_arrival_failure_allowed = not bool(allow_skip)
         options = [
             DecisionOption.create(
                 "Confirm",
@@ -2428,6 +2429,18 @@ class GameSetupDeploymentReservesMixin:
                 DecisionOption.create(
                     "Skip",
                     payload={"unit_id": unit_id, "movement_type": "deploy", "action": "skip"},
+                )
+            )
+        elif forced_arrival_failure_allowed:
+            options.append(
+                DecisionOption.create(
+                    "Unable to arrive",
+                    payload={
+                        "unit_id": unit_id,
+                        "movement_type": "deploy",
+                        "action": "skip",
+                        "forced_arrival_failed": True,
+                    },
                 )
             )
         player_id = None
@@ -2450,6 +2463,7 @@ class GameSetupDeploymentReservesMixin:
             "battle_round": int(getattr(self, "turn", 0) or 0),
             "reserve_status": str(getattr(unit, "reserve_status", "") or ""),
             "reserve_entry_kind": self._reserve_entry_kind_for_unit(unit),
+            "allow_forced_arrival_failure": bool(forced_arrival_failure_allowed),
         }
         return DecisionRequest.create(
             DECISION_MOVE_UNIT,

@@ -605,6 +605,7 @@ class DeploymentManager:
                     break
             if normalized:
                 return normalized
+            return []
 
         anchor = decision_maker.choose_unit_deployment_position(unit, deployment_zone, list(already_deployed or []))
         model_positions = self._build_deployment_model_positions(

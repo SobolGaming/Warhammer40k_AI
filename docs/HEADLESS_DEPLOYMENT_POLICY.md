@@ -81,6 +81,10 @@ This document describes deterministic headless placement behavior for deployment
 - Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`.
 - Reserves diagnostics are available from `HeadlessPolicyDecisionController.get_reserves_arrival_search_metrics()`.
   - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
+- Forced arrivals still search legal reserve zones first. If every generated placement is rejected, the
+  controller resolves the same `MOVE_UNIT` request through an explicit `Unable to arrive`
+  fallback option. This is not a voluntary pass: the unit remains in reserves and existing
+  end-of-battle-round destruction rules handle units that still have not arrived.
 
 ## Benchmark Workflow
 

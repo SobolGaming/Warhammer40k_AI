@@ -39,6 +39,19 @@ from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
 logger = logging.getLogger(__name__)
 
 
+GENERIC_TOOL_ACTION_EXCLUDED_STRATAGEM_NAMES = {
+    # These stratagems are handled by bespoke timing/target queues. The generic
+    # tool-action bridge cannot safely synthesize their missing event context.
+    "DUTY AND HONOUR",
+    "ETHEREAL PHANTASM",
+    "FRACTAL DISJUNCTION",
+    "HEROES OF THE CHAPTER",
+    "LEGENDARY FORTITUDE",
+    "ORBITAL TELEPORTARIUM",
+    "TERRIFYING PROFICIENCY",
+}
+
+
 IMPLEMENTED_STRATAGEM_NAMES = {
     "AERIAL EXTRACTION",
     "A LONG LEASH",
@@ -3559,7 +3572,7 @@ class StratagemManager(
     @staticmethod
     def _tool_action_is_explicitly_supported(item: Dict[str, Any]) -> bool:
         name_u = str(item.get("name", "") or "").strip().upper()
-        return name_u in {
+        return name_u in GENERIC_TOOL_ACTION_EXCLUDED_STRATAGEM_NAMES or name_u in {
             "COMMAND RE-ROLL",
             "CORRUPT REALSPACE",
             "FIRE OVERWATCH",
@@ -3696,7 +3709,13 @@ class StratagemManager(
 
     @staticmethod
     def _tool_action_sort_key(value: Any) -> str:
-        return str(get_entity_id(value) or getattr(value, "id", "") or getattr(value, "_id", "") or "")
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return str(value.get("id", "") or value.get("_id", "") or "")
+        return str(getattr(value, "id", None) or getattr(value, "_id", None) or "")
 
     def _tool_action_root_units(self, units: List[Any]) -> List[Any]:
         deduped: Dict[str, Any] = {}

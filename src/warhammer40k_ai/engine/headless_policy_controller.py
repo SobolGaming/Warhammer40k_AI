@@ -370,6 +370,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         confirm_option_id = ""
         skip_option_id = ""
         confirm_action_id = ""
+        skip_is_forced_arrival_failure = False
         for option in options:
             option_id = str(getattr(option, "option_id", "") or "")
             if not option_id:
@@ -377,6 +378,10 @@ class HeadlessPolicyDecisionController(DecisionController):
             payload = dict(getattr(option, "payload", {}) or {})
             if str(payload.get("action", "") or "").strip().lower() == "skip":
                 skip_option_id = option_id
+                skip_is_forced_arrival_failure = bool(
+                    payload.get("forced_arrival_failed", False)
+                    or payload.get("forced_arrival_failure", False)
+                )
             else:
                 confirm_option_id = option_id
                 confirm_action_id = request.action_id_for_option_id(option_id)
@@ -482,15 +487,19 @@ class HeadlessPolicyDecisionController(DecisionController):
             )
 
         allow_skip = bool(context.get("allow_skip", True))
-        if allow_skip and skip_option_id:
+        if skip_option_id and (allow_skip or skip_is_forced_arrival_failure):
             apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
                 skip_option_id,
-                result_payload={"skipped": True},
+                result_payload={
+                    "skipped": True,
+                    "forced_arrival_failed": bool(skip_is_forced_arrival_failure),
+                },
                 player_id=getattr(request, "player_id", None),
             )
             metric["skipped"] = bool(apply_result is not None and getattr(apply_result, "ok", False))
+            metric["forced_arrival_failed"] = bool(skip_is_forced_arrival_failure)
             metric["consumed_anchor_count"] = int(consumed)
             metric["returned_candidate_count"] = 0
             metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))

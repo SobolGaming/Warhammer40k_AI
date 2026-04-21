@@ -1408,6 +1408,7 @@ def validate_move_unit_payload(
         return ("Move unit: unit not found.",)
     ctx = dict(getattr(request, "context", {}) or {})
     allow_skip = bool(ctx.get("allow_skip", True))
+    placement_kind = str(ctx.get("placement_kind", "") or "")
     action = str(
         resolved_payload.get("action", "")
         or payload.get("action", "")
@@ -1421,7 +1422,17 @@ def validate_move_unit_payload(
         or action in {"skip", "pass"}
     )
     if is_skip:
-        if not allow_skip:
+        forced_arrival_failed = bool(
+            ctx.get("allow_forced_arrival_failure", False)
+            and placement_kind == "reserves_arrival"
+            and (
+                resolved_payload.get("forced_arrival_failed", False)
+                or resolved_payload.get("forced_arrival_failure", False)
+                or payload.get("forced_arrival_failed", False)
+                or payload.get("forced_arrival_failure", False)
+            )
+        )
+        if not allow_skip and not forced_arrival_failed:
             return ("Move unit: skipping is not allowed for this placement.",)
         return ()
     model_positions = resolved_payload.get("model_positions")
@@ -1431,7 +1442,6 @@ def validate_move_unit_payload(
     if errors:
         return errors
     allowed_ids = ctx.get("allowed_model_ids")
-    placement_kind = str(ctx.get("placement_kind", "") or "")
     if allowed_ids is not None:
         allowed_set = {str(v) for v in list(allowed_ids or []) if v is not None}
         if not allowed_set:

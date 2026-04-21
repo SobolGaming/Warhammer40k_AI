@@ -271,6 +271,30 @@ def test_deployment_move_request_supports_multi_candidate_payloads_and_option_ho
     assert int(selected_payload.get("placement_candidate_index", -1) or -1) == 1
 
 
+def test_deployment_move_candidate_builder_empty_result_does_not_fall_back() -> None:
+    game, _player, _other = _build_game()
+    manager = DeploymentManager(game)
+
+    class _EmptyCandidateDecisionMaker(_ScriptedDecisionMaker):
+        def build_deployment_move_candidates(self, *_args, **_kwargs):
+            return []
+
+        def choose_unit_deployment_position(self, *_args, **_kwargs):
+            raise AssertionError("empty structured deployment candidates must not fall back")
+
+    unit = _StubUnit("unit:a", "Alpha")
+    decision_maker = _EmptyCandidateDecisionMaker(zone_name="Zone A", next_unit_id=unit.id)
+
+    candidates = manager._build_deployment_move_candidates(
+        unit,
+        decision_maker=decision_maker,
+        deployment_zone={"name": "Zone A", "zone_type": "defender"},
+        already_deployed=[],
+    )
+
+    assert candidates == []
+
+
 def test_execute_alternating_deployment_skips_unplaceable_unit_without_crashing(monkeypatch) -> None:
     game, defender, attacker = _build_game()
     manager = DeploymentManager(game)
