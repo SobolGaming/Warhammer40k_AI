@@ -8,6 +8,7 @@ import re
 from typing import TYPE_CHECKING
 
 from ..units.unit import Unit
+from ..utility.text_normalization import canonical_rules_key, normalize_display_text
 from ..waha_helper import WahaHelper
 from .army import ArmyValidationError
 from .army_build import EnhancementAssignment, RosterEntry, ValidatedMuster
@@ -25,13 +26,28 @@ _WARGEAR_PATTERN = re.compile(
 
 
 def _normalize_gear_name(text: str) -> str:
-    return (
-        str(text or "")
-        .replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u00e2\u0080\u0099", "'")
-        .lower()
-    )
+    return canonical_rules_key(text)
+
+
+def _gear_name_match_keys(text: object) -> set[str]:
+    key = _normalize_gear_name(str(text or ""))
+    keys = {key} if key else set()
+    if " s " in key:
+        suffix = key.split(" s ", 1)[1].strip()
+        if suffix:
+            keys.add(suffix)
+    display = normalize_display_text(text)
+    possessive = re.match(r"^\s*[^']+'\s*s\s+(.+)$", display, flags=re.IGNORECASE)
+    if possessive is not None:
+        suffix = _normalize_gear_name(possessive.group(1))
+        if suffix:
+            keys.add(suffix)
+    return keys
+
+
+def _matches_requested_gear_name(candidate_name: object, requested_name: object) -> bool:
+    candidate_key = _normalize_gear_name(str(candidate_name or ""))
+    return bool(candidate_key and candidate_key in _gear_name_match_keys(requested_name))
 
 
 def _coerce_positive_int(value: object, *, field_name: str) -> int:
@@ -169,11 +185,12 @@ def add_materialized_unit_to_army(
     for model_name, wargear_list in wargear_dict.items():
         for wargear_name, quantity in wargear_list:
             gear_name = _normalize_gear_name(wargear_name)
+            display_gear_name = normalize_display_text(wargear_name)
             matching_gear = next(
                 (
                     gear
                     for gear in unit.possible_wargear
-                    if _normalize_gear_name(gear.name) == gear_name
+                    if _matches_requested_gear_name(gear.name, wargear_name)
                 ),
                 None,
             )
@@ -182,7 +199,7 @@ def add_materialized_unit_to_army(
                     target_models = [
                         model
                         for model in unit.models
-                        if model.name.lower() == model_name.lower()
+                        if canonical_rules_key(model.name) == canonical_rules_key(model_name)
                     ]
                 else:
                     target_models = unit.models
@@ -212,22 +229,23 @@ def add_materialized_unit_to_army(
             for gear in unit.wargear_options:
                 for choice in gear.wargear_to or []:
                     for _quantity, name in choice or []:
-                        if name and _normalize_gear_name(name) == gear_name:
+                        if name and _matches_requested_gear_name(name, wargear_name):
                             matching_option = gear
+                            display_gear_name = normalize_display_text(name)
                             break
                     if matching_option is not None:
                         break
                 if matching_option is not None:
                     break
             if matching_option is not None:
-                unit.apply_wargear_options_strict(gear_name)
+                unit.apply_wargear_options_strict(display_gear_name)
                 continue
 
             matching_ability = next(
                 (
                     ability
                     for ability in unit.possible_abilities
-                    if _normalize_gear_name(ability.name) == gear_name
+                    if _matches_requested_gear_name(ability.name, wargear_name)
                     and ability.type == "Wargear"
                 ),
                 None,
@@ -299,7 +317,7 @@ def materialize_roster_entry(
     if ally_context:
         build_metadata = dict(getattr(unit, "build_metadata", {}) or {})
         build_metadata["ally_context"] = dict(ally_context)
-        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id"):
+        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id", "catalog_faction_id"):
             value = entry_metadata.get(key)
             if value:
                 build_metadata[key] = value
@@ -308,7 +326,7 @@ def materialize_roster_entry(
         if not isinstance(special_rules, dict):
             special_rules = {}
         special_rules["ally_context"] = dict(ally_context)
-        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id"):
+        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id", "catalog_faction_id"):
             value = entry_metadata.get(key)
             if value:
                 special_rules[key] = value

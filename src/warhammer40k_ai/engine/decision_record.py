@@ -229,6 +229,90 @@ def _ensure_outcome_shape(outcome: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _json_value_has_content(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value)
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _prefer_richer_json_value(existing: Any, incoming: Any) -> Any:
+    if not _json_value_has_content(existing):
+        return incoming
+    if not _json_value_has_content(incoming):
+        return existing
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        merged = dict(existing)
+        for key, value in incoming.items():
+            merged[str(key)] = _prefer_richer_json_value(merged.get(str(key)), value)
+        return merged
+    if isinstance(existing, list) and isinstance(incoming, list):
+        if all(not isinstance(item, (dict, list)) for item in existing + incoming):
+            merged_items: list[Any] = []
+            seen: set[str] = set()
+            for item in existing + incoming:
+                key = _canonical_json(item)
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged_items.append(item)
+            return merged_items
+        return incoming if len(incoming) > len(existing) else existing
+    try:
+        incoming_size = len(_canonical_json(incoming))
+        existing_size = len(_canonical_json(existing))
+    except TypeError:
+        incoming_size = 1
+        existing_size = 1
+    return incoming if incoming_size > existing_size else existing
+
+
+def merge_decision_records_by_id(records: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> list[dict[str, Any]]:
+    merged_by_id: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for raw_record in list(records or []):
+        if not isinstance(raw_record, dict):
+            continue
+        record = dict(raw_record)
+        decision_id = str(record.get("decision_id", "") or "")
+        if not decision_id:
+            key = f"__missing_id_{len(order)}"
+            merged_by_id[key] = record
+            order.append(key)
+            continue
+        if decision_id not in merged_by_id:
+            merged_by_id[decision_id] = record
+            order.append(decision_id)
+            continue
+        merged_by_id[decision_id] = _merge_decision_record(merged_by_id[decision_id], record)
+    return [merged_by_id[key] for key in order if key in merged_by_id]
+
+
+def _merge_decision_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
+    for key, value in dict(incoming or {}).items():
+        if key == "decision_id":
+            continue
+        if key == "wall_clock_ms":
+            merged[key] = max(int(merged.get(key, 0) or 0), int(value or 0))
+            continue
+        if key == "time_budget_ms":
+            if key not in merged or not _json_value_has_content(merged.get(key)):
+                merged[key] = value
+            continue
+        if key == "outcome" and isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = _ensure_outcome_shape(_prefer_richer_json_value(merged.get(key), value))
+            continue
+        if key in {"candidates", "mask"} and isinstance(merged.get(key), list) and isinstance(value, list):
+            merged[key] = value if len(value) > len(merged.get(key, [])) else merged[key]
+            continue
+        merged[key] = _prefer_richer_json_value(merged.get(key), value)
+    return merged
+
+
 def _candidate_ids(request: DecisionRequest) -> set[str]:
     return {str(c.action_id) for c in list(getattr(request, "candidates", []) or [])}
 
@@ -466,6 +550,19 @@ class DecisionRecordStore:
             if errors:
                 msg = "; ".join(errors)
                 raise ValueError(f"DecisionRecord schema validation failed: {msg}")
+        decision_id = str(record.get("decision_id", "") or "")
+        if decision_id:
+            for index, existing in enumerate(list(self.records or [])):
+                if str(dict(existing or {}).get("decision_id", "") or "") != decision_id:
+                    continue
+                merged = _merge_decision_record(dict(existing or {}), record)
+                if _record_validation_enabled():
+                    errors = self._validator.validate(merged)
+                    if errors:
+                        msg = "; ".join(errors)
+                        raise ValueError(f"DecisionRecord schema validation failed after merge: {msg}")
+                self.records[index] = merged
+                return merged
         self.records.append(record)
         limit = int(self.max_records or 0)
         overflow = len(self.records) - limit

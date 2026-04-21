@@ -2880,6 +2880,7 @@ _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor]
             "post_shoot_roll": "D6",
             "post_shoot_success_on": 5,
             "post_shoot_mortal_wounds": "D3+1",
+            "required_context_keys": ["unit", "enemy_unit", "engaged_gsc_units"],
         },
     ),
     "000009085002": StratagemToolDescriptor(
@@ -2942,6 +2943,7 @@ _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor]
             "requires_ranged_weapon_in_range": True,
             "target_lock": True,
             "reroll_wound_values": [1],
+            "required_context_keys": ["astra_unit", "gsc_unit", "enemy_unit"],
         },
     ),
 }

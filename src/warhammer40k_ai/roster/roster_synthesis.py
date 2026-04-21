@@ -883,6 +883,56 @@ def _pact_ally_options_for_detachment(
     return options
 
 
+def _resolve_include_options_for_detachment(
+    catalog: RosterSynthesisCatalog,
+    *,
+    faction_id: str,
+    detachment: CatalogDetachmentOption,
+    seed: RosterSynthesisSeed,
+) -> tuple[dict[str, CatalogUnitOption], list[str]]:
+    include_options: dict[str, CatalogUnitOption] = {}
+    if not seed.include_units:
+        return include_options, []
+    candidate_options = [
+        option
+        for option in catalog.unit_options(faction_id)
+        if option.points <= seed.max_points
+    ]
+    candidate_options.extend(
+        _pact_ally_options_for_detachment(
+            catalog,
+            primary_faction_id=faction_id,
+            detachment_name=detachment.name,
+            max_points=seed.max_points,
+        )
+    )
+    by_name: dict[str, list[CatalogUnitOption]] = {}
+    for option in candidate_options:
+        by_name.setdefault(option.normalized_name, []).append(option)
+    missing: list[str] = []
+    for requested_name in list(seed.include_units or []):
+        requested_norm = _normalize_text(requested_name)
+        matches = by_name.get(requested_norm, [])
+        if not matches:
+            missing.append(str(requested_name or "").strip())
+            continue
+        def include_sort_key(item: CatalogUnitOption) -> tuple[int, int, int, str]:
+            is_pact_ally = bool(
+                _pact_ally_metadata_for_option(
+                    primary_faction_id=faction_id,
+                    detachment_name=detachment.name,
+                    option=item,
+                )
+            )
+            return (0 if is_pact_ally else 1, item.points, item.model_count, item.datasheet_id)
+
+        include_options[requested_norm] = min(
+            matches,
+            key=include_sort_key,
+        )
+    return include_options, missing
+
+
 def _style_unit_score(option: CatalogUnitOption, style_tags: Sequence[str]) -> float:
     tags = set(style_tags or ())
     keyword_set = option.keyword_set
@@ -1691,8 +1741,14 @@ def synthesize_rosters(
     catalog = RosterSynthesisCatalog(waha_helper)
     faction_constraints = catalog.resolve_faction_constraints(seed)
     faction_ids = [faction_id for faction_id, _faction_name, _blueprint_faction in faction_constraints]
-    include_by_faction = catalog.resolve_unit_names(
-        faction_ids,
+    include_validation_faction_ids = set(faction_ids)
+    if int(seed.max_points or 0) >= 1000 and any(
+        str(faction_id or "").strip().upper() in {"WE", "EC"}
+        for faction_id in faction_ids
+    ):
+        include_validation_faction_ids.add("CD")
+    catalog.resolve_unit_names(
+        sorted(include_validation_faction_ids),
         seed.include_units,
         field_name="include",
     )
@@ -1719,14 +1775,6 @@ def synthesize_rosters(
         if not detachments:
             diagnostics.append(f"No regular detachments found for {blueprint_faction}.")
             continue
-        include_options = include_by_faction.get(faction_id, {})
-        required_names = {_normalize_text(value) for value in seed.include_units}
-        if required_names and set(include_options.keys()) != required_names:
-            missing = sorted(required_names - set(include_options.keys()))
-            diagnostics.append(
-                f"Skipping {blueprint_faction}: required unit(s) unavailable: {', '.join(missing)}."
-            )
-            continue
         exclude_names = set(exclude_by_faction.get(faction_id, {}).keys())
         detachment_list = list(detachments)
         if all_factions_mode and seed.detachment is None:
@@ -1735,6 +1783,23 @@ def synthesize_rosters(
             rng.shuffle(detachment_list)
         for detachment in detachment_list:
             catalog.enhancement_options(faction_id, detachment_name=detachment.name)
+            include_options, missing_includes = _resolve_include_options_for_detachment(
+                catalog,
+                faction_id=faction_id,
+                detachment=detachment,
+                seed=seed,
+            )
+            if missing_includes:
+                diagnostics.append(
+                    f"Skipping {blueprint_faction} / {detachment.name}: required unit(s) unavailable: "
+                    f"{', '.join(sorted(missing_includes))}."
+                )
+                continue
+            required_names = {
+                _normalize_text(option.name)
+                for option in include_options.values()
+                if str(getattr(option, "name", "") or "").strip()
+            }
             style_variants = _variant_styles(seed)
             if all_factions_mode:
                 style_variants = style_variants[:1]

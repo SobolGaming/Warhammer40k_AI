@@ -18,6 +18,13 @@ import openpyxl
 import csv
 import json
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from warhammer40k_ai.utility.text_normalization import normalize_wahapedia_value
+
 # Constants
 WAHAPEDIA_URL = "https://wahapedia.ru/wh40k10ed/Export%20Data%20Specs.xlsx"
 INDEX_FILENAME = "Index.xlsx"
@@ -111,7 +118,7 @@ def convert_csv_to_json(srcdir: Union[str, Path], dstdir: Union[str, Path]) -> N
                 for row in csvReader:
                     if '' in row:
                         del row['']
-                    jsonArray.append(row)
+                    jsonArray.append(normalize_wahapedia_value(row))
 
             json_file = dstdir / f"{csv_file.stem}{JSON_EXTENSION}"
             with open(json_file, 'w', encoding='utf-8') as jsonf:

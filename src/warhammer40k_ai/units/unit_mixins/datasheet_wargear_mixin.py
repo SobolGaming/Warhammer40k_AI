@@ -1,6 +1,7 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+from ..wargear import _split_wargear_name
 import logging
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,40 @@ class DatasheetWargearMixin:
     def id(self) -> str:
         return self._id
 
+    def _strip_unit_composition_keyword_annotation(self, description: str) -> str:
+        text = str(description or "").strip().rstrip(".")
+        keyword_words = {
+            "aircraft",
+            "battleline",
+            "beast",
+            "character",
+            "dedicated",
+            "epic",
+            "fly",
+            "fortification",
+            "hero",
+            "infantry",
+            "mounted",
+            "monster",
+            "psyker",
+            "smoke",
+            "swarm",
+            "transport",
+            "vehicle",
+        }
+        for separator in (" \u2013 ", " - ", " \u2014 "):
+            if separator not in text:
+                continue
+            base, suffix = text.split(separator, 1)
+            suffix_without_tags = re.sub(r"<[^>]+>", " ", suffix)
+            suffix_words = {
+                word.lower()
+                for word in re.findall(r"[A-Za-z]+", suffix_without_tags)
+            }
+            if suffix_words and suffix_words <= keyword_words:
+                return base.strip().rstrip(".")
+        return text
+
     def _parse_unit_composition(self, unit_composition):
         """
         Parse `datasheets_unit_composition` entries.
@@ -344,8 +379,8 @@ class DatasheetWargearMixin:
             if dlow.startswith("one of the following:"):
                 continue
 
-            # Remove trailing keyword annotation after an en-dash (" \u2013 EPIC HERO", etc.)
-            main = desc.split(" \u2013 ", 1)[0].strip().rstrip(".")
+            # Remove trailing Wahapedia keyword annotations (" - EPIC HERO", etc.) after normalization.
+            main = self._strip_unit_composition_keyword_annotation(desc)
 
             # Split into segments at top level: commas, then "and" separators.
             segments: list[str] = []
@@ -1218,17 +1253,15 @@ class DatasheetWargearMixin:
                 if not raw_name:
                     continue
                 #print(f"Parsing wargear {raw_name}")
-                if ' \u2013 ' in raw_name:
-                    name, profile = raw_name.split(' \u2013 ')
-                    if name not in [wargear.name for wargear in possible_wargear]:
+                name, profile = _split_wargear_name(raw_name)
+                if profile != "default":
+                    existing = next((wargear for wargear in possible_wargear if wargear.name == name), None)
+                    if existing is None:
                         #print(f"Adding wargear {name} with profile {profile}")
                         possible_wargear.append(Wargear(wargear_data))
                     else:
-                        for wargear in possible_wargear:
-                            if wargear.name == name:
-                                #print(f"Adding profile {profile} to wargear {name}")
-                                wargear.add_profile(profile, wargear_data)
-                                break
+                        #print(f"Adding profile {profile} to wargear {name}")
+                        existing.add_profile(profile, wargear_data)
                 else:
                     #print(f"Adding wargear {raw_name}")
                     possible_wargear.append(Wargear(wargear_data))

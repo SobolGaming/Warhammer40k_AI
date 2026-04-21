@@ -76,6 +76,43 @@ def test_resolve_chaos_transport_hull_overrides(
     assert resolved.height_source == "override"
 
 
+@pytest.mark.parametrize(
+    "datasheet_id,datasheet_name,expected_key,length_mm,width_mm,height_mm",
+    [
+        ("000000521", "Goliath Rockgrinder", "goliath_rockgrinder_hull", 135.0, 70.0, 65.0),
+        ("000000516", "Goliath Truck", "goliath_truck_hull", 135.0, 70.0, 65.0),
+        ("000000702", "Baneblade", "baneblade_hull", 240.0, 180.0, 110.0),
+        ("000003963", "Baneblade", "baneblade_hull", 240.0, 180.0, 110.0),
+        ("000002745", "Leman Russ Vanquisher", "leman_russ_hull", 120.0, 80.0, 75.0),
+        ("000003985", "Leman Russ Vanquisher", "leman_russ_hull", 120.0, 80.0, 75.0),
+        ("000000696", "Hydra", "hydra_chimera_hull", 117.0, 92.0, 110.0),
+        ("000003975", "Hydra", "hydra_chimera_hull", 117.0, 92.0, 110.0),
+    ],
+)
+def test_resolve_manual_vehicle_hull_overrides_from_recent_headless_warnings(
+    datasheet_id,
+    datasheet_name,
+    expected_key,
+    length_mm,
+    width_mm,
+    height_mm,
+):
+    resolved = resolve_model_geometry(
+        datasheet_id=datasheet_id,
+        datasheet_name=datasheet_name,
+        model_name=datasheet_name,
+        unit_keywords=["Vehicle"],
+        parsed_base_type=BaseType.HULL,
+        parsed_radius=(convert_mm_to_inches(80.0) / 2.0, convert_mm_to_inches(40.0) / 2.0),
+    )
+    assert resolved.base_type == BaseType.HULL
+    assert resolved.radius[0] == pytest.approx(convert_mm_to_inches(length_mm) / 2.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(convert_mm_to_inches(width_mm) / 2.0, abs=1e-4)
+    assert resolved.model_height == pytest.approx(convert_mm_to_inches(height_mm), abs=1e-4)
+    assert resolved.geometry_source == f"geometry_override:{expected_key}"
+    assert resolved.height_source == "override"
+
+
 def test_resolve_aegis_compound_override():
     resolved = resolve_model_geometry(
         datasheet_id="000002619",

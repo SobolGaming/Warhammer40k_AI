@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.ability import Ability
 import logging
+from ..utility.text_normalization import normalize_display_text
 logger = logging.getLogger(__name__)
 
 # Suppress the specific warnings at the module level
@@ -70,19 +71,10 @@ class WahaHelper:
                 data = data.replace("</li>", ";")
                 soup = BeautifulSoup(data, 'html.parser')
                 text = soup.get_text(separator=' ')
-                text = re.sub(r'\s+', ' ', text).strip()
-                text = re.sub(r'\s+([,.])', r'\1', text)
-                return text
+                return normalize_display_text(text)
             else:
                 # For plain text strings, just clean up whitespace
-                text = re.sub(r'\s+', ' ', data).strip()
-                text = re.sub(r'\s+([,.])', r'\1', text)
-                text = (
-                    text.replace("\u2019", "'")
-                    .replace("\u2018", "'")
-                    .replace("\u00e2\u0080\u0099", "'")
-                )
-                return text
+                return normalize_display_text(data)
         else:
             return data
 

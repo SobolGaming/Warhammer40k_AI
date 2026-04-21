@@ -133,6 +133,37 @@ def test_export_decision_records_normalizes_uncopyable_objects() -> None:
     ]
 
 
+def test_export_decision_records_deduplicates_decision_ids_and_merges_richer_outcome() -> None:
+    mod = _load_script_module()
+
+    exported = mod._export_decision_records(
+        [
+            {
+                "decision_id": "decision:one",
+                "decision_type": "CHOOSE_BLESSINGS",
+                "wall_clock_ms": 1,
+                "outcome": {"immediate_deltas": {"errors": []}, "end_of_turn_return": 0.0},
+            },
+            {
+                "decision_id": "decision:one",
+                "decision_type": "CHOOSE_BLESSINGS",
+                "wall_clock_ms": 12,
+                "outcome": {
+                    "immediate_deltas": {"errors": ["late-resolution"], "value": {"ok": True}},
+                    "end_of_turn_return": 0.0,
+                },
+            },
+        ]
+    )
+
+    assert len(exported) == 1
+    assert exported[0]["decision_id"] == "decision:one"
+    assert exported[0]["wall_clock_ms"] == 12
+    immediate = exported[0]["outcome"]["immediate_deltas"]
+    assert immediate["errors"] == ["late-resolution"]
+    assert immediate["value"] == {"ok": True}
+
+
 def test_winner_summary_uses_army_labels_and_winner_first_score_order() -> None:
     mod = _load_script_module()
     player1 = SimpleNamespace(id="p1", get_score=lambda: 17)

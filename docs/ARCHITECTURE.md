@@ -333,6 +333,11 @@ Purpose: **load structured game data** (datasheets, wargear, keywords, etc.) int
 
 - `wahapedia_data/` is the canonical structured data source in-repo.
 - `scripts/get_wahapedia_data.py` updates/refetches that dataset.
+- Wahapedia CSV-to-JSON conversion normalizes unstable punctuation and spacing at ingestion
+  (curly quotes/apostrophes, dash variants, non-breaking/thin spaces, zero-width characters,
+  and known mojibake forms). `WahaHelper.clean_data()` applies the same normalization at
+  runtime for generated or intermediate text, and matching code should use canonical text keys
+  for user-authored/imported army-list names.
 
 ### Tests (`tests/`)
 

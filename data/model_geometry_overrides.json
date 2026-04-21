@@ -104,6 +104,46 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "land_raider_hull"
+      },
+      "000000521": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "goliath_rockgrinder_hull"
+      },
+      "000000516": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "goliath_truck_hull"
+      },
+      "000000702": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003963": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000002745": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003985": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000000696": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003975": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
       }
     }
   },
@@ -144,6 +184,34 @@
     "land raider hull": "land_raider_hull",
     "land raider": "land_raider_hull",
     "chaos land raider": "land_raider_hull",
+
+    "000000521": "goliath_rockgrinder_hull",
+    "goliath_rockgrinder_hull": "goliath_rockgrinder_hull",
+    "goliath rockgrinder hull": "goliath_rockgrinder_hull",
+    "goliath rockgrinder": "goliath_rockgrinder_hull",
+
+    "000000516": "goliath_truck_hull",
+    "goliath_truck_hull": "goliath_truck_hull",
+    "goliath truck hull": "goliath_truck_hull",
+    "goliath truck": "goliath_truck_hull",
+
+    "000000702": "baneblade_hull",
+    "000003963": "baneblade_hull",
+    "baneblade_hull": "baneblade_hull",
+    "baneblade hull": "baneblade_hull",
+    "baneblade": "baneblade_hull",
+
+    "000002745": "leman_russ_hull",
+    "000003985": "leman_russ_hull",
+    "leman_russ_hull": "leman_russ_hull",
+    "leman russ hull": "leman_russ_hull",
+    "leman russ vanquisher": "leman_russ_hull",
+
+    "000000696": "hydra_chimera_hull",
+    "000003975": "hydra_chimera_hull",
+    "hydra_chimera_hull": "hydra_chimera_hull",
+    "hydra chimera hull": "hydra_chimera_hull",
+    "hydra": "hydra_chimera_hull",
 
     "000000599": "wave_serpent",
     "wave_serpent": "wave_serpent",
@@ -319,6 +387,51 @@
       "width_mm": 100.0,
       "height_mm": 70.0,
       "notes": "Bounding rectangle proxy from community tabletop model dimensions: 17cm x 10cm x 7cm."
+    },
+    "goliath_rockgrinder_hull": {
+      "display_name": "Goliath Rockgrinder",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 135.0,
+      "width_mm": 70.0,
+      "height_mm": 65.0,
+      "notes": "Bounding rectangle proxy from community tabletop model measurement: 13.5cm x 7cm x 6.5cm with guns. Source: https://www.reddit.com/r/genestealercult/comments/shnpeu/goliath_rockgrinder_size/"
+    },
+    "goliath_truck_hull": {
+      "display_name": "Goliath Truck",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 135.0,
+      "width_mm": 70.0,
+      "height_mm": 65.0,
+      "notes": "Separate key for the Truck build of the shared Goliath kit. Uses the sourced Goliath hull bounding box until a truck-only measurement is available. Source: https://www.reddit.com/r/genestealercult/comments/shnpeu/goliath_rockgrinder_size/"
+    },
+    "baneblade_hull": {
+      "display_name": "Baneblade",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 240.0,
+      "width_mm": 180.0,
+      "height_mm": 110.0,
+      "notes": "Bounding rectangle proxy from community tabletop model measurement: 24cm long, 18cm wide with sponsons, 11cm high. Source: https://www.reddit.com/r/Warhammer40k/comments/gesssu/baneblade_dimensions/"
+    },
+    "leman_russ_hull": {
+      "display_name": "Leman Russ hull",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 120.0,
+      "width_mm": 80.0,
+      "height_mm": 75.0,
+      "notes": "Bounding rectangle proxy from community tabletop model measurement: 12cm x 8cm x 5.5cm hull, with turret adding about 2cm height. Source: https://www.reddit.com/r/Warhammer40k/comments/lswber/russ_proxies_wwt_wip/"
+    },
+    "hydra_chimera_hull": {
+      "display_name": "Hydra / Chimera chassis",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 117.0,
+      "width_mm": 92.0,
+      "height_mm": 110.0,
+      "notes": "Bounding rectangle proxy for Hydra on Chimera chassis. Hull footprint uses community Chimera model dimensions 117mm x 92mm; height uses Hydra turret/barrels at maximum elevation source note. Sources: https://www.dakkadakka.com/dakkaforum/posts/list/60/603884.page#7092724 and https://www.reddit.com/r/astramilitarum/comments/17o8jcw/does_anyone_know_the_dimensions_of_a_hydra/"
     },
     "drop_pod": {
       "display_name": "Drop Pod",

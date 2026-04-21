@@ -172,6 +172,23 @@ def test_round_three_reserve_destruction_records_visible_diagnostic() -> None:
     ]
 
 
+def test_round_three_reserve_destruction_fixes_blank_metadata_before_diagnostic() -> None:
+    player, army, unit = _build_reserve_unit()
+    player.get_army = lambda: army
+    unit.special_rules.pop("reserve_source", None)
+    unit.special_rules.pop("reserve_latest_arrival_round", None)
+    unit.reserve_source = ""
+    unit.reserve_latest_arrival_round = 0
+    game = _ReserveScoringGame([player])
+
+    game.end_of_battle_round_scoring()
+
+    diagnostic = game.reserve_arrival_diagnostics[0]
+    assert diagnostic["reserve_source"] == "deployment_choice"
+    assert diagnostic["reserve_mandatory_start"] is False
+    assert diagnostic["reserve_latest_arrival_round"] == 3
+
+
 def test_state_blob_units_include_reserve_arrival_metadata_for_owner() -> None:
     player, _army, unit = _build_reserve_unit()
     unit.reserve_last_arrival_failure = {

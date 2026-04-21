@@ -2375,6 +2375,112 @@ class GenestealerCultsStratagemMixin:
             out.append(enemy_root)
         return sorted(out, key=self._gsc_sort_key)
 
+    def _build_genestealer_cults_tool_action_specs_for_item(
+        self,
+        *,
+        item: Dict[str, Any],
+        stratagem: Any,
+        base_ctx: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        if stratagem is None or not self._is_brood_brother_auxilia_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u not in {"ACCEPTABLE LOSSES", "SYMBIOTIC DESTRUCTION"}:
+            return None
+
+        specs: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        if name_u == "SYMBIOTIC DESTRUCTION":
+            for astra_unit in self._gsc_symbiotic_destruction_astra_candidates():
+                for gsc_unit in self._gsc_symbiotic_destruction_gsc_candidates():
+                    if astra_unit is gsc_unit:
+                        continue
+                    for enemy_unit in self._gsc_symbiotic_enemy_candidates(astra_unit, gsc_unit):
+                        self._tool_action_add_probe(
+                            specs=specs,
+                            seen=seen,
+                            stratagem=stratagem,
+                            item=item,
+                            kwargs={
+                                **base_ctx,
+                                "unit": astra_unit,
+                                "target_unit": astra_unit,
+                                "astra_unit": astra_unit,
+                                "gsc_unit": gsc_unit,
+                                "other_unit": gsc_unit,
+                                "support_unit": gsc_unit,
+                                "selected_units": [astra_unit, gsc_unit],
+                                "friendly_units": [astra_unit, gsc_unit],
+                                "enemy_unit": enemy_unit,
+                                "target_enemy_unit": enemy_unit,
+                            },
+                            label_suffix=(
+                                f"{self._tool_action_label_value(astra_unit)} + "
+                                f"{self._tool_action_label_value(gsc_unit)} vs "
+                                f"{self._tool_action_label_value(enemy_unit)}"
+                            ),
+                        )
+        else:
+            for astra_unit in self._gsc_symbiotic_destruction_astra_candidates():
+                for enemy_unit in self._gsc_acceptable_losses_enemy_candidates():
+                    engaged_units = self._gsc_acceptable_losses_engaged_gsc_units(enemy_unit)
+                    if not engaged_units:
+                        continue
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": astra_unit,
+                            "target_unit": astra_unit,
+                            "enemy_unit": enemy_unit,
+                            "target_enemy_unit": enemy_unit,
+                            "engaged_gsc_units": engaged_units,
+                        },
+                        label_suffix=(
+                            f"{self._tool_action_label_value(astra_unit)} vs "
+                            f"{self._tool_action_label_value(enemy_unit)}"
+                        ),
+                    )
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("label", "")),
+                str(spec.get("payload", {}).get("action_id", "")),
+                str(spec.get("payload", {}).get("resolved_kwargs", "")),
+            )
+        )
+        return specs
+
+    def _gsc_record_malformed_tool_candidate_escaped(
+        self,
+        stratagem: Any,
+        context: Dict[str, Any],
+        missing_keys: List[str],
+    ) -> None:
+        recorder = getattr(self, "_record_tool_action_probe_diagnostic", None)
+        if callable(recorder):
+            recorder(
+                stratagem=stratagem,
+                kwargs=dict(context or {}),
+                missing_keys=list(missing_keys or []),
+                severity="ERROR",
+                code="malformed_tool_candidate_escaped_preflight",
+                resolver="genestealer_cults_brood_brother_auxilia",
+            )
+            return
+        logger.error(
+            "TOOL_ACTION_PROBE_DIAGNOSTIC %s",
+            {
+                "code": "malformed_tool_candidate_escaped_preflight",
+                "severity": "ERROR",
+                "tool_name": str(getattr(stratagem, "name", "") or "Tool"),
+                "missing_keys": list(missing_keys or []),
+                "resolver": "genestealer_cults_brood_brother_auxilia",
+            },
+        )
+
     def _gsc_regimental_reinforcements_candidates(self) -> List[Any]:
         out: list[Any] = []
         for root in self._gsc_brood_brother_auxilia_army_units():
@@ -3315,7 +3421,7 @@ class GenestealerCultsStratagemMixin:
             if len(candidates) == 1:
                 target_root = candidates[0]
             else:
-                logger.error("ERROR: ACCEPTABLE LOSSES: missing Astra Militarum target unit")
+                self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["unit"])
                 return False
         if not self._gsc_unit_in_candidates(target_root, candidates):
             logger.error("ERROR: ACCEPTABLE LOSSES: target must be an eligible ASTRA MILITARUM unit that has not shot")
@@ -3334,7 +3440,7 @@ class GenestealerCultsStratagemMixin:
             if len(enemy_candidates) == 1:
                 enemy_root = enemy_candidates[0]
             else:
-                logger.error("ERROR: ACCEPTABLE LOSSES: missing engaged enemy unit")
+                self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["enemy_unit"])
                 return False
         if not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
             logger.error("ERROR: ACCEPTABLE LOSSES: selected enemy must be within Engagement Range of friendly GENESTEALER CULTS units")
@@ -3344,7 +3450,7 @@ class GenestealerCultsStratagemMixin:
         if not engaged_units:
             engaged_units = self._gsc_acceptable_losses_engaged_gsc_units(enemy_root)
         if not engaged_units:
-            logger.error("ERROR: ACCEPTABLE LOSSES: selected enemy must be within Engagement Range of one or more friendly GENESTEALER CULTS units")
+            self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["engaged_gsc_units"])
             return False
 
         if not self._gsc_spend_cp(stratagem, target_unit=target_root):
@@ -3657,13 +3763,13 @@ class GenestealerCultsStratagemMixin:
             if len(astra_candidates) == 1:
                 astra_root = astra_candidates[0]
             else:
-                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing Astra Militarum unit")
+                self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["astra_unit"])
                 return False
         if gsc_root is None:
             if len(gsc_candidates) == 1:
                 gsc_root = gsc_candidates[0]
             else:
-                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing Genestealer Cults unit")
+                self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["gsc_unit"])
                 return False
         if astra_root is gsc_root:
             logger.error("ERROR: SYMBIOTIC DESTRUCTION: must select one Astra Militarum unit and one different Genestealer Cults unit")
@@ -3688,7 +3794,7 @@ class GenestealerCultsStratagemMixin:
             if len(enemy_candidates) == 1:
                 enemy_root = enemy_candidates[0]
             else:
-                logger.error("ERROR: SYMBIOTIC DESTRUCTION: missing enemy unit")
+                self._gsc_record_malformed_tool_candidate_escaped(stratagem, context, ["enemy_unit"])
                 return False
         if not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
             logger.error(

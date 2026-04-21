@@ -1154,3 +1154,115 @@ def test_symbiotic_destruction_target_locks_units_and_grants_wound_reroll_ones()
             "SYMBIOTIC DESTRUCTION" in str(reason or "")
             for reason in list(wound_mods.get("reroll_wound_reasons", ()) or ())
         )
+
+
+def test_brood_brother_tool_candidates_emit_only_fully_bound_specialized_contexts():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 6
+
+    astra_unit = _make_unit(
+        "Brood Brothers Squad",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    gsc_unit = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    engaged_gsc = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy_target = _make_unit("Enemy Target", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (astra_unit, gsc_unit, engaged_gsc):
+        gsc_army.add_unit(unit)
+    enemy_army.add_unit(enemy_target)
+    _attach_ranged_weapons(astra_unit, weapon_name="Lasgun")
+    _attach_ranged_weapons(gsc_unit, weapon_name="Autogun")
+    _set_unit_position(astra_unit, 0.0, 0.0)
+    _set_unit_position(gsc_unit, 2.0, 0.0)
+    _set_unit_position(engaged_gsc, 10.0, 0.0)
+    _set_unit_position(enemy_target, 10.6, 0.0)
+    game.map.units = [astra_unit, gsc_unit, engaged_gsc, enemy_target]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    acceptable = gsc_player.stratagems._build_tool_action_specs_for_item(
+        {"available": True, "name": "ACCEPTABLE LOSSES", "context": {"phase_name": "Shooting phase"}}
+    )
+    symbiotic = gsc_player.stratagems._build_tool_action_specs_for_item(
+        {"available": True, "name": "SYMBIOTIC DESTRUCTION", "context": {"phase_name": "Shooting phase"}}
+    )
+
+    assert acceptable
+    assert symbiotic
+    acceptable_kwargs = acceptable[0]["payload"]["resolved_kwargs"]
+    assert {"unit", "enemy_unit", "engaged_gsc_units"}.issubset(acceptable_kwargs)
+    assert acceptable_kwargs["engaged_gsc_units"]
+    symbiotic_kwargs = symbiotic[0]["payload"]["resolved_kwargs"]
+    assert {"astra_unit", "gsc_unit", "enemy_unit"}.issubset(symbiotic_kwargs)
+    assert gsc_player.stratagems.get_tool_action_probe_diagnostics() == []
+
+
+def test_brood_brother_malformed_tool_candidate_escape_persists_error_diagnostic():
+    game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 6
+
+    astra_unit = _make_unit(
+        "Brood Brothers Squad",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    gsc_unit = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(astra_unit)
+    gsc_army.add_unit(gsc_unit)
+    _attach_ranged_weapons(astra_unit, weapon_name="Lasgun")
+    _attach_ranged_weapons(gsc_unit, weapon_name="Autogun")
+    _set_unit_position(astra_unit, 0.0, 0.0)
+    _set_unit_position(gsc_unit, 2.0, 0.0)
+    game.map.units = [astra_unit, gsc_unit]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    specs = gsc_player.stratagems._build_tool_action_specs_for_item(
+        {"available": True, "name": "SYMBIOTIC DESTRUCTION", "context": {"phase_name": "Shooting phase"}}
+    )
+    assert specs == []
+    assert gsc_player.stratagems.get_tool_action_probe_diagnostics() == []
+
+    used = gsc_player.stratagems.use(
+        "SYMBIOTIC DESTRUCTION",
+        phase_name="Shooting phase",
+        astra_unit=astra_unit,
+        gsc_unit=gsc_unit,
+    )
+
+    assert bool(used) is False
+    diagnostics = gsc_player.stratagems.get_tool_action_probe_diagnostics()
+    assert diagnostics
+    assert diagnostics[0]["code"] == "malformed_tool_candidate_escaped_preflight"
+    assert diagnostics[0]["severity"] == "ERROR"
+    assert diagnostics[0]["resolver"] == "genestealer_cults_brood_brother_auxilia"
+    assert diagnostics[0]["missing_keys"] == ["enemy_unit"]
+    assert game.tool_action_probe_diagnostics == diagnostics

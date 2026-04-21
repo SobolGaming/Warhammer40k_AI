@@ -317,22 +317,23 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             unit_name = line.split(" (")[0].strip()
             ally_metadata: dict[str, str] = {}
             if faction_id:
-                datasheet = waha_helper.get_full_datasheet_info_by_name(
+                datasheet, ally_metadata = _resolve_pact_ally_datasheet(
+                    waha_helper,
                     unit_name,
                     faction_id=faction_id,
+                    detachment_type=detachment_type,
                 )
                 if not datasheet:
-                    logger.warning(
-                        "Warning: Faction-specific datasheet not found for %s (faction: %s)",
-                        unit_name,
-                        faction_id,
-                    )
-                    datasheet, ally_metadata = _resolve_pact_ally_datasheet(
-                        waha_helper,
+                    datasheet = waha_helper.get_full_datasheet_info_by_name(
                         unit_name,
                         faction_id=faction_id,
-                        detachment_type=detachment_type,
                     )
+                    if not datasheet:
+                        logger.warning(
+                            "Warning: Faction-specific datasheet not found for %s (faction: %s)",
+                            unit_name,
+                            faction_id,
+                        )
             else:
                 datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
 

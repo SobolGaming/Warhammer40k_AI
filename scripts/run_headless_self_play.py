@@ -13,6 +13,7 @@ from typing import Any
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
+from warhammer40k_ai.engine.decision_record import merge_decision_records_by_id
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 from warhammer40k_ai.engine.replay_store import DEFAULT_KEYFRAME_INTERVAL
@@ -159,7 +160,7 @@ def _allocate_replay_session_id(
 
 def _export_decision_records(records: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, Any]]:
     safe_records = _json_safe(list(records or []))
-    return list(safe_records or [])
+    return merge_decision_records_by_id(list(safe_records or []))
 
 
 def _player_score(player: object) -> int:
@@ -781,13 +782,13 @@ def run_headless_self_play(
             severity = str(item.get("severity", "") or "WARNING")
             reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
 
-    exported_records = all_records
+    exported_records = merge_decision_records_by_id(all_records)
     if not bool(no_reward_annotation):
         exported_records = annotate_decision_records_with_rewards(
             exported_records,
             profile_id=str(reward_profile),
         )
-    exported_records = _json_safe(exported_records)
+    exported_records = merge_decision_records_by_id(list(_json_safe(exported_records) or []))
 
     output_path = Path(str(output))
     output_path.parent.mkdir(parents=True, exist_ok=True)

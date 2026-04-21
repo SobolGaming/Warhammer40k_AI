@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+from ..reserve_metadata import ensure_reserve_start_metadata
 import logging
 logger = logging.getLogger(__name__)
 
@@ -785,6 +786,7 @@ class GameMissionsScoringActionsMixin:
                     if getattr(u, "is_in_reserves", lambda: False)() and bool(getattr(u, "_started_in_reserves", False)):
                         to_remove.append(u)
                 for u in to_remove:
+                    reserve_metadata = ensure_reserve_start_metadata(u)
                     special_rules = getattr(u, "special_rules", None)
                     if not isinstance(special_rules, dict):
                         special_rules = {}
@@ -799,20 +801,9 @@ class GameMissionsScoringActionsMixin:
                         "unit_name": str(getattr(u, "name", "Unit") or "Unit"),
                         "player_id": str(getattr(p, "id", "") or ""),
                         "battle_round": int(getattr(self, "turn", 0) or 0),
-                        "reserve_source": str(
-                            getattr(u, "reserve_source", "")
-                            or special_rules.get("reserve_source", "")
-                            or ""
-                        ),
-                        "reserve_mandatory_start": bool(
-                            getattr(u, "reserve_mandatory_start", False)
-                            or special_rules.get("reserve_mandatory_start", False)
-                        ),
-                        "reserve_latest_arrival_round": int(
-                            getattr(u, "reserve_latest_arrival_round", 0)
-                            or special_rules.get("reserve_latest_arrival_round", 0)
-                            or 0
-                        ),
+                        "reserve_source": str(reserve_metadata["reserve_source"] or ""),
+                        "reserve_mandatory_start": bool(reserve_metadata["reserve_mandatory_start"]),
+                        "reserve_latest_arrival_round": int(reserve_metadata["reserve_latest_arrival_round"] or 0),
                         "last_failed_placement_reason": last_failure,
                     }
                     diagnostics = getattr(self, "reserve_arrival_diagnostics", None)

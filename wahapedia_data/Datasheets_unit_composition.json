@@ -32,7 +32,7 @@
     {
         "datasheet_id": "000000008",
         "line": "1",
-        "description": "1 Ghazghkull Thraka \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ghazghkull Thraka - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000008",
@@ -42,17 +42,17 @@
     {
         "datasheet_id": "000000009",
         "line": "1",
-        "description": "1 Kaptin Badrukk \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kaptin Badrukk - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000010",
         "line": "1",
-        "description": "1 Boss Zagstruk \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Boss Zagstruk - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000011",
         "line": "1",
-        "description": "1 Boss Snikrot \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Boss Snikrot - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000012",
@@ -72,7 +72,7 @@
     {
         "datasheet_id": "000000015",
         "line": "1",
-        "description": "1 Mad Dok Grotsnik \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Mad Dok Grotsnik - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000016",
@@ -487,7 +487,7 @@
     {
         "datasheet_id": "000000096",
         "line": "1",
-        "description": "1 Carab Culln the Risen \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Carab Culln the Risen - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000097",
@@ -602,7 +602,7 @@
     {
         "datasheet_id": "000000121",
         "line": "1",
-        "description": "1 Uriel Ventris \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Uriel Ventris - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000122",
@@ -642,7 +642,7 @@
     {
         "datasheet_id": "000000127",
         "line": "1",
-        "description": "1 Iron Father Feirros \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Iron Father Feirros - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000128",
@@ -697,7 +697,7 @@
     {
         "datasheet_id": "000000138",
         "line": "1",
-        "description": "1 Roboute Guilliman \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Roboute Guilliman - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000139",
@@ -732,17 +732,17 @@
     {
         "datasheet_id": "000000151",
         "line": "1",
-        "description": "1 Commander Dante \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Commander Dante - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000152",
         "line": "1",
-        "description": "1 Captain Tycho \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Captain Tycho - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000153",
         "line": "1",
-        "description": "1 Tycho the Lost \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Tycho the Lost - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000154",
@@ -752,17 +752,17 @@
     {
         "datasheet_id": "000000155",
         "line": "1",
-        "description": "1 Chief Librarian Mephiston \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chief Librarian Mephiston - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000156",
         "line": "1",
-        "description": "1 The Sanguinor \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 The Sanguinor - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000157",
         "line": "1",
-        "description": "1 Astorath \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Astorath - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000158",
@@ -777,12 +777,12 @@
     {
         "datasheet_id": "000000160",
         "line": "1",
-        "description": "1 Brother Corbulo \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Brother Corbulo - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000164",
         "line": "1",
-        "description": "1 Lemartes \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lemartes - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000165",
@@ -807,27 +807,27 @@
     {
         "datasheet_id": "000000169",
         "line": "1",
-        "description": "1 Gabriel Seth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Gabriel Seth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000218",
         "line": "1",
-        "description": "1 Azrael \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Azrael - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000219",
         "line": "1",
-        "description": "1 Belial \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Belial - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000225",
         "line": "1",
-        "description": "1 Asmodai \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Asmodai - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000226",
         "line": "1",
-        "description": "1 Ezekiel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ezekiel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000230",
@@ -887,12 +887,12 @@
     {
         "datasheet_id": "000000282",
         "line": "1",
-        "description": "1 Logan Grimnar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Logan Grimnar - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000283",
         "line": "1",
-        "description": "1 Logan Grimnar on Stormrider \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Logan Grimnar on Stormrider - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000284",
@@ -902,7 +902,7 @@
     {
         "datasheet_id": "000000285",
         "line": "1",
-        "description": "1 Ragnar Blackmane \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ragnar Blackmane - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000286",
@@ -912,22 +912,22 @@
     {
         "datasheet_id": "000000287",
         "line": "1",
-        "description": "1 Harald Deathwolf \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Harald Deathwolf - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000288",
         "line": "1",
-        "description": "1 Canis Wolfborn \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Canis Wolfborn - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000292",
         "line": "1",
-        "description": "1 Njal Stormcaller \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Njal Stormcaller - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000297",
         "line": "1",
-        "description": "1 Ulrik the Slayer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ulrik the Slayer - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000300",
@@ -942,7 +942,7 @@
     {
         "datasheet_id": "000000302",
         "line": "1",
-        "description": "1 Bjorn the Fell-Handed\u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Bjorn the Fell-Handed- <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000303",
@@ -957,7 +957,7 @@
     {
         "datasheet_id": "000000304",
         "line": "1",
-        "description": "1 Lukas the Trickster \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lukas the Trickster - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000305",
@@ -997,7 +997,7 @@
     {
         "datasheet_id": "000000314",
         "line": "1",
-        "description": "1 Murderfang \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Murderfang - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000315",
@@ -1012,7 +1012,7 @@
     {
         "datasheet_id": "000000317",
         "line": "1",
-        "description": "1 Arjac Rockfist \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Arjac Rockfist - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000318",
@@ -1077,12 +1077,12 @@
     {
         "datasheet_id": "000000373",
         "line": "1",
-        "description": "1 Kaldor Draigo \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kaldor Draigo - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000374",
         "line": "1",
-        "description": "1 Grand Master Voldus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Grand Master Voldus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000375",
@@ -1097,7 +1097,7 @@
     {
         "datasheet_id": "000000377",
         "line": "1",
-        "description": "1 Brother-Captain Stern \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Brother-Captain Stern - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000379",
@@ -1107,7 +1107,7 @@
     {
         "datasheet_id": "000000380",
         "line": "1",
-        "description": "1 Castellan Crowe \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Castellan Crowe - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000381",
@@ -1247,22 +1247,22 @@
     {
         "datasheet_id": "000000406",
         "line": "1",
-        "description": "1 Commander Farsight \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Commander Farsight - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000407",
         "line": "1",
-        "description": "1 Commander Shadowsun \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Commander Shadowsun - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000408",
         "line": "1",
-        "description": "1 Aun\u2019Shi \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aun'Shi - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000409",
         "line": "1",
-        "description": "1 Aun\u2019Va \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aun'Va - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000409",
@@ -1272,12 +1272,12 @@
     {
         "datasheet_id": "000000410",
         "line": "1",
-        "description": "1 Darkstrider \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Darkstrider - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000411",
         "line": "1",
-        "description": "1 Fire Warrior Shas\u2019ui"
+        "description": "1 Fire Warrior Shas'ui"
     },
     {
         "datasheet_id": "000000411",
@@ -1287,7 +1287,7 @@
     {
         "datasheet_id": "000000412",
         "line": "1",
-        "description": "1 Breacher Fire Warrior Shas\u2019ui"
+        "description": "1 Breacher Fire Warrior Shas'ui"
     },
     {
         "datasheet_id": "000000412",
@@ -1317,22 +1317,22 @@
     {
         "datasheet_id": "000000417",
         "line": "1",
-        "description": "1 Stealth Shas\u2019vre"
+        "description": "1 Stealth Shas'vre"
     },
     {
         "datasheet_id": "000000417",
         "line": "2",
-        "description": "4 Stealth Shas\u2019ui"
+        "description": "4 Stealth Shas'ui"
     },
     {
         "datasheet_id": "000000418",
         "line": "1",
-        "description": "1 Crisis Shas\u2019vre"
+        "description": "1 Crisis Shas'vre"
     },
     {
         "datasheet_id": "000000418",
         "line": "2",
-        "description": "2-5 Crisis Shas\u2019ui"
+        "description": "2-5 Crisis Shas'ui"
     },
     {
         "datasheet_id": "000000420",
@@ -1347,7 +1347,7 @@
     {
         "datasheet_id": "000000422",
         "line": "1",
-        "description": "1 Pathfinder Shas\u2019ui"
+        "description": "1 Pathfinder Shas'ui"
     },
     {
         "datasheet_id": "000000422",
@@ -1397,7 +1397,7 @@
     {
         "datasheet_id": "000000431",
         "line": "1",
-        "description": "1 Longstrike \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Longstrike - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000432",
@@ -1407,12 +1407,12 @@
     {
         "datasheet_id": "000000433",
         "line": "1",
-        "description": "1 Broadside Shas\u2019vre"
+        "description": "1 Broadside Shas'vre"
     },
     {
         "datasheet_id": "000000433",
         "line": "2",
-        "description": "0-2 Broadside Shas\u2019ui"
+        "description": "0-2 Broadside Shas'ui"
     },
     {
         "datasheet_id": "000000434",
@@ -1437,7 +1437,7 @@
     {
         "datasheet_id": "000000439",
         "line": "1",
-        "description": "1 Shas'o R'alai \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Shas'o R'alai - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000443",
@@ -1447,17 +1447,17 @@
     {
         "datasheet_id": "000000444",
         "line": "1",
-        "description": "1 Y\u2019vahra Battlesuit"
+        "description": "1 Y'vahra Battlesuit"
     },
     {
         "datasheet_id": "000000445",
         "line": "1",
-        "description": "1 R\u2019varna Battlesuit"
+        "description": "1 R'varna Battlesuit"
     },
     {
         "datasheet_id": "000000446",
         "line": "1",
-        "description": "1 Ta\u2019unar Supremacy Armour"
+        "description": "1 Ta'unar Supremacy Armour"
     },
     {
         "datasheet_id": "000000447",
@@ -1522,12 +1522,12 @@
     {
         "datasheet_id": "000000461",
         "line": "1",
-        "description": "1 Swarmlord \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Swarmlord - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000462",
         "line": "1",
-        "description": "1 Old One Eye \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Old One Eye - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000463",
@@ -1607,7 +1607,7 @@
     {
         "datasheet_id": "000000479",
         "line": "1",
-        "description": "1 Deathleaper \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Deathleaper - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000482",
@@ -1797,7 +1797,7 @@
     {
         "datasheet_id": "000000522",
         "line": "1",
-        "description": "1 Imotekh the Stormlord \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Imotekh the Stormlord - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000523",
@@ -1812,27 +1812,27 @@
     {
         "datasheet_id": "000000527",
         "line": "1",
-        "description": "1 Nemesor Zahndrekh \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Nemesor Zahndrekh - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000528",
         "line": "1",
-        "description": "1 Vargard Obyron \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Vargard Obyron - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000530",
         "line": "1",
-        "description": "1 Orikan the Diviner \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Orikan the Diviner - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000531",
         "line": "1",
-        "description": "1 Anrakyr the Traveller \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Anrakyr the Traveller - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000532",
         "line": "1",
-        "description": "1 Trazyn the Infinite \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Trazyn the Infinite - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000533",
@@ -1877,12 +1877,12 @@
     {
         "datasheet_id": "000000541",
         "line": "1",
-        "description": "1 C\u2019tan Shard of the Nightbringer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 C'tan Shard of the Nightbringer - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000542",
         "line": "1",
-        "description": "1 C\u2019tan Shard of the Deceiver \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 C'tan Shard of the Deceiver - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000543",
@@ -1932,7 +1932,7 @@
     {
         "datasheet_id": "000000555",
         "line": "1",
-        "description": "1 Transcendent C\u2019tan"
+        "description": "1 Transcendent C'tan"
     },
     {
         "datasheet_id": "000000556",
@@ -1982,42 +1982,42 @@
     {
         "datasheet_id": "000000568",
         "line": "1",
-        "description": "1 Eldrad Ulthran \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Eldrad Ulthran - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000569",
         "line": "1",
-        "description": "1 Prince Yriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Prince Yriel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000570",
         "line": "1",
-        "description": "1 Illic Nightspear \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Illic Nightspear - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000571",
         "line": "1",
-        "description": "1 Asurmen \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Asurmen - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000572",
         "line": "1",
-        "description": "1 Jain Zar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Jain Zar - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000573",
         "line": "1",
-        "description": "1 Karandras \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Karandras - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000574",
         "line": "1",
-        "description": "1 Fuegan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Fuegan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000575",
         "line": "1",
-        "description": "1 Baharroth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Baharroth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000576",
@@ -2037,7 +2037,7 @@
     {
         "datasheet_id": "000000581",
         "line": "1",
-        "description": "1 Avatar of Khaine \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Avatar of Khaine - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000582",
@@ -2087,7 +2087,7 @@
     {
         "datasheet_id": "000000590",
         "line": "2",
-        "description": "1 Serpent\u2019s Scale Platform"
+        "description": "1 Serpent's Scale Platform"
     },
     {
         "datasheet_id": "000000591",
@@ -2327,7 +2327,7 @@
     {
         "datasheet_id": "000000630",
         "line": "1",
-        "description": "1 Irillyth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Irillyth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000631",
@@ -2367,7 +2367,7 @@
     {
         "datasheet_id": "000000640",
         "line": "1",
-        "description": "1 Lelith Hesperax \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lelith Hesperax - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000641",
@@ -2377,12 +2377,12 @@
     {
         "datasheet_id": "000000642",
         "line": "1",
-        "description": "1 Urien Rakarth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Urien Rakarth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000643",
         "line": "1",
-        "description": "1 Drazhar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Drazhar - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000644",
@@ -2647,12 +2647,12 @@
     {
         "datasheet_id": "000000713",
         "line": "1",
-        "description": "1 \u2018Iron Hand\u2019 Straken \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 'Iron Hand' Straken - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000714",
         "line": "1",
-        "description": "1 Sergeant Harker \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sergeant Harker - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000716",
@@ -2677,7 +2677,7 @@
     {
         "datasheet_id": "000000722",
         "line": "1",
-        "description": "1 Ogryn Bone \u2018ead"
+        "description": "1 Ogryn Bone 'ead"
     },
     {
         "datasheet_id": "000000722",
@@ -2687,7 +2687,7 @@
     {
         "datasheet_id": "000000723",
         "line": "1",
-        "description": "1 Bullgryn Bone \u2018ead"
+        "description": "1 Bullgryn Bone 'ead"
     },
     {
         "datasheet_id": "000000723",
@@ -2702,7 +2702,7 @@
     {
         "datasheet_id": "000000725",
         "line": "1",
-        "description": "1 Nork Deddog \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Nork Deddog - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000727",
@@ -2957,7 +2957,7 @@
     {
         "datasheet_id": "000000838",
         "line": "1",
-        "description": "1 Belisarius Cawl \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Belisarius Cawl - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000839",
@@ -3137,37 +3137,37 @@
     {
         "datasheet_id": "000000870",
         "line": "1",
-        "description": "1 Vindicare Assassin \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Vindicare Assassin - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000871",
         "line": "1",
-        "description": "1 Callidus Assassin \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Callidus Assassin - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000872",
         "line": "1",
-        "description": "1 Eversor Assassin \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Eversor Assassin - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000873",
         "line": "1",
-        "description": "1 Culexus Assassin \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Culexus Assassin - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000874",
         "line": "1",
-        "description": "1 Inquisitor Greyfax \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Greyfax - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000875",
         "line": "1",
-        "description": "1 Inquisitor Karamazov \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Karamazov - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000876",
         "line": "1",
-        "description": "1 Inquisitor Coteaz \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Coteaz - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000877",
@@ -3217,7 +3217,7 @@
     {
         "datasheet_id": "000000898",
         "line": "1",
-        "description": "1 Celestine \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Celestine - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000898",
@@ -3352,22 +3352,22 @@
     {
         "datasheet_id": "000000924",
         "line": "1",
-        "description": "1 Abaddon the Despoiler \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Abaddon the Despoiler - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000925",
         "line": "1",
-        "description": "1 Huron Blackheart \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Huron Blackheart - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000926",
         "line": "1",
-        "description": "1 Cypher \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Cypher - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000928",
         "line": "1",
-        "description": "1 Fabius Bile \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Fabius Bile - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000000928",
@@ -3677,12 +3677,12 @@
     {
         "datasheet_id": "000001031",
         "line": "1",
-        "description": "1 Magnus the Red \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Magnus the Red - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001032",
         "line": "1",
-        "description": "1 Ahriman \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ahriman - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001033",
@@ -3792,7 +3792,7 @@
     {
         "datasheet_id": "000001053",
         "line": "1",
-        "description": "1 Typhus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Typhus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001054",
@@ -3857,17 +3857,17 @@
     {
         "datasheet_id": "000001104",
         "line": "1",
-        "description": "1 Karanak \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Karanak - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001105",
         "line": "1",
-        "description": "1 Skarbrand \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Skarbrand - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001106",
         "line": "1",
-        "description": "1 Skulltaker \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Skulltaker - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001111",
@@ -3912,17 +3912,17 @@
     {
         "datasheet_id": "000001117",
         "line": "1",
-        "description": "1 Kairos Fateweaver \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kairos Fateweaver - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001118",
         "line": "1",
-        "description": "1 The Changeling \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 The Changeling - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001119",
         "line": "1",
-        "description": "1 The Blue Scribes \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 The Blue Scribes - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001120",
@@ -3957,7 +3957,7 @@
     {
         "datasheet_id": "000001129",
         "line": "1",
-        "description": "1 Epidemius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Epidemius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001130",
@@ -3997,7 +3997,7 @@
     {
         "datasheet_id": "000001136",
         "line": "1",
-        "description": "1 The Masque of Slaanesh \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 The Masque of Slaanesh - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001137",
@@ -4067,7 +4067,7 @@
     {
         "datasheet_id": "000001148",
         "line": "1",
-        "description": "1 Be\u2019lakor \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Be'lakor - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001149",
@@ -4147,7 +4147,7 @@
     {
         "datasheet_id": "000001162",
         "line": "1",
-        "description": "1 Sergeant Telion \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sergeant Telion - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001163",
@@ -4362,17 +4362,17 @@
     {
         "datasheet_id": "000001329",
         "line": "1",
-        "description": "1 An'ggrath the Unbound \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 An'ggrath the Unbound - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001332",
         "line": "1",
-        "description": "1 Zarakynel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Zarakynel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001333",
         "line": "1",
-        "description": "1 Aetaos'rau'keres \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aetaos'rau'keres - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001336",
@@ -4397,7 +4397,7 @@
     {
         "datasheet_id": "000001340",
         "line": "1",
-        "description": "1 Scabeiathrax the Bloated \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Scabeiathrax the Bloated - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001344",
@@ -4507,7 +4507,7 @@
     {
         "datasheet_id": "000001377",
         "line": "1",
-        "description": "1 Mortarion \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Mortarion - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001383",
@@ -4592,7 +4592,7 @@
     {
         "datasheet_id": "000001406",
         "line": "1",
-        "description": "1 Sly Marbo \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sly Marbo - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001423",
@@ -4602,7 +4602,7 @@
     {
         "datasheet_id": "000001446",
         "line": "1",
-        "description": "1 Trajann Valoris \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Trajann Valoris - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001447",
@@ -4677,12 +4677,12 @@
     {
         "datasheet_id": "000001465",
         "line": "1",
-        "description": "1 Rotigus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Rotigus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001466",
         "line": "1",
-        "description": "1 Horticulous Slimux \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Horticulous Slimux - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001467",
@@ -4757,7 +4757,7 @@
     {
         "datasheet_id": "000001484",
         "line": "1",
-        "description": "1 Canis Rex \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Canis Rex - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001485",
@@ -4782,7 +4782,7 @@
     {
         "datasheet_id": "000001524",
         "line": "1",
-        "description": "1 Sergeant Chronus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sergeant Chronus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001525",
@@ -4867,7 +4867,7 @@
     {
         "datasheet_id": "000001556",
         "line": "1",
-        "description": "1 Haarken Worldclaimer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Haarken Worldclaimer - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001557",
@@ -4972,7 +4972,7 @@
     {
         "datasheet_id": "000001579",
         "line": "1",
-        "description": "1 Inquisitor Eisenhorn \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Eisenhorn - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001580",
@@ -5017,17 +5017,17 @@
     {
         "datasheet_id": "000001596",
         "line": "1",
-        "description": "1 Rein \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Rein - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001596",
         "line": "2",
-        "description": "1 Raus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Raus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001598",
         "line": "1",
-        "description": "1 Amallyn Shadowguide \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Amallyn Shadowguide - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001600",
@@ -5087,7 +5087,7 @@
     {
         "datasheet_id": "000001611",
         "line": "1",
-        "description": "1 Chief Librarian Tigurius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chief Librarian Tigurius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001630",
@@ -5102,12 +5102,12 @@
     {
         "datasheet_id": "000001648",
         "line": "1",
-        "description": "1 Shalaxi Helbane \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Shalaxi Helbane - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001649",
         "line": "1",
-        "description": "1 Syll\u2019Esske \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Syll'Esske - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001650",
@@ -5182,7 +5182,7 @@
     {
         "datasheet_id": "000001822",
         "line": "1",
-        "description": "1 X-101 \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 X-101 - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001825",
@@ -5197,7 +5197,7 @@
     {
         "datasheet_id": "000001993",
         "line": "1",
-        "description": "1 Da Red Gobbo \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Da Red Gobbo - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000001994",
@@ -5212,12 +5212,12 @@
     {
         "datasheet_id": "000002063",
         "line": "1",
-        "description": "1 Triumph of Saint Katherine \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Triumph of Saint Katherine - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002064",
         "line": "1",
-        "description": "1 Junith Eruita \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Junith Eruita - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002066",
@@ -5312,22 +5312,22 @@
     {
         "datasheet_id": "000002088",
         "line": "1",
-        "description": "1 Aleya \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aleya - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002090",
         "line": "1",
-        "description": "1 Inquisitor Draxus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Draxus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002092",
         "line": "1",
-        "description": "1 Illuminor Szeras \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Illuminor Szeras - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002093",
         "line": "1",
-        "description": "1 Archivist \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Archivist - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002098",
@@ -5352,7 +5352,7 @@
     {
         "datasheet_id": "000002100",
         "line": "1",
-        "description": "1 Adrax Agatone \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Adrax Agatone - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002102",
@@ -5382,7 +5382,7 @@
     {
         "datasheet_id": "000002105",
         "line": "1",
-        "description": "1 Darnath Lysander \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Darnath Lysander - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002108",
@@ -5502,12 +5502,12 @@
     {
         "datasheet_id": "000002291",
         "line": "1",
-        "description": "1 Sammael \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sammael - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002296",
         "line": "1",
-        "description": "1 Lazarus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lazarus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002302",
@@ -5562,7 +5562,7 @@
     {
         "datasheet_id": "000002357",
         "line": "1",
-        "description": "1 C\u2019tan Shard of the Void Dragon \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 C'tan Shard of the Void Dragon - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002358",
@@ -5577,7 +5577,7 @@
     {
         "datasheet_id": "000002360",
         "line": "1",
-        "description": "1 Szarekh \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Szarekh - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002360",
@@ -5697,7 +5697,7 @@
     {
         "datasheet_id": "000002473",
         "line": "1",
-        "description": "1 Tor Garadon \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Tor Garadon - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002477",
@@ -5712,17 +5712,17 @@
     {
         "datasheet_id": "000002479",
         "line": "1",
-        "description": "1 Morvenn Vahl \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Morvenn Vahl - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002480",
         "line": "1",
-        "description": "1 Aestred Thurga \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aestred Thurga - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002480",
         "line": "2",
-        "description": "1 Agathae Dolan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Agathae Dolan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002481",
@@ -5767,7 +5767,7 @@
     {
         "datasheet_id": "000002488",
         "line": "1",
-        "description": "1 Zodgrod Wortsnagga \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Zodgrod Wortsnagga - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002489",
@@ -5792,7 +5792,7 @@
     {
         "datasheet_id": "000002493",
         "line": "1",
-        "description": "1 Mozrog Skragbad \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Mozrog Skragbad - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002494",
@@ -5827,7 +5827,7 @@
     {
         "datasheet_id": "000002499",
         "line": "1",
-        "description": "1 Big\u2019ed Bossbunka"
+        "description": "1 Big'ed Bossbunka"
     },
     {
         "datasheet_id": "000002500",
@@ -5872,7 +5872,7 @@
     {
         "datasheet_id": "000002519",
         "line": "1",
-        "description": "1 Valerian \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Valerian - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002520",
@@ -6007,7 +6007,7 @@
     {
         "datasheet_id": "000002538",
         "line": "1",
-        "description": "1 Solitaire \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Solitaire - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002539",
@@ -6027,17 +6027,17 @@
     {
         "datasheet_id": "000002542",
         "line": "1",
-        "description": "1 Yvraine \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Yvraine - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002543",
         "line": "1",
-        "description": "1 Visarch \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Visarch - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002544",
         "line": "1",
-        "description": "1 Yncarne \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Yncarne - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002562",
@@ -6197,7 +6197,7 @@
     {
         "datasheet_id": "000002593",
         "line": "1",
-        "description": "1 \u00dbthar the Destined \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 \u00dbthar the Destined - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002594",
@@ -6282,12 +6282,12 @@
     {
         "datasheet_id": "000002605",
         "line": "1",
-        "description": "1 Lord Solar Leontus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lord Solar Leontus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002606",
         "line": "1",
-        "description": "1 Ursula Creed \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ursula Creed - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002607",
@@ -6387,17 +6387,17 @@
     {
         "datasheet_id": "000002621",
         "line": "1",
-        "description": "1 Angron \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Angron - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002622",
         "line": "1",
-        "description": "1 Kh\u00e2rn the Betrayer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kh\u00e2rn the Betrayer - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002623",
         "line": "1",
-        "description": "1 Lord Invocatus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lord Invocatus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002624",
@@ -6527,17 +6527,17 @@
     {
         "datasheet_id": "000002678",
         "line": "1",
-        "description": "1 Chaplain Cassius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chaplain Cassius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002679",
         "line": "1",
-        "description": "1 Vashtorr the Arkifane \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Vashtorr the Arkifane - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002682",
         "line": "1",
-        "description": "1 Lion El\u2019Jonson \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lion El'Jonson - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002683",
@@ -6637,7 +6637,7 @@
     {
         "datasheet_id": "000002693",
         "line": "1",
-        "description": "3-6 Von Ryan\u2019s Leapers"
+        "description": "3-6 Von Ryan's Leapers"
     },
     {
         "datasheet_id": "000002694",
@@ -6692,12 +6692,12 @@
     {
         "datasheet_id": "000002708",
         "line": "1",
-        "description": "1 Kayvaan Shrike \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kayvaan Shrike - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002709",
         "line": "1",
-        "description": "1 Kor\u2019sarro Khan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kor'sarro Khan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002710",
@@ -6727,7 +6727,7 @@
     {
         "datasheet_id": "000002713",
         "line": "1",
-        "description": "1 Pedro Kantor \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Pedro Kantor - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002714",
@@ -6797,7 +6797,7 @@
     {
         "datasheet_id": "000002726",
         "line": "1",
-        "description": "1 Vulkan He\u2019stan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Vulkan He'stan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002727",
@@ -7007,12 +7007,12 @@
     {
         "datasheet_id": "000002763",
         "line": "1",
-        "description": "1 Janus Draik \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Janus Draik - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002764",
         "line": "1",
-        "description": "1 Neyam Shai Murad \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Neyam Shai Murad - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002765",
@@ -7022,7 +7022,7 @@
     {
         "datasheet_id": "000002766",
         "line": "1",
-        "description": "1 UR-025 \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 UR-025 - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002767",
@@ -7047,17 +7047,17 @@
     {
         "datasheet_id": "000002770",
         "line": "1",
-        "description": "1 Sir Hekhtur \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Sir Hekhtur - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002771",
         "line": "1",
-        "description": "1 Ephrael Stern \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ephrael Stern - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002771",
         "line": "2",
-        "description": "1 Kyganil of the Bloody Tears \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kyganil of the Bloody Tears - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002772",
@@ -7102,22 +7102,22 @@
     {
         "datasheet_id": "000002779",
         "line": "2",
-        "description": "3\u201110 Kill Team Infiltrators"
+        "description": "3-10 Kill Team Infiltrators"
     },
     {
         "datasheet_id": "000002779",
         "line": "3",
-        "description": "0\u20113 Kill Team Infiltrators with bolt sniper rifles"
+        "description": "0-3 Kill Team Infiltrators with bolt sniper rifles"
     },
     {
         "datasheet_id": "000002779",
         "line": "4",
-        "description": "0\u20114 Kill Team Infiltrators with Deathwatch occulus bolt carbines"
+        "description": "0-4 Kill Team Infiltrators with Deathwatch occulus bolt carbines"
     },
     {
         "datasheet_id": "000002779",
         "line": "5",
-        "description": "0\u20114 Kill Team Infiltrators with combat knives"
+        "description": "0-4 Kill Team Infiltrators with combat knives"
     },
     {
         "datasheet_id": "000002780",
@@ -7147,12 +7147,12 @@
     {
         "datasheet_id": "000002780",
         "line": "6",
-        "description": "0\u20114 Kill Team Intercessors with pyreblasters"
+        "description": "0-4 Kill Team Intercessors with pyreblasters"
     },
     {
         "datasheet_id": "000002780",
         "line": "7",
-        "description": "0\u20112 Kill Team Intercessors with superfrag rocket launchers"
+        "description": "0-2 Kill Team Intercessors with superfrag rocket launchers"
     },
     {
         "datasheet_id": "000002781",
@@ -7162,17 +7162,17 @@
     {
         "datasheet_id": "000002781",
         "line": "2",
-        "description": "3\u201110 Kill Team Heavy Intercessors"
+        "description": "3-10 Kill Team Heavy Intercessors"
     },
     {
         "datasheet_id": "000002781",
         "line": "3",
-        "description": "0\u20113 Kill Team Heavy Intercessors with power fists"
+        "description": "0-3 Kill Team Heavy Intercessors with power fists"
     },
     {
         "datasheet_id": "000002781",
         "line": "4",
-        "description": "0\u20113 Kill Team Heavy Intercessors with melta rifles"
+        "description": "0-3 Kill Team Heavy Intercessors with melta rifles"
     },
     {
         "datasheet_id": "000002783",
@@ -7217,7 +7217,7 @@
     {
         "datasheet_id": "000002792",
         "line": "1",
-        "description": "1 Chaplain Grimaldus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chaplain Grimaldus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002792",
@@ -7232,12 +7232,12 @@
     {
         "datasheet_id": "000002794",
         "line": "1",
-        "description": "1 High Marshal Helbrecht \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 High Marshal Helbrecht - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000002795",
         "line": "1",
-        "description": "1 Emperor\u2019s Champion"
+        "description": "1 Emperor's Champion"
     },
     {
         "datasheet_id": "000002796",
@@ -7892,7 +7892,7 @@
     {
         "datasheet_id": "000003693",
         "line": "1",
-        "description": "1 Overlord with Translocation Shroud "
+        "description": "1 Overlord with Translocation Shroud"
     },
     {
         "datasheet_id": "000003694",
@@ -7912,32 +7912,32 @@
     {
         "datasheet_id": "000003699",
         "line": "1",
-        "description": "1 Crisis Sunforge Shas\u2019vre"
+        "description": "1 Crisis Sunforge Shas'vre"
     },
     {
         "datasheet_id": "000003699",
         "line": "2",
-        "description": "2 Crisis Sunforge Shas\u2019ui"
+        "description": "2 Crisis Sunforge Shas'ui"
     },
     {
         "datasheet_id": "000003700",
         "line": "1",
-        "description": "1 Crisis Fireknife Shas\u2019vre"
+        "description": "1 Crisis Fireknife Shas'vre"
     },
     {
         "datasheet_id": "000003700",
         "line": "2",
-        "description": "2 Crisis Fireknife Shas\u2019ui"
+        "description": "2 Crisis Fireknife Shas'ui"
     },
     {
         "datasheet_id": "000003701",
         "line": "1",
-        "description": "1 Crisis Starscythe Shas\u2019vre"
+        "description": "1 Crisis Starscythe Shas'vre"
     },
     {
         "datasheet_id": "000003701",
         "line": "2",
-        "description": "2 Crisis Starscythe Shas\u2019ui"
+        "description": "2 Crisis Starscythe Shas'ui"
     },
     {
         "datasheet_id": "000003702",
@@ -7992,7 +7992,7 @@
     {
         "datasheet_id": "000003712",
         "line": "1",
-        "description": "1 Cultist Firebrand "
+        "description": "1 Cultist Firebrand"
     },
     {
         "datasheet_id": "000003713",
@@ -8027,7 +8027,7 @@
     {
         "datasheet_id": "000003811",
         "line": "1",
-        "description": "1 Celestian Sacresant Aveline \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Celestian Sacresant Aveline - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003812",
@@ -8092,7 +8092,7 @@
     {
         "datasheet_id": "000003821",
         "line": "1",
-        "description": "1 Chaplain Cassius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chaplain Cassius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003821",
@@ -8287,7 +8287,7 @@
     {
         "datasheet_id": "000003837",
         "line": "1",
-        "description": "5-10  Death Company Marines with Jump Packs"
+        "description": "5-10 Death Company Marines with Jump Packs"
     },
     {
         "datasheet_id": "000003839",
@@ -8327,7 +8327,7 @@
     {
         "datasheet_id": "000003844",
         "line": "1",
-        "description": "1 Cultist Firebrand "
+        "description": "1 Cultist Firebrand"
     },
     {
         "datasheet_id": "000003845",
@@ -8507,17 +8507,17 @@
     {
         "datasheet_id": "000003874",
         "line": "3",
-        "description": "2\u20119 Kill Team Intercessors with Jump Packs"
+        "description": "2-9 Kill Team Intercessors with Jump Packs"
     },
     {
         "datasheet_id": "000003874",
         "line": "4",
-        "description": "0\u20115 Kill Team Heavy Intercessors with Jump Packs"
+        "description": "0-5 Kill Team Heavy Intercessors with Jump Packs"
     },
     {
         "datasheet_id": "000003875",
         "line": "1",
-        "description": "1 Chaplain Cassius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chaplain Cassius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003875",
@@ -8547,7 +8547,7 @@
     {
         "datasheet_id": "000003877",
         "line": "1",
-        "description": "1 Deathleaper \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Deathleaper - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003878",
@@ -8602,7 +8602,7 @@
     {
         "datasheet_id": "000003888",
         "line": "1",
-        "description": "3-6 Von Ryan\u2019s Leapers"
+        "description": "3-6 Von Ryan's Leapers"
     },
     {
         "datasheet_id": "000003889",
@@ -8617,7 +8617,7 @@
     {
         "datasheet_id": "000003890",
         "line": "1",
-        "description": "1 Lord Marshal Dreir \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lord Marshal Dreir - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003891",
@@ -8682,7 +8682,7 @@
     {
         "datasheet_id": "000003909",
         "line": "1",
-        "description": "1 Lhykhis \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lhykhis - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003910",
@@ -8772,12 +8772,12 @@
     {
         "datasheet_id": "000003922",
         "line": "2",
-        "description": "4 Lesk\u2019s Heroes"
+        "description": "4 Lesk's Heroes"
     },
     {
         "datasheet_id": "000003937",
         "line": "1",
-        "description": "1 Provisionally Prepared \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Provisionally Prepared - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000003938",
@@ -8852,7 +8852,7 @@
     {
         "datasheet_id": "000003947",
         "line": "2",
-        "description": "4 Lesk\u2019s Heroes"
+        "description": "4 Lesk's Heroes"
     },
     {
         "datasheet_id": "000003948",
@@ -9422,7 +9422,7 @@
     {
         "datasheet_id": "000004045",
         "line": "1",
-        "description": "1 Cultist Firebrand "
+        "description": "1 Cultist Firebrand"
     },
     {
         "datasheet_id": "000004046",
@@ -9712,7 +9712,7 @@
     {
         "datasheet_id": "000004077",
         "line": "1",
-        "description": "1 Fulgrim \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Fulgrim - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004078",
@@ -9757,7 +9757,7 @@
     {
         "datasheet_id": "000004083",
         "line": "1",
-        "description": "1 Lucius the Eternal \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lucius the Eternal - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004084",
@@ -9817,7 +9817,7 @@
     {
         "datasheet_id": "000004094",
         "line": "1",
-        "description": "1 Shalaxi Helbane \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Shalaxi Helbane - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004095",
@@ -9877,7 +9877,7 @@
     {
         "datasheet_id": "000004102",
         "line": "1",
-        "description": "1 Karanak \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Karanak - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004103",
@@ -9887,7 +9887,7 @@
     {
         "datasheet_id": "000004104",
         "line": "1",
-        "description": "1 Skarbrand \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Skarbrand - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004105",
@@ -9937,7 +9937,7 @@
     {
         "datasheet_id": "000004111",
         "line": "1",
-        "description": "1 Rotigus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Rotigus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004112",
@@ -10032,7 +10032,7 @@
     {
         "datasheet_id": "000004123",
         "line": "1",
-        "description": "1 Kairos Fateweaver \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kairos Fateweaver - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004124",
@@ -10137,7 +10137,7 @@
     {
         "datasheet_id": "000004140",
         "line": "1",
-        "description": "1 Buri Aegnirssen \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Buri Aegnirssen - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004141",
@@ -10187,7 +10187,7 @@
     {
         "datasheet_id": "000004148",
         "line": "1",
-        "description": "1 Aethon Shaan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aethon Shaan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004149",
@@ -10232,7 +10232,7 @@
     {
         "datasheet_id": "000004155",
         "line": "1",
-        "description": "1 Lady Malys \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lady Malys - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004156",
@@ -10267,7 +10267,7 @@
     {
         "datasheet_id": "000004160",
         "line": "1",
-        "description": "1 Solitaire \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Solitaire - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004161",
@@ -10302,12 +10302,12 @@
     {
         "datasheet_id": "000004166",
         "line": "1",
-        "description": "1 Caanok Var \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Caanok Var - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004167",
         "line": "1",
-        "description": "1 Suboden Khan \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Suboden Khan - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004168",
@@ -10382,12 +10382,12 @@
     {
         "datasheet_id": "000004173",
         "line": "1",
-        "description": "1 Inquisitor Ostromandeus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Inquisitor Ostromandeus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004173",
         "line": "2",
-        "description": "1 Stentor-I-52 \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Stentor-I-52 - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004174",
@@ -10477,17 +10477,17 @@
     {
         "datasheet_id": "000004179",
         "line": "1",
-        "description": "1 Judiciar Xacharus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Judiciar Xacharus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004180",
         "line": "1",
-        "description": "1 Chaplain Kastiel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Chaplain Kastiel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004181",
         "line": "1",
-        "description": "1 Da Red Gobbo\u2019s Tinboy \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Da Red Gobbo's Tinboy - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004182",
@@ -10527,22 +10527,22 @@
     {
         "datasheet_id": "000004183",
         "line": "1",
-        "description": "1 Marneus Calgar in Armour of Antilochus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Marneus Calgar in Armour of Antilochus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004184",
         "line": "1",
-        "description": "1 Cato Sicarius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Cato Sicarius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004185",
         "line": "1",
-        "description": "0-1 Chapter Ancient \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "0-1 Chapter Ancient - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004185",
         "line": "2",
-        "description": "0-1 Chapter Champion \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "0-1 Chapter Champion - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004185",
@@ -10552,42 +10552,42 @@
     {
         "datasheet_id": "000004186",
         "line": "1",
-        "description": "1 Nekrosor Ammentar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Nekrosor Ammentar - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004187",
         "line": "1",
-        "description": "1 Captain Titus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Captain Titus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "1",
-        "description": "1 Ancient Gadriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ancient Gadriel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "2",
-        "description": "1 Veteran Sergeant Metaurus \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Veteran Sergeant Metaurus - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "3",
-        "description": " 1 Gaius Silva \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Gaius Silva - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "4",
-        "description": " 1 Aemelia Minervas \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Aemelia Minervas - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "5",
-        "description": "1 Dainal Kornelius \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Dainal Kornelius - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004188",
         "line": "6",
-        "description": "1 Lucia Vestha \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Lucia Vestha - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004189",
@@ -10602,27 +10602,27 @@
     {
         "datasheet_id": "000004190",
         "line": "1",
-        "description": "1 Garreon the Corpsemaster \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Garreon the Corpsemaster - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004190",
         "line": "2",
-        "description": "1 Garlon Souleater \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Garlon Souleater - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004190",
         "line": "3",
-        "description": "1 Katar Garrix \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Katar Garrix - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004190",
         "line": "4",
-        "description": "1 Captain Sargotta \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Captain Sargotta - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004190",
         "line": "5",
-        "description": "1 The Enforcer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 The Enforcer - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004191",
@@ -10642,12 +10642,12 @@
     {
         "datasheet_id": "000004193",
         "line": "1",
-        "description": "1 Prince Yriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Prince Yriel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004194",
         "line": "1",
-        "description": "1 Kharseth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kharseth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004195",
@@ -10667,12 +10667,12 @@
     {
         "datasheet_id": "000004197",
         "line": "1",
-        "description": "1 Kharseth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kharseth - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004198",
         "line": "1",
-        "description": "1 Prince Yriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Prince Yriel - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004199",
@@ -10692,7 +10692,7 @@
     {
         "datasheet_id": "000004201",
         "line": "1",
-        "description": "1 Berehk Stornbr\u00f6w \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Berehk Stornbr\u00f6w - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004202",
@@ -10702,22 +10702,22 @@
     {
         "datasheet_id": "000004203",
         "line": "1",
-        "description": "1 Ri\u2019Lantar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ri'Lantar - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004203",
         "line": "2",
-        "description": "1 Ri\u2019Locai \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ri'Locai - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004204",
         "line": "1",
-        "description": "1 Ferren Areios \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Ferren Areios - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004205",
         "line": "1",
-        "description": "1 Kravek Morne \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Kravek Morne - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004206",
@@ -10742,7 +10742,7 @@
     {
         "datasheet_id": "000004210",
         "line": "1",
-        "description": "1 Archmagos Terminus Thulia Ghuld \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+        "description": "1 Archmagos Terminus Thulia Ghuld - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     },
     {
         "datasheet_id": "000004211",

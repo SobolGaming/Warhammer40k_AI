@@ -77,6 +77,50 @@ def test_decision_record_invalid_attempt_logs_rejection() -> None:
     assert str(record["rejection_reason"])
 
 
+def test_decision_record_store_merges_duplicate_decision_id_records() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    first = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+    second = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=("richer-context",),
+        value={"applied": True},
+        wall_clock_ms=9,
+    )
+
+    assert first["decision_id"] == second["decision_id"]
+    assert len(game.decision_record_store.records) == 1
+    record = game.decision_record_store.records[0]
+    assert record["wall_clock_ms"] == 9
+    immediate = record["outcome"]["immediate_deltas"]
+    assert immediate["errors"] == ["richer-context"]
+    assert immediate["value"] == {"applied": True}
+
+
 def test_decision_record_human_action_candidate_injection_for_move_payload() -> None:
     game, player = _build_game()
     request = DecisionRequest.create(

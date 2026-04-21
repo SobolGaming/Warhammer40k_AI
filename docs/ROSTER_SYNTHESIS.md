@@ -64,6 +64,10 @@ The report includes:
   `horde`, `defensive`, `offensive`, `objective-control`, `durable`, and `fast`.
 - `include_units`: hard required datasheet names. Unknown names fail before
   proposal.
+  Detachment-aware include resolution checks the primary faction plus eligible
+  pact ally pools, so `World Eaters` `Khorne Daemonkin` includes can resolve
+  `Blood Legions` units as allied selections without changing the top-level army
+  faction.
 - `exclude_units`: hard excluded datasheet names. Unknown names fail before
   proposal.
 

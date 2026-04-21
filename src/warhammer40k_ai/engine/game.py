@@ -56,6 +56,7 @@ from .random_source import RandomSource
 from .decision_controller import DecisionController, DecisionControllerHub
 from .decision_record import DecisionRecordStore
 from .descriptor_compiler import compile_descriptor_bundle
+from .reserve_metadata import ensure_reserve_start_metadata, set_reserve_start_metadata
 from .ruleset import RulesetBundle
 from .version_adapter import ensure_version_adapter_boundary
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
@@ -12700,24 +12701,28 @@ class Game(
                     except Exception:
                         passengers = []
                     for passenger in passengers:
-                        try:
-                            passenger.set_reserve_status("reserves")
-                        except Exception:
-                            try:
-                                passenger.reserve_status = "reserves"
-                            except Exception:
-                                pass
+                        set_reserve_start_metadata(
+                            passenger,
+                            started=True,
+                            reserve_status="reserves",
+                            source="must_start_in_reserves",
+                            mandatory_start=True,
+                            latest_arrival_round=3,
+                        )
                         try:
                             passenger.deployed = True
                         except Exception:
                             pass
                         try:
-                            setattr(passenger, "_started_in_reserves", True)
-                        except Exception:
-                            pass
-                        try:
                             for leader in list(getattr(passenger, "attached_leaders", []) or []):
-                                setattr(leader, "_started_in_reserves", True)
+                                set_reserve_start_metadata(
+                                    leader,
+                                    started=True,
+                                    reserve_status="reserves",
+                                    source="must_start_in_reserves",
+                                    mandatory_start=True,
+                                    latest_arrival_round=3,
+                                )
                         except Exception:
                             pass
 
@@ -12727,38 +12732,14 @@ class Game(
                     members = [root]
                 # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
                 for member in members:
-                    try:
-                        setattr(member, "_started_in_reserves", bool(started))
-                    except Exception:
-                        pass
-                    special_rules = getattr(member, "special_rules", None)
-                    if not isinstance(special_rules, dict):
-                        special_rules = {}
-                    if started:
-                        source = "must_start_in_reserves" if bool(must_reserves) else "deployment_choice"
-                        special_rules["reserve_source"] = source
-                        special_rules["reserve_mandatory_start"] = bool(must_reserves)
-                        special_rules["reserve_latest_arrival_round"] = 3
-                        setattr(member, "reserve_source", source)
-                        setattr(member, "reserve_mandatory_start", bool(must_reserves))
-                        setattr(member, "reserve_latest_arrival_round", 3)
-                    else:
-                        for key in (
-                            "reserve_source",
-                            "reserve_mandatory_start",
-                            "reserve_latest_arrival_round",
-                            "reserve_last_arrival_failure",
-                        ):
-                            special_rules.pop(key, None)
-                        for attr in (
-                            "reserve_source",
-                            "reserve_mandatory_start",
-                            "reserve_latest_arrival_round",
-                            "reserve_last_arrival_failure",
-                        ):
-                            if hasattr(member, attr):
-                                delattr(member, attr)
-                    member.special_rules = special_rules
+                    source = "must_start_in_reserves" if bool(must_reserves) else "deployment_choice"
+                    set_reserve_start_metadata(
+                        member,
+                        started=bool(started),
+                        source=source,
+                        mandatory_start=bool(must_reserves),
+                        latest_arrival_round=3,
+                    )
                 for member in members:
                     if member is root:
                         continue
@@ -12773,6 +12754,26 @@ class Game(
                         member.deployed = True
                     except Exception:
                         pass
+                for member in members:
+                    metadata = ensure_reserve_start_metadata(member)
+                    if bool(metadata.get("metadata_incomplete", False)):
+                        diagnostics = getattr(self, "reserve_arrival_diagnostics", None)
+                        if not isinstance(diagnostics, list):
+                            diagnostics = []
+                            setattr(self, "reserve_arrival_diagnostics", diagnostics)
+                        diagnostics.append(
+                            {
+                                "code": "reserve_metadata_incomplete_post_deployment",
+                                "severity": "WARNING",
+                                "unit_id": str(get_entity_id(member) or ""),
+                                "unit_name": str(getattr(member, "name", "Unit") or "Unit"),
+                                "reserve_source": str(metadata.get("reserve_source", "") or ""),
+                                "reserve_mandatory_start": bool(metadata.get("reserve_mandatory_start", False)),
+                                "reserve_latest_arrival_round": int(
+                                    metadata.get("reserve_latest_arrival_round", 0) or 0
+                                ),
+                            }
+                        )
         except Exception:
             return False
         return True

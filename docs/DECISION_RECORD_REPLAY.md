@@ -12,6 +12,11 @@ Replay-store persistence note:
 - On-disk `decision_steps` are keyed by unique `decision_id`; repeated captures
   of the same resolved decision update the existing row and preserve the widest
   recorded event range for that decision.
+- Runtime `DecisionRecordStore` is also idempotent by `decision_id`. Duplicate
+  resolution records merge into the existing in-memory record, preserving richer
+  outcome data and the largest timing value.
+- Headless self-play JSON export defensively deduplicates by `decision_id` before
+  reward annotation and before writing the output file.
 
 ## Rules-Bundle Reproducibility Matrix (PR-AI-012)
 

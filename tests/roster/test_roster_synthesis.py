@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from warhammer40k_ai.roster.army import ArmyValidationError, parse_army_list_text
@@ -265,6 +267,75 @@ def test_pact_daemon_factions_are_not_supported_primary_factions() -> None:
 
     with pytest.raises(ArmyValidationError, match="Unsupported army faction 'Blood Legions'"):
         ArmyMusterer(WahaHelper()).validate_request(blueprint)
+
+
+@pytest.mark.integration
+def test_khorne_daemonkin_synthesis_hard_includes_pact_daemon_allies(
+    waha_helper: WahaHelper,
+) -> None:
+    report = synthesize_rosters(
+        RosterSynthesisSeed(
+            max_points=2000,
+            max_under_cap_allowance=200,
+            faction="World Eaters",
+            detachment="Khorne Daemonkin",
+            include_units=("Bloodletters", "Bloodcrushers", "Flesh Hounds"),
+            style_tags=("daemonkin", "melee"),
+        ),
+        waha_helper=waha_helper,
+        rules_bundle_id=RULES_BUNDLE_ID,
+        top_k=1,
+        random_seed=1901,
+    )
+
+    assert report.candidates, report.diagnostics
+    candidate = report.candidates[0]
+    names = {entry.name for entry in candidate.army_blueprint.unit_entries}
+    assert {"Bloodletters", "Bloodcrushers", "Flesh Hounds"}.issubset(names)
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(candidate.army_blueprint)
+    assert army.faction == "World Eaters"
+    assert army.faction_id == "WE"
+    allied = [unit for unit in army.units if unit.name in {"Bloodletters", "Bloodcrushers", "Flesh Hounds"}]
+    assert {unit.name for unit in allied} == {"Bloodletters", "Bloodcrushers", "Flesh Hounds"}
+    assert all(unit.special_rules["ally_source_rule"] == "Pact of Blood" for unit in allied)
+    assert all(unit.special_rules["catalog_faction_id"] == "CD" for unit in allied)
+
+
+def test_army_list_parser_resolves_khorne_pact_character_allies_without_faction_warning(
+    waha_helper: WahaHelper,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    text = """\
+World Eaters Pact Parse (1000 points)
+World Eaters
+Khorne Daemonkin
+
+CHARACTERS
+Master of Executions (125 points)
+  - 1x Master of Executions
+  - 1x Axe of dismemberment
+  - 1x Bolt pistol
+  - Warlord
+Bloodmaster (65 points)
+  - 1x Bloodmaster
+  - 1x Blade of blood
+Rendmaster On Blood Throne (150 points)
+  - 1x Rendmaster on Blood Throne
+  - 1x Attendants' hellblades
+  - 1x Blade of blood
+Skullmaster (95 points)
+  - 1x Skullmaster
+  - 1x Blade of blood
+  - 1x Juggernaut's bladed horn
+"""
+
+    with caplog.at_level(logging.WARNING, logger="warhammer40k_ai.roster.army_parse"):
+        army = parse_army_list_text(text, waha_helper, list_name="pact_character_parse")
+
+    assert {unit.name for unit in army.units}.issuperset(
+        {"Bloodmaster", "Rendmaster On Blood Throne", "Skullmaster"}
+    )
+    assert "Faction-specific datasheet not found" not in caplog.text
 
 
 @pytest.mark.integration

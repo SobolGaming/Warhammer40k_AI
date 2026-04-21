@@ -87,6 +87,10 @@ This document describes deterministic headless placement behavior for deployment
   - `reserve_mandatory_start`
   - `reserve_latest_arrival_round`
   - `reserve_last_arrival_failure`
+- Reserve-start mutations route through shared metadata helpers so units that started
+  in reserves cannot retain blank `reserve_source` or `reserve_latest_arrival_round=0`.
+  If a post-deployment check has to repair incomplete metadata, it records
+  `reserve_metadata_incomplete_post_deployment` in `reserve_arrival_diagnostics`.
 - Forced arrivals still search legal reserve zones first. If every generated placement is rejected, the
   controller resolves the same `MOVE_UNIT` request through an explicit `Unable to arrive`
   fallback option. This is not a voluntary pass: the unit remains in reserves and existing

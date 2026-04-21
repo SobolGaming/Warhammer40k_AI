@@ -59,9 +59,18 @@ placement/movement legality.
 - `Aegis Defence Line` (compound hull footprint)
 - `Drop Pod` (manual central-hull footprint; open fins/ramps excluded from collision footprint)
 - `Khorne Lord of Skulls` (manual hull rectangle)
+- `Goliath Rockgrinder` (manual hull rectangle)
+- `Goliath Truck` (separate manual hull rectangle for the Truck build)
+- `Baneblade` (manual hull rectangle, including sponson width)
+- `Leman Russ Vanquisher` / `Leman Russ` hull variants (manual hull rectangle)
+- `Hydra` / Chimera chassis (manual hull rectangle with Hydra turret height)
 - `Rhino` / `Chaos Rhino` (manual hull rectangle)
 - `Land Raider` / `Chaos Land Raider` (manual hull rectangle)
 - `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
+
+Vehicle hull overrides use source notes embedded in `data/model_geometry_overrides.json`. Where only
+community model measurements are available, the override is a deterministic bounding rectangle and the
+source URL is recorded alongside the dimensions.
 
 When `hull_proxy_policy` is `bounding`, flying-base `VEHICLE`/`MONSTER` datasheets without
 explicit overrides also receive deterministic auto-generated support-base + hull-proxy geometry.

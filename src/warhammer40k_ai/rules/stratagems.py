@@ -3694,6 +3694,15 @@ class StratagemManager(
         return "model" in str(descriptor_target or "").strip().lower()
 
     def _tool_action_missing_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> List[str]:
+        def _context_value_missing(value: Any) -> bool:
+            if value is None:
+                return True
+            if isinstance(value, str):
+                return not value.strip()
+            if isinstance(value, (list, tuple, set, dict)):
+                return len(value) == 0
+            return False
+
         descriptor = getattr(stratagem, "tool_descriptor", None)
         target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
         effect_text = str(getattr(descriptor, "effect", "") or "").strip().lower()
@@ -3729,7 +3738,7 @@ class StratagemManager(
         required_context = list(effect_params.get("required_context", []) or effect_params.get("required_context_keys", []) or [])
         for key in required_context:
             key_text = str(key or "").strip()
-            if key_text and kwargs.get(key_text) is None:
+            if key_text and _context_value_missing(kwargs.get(key_text)):
                 missing.append(key_text)
         needs_support = (
             "source_and" in target_text
@@ -4177,6 +4186,12 @@ class StratagemManager(
         base_ctx = self._tool_action_base_context(original_ctx)
         specs: List[Dict[str, Any]] = []
         seen: set[str] = set()
+
+        specialized_builder = getattr(self, "_build_genestealer_cults_tool_action_specs_for_item", None)
+        if callable(specialized_builder):
+            specialized_specs = specialized_builder(item=item, stratagem=stratagem, base_ctx=base_ctx)
+            if specialized_specs is not None:
+                return specialized_specs
 
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
