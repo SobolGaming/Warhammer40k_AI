@@ -1140,7 +1140,12 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
             candidates.append(CandidateAction(action_id=str(action_id), params=payload, metadata=metadata))
             continue
 
+        if action != "scout":
+            continue
         destination = list(payload.get("destination", []) or [])
+        model_positions = list(payload.get("model_positions", []) or [])
+        if len(destination) < 2 and not model_positions:
+            continue
         dest_x = _safe_float(destination[0], origin_x) if len(destination) >= 1 else origin_x
         dest_y = _safe_float(destination[1], origin_y) if len(destination) >= 2 else origin_y
         travel = ((dest_x - origin_x) ** 2 + (dest_y - origin_y) ** 2) ** 0.5

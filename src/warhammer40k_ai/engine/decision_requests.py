@@ -3482,17 +3482,6 @@ def build_scout_move_request(game: object, unit: object) -> Optional[DecisionReq
                 },
             )
         )
-    if not options:
-        options.append(
-            DecisionOption.create(
-                "Scout move",
-                payload={
-                    "unit_id": unit_id,
-                    "action": "scout",
-                    "action_id": f"{DECISION_SCOUT_MOVE}:{player_key}:{unit_id}:scout:default",
-                },
-            )
-        )
     options.append(
         DecisionOption.create(
             "Skip scout move",

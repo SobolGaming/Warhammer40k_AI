@@ -245,6 +245,68 @@ def test_chosen_floor_payload_is_cached_for_deployment_manager_consumption(
     assert float(pos[2]) >= 4.12
 
 
+def test_deployment_builder_relaxed_fallback_bypasses_quick_reject(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+    class _StubGame:
+        def __init__(self) -> None:
+            self.players = []
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str) -> bool:
+            return True
+
+    unit = _StubUnit("unit:rescue", must_start_in_reserves=False)
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), placement_candidate_limit=1)
+
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("blocked", [(5.0, 5.0)])],
+    )
+    monkeypatch.setattr(
+        maker,
+        "_quick_reject_deployment_anchor",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        maker,
+        "_relaxed_deployment_anchor_candidates",
+        lambda *_args, **_kwargs: [(6.0, 6.0)],
+    )
+
+    def _payload(_unit, *, x, y, source, **_kwargs):
+        if source != "lattice_relaxed_no_quick_reject":
+            return []
+        return [
+            {
+                "model_id": "unit:rescue:model",
+                "position": [float(x), float(y), 0.0],
+                "facing": 0.0,
+            }
+        ]
+
+    monkeypatch.setattr(maker, "_select_valid_deployment_payload", _payload)
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    assert candidates[0]["source"] == "lattice_relaxed_no_quick_reject"
+    metrics = maker.get_deployment_search_metrics()
+    assert metrics
+    assert metrics[-1]["relaxed_fallback_used"] is True
+    assert metrics[-1]["returned_candidate_sources"] == ["lattice_relaxed_no_quick_reject"]
+
+
 def test_zone_choice_uses_pregame_teacher_when_player_context_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

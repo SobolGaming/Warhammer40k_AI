@@ -17,6 +17,9 @@ Replay-store persistence note:
   outcome data and the largest timing value.
 - Headless self-play JSON export defensively deduplicates by `decision_id` before
   reward annotation and before writing the output file.
+- Rejected `RESOLVE_DECISION` commands that still reference a pending request are
+  persisted as invalid DecisionRecords so replay/event diagnostics and exported
+  training records agree on malformed candidate attempts.
 
 ## Rules-Bundle Reproducibility Matrix (PR-AI-012)
 

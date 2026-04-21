@@ -386,6 +386,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             "source_validate_calls": {},
             "source_quick_rejects": {},
             "exhaustive_fallback_used": False,
+            "relaxed_fallback_used": False,
             "already_deployed_count": int(len(list(already_deployed or []))),
             "board_occupancy_key": list(stable_board_occupancy_key(already_deployed)),
         }
@@ -534,6 +535,52 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             if len(candidates) >= candidate_limit:
                 break
 
+        if not candidates:
+            source = (
+                "infiltrate_relaxed_no_quick_reject"
+                if self._unit_has_infiltrate(unit)
+                else "lattice_relaxed_no_quick_reject"
+            )
+            metric["relaxed_fallback_used"] = True
+            rescue_seen_anchor: set[tuple[float, float]] = set()
+            for x, y in self._relaxed_deployment_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=list(already_deployed or []),
+            ):
+                metric["anchor_attempts"] = int(metric.get("anchor_attempts", 0) or 0) + 1
+                self._bump_metric_counter(metric, "source_attempt_counts", source)
+                key = (round(float(x), 3), round(float(y), 3))
+                if key in rescue_seen_anchor:
+                    continue
+                rescue_seen_anchor.add(key)
+                payload = self._select_valid_deployment_payload(
+                    unit,
+                    player_id=str(player_id),
+                    x=float(x),
+                    y=float(y),
+                    fast_validate_fn=validate_fn,
+                    boundary_repulsors=boundary_repulsors,
+                    search_context=search_context,
+                    metric=metric,
+                    source=source,
+                )
+                if not payload:
+                    continue
+                payload_sig = self._model_positions_signature(payload)
+                if payload_sig in seen_payload:
+                    continue
+                seen_payload.add(payload_sig)
+                candidates.append(
+                    {
+                        "anchor": [float(x), float(y)],
+                        "model_positions": [dict(entry or {}) for entry in list(payload or [])],
+                        "source": source,
+                    }
+                )
+                if len(candidates) >= candidate_limit:
+                    break
+
         metric["returned_candidate_count"] = int(len(candidates))
         metric["returned_candidate_sources"] = [
             str(dict(candidate or {}).get("source", "") or "")
@@ -598,6 +645,27 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             for idx, anchors in enumerate(list(infiltrate_groups or [])):
                 groups.insert(int(idx), (f"infiltrate_{int(idx)}", list(anchors or [])))
         return groups
+
+    def _relaxed_deployment_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+    ) -> list[tuple[float, float]]:
+        del already_deployed
+        bounds = (
+            self._zone_bounds({})
+            if self._unit_has_infiltrate(unit)
+            else self._zone_bounds(deployment_zone)
+        )
+        if bounds is None:
+            return []
+        return self._candidate_positions_exhaustive_for_bounds(
+            unit,
+            bounds=bounds,
+            anchor_limit=max(512, int(self._exhaustive_anchor_limit)),
+        )
 
     @staticmethod
     def _model_positions_signature(model_positions: list[dict]) -> tuple[tuple[str, float, float, float, float], ...]:
@@ -1026,6 +1094,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         unit: object,
         *,
         bounds: tuple[float, float, float, float],
+        anchor_limit: int | None = None,
     ) -> list[tuple[float, float]]:
         min_x, max_x, min_y, max_y = bounds
         if min_x > max_x or min_y > max_y:
@@ -1058,7 +1127,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             return (float(dist_sq), tie)
 
         candidates.sort(key=_sort_key)
-        return candidates[: int(self._exhaustive_anchor_limit)]
+        limit = int(self._exhaustive_anchor_limit) if anchor_limit is None else int(anchor_limit)
+        return candidates[: max(0, limit)]
 
     @staticmethod
     def _unit_has_infiltrate(unit: object) -> bool:

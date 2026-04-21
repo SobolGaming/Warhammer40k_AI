@@ -144,6 +144,86 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "hydra_chimera_hull"
+      },
+      "000000697": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003992": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000000680": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000000700": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003942": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003979": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000002617": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rogal_dorn_hull"
+      },
+      "000003892": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rogal_dorn_hull"
+      },
+      "000003944": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rogal_dorn_hull"
+      },
+      "000003987": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rogal_dorn_hull"
+      },
+      "000000704": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000000708": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000000709": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003965": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003990": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003991": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
       }
     }
   },
@@ -197,21 +277,48 @@
 
     "000000702": "baneblade_hull",
     "000003963": "baneblade_hull",
+    "000000704": "baneblade_hull",
+    "000000708": "baneblade_hull",
+    "000000709": "baneblade_hull",
+    "000003965": "baneblade_hull",
+    "000003990": "baneblade_hull",
+    "000003991": "baneblade_hull",
     "baneblade_hull": "baneblade_hull",
     "baneblade hull": "baneblade_hull",
     "baneblade": "baneblade_hull",
+    "banesword": "baneblade_hull",
+    "stormlord": "baneblade_hull",
+    "stormsword": "baneblade_hull",
 
     "000002745": "leman_russ_hull",
     "000003985": "leman_russ_hull",
+    "000000680": "leman_russ_hull",
+    "000000700": "leman_russ_hull",
+    "000003942": "leman_russ_hull",
+    "000003979": "leman_russ_hull",
     "leman_russ_hull": "leman_russ_hull",
     "leman russ hull": "leman_russ_hull",
     "leman russ vanquisher": "leman_russ_hull",
+    "leman russ commander": "leman_russ_hull",
+    "leman russ battle tank": "leman_russ_hull",
+
+    "000002617": "rogal_dorn_hull",
+    "000003892": "rogal_dorn_hull",
+    "000003944": "rogal_dorn_hull",
+    "000003987": "rogal_dorn_hull",
+    "rogal_dorn_hull": "rogal_dorn_hull",
+    "rogal dorn hull": "rogal_dorn_hull",
+    "rogal dorn battle tank": "rogal_dorn_hull",
+    "rogal dorn commander": "rogal_dorn_hull",
 
     "000000696": "hydra_chimera_hull",
     "000003975": "hydra_chimera_hull",
+    "000000697": "hydra_chimera_hull",
+    "000003992": "hydra_chimera_hull",
     "hydra_chimera_hull": "hydra_chimera_hull",
     "hydra chimera hull": "hydra_chimera_hull",
     "hydra": "hydra_chimera_hull",
+    "wyvern": "hydra_chimera_hull",
 
     "000000599": "wave_serpent",
     "wave_serpent": "wave_serpent",
@@ -407,31 +514,40 @@
       "notes": "Separate key for the Truck build of the shared Goliath kit. Uses the sourced Goliath hull bounding box until a truck-only measurement is available. Source: https://www.reddit.com/r/genestealercult/comments/shnpeu/goliath_rockgrinder_size/"
     },
     "baneblade_hull": {
-      "display_name": "Baneblade",
+      "display_name": "Baneblade chassis variants",
       "type": "hull",
       "rules_footprint": "hull",
       "length_mm": 240.0,
       "width_mm": 180.0,
       "height_mm": 110.0,
-      "notes": "Bounding rectangle proxy from community tabletop model measurement: 24cm long, 18cm wide with sponsons, 11cm high. Source: https://www.reddit.com/r/Warhammer40k/comments/gesssu/baneblade_dimensions/"
+      "notes": "Bounding rectangle proxy for Baneblade/Banesword/Stormlord/Stormsword chassis variants from community tabletop model measurement: 24cm long, 18cm wide with sponsons, 11cm high. Official Base Size Guide classifies these as Hull. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/Warhammer40k/comments/gesssu/baneblade_dimensions/"
     },
     "leman_russ_hull": {
       "display_name": "Leman Russ hull",
       "type": "hull",
       "rules_footprint": "hull",
       "length_mm": 120.0,
-      "width_mm": 80.0,
+      "width_mm": 105.0,
       "height_mm": 75.0,
-      "notes": "Bounding rectangle proxy from community tabletop model measurement: 12cm x 8cm x 5.5cm hull, with turret adding about 2cm height. Source: https://www.reddit.com/r/Warhammer40k/comments/lswber/russ_proxies_wwt_wip/"
+      "notes": "Bounding rectangle proxy for Leman Russ variants. Footprint uses community tabletop model measurements for LRBT with sponsons (about 119mm long, 105mm wide); height uses the 12cm x 8cm x 5.5cm hull source with turret adding about 2cm. Official Base Size Guide classifies Leman Russ variants as Hull. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/TheAstraMilitarum/comments/1c319rq/tank_sizes/, and https://www.reddit.com/r/Warhammer40k/comments/lswber/russ_proxies_wwt_wip/"
+    },
+    "rogal_dorn_hull": {
+      "display_name": "Rogal Dorn hull",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 148.0,
+      "width_mm": 127.0,
+      "height_mm": 84.0,
+      "notes": "Bounding rectangle proxy for Rogal Dorn Battle Tank and Rogal Dorn Commander from community tabletop model measurements for the sponson build: 84mm high, 148mm long, 127mm wide. Official Base Size Guide classifies both datasheets as Hull. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/TheAstraMilitarum/comments/1c319rq/tank_sizes/"
     },
     "hydra_chimera_hull": {
-      "display_name": "Hydra / Chimera chassis",
+      "display_name": "Hydra / Wyvern / Chimera chassis",
       "type": "hull",
       "rules_footprint": "hull",
       "length_mm": 117.0,
       "width_mm": 92.0,
       "height_mm": 110.0,
-      "notes": "Bounding rectangle proxy for Hydra on Chimera chassis. Hull footprint uses community Chimera model dimensions 117mm x 92mm; height uses Hydra turret/barrels at maximum elevation source note. Sources: https://www.dakkadakka.com/dakkaforum/posts/list/60/603884.page#7092724 and https://www.reddit.com/r/astramilitarum/comments/17o8jcw/does_anyone_know_the_dimensions_of_a_hydra/"
+      "notes": "Bounding rectangle proxy for Hydra and Wyvern on the Chimera chassis. Hull footprint uses community Chimera model dimensions 117mm x 92mm; height uses Hydra turret/barrels at maximum elevation as the conservative shared chassis bound. Official Base Size Guide classifies Chimera, Hydra, and Wyvern as Hull. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.dakkadakka.com/dakkaforum/posts/list/60/603884.page#7092724, and https://www.reddit.com/r/astramilitarum/comments/17o8jcw/does_anyone_know_the_dimensions_of_a_hydra/"
     },
     "drop_pod": {
       "display_name": "Drop Pod",

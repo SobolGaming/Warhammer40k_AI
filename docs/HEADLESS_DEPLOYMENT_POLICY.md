@@ -43,6 +43,7 @@ This document describes deterministic headless placement behavior for deployment
   crashing the whole headless run.
 - Deployment diagnostics are available from `DeterministicDeploymentDecisionMaker.get_deployment_search_metrics()`.
   - Per-unit metrics include deployment order, anchor attempts, quick rejects, validation calls, calls to first valid result, returned candidate count, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
+  - If all normal anchor groups are rejected, deployment runs one deterministic relaxed fallback search that bypasses conservative occupancy quick-rejects and relies on the authoritative exact-placement validation path instead. This is intended for crowded deployments where a coarse anchor bounding-box test can be too pessimistic for multi-model units.
 
 ## Ruins Floors (Headless Deployment Payloads)
 
@@ -132,6 +133,6 @@ This document describes deterministic headless placement behavior for deployment
   option; formation-phase orchestration suppresses the request rather than
   queuing malformed options for empty or temporarily unrepresentable setup
   states.
-- `SCOUT_MOVE` now emits deterministic destination options (plus skip) and solver metadata keyed to reserve denial, entry-lane quality, and exposure.
+- `SCOUT_MOVE` now emits deterministic destination options plus skip, and solver metadata keyed to reserve denial, entry-lane quality, and exposure. If no legal destination can be generated, the request emits only skip rather than an invalid placeholder Scout action.
 - Deployment-scoped `MOVE_UNIT` now emits deterministic multi-option exact-placement candidates at runtime (anchor + exact `model_positions` per option), with per-option deployment semantic metadata.
 - With rollout enabled, deployment pregame candidates include deterministic shallow-lookahead metadata (`lookahead_*`) and adjusted round/trade projections for ranker consumption.

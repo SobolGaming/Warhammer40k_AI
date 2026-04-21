@@ -13,6 +13,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECIS
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game, SetupPhase
 from warhammer40k_ai.engine.mission_selection import default_mission_selection
+from warhammer40k_ai.engine.replay_store import ReplayStoreReader, enable_decision_replay_recording
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 
@@ -172,6 +173,42 @@ def test_resolve_decision_rejects_invalid_option():
     result = game.apply_command(cmd)
     assert result.ok is False
     assert game.decision_queue.peek() is request
+    records = list(game.decision_record_store.records or [])
+    assert records
+    assert records[-1]["decision_id"] == request.decision_id
+    assert records[-1]["valid"] is False
+    assert records[-1]["rejection_reason"] == "Selected option_id is not valid for this decision."
+    assert records[-1]["invalid_attempt"]["params"] == {}
+
+
+def test_rejected_resolve_decision_is_persisted_as_invalid_replay_record(tmp_path):
+    game = _make_game()
+    replay_path = tmp_path / "rejected_resolve.replay.sqlite3"
+    enable_decision_replay_recording(game, replay_path=replay_path, session_id="rejected-resolve")
+    player_id = game.get_current_player().id
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=player_id,
+        options=[option],
+    )
+    game.request_decision(request)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player_id,
+        payload={"decision_id": request.decision_id, "option_id": "bad-option"},
+    )
+
+    result = game.apply_command(cmd)
+
+    assert result.ok is False
+    reader = ReplayStoreReader(replay_path)
+    assert reader.decision_count() == 1
+    record = reader.get_decision_record(1)
+    assert record["decision_id"] == request.decision_id
+    assert record["valid"] is False
+    assert record["rejection_reason"] == "Selected option_id is not valid for this decision."
 
 
 def test_command_rejected_resolve_decision_event_includes_compact_diagnostics() -> None:

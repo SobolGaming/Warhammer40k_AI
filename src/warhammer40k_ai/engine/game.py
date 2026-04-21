@@ -147,6 +147,48 @@ def _command_rejection_diagnostics(
         diagnostics["declarations_checksum"] = _command_event_digest(declarations)
     return diagnostics
 
+
+def _record_rejected_resolve_decision_command(
+    game: "Game",
+    command: GameCommand | None,
+    result: object | None,
+) -> None:
+    if game is None or command is None or result is None:
+        return
+    if str(getattr(command, "kind", "") or "") != CMD_RESOLVE_DECISION:
+        return
+    if bool(getattr(result, "ok", False)):
+        return
+    payload = dict(getattr(command, "payload", {}) or {})
+    decision_id = str(payload.get("decision_id", "") or "")
+    if not decision_id:
+        return
+    queue = getattr(game, "decision_queue", None)
+    request = queue.get(decision_id) if queue is not None and hasattr(queue, "get") else None
+    if request is None:
+        return
+    raw_result_payload = payload.get("result_payload", {})
+    result_payload = dict(raw_result_payload or {}) if isinstance(raw_result_payload, dict) else {}
+    decision_result = DecisionResult(
+        decision_id=decision_id,
+        player_id=getattr(command, "player_id", None),
+        option_id=str(payload.get("option_id", "") or ""),
+        payload=result_payload,
+    )
+    errors = [str(error or "") for error in list(getattr(result, "errors", ()) or ()) if str(error or "")]
+    game.decision_record_store.record_resolution(
+        request,
+        decision_result,
+        ok=False,
+        errors=errors,
+        value=getattr(result, "value", None),
+    )
+    recorder = getattr(game, "_decision_replay_recorder", None)
+    record_resolution = getattr(recorder, "record_resolution", None)
+    if callable(record_resolution):
+        record_resolution(game, request, decision_result, defer_keyframe=True)
+
+
 class Game(
     GameSetupDeploymentReservesMixin,
     GameMissionsScoringActionsMixin,
@@ -12542,6 +12584,7 @@ class Game(
                 payload=payload,
                 validate_payload=False,
             )
+        _record_rejected_resolve_decision_command(self, command, result)
         recorder = getattr(self, "_decision_replay_recorder", None)
         record_post_command = getattr(recorder, "record_post_command", None)
         if callable(record_post_command):

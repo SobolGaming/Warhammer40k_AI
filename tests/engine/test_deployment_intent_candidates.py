@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import warhammer40k_ai.engine.decision_requests as decision_requests
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
@@ -553,3 +554,21 @@ def test_scout_move_request_generates_rankable_destination_candidates() -> None:
     metadata = dict(scout_candidates[0].metadata or {})
     assert metadata.get("candidate_kind") == "deployment_scout"
     assert "reserve_entry_lane_delta" in metadata
+
+
+def test_scout_move_request_without_destinations_only_emits_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    game, _player, screen_unit, _hammer = _build_game()
+    monkeypatch.setattr(decision_requests, "_scout_candidate_destinations", lambda *_args, **_kwargs: [])
+
+    request = decision_requests.build_scout_move_request(game, screen_unit)
+
+    assert request is not None
+    assert request.decision_type == DECISION_SCOUT_MOVE
+    payloads = [dict(option.payload or {}) for option in list(request.options or [])]
+    assert [str(payload.get("action", "") or "") for payload in payloads] == ["skip"]
+    assert all(
+        str(candidate.action_id).endswith(":skip")
+        for candidate in list(request.candidates or [])
+    )

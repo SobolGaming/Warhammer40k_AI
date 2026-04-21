@@ -6,7 +6,7 @@ Canonical schema:
 - `docs/DECISION_RECORD_SCHEMA.json`
 
 Runtime guarantees:
-- A `DecisionRecord` is emitted for each resolved decision.
+- A `DecisionRecord` is emitted for each resolved decision and for each rejected `RESOLVE_DECISION` command that can still be mapped to a pending request.
 - Every record includes decomposed `rules_bundle` ids plus convenience `rules_bundle_id`.
 - Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/army-build/tool`) used at record time.
 - Every record includes the compiled `descriptor_bundle_id` used for the request.
@@ -21,7 +21,7 @@ Runtime guarantees:
 - When deployment lookahead is enabled, deployment candidates may also include deterministic bounded rollout metadata (`lookahead_immediate_value`, `lookahead_worst_branch_value`, `lookahead_followup_value`, `lookahead_enemy_pressure`, `lookahead_total_value`) and `lookahead_base_*`/`lookahead_adjusted_*` projection fields.
 - `outcome.immediate_deltas.actor_player_id` is recorded for each decision resolution and is used by reward-profile labeling.
 - Valid decisions (`valid=true`) include `chosen_action_id`, and that action is present in `candidates`.
-- Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`.
+- Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`; this includes command-level validation rejections such as malformed candidate payloads submitted through `RESOLVE_DECISION`.
 - For freeform human payloads (movement payloads with `model_positions`), the engine may inject a `HumanActionCandidate` so the chosen action is represented inside `candidates`.
 - Network auto-dice resolution paths (controller-hub and fallback event subscription) use the same `AutoDiceDecisionController` logic.
 - Fight-phase target selection, melee weapon declaration, and multi-target melee allocation are emitted from the authoritative engine path in both UI and headless execution; replay/telemetry should therefore capture the same fight decision sequence regardless of controller type.
