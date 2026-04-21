@@ -46,5 +46,8 @@ wahapedia_data/Archive
 
 # Local game session data
 games/data/
+army_lists/*_generated.txt
 data/headless_self_play_replays/
-data/headless_self_play_decision_records.json
+data/headless_self_play_decision_records*.json
+data/headless_self_play_reports/
+data/generated_rosters_we_ec_selfplay/
