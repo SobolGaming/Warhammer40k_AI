@@ -42,6 +42,40 @@ def test_resolve_drop_pod_uses_manual_hull_override():
     assert resolved.geometry_source == "geometry_override:drop_pod"
 
 
+@pytest.mark.parametrize(
+    "datasheet_id,datasheet_name,model_name,expected_key,length_mm,width_mm,height_mm",
+    [
+        ("000002640", "Chaos Rhino", "Chaos Rhino", "rhino_chassis", 115.0, 75.0, 50.0),
+        ("000004093", "Chaos Rhino", "Chaos Rhino", "rhino_chassis", 115.0, 75.0, 50.0),
+        ("000002634", "Chaos Land Raider", "Chaos Land Raider", "land_raider_hull", 170.0, 100.0, 70.0),
+        ("000004082", "Chaos Land Raider", "Chaos Land Raider", "land_raider_hull", 170.0, 100.0, 70.0),
+    ],
+)
+def test_resolve_chaos_transport_hull_overrides(
+    datasheet_id,
+    datasheet_name,
+    model_name,
+    expected_key,
+    length_mm,
+    width_mm,
+    height_mm,
+):
+    resolved = resolve_model_geometry(
+        datasheet_id=datasheet_id,
+        datasheet_name=datasheet_name,
+        model_name=model_name,
+        unit_keywords=["Vehicle", "Transport", "Chaos"],
+        parsed_base_type=BaseType.HULL,
+        parsed_radius=(1.0, 1.0),
+    )
+    assert resolved.base_type == BaseType.HULL
+    assert resolved.radius[0] == pytest.approx(convert_mm_to_inches(length_mm) / 2.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(convert_mm_to_inches(width_mm) / 2.0, abs=1e-4)
+    assert resolved.model_height == pytest.approx(convert_mm_to_inches(height_mm), abs=1e-4)
+    assert resolved.geometry_source == f"geometry_override:{expected_key}"
+    assert resolved.height_source == "override"
+
+
 def test_resolve_aegis_compound_override():
     resolved = resolve_model_geometry(
         datasheet_id="000002619",

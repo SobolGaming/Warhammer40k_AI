@@ -34,6 +34,76 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "drop_pod"
+      },
+      "000000396": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000002723": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000956": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000001047": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000004093": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000001022": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000002640": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000391": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000065": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000962": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000001049": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000004082": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000001025": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000002634": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
       }
     }
   },
@@ -50,6 +120,30 @@
     "000002642": "khorne_lord_of_skulls",
     "khorne_lord_of_skulls": "khorne_lord_of_skulls",
     "khorne lord of skulls": "khorne_lord_of_skulls",
+
+    "000000396": "rhino_chassis",
+    "000002723": "rhino_chassis",
+    "000000956": "rhino_chassis",
+    "000001047": "rhino_chassis",
+    "000004093": "rhino_chassis",
+    "000001022": "rhino_chassis",
+    "000002640": "rhino_chassis",
+    "rhino_chassis": "rhino_chassis",
+    "rhino chassis": "rhino_chassis",
+    "rhino": "rhino_chassis",
+    "chaos rhino": "rhino_chassis",
+
+    "000000391": "land_raider_hull",
+    "000000065": "land_raider_hull",
+    "000000962": "land_raider_hull",
+    "000001049": "land_raider_hull",
+    "000004082": "land_raider_hull",
+    "000001025": "land_raider_hull",
+    "000002634": "land_raider_hull",
+    "land_raider_hull": "land_raider_hull",
+    "land raider hull": "land_raider_hull",
+    "land raider": "land_raider_hull",
+    "chaos land raider": "land_raider_hull",
 
     "000000599": "wave_serpent",
     "wave_serpent": "wave_serpent",
@@ -207,6 +301,24 @@
       "width_mm": 127.0,
       "height_mm": 178.0,
       "notes": "Bounding rectangle proxy to keep hull handling deterministic."
+    },
+    "rhino_chassis": {
+      "display_name": "Rhino / Chaos Rhino",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 115.0,
+      "width_mm": 75.0,
+      "height_mm": 50.0,
+      "notes": "Bounding rectangle proxy from community tabletop model dimensions: 11.5cm x 7.5cm x 5cm."
+    },
+    "land_raider_hull": {
+      "display_name": "Land Raider / Chaos Land Raider",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 170.0,
+      "width_mm": 100.0,
+      "height_mm": 70.0,
+      "notes": "Bounding rectangle proxy from community tabletop model dimensions: 17cm x 10cm x 7cm."
     },
     "drop_pod": {
       "display_name": "Drop Pod",

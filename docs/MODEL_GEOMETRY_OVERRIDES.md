@@ -59,6 +59,8 @@ placement/movement legality.
 - `Aegis Defence Line` (compound hull footprint)
 - `Drop Pod` (manual central-hull footprint; open fins/ramps excluded from collision footprint)
 - `Khorne Lord of Skulls` (manual hull rectangle)
+- `Rhino` / `Chaos Rhino` (manual hull rectangle)
+- `Land Raider` / `Chaos Land Raider` (manual hull rectangle)
 - `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
 
 When `hull_proxy_policy` is `bounding`, flying-base `VEHICLE`/`MONSTER` datasheets without
