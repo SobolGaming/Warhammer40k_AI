@@ -8,6 +8,11 @@ Strict mode guarantees:
 - `chosen_action_id` must appear in recorded candidates.
 - Resolution failure during strict replay raises an error immediately.
 
+Replay-store persistence note:
+- On-disk `decision_steps` are keyed by unique `decision_id`; repeated captures
+  of the same resolved decision update the existing row and preserve the widest
+  recorded event range for that decision.
+
 ## Rules-Bundle Reproducibility Matrix (PR-AI-012)
 
 Regression gate:

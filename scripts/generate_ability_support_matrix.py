@@ -2645,9 +2645,9 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Nurgle's Gift (Aura)": ("Supported", "Contagion range + plague effects."),
         "Thrill Seekers": ("Supported", "EC core rule hooks for crits and movement bonuses."),
         "Pact of Decay": ("Supported", "Army faction restriction enforced during validation."),
-        "Pact of Excess": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Excess": ("Supported", "Army faction restriction and Legions of Excess ally mustering caps enforced."),
         "Pact of Sorcery": ("Supported", "Army faction restriction enforced during validation."),
-        "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Blood": ("Supported", "Army faction restriction and Blood Legions ally mustering caps enforced."),
         "Cabal of Sorcerers": ("Supported", "Cabal rituals and warp charge checks."),
         "Blessings of Khorne": ("Supported", "Blessings dice engine + effects."),
         "Oath of Moment": ("Supported", "Target selection + hit/wound bonuses."),
@@ -3541,9 +3541,9 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Dreadblades": ("Supported", "Chaos Knights ally validation and model caps."),
         "Cult of the Dark Gods": ("Supported", "Cult ally points caps and keyword adjustments."),
         "Pact of Decay": ("Supported", "Army faction restriction enforced during validation."),
-        "Pact of Excess": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Excess": ("Supported", "Army faction restriction and Legions of Excess ally mustering caps enforced."),
         "Pact of Sorcery": ("Supported", "Army faction restriction enforced during validation."),
-        "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Blood": ("Supported", "Army faction restriction and Blood Legions ally mustering caps enforced."),
         "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
         "A Character unit can only be attached to a unit if both units share the same keyword from the list above.": (
@@ -22813,6 +22813,16 @@ def _restriction_rule_and_engine(name: str, abilities: List[dict], faction_id: O
     pact_match = re.search(r"cannot select\s+(.+?)\s+as your army faction", desc, flags=re.IGNORECASE)
     if pact_match:
         forbidden = pact_match.group(1).strip().strip(".")
+        if key == "pact of blood":
+            return (
+                f"Army Faction cannot be {forbidden}; Khorne daemon allies can be mustered as Blood Legions under Khorne Daemonkin caps.",
+                "Validated in army detachment restrictions and Army._validate_daemonic_pact.",
+            )
+        if key == "pact of excess":
+            return (
+                f"Army Faction cannot be {forbidden}; Slaanesh daemon allies can be mustered as Legions of Excess under Carnival of Excess caps.",
+                "Validated in army detachment restrictions and Army._validate_daemonic_pact.",
+            )
         return (
             f"Army Faction cannot be {forbidden}.",
             "Validated in army detachment restrictions.",

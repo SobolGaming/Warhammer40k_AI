@@ -113,6 +113,7 @@ def run_setup_only_headless_benchmark(
         game=game,
         auto_attach=True,
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+        reserve_policy=str(reserve_policy or "forced_only"),
     )
     runtime = LocalAuthoritativeRuntime(
         game,

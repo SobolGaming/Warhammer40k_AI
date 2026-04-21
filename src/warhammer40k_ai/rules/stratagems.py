@@ -5,6 +5,7 @@ import html
 import json
 import logging
 import re
+from enum import Enum
 from itertools import combinations
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
@@ -2331,6 +2332,8 @@ class StratagemManager(
         # Headless/non-local controllers should not be re-prompted for the same optional tool window
         # after explicitly skipping it.
         self._skipped_tool_action_signatures: set[str] = set()
+        self._tool_action_probe_diagnostics: List[Dict[str, Any]] = []
+        self._tool_action_probe_diagnostic_keys: set[str] = set()
 
     def _unit_cannot_be_target_of_stratagem(self, unit: Any) -> bool:
         return _unit_cannot_be_target_of_stratagem(unit)
@@ -2343,6 +2346,12 @@ class StratagemManager(
         if not isinstance(getattr(self, "_auric_superhuman_reserves_granted_pairs", None), set):
             self._auric_superhuman_reserves_granted_pairs = set(
                 getattr(self, "_auric_superhuman_reserves_granted_pairs", []) or []
+            )
+        if not isinstance(getattr(self, "_tool_action_probe_diagnostics", None), list):
+            self._tool_action_probe_diagnostics = []
+        if not isinstance(getattr(self, "_tool_action_probe_diagnostic_keys", None), set):
+            self._tool_action_probe_diagnostic_keys = set(
+                getattr(self, "_tool_action_probe_diagnostic_keys", []) or []
             )
         if not isinstance(getattr(self, "_vessels_meet_force_wounds_before", None), dict):
             self._vessels_meet_force_wounds_before = {}
@@ -3645,7 +3654,7 @@ class StratagemManager(
     def _tool_action_descriptor_requires_friendly_unit(descriptor_target: str) -> bool:
         target_text = str(descriptor_target or "").strip().lower()
         if "unit" not in target_text:
-            return False
+            return "vehicle" in target_text and "enemy" not in target_text
         return not any(
             token in target_text
             for token in (
@@ -3674,7 +3683,7 @@ class StratagemManager(
     @staticmethod
     def _tool_action_descriptor_requires_transport(descriptor_target: str) -> bool:
         target_text = str(descriptor_target or "").strip().lower()
-        return "transport" in target_text or "embarked" in target_text
+        return "transport" in target_text or "embarked" in target_text or "rhino" in target_text
 
     @staticmethod
     def _tool_action_descriptor_requires_terrain(descriptor_target: str) -> bool:
@@ -3684,38 +3693,155 @@ class StratagemManager(
     def _tool_action_descriptor_requires_model(descriptor_target: str) -> bool:
         return "model" in str(descriptor_target or "").strip().lower()
 
-    def _tool_action_probe_has_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> bool:
+    def _tool_action_missing_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> List[str]:
         descriptor = getattr(stratagem, "tool_descriptor", None)
         target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        effect_text = str(getattr(descriptor, "effect", "") or "").strip().lower()
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
         objective = kwargs.get("objective") or kwargs.get("objective_marker")
         transport = kwargs.get("transport_unit") or kwargs.get("transport")
         terrain = kwargs.get("terrain_feature") or kwargs.get("terrain")
         model = kwargs.get("model") or kwargs.get("target_model")
+        support_unit = (
+            kwargs.get("support_unit")
+            or kwargs.get("secondary_unit")
+            or kwargs.get("battle_shocked_unit")
+            or kwargs.get("friendly_support_unit")
+        )
+        missing: List[str] = []
         if self._tool_action_descriptor_requires_friendly_unit(target_text) and unit is None:
-            return False
+            missing.append("unit")
         if self._tool_action_descriptor_requires_enemy_unit(target_text) and enemy_unit is None:
-            return False
+            missing.append("enemy_unit")
         if self._tool_action_descriptor_requires_objective(target_text) and objective is None:
-            return False
-        if self._tool_action_descriptor_requires_transport(target_text) and transport is None and unit is None:
-            return False
+            missing.append("objective")
+        if (
+            self._tool_action_descriptor_requires_transport(target_text)
+            or effect_text.startswith("disembark")
+        ) and transport is None and unit is None:
+            missing.append("transport")
         if self._tool_action_descriptor_requires_terrain(target_text) and terrain is None:
-            return False
+            missing.append("terrain")
         if self._tool_action_descriptor_requires_model(target_text) and model is None:
-            return False
-        return True
+            missing.append("model")
+        required_context = list(effect_params.get("required_context", []) or effect_params.get("required_context_keys", []) or [])
+        for key in required_context:
+            key_text = str(key or "").strip()
+            if key_text and kwargs.get(key_text) is None:
+                missing.append(key_text)
+        needs_support = (
+            "source_and" in target_text
+            or ("within_6" in target_text and "_and_" in target_text)
+            or bool(effect_params.get("requires_support_unit", False))
+        )
+        if needs_support and support_unit is None:
+            missing.append("support_unit")
+        return sorted(set(missing))
+
+    def _tool_action_probe_has_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> bool:
+        return not self._tool_action_missing_required_bindings(stratagem, kwargs)
+
+    def _record_tool_action_probe_diagnostic(
+        self,
+        *,
+        stratagem: Stratagem,
+        kwargs: Dict[str, Any],
+        missing_keys: List[str],
+        severity: str = "WARNING",
+        code: str = "missing_tool_action_context",
+        resolver: str = "generic_tool_action_builder",
+    ) -> None:
+        normalized_missing = sorted({str(key or "").strip() for key in list(missing_keys or []) if str(key or "").strip()})
+        if not normalized_missing:
+            return
+        identity = self._stratagem_tool_payload_identity(stratagem)
+        tool_name = str(identity.get("tool_name", "") or getattr(stratagem, "name", "") or "Tool")
+        phase_name = str(kwargs.get("phase_name", "") or self._resolved_phase_name() or "")
+        player_id = str(getattr(self.player, "id", "") or "")
+        source_unit = kwargs.get("source_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        source_unit_id = self._tool_action_sort_key(source_unit)
+        diagnostic = {
+            "code": str(code or "missing_tool_action_context"),
+            "severity": str(severity or "WARNING").upper(),
+            "tool_name": tool_name,
+            "stratagem_name": str(getattr(stratagem, "name", "") or tool_name),
+            "phase": phase_name,
+            "player_id": player_id,
+            "detachment": str(getattr(stratagem, "detachment", "") or ""),
+            "source_unit_id": str(source_unit_id or ""),
+            "missing_keys": normalized_missing,
+            "context_keys": sorted(str(key) for key in dict(kwargs or {}).keys()),
+            "resolver": str(resolver or "generic_tool_action_builder"),
+        }
+        key = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        keys = getattr(self, "_tool_action_probe_diagnostic_keys", None)
+        if not isinstance(keys, set):
+            keys = set()
+            self._tool_action_probe_diagnostic_keys = keys
+        if key in keys:
+            return
+        keys.add(key)
+        diagnostics = getattr(self, "_tool_action_probe_diagnostics", None)
+        if not isinstance(diagnostics, list):
+            diagnostics = []
+            self._tool_action_probe_diagnostics = diagnostics
+        diagnostics.append(diagnostic)
+        game = getattr(self, "game", None)
+        if game is not None:
+            game_diagnostics = getattr(game, "tool_action_probe_diagnostics", None)
+            if not isinstance(game_diagnostics, list):
+                game_diagnostics = []
+                setattr(game, "tool_action_probe_diagnostics", game_diagnostics)
+            game_diagnostics.append(dict(diagnostic))
+        log_fn = logger.error if str(diagnostic["severity"]).upper() == "ERROR" else logger.warning
+        log_fn("TOOL_ACTION_PROBE_DIAGNOSTIC %s", json.dumps(diagnostic, sort_keys=True, ensure_ascii=True))
+
+    def get_tool_action_probe_diagnostics(self) -> List[Dict[str, Any]]:
+        return [dict(entry or {}) for entry in list(getattr(self, "_tool_action_probe_diagnostics", []) or [])]
 
     @staticmethod
     def _tool_action_sort_key(value: Any) -> str:
+        return StratagemManager._tool_action_stable_context_key(value)
+
+    @staticmethod
+    def _tool_action_stable_context_key(value: Any) -> str:
         if value is None:
             return ""
+        if isinstance(value, Enum):
+            return f"{value.__class__.__name__}.{value.name}"
         if isinstance(value, str):
             return value
+        if isinstance(value, (int, float, bool)):
+            return str(value)
         if isinstance(value, dict):
-            return str(value.get("id", "") or value.get("_id", "") or "")
-        return str(getattr(value, "id", None) or getattr(value, "_id", None) or "")
+            entity_id = str(value.get("id", "") or value.get("_id", "") or "")
+            if entity_id:
+                return entity_id
+            return json.dumps(
+                {
+                    str(key): StratagemManager._tool_action_stable_context_key(item)
+                    for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+        if isinstance(value, (list, tuple)):
+            return json.dumps(
+                [StratagemManager._tool_action_stable_context_key(item) for item in value],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+        if isinstance(value, set):
+            parts = [StratagemManager._tool_action_stable_context_key(item) for item in value]
+            return json.dumps(sorted(parts), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        entity_id = str(getattr(value, "id", None) or getattr(value, "_id", None) or "")
+        if entity_id:
+            return entity_id
+        return str(value)
 
     def _tool_action_root_units(self, units: List[Any]) -> List[Any]:
         deduped: Dict[str, Any] = {}
@@ -3836,6 +3962,14 @@ class StratagemManager(
     def _serialize_tool_action_value(self, value: Any) -> Any:
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
+        if isinstance(value, Enum):
+            return {
+                "__enum_ref__": {
+                    "type": value.__class__.__name__,
+                    "name": value.name,
+                    "value": self._serialize_tool_action_value(value.value),
+                }
+            }
         if isinstance(value, dict):
             return {
                 str(key): self._serialize_tool_action_value(item)
@@ -3847,7 +3981,7 @@ class StratagemManager(
             serialized = [self._serialize_tool_action_value(item) for item in value]
             serialized.sort(key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True))
             return serialized
-        entity_id = str(get_entity_id(value) or "")
+        entity_id = str(getattr(value, "id", None) or getattr(value, "_id", None) or "")
         if entity_id:
             return {
                 "__entity_ref__": {
@@ -3981,7 +4115,16 @@ class StratagemManager(
             resolved_phase_name = self._resolved_phase_name()
             if resolved_phase_name:
                 probe["phase_name"] = resolved_phase_name
-        if not self._tool_action_probe_has_required_bindings(stratagem, probe):
+        missing_bindings = self._tool_action_missing_required_bindings(stratagem, probe)
+        if missing_bindings:
+            self._record_tool_action_probe_diagnostic(
+                stratagem=stratagem,
+                kwargs=probe,
+                missing_keys=missing_bindings,
+                severity="WARNING",
+                code="missing_tool_action_context",
+                resolver="generic_tool_action_builder",
+            )
             return
         if not self.can_use(str(getattr(stratagem, "name", "") or ""), **probe):
             return
@@ -4347,6 +4490,19 @@ class StratagemManager(
                     )
 
         if needs_transport:
+            for transport in transports:
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "transport_unit": transport,
+                        "transport": transport,
+                    },
+                    label_suffix=self._tool_action_label_value(transport),
+                )
             for unit in candidate_units:
                 for transport in transports:
                     self._tool_action_add_probe(
@@ -22165,6 +22321,12 @@ class StratagemManager(
             return False
         if name_u == "WARP SURGE" and not self._can_use_warp_surge(kwargs):
             return False
+        if name_u in {"DAEMONIC FURY", "DAEMONTIDE"} and not self._we_can_use_khorne_daemonkin_tool_action(name_u, kwargs):
+            return False
+        if name_u == "SYCOPHANTIC SURGE" and not self._ec_can_use_carnival_sycophantic_surge_tool_action(kwargs):
+            return False
+        if name_u == "VIOLENT CRESCENDO" and not self._ec_can_use_carnival_violent_crescendo_tool_action(kwargs):
+            return False
         if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
@@ -30902,6 +31064,8 @@ class StratagemManager(
         if not phase_label:
             return {}
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "VIOLENT CRESCENDO":
+            return dict(self._ec_carnival_violent_crescendo_tool_action_context() or {})
         if not is_active_turn:
             return {}
         if name_u == "DENIZENS OF THE WARP":
@@ -30920,6 +31084,10 @@ class StratagemManager(
             if phase_label.lower() != "shooting phase":
                 return {}
             return dict(self._grenade_phase_action_context() or {})
+        if name_u in {"DAEMONIC FURY", "DAEMONTIDE"}:
+            return dict(self._we_khorne_daemonkin_tool_action_context(name_u) or {})
+        if name_u == "SYCOPHANTIC SURGE":
+            return dict(self._ec_carnival_sycophantic_surge_tool_action_context() or {})
         if name_u == "WARP SURGE":
             if phase_label.lower() != "charge phase":
                 return {}

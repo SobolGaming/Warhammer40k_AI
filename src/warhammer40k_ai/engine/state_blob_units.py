@@ -55,6 +55,31 @@ def unit_centroid(unit: object, *, alive_models_override: list[object] | None = 
     return (total_x / count, total_y / count, total_z / count)
 
 
+def _reserve_metadata_value(unit: object, key: str, default: Any = "") -> Any:
+    value = getattr(unit, key, None)
+    if value not in (None, ""):
+        return value
+    special_rules = getattr(unit, "special_rules", None)
+    if isinstance(special_rules, dict):
+        return special_rules.get(key, default)
+    return default
+
+
+def reserve_last_arrival_failure(unit: object) -> dict[str, Any] | str:
+    failure = _reserve_metadata_value(unit, "reserve_last_arrival_failure", "")
+    if not isinstance(failure, dict):
+        return str(failure or "")
+    return {
+        "reason": str(failure.get("reason", "") or ""),
+        "anchor_attempts": int(failure.get("anchor_attempts", 0) or 0),
+        "build_calls": int(failure.get("build_calls", 0) or 0),
+        "validation_rejects": int(failure.get("validation_rejects", 0) or 0),
+        "quick_rejects": int(failure.get("quick_rejects", 0) or 0),
+        "timed_out": bool(failure.get("timed_out", False)),
+        "elapsed_ms": int(failure.get("elapsed_ms", 0) or 0),
+    }
+
+
 def distance_2d(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
     dx = float(a[0]) - float(b[0])
     dy = float(a[1]) - float(b[1])
@@ -316,6 +341,14 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
             }
             if include_hidden or str(getattr(player, "id", "") or "") == str(viewer_id or ""):
                 entry["reserve_status"] = str(getattr(unit, "reserve_status", "") or "")
+                entry["reserve_source"] = str(_reserve_metadata_value(unit, "reserve_source", "") or "")
+                entry["reserve_mandatory_start"] = bool(
+                    _reserve_metadata_value(unit, "reserve_mandatory_start", False)
+                )
+                entry["reserve_latest_arrival_round"] = int(
+                    _reserve_metadata_value(unit, "reserve_latest_arrival_round", 0) or 0
+                )
+                entry["reserve_last_arrival_failure"] = reserve_last_arrival_failure(unit)
             units.append((unit_id, entry))
     units.sort(key=lambda item: item[0])
     return [entry for _unit_id, entry in units]

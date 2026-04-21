@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from warhammer40k_ai.roster.army import parse_army_list_text
+from warhammer40k_ai.roster.army import ArmyValidationError, parse_army_list_text
+from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, RosterEntry
 from warhammer40k_ai.roster.army_muster import ArmyMusterer
 from warhammer40k_ai.roster.roster_synthesis import (
     RosterSynthesisCatalog,
@@ -118,6 +119,152 @@ def test_catalog_enumerates_faction_datasheets_points_and_detachments(
     assert not any("Boarding" in option.name for option in detachments)
     enhancement_options = catalog.enhancement_options("WE", detachment_name="Khorne Daemonkin")
     assert any(option.name == "Disciple of Khorne" for option in enhancement_options)
+
+
+@pytest.mark.integration
+def test_khorne_daemonkin_musters_blood_legions_as_allies_not_primary_faction(
+    waha_helper: WahaHelper,
+) -> None:
+    catalog = RosterSynthesisCatalog(waha_helper)
+    bloodletters = next(
+        option
+        for option in catalog.unit_options("CD")
+        if option.normalized_name == "bloodletters" and "khorne" in option.keyword_set
+    )
+    blueprint = ArmyBlueprint(
+        faction="World Eaters",
+        points_limit=1000,
+        battle_size="Incursion",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_khorne_daemonkin",
+                detachment_type="Khorne Daemonkin",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_master_of_executions",
+                name="Master of Executions",
+                count=1,
+                detachment_selection_id="detachment_khorne_daemonkin",
+                is_warlord=True,
+            ),
+            RosterEntry(
+                entry_id="unit_bloodletters",
+                name=bloodletters.name,
+                count=bloodletters.model_count,
+                detachment_selection_id="detachment_khorne_daemonkin",
+                metadata={
+                    "datasheet_id": bloodletters.datasheet_id,
+                    "catalog_points": bloodletters.points,
+                    "catalog_faction_id": "CD",
+                    "ally_source_rule": "Pact of Blood",
+                    "allied_faction": "Blood Legions",
+                    "parent_faction": "World Eaters",
+                    "parent_faction_id": "WE",
+                    "ally_context": {
+                        "ally_source_rule": "Pact of Blood",
+                        "allied_faction": "Blood Legions",
+                        "parent_faction": "World Eaters",
+                    },
+                },
+            ),
+        ],
+    )
+
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(blueprint)
+
+    assert army.faction == "World Eaters"
+    assert army.faction_id == "WE"
+    allied = next(unit for unit in army.units if unit.name == bloodletters.name)
+    assert allied.special_rules["ally_source_rule"] == "Pact of Blood"
+    assert allied.special_rules["allied_faction"] == "Blood Legions"
+
+
+@pytest.mark.integration
+def test_carnival_of_excess_musters_legions_of_excess_as_allies(
+    waha_helper: WahaHelper,
+) -> None:
+    catalog = RosterSynthesisCatalog(waha_helper)
+    daemonettes = next(
+        option
+        for option in catalog.unit_options("CD")
+        if option.normalized_name == "daemonettes" and "slaanesh" in option.keyword_set
+    )
+    blueprint = ArmyBlueprint(
+        faction="Emperor's Children",
+        points_limit=1000,
+        battle_size="Incursion",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_carnival_of_excess",
+                detachment_type="Carnival of Excess",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_lord_exultant",
+                name="Lord Exultant",
+                count=1,
+                detachment_selection_id="detachment_carnival_of_excess",
+                is_warlord=True,
+            ),
+            RosterEntry(
+                entry_id="unit_daemonettes",
+                name=daemonettes.name,
+                count=daemonettes.model_count,
+                detachment_selection_id="detachment_carnival_of_excess",
+                metadata={
+                    "datasheet_id": daemonettes.datasheet_id,
+                    "catalog_points": daemonettes.points,
+                    "catalog_faction_id": "CD",
+                    "ally_source_rule": "Pact of Excess",
+                    "allied_faction": "Legions of Excess",
+                    "parent_faction": "Emperor's Children",
+                    "parent_faction_id": "EC",
+                    "ally_context": {
+                        "ally_source_rule": "Pact of Excess",
+                        "allied_faction": "Legions of Excess",
+                        "parent_faction": "Emperor's Children",
+                    },
+                },
+            ),
+        ],
+    )
+
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(blueprint)
+
+    assert army.faction == "Emperor's Children"
+    assert army.faction_id == "EC"
+    allied = next(unit for unit in army.units if unit.name == daemonettes.name)
+    assert allied.special_rules["ally_source_rule"] == "Pact of Excess"
+    assert allied.special_rules["allied_faction"] == "Legions of Excess"
+
+
+def test_pact_daemon_factions_are_not_supported_primary_factions() -> None:
+    blueprint = ArmyBlueprint(
+        faction="Blood Legions",
+        points_limit=1000,
+        battle_size="Incursion",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_blood_legions",
+                detachment_type="Khorne Daemonkin",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_bloodletters",
+                name="Bloodletters",
+                count=10,
+                detachment_selection_id="detachment_blood_legions",
+                is_warlord=True,
+            )
+        ],
+    )
+
+    with pytest.raises(ArmyValidationError, match="Unsupported army faction 'Blood Legions'"):
+        ArmyMusterer(WahaHelper()).validate_request(blueprint)
 
 
 @pytest.mark.integration

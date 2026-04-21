@@ -46,6 +46,55 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _collect_tool_action_probe_diagnostics(game: object) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in list(getattr(game, "tool_action_probe_diagnostics", []) or []):
+        item = _json_safe(dict(entry or {}))
+        key = json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        diagnostics.append(dict(item))
+    for player in list(getattr(game, "players", []) or []):
+        manager = getattr(player, "stratagems", None)
+        get_diagnostics = getattr(manager, "get_tool_action_probe_diagnostics", None)
+        if not callable(get_diagnostics):
+            continue
+        for entry in list(get_diagnostics() or []):
+            item = _json_safe(dict(entry or {}))
+            key = json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            if key in seen:
+                continue
+            seen.add(key)
+            diagnostics.append(dict(item))
+    return diagnostics
+
+
+def _collect_reserve_arrival_diagnostics(game: object) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in list(getattr(game, "reserve_arrival_diagnostics", []) or []):
+        item = _json_safe(dict(entry or {}))
+        key = json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        diagnostics.append(dict(item))
+    return diagnostics
+
+
+def _tool_action_probe_diagnostic_summary(diagnostics: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for diagnostic in list(diagnostics or []):
+        item = dict(diagnostic or {})
+        tool_name = str(item.get("tool_name", "") or "<unknown>")
+        code = str(item.get("code", "") or "<unknown>")
+        severity = str(item.get("severity", "") or "WARNING")
+        counts[f"{severity}:{tool_name}:{code}"] += 1
+    return dict(counts)
+
+
 def _setup_logging(log_level: str) -> logging.Logger:
     level_name = str(log_level or "WARNING").strip().upper() or "WARNING"
     level = logging.getLevelNamesMapping().get(level_name, logging.WARNING)
@@ -297,7 +346,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report-output",
         default="",
-        help="Optional JSON report path with per-game outcomes and aggregate self-play metadata.",
+        help="Optional JSON report path with per-game outcomes, diagnostics, and aggregate self-play metadata.",
     )
     return parser.parse_args()
 
@@ -396,10 +445,11 @@ def _run_single_game(
         seed_fn = getattr(random_source, "seed", None)
         if callable(seed_fn):
             seed_fn(int(game_seed))
-    HeadlessPolicyDecisionController(
+    controller = HeadlessPolicyDecisionController(
         game=game,
         auto_attach=True,
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+        reserve_policy=str(reserve_policy or "forced_only"),
     )
     runtime = LocalAuthoritativeRuntime(
         game,
@@ -520,6 +570,10 @@ def _run_single_game(
         )
         game.session_id = stable_game_id
     records = _export_decision_records(list(getattr(game.decision_record_store, "records", []) or []))
+    tool_action_probe_diagnostics = _collect_tool_action_probe_diagnostics(game)
+    reserve_arrival_diagnostics = _collect_reserve_arrival_diagnostics(game)
+    get_reserves_metrics = getattr(controller, "get_reserves_arrival_search_metrics", None)
+    reserves_arrival_search_metrics = list(get_reserves_metrics() or []) if callable(get_reserves_metrics) else []
     return {
         "game_id": stable_game_id,
         "records": records,
@@ -528,6 +582,9 @@ def _run_single_game(
         "winner_army_label": str(winner_army_label or ""),
         "winner_score_line": str(winner_score_line or ""),
         "scoreboard": scoreboard,
+        "tool_action_probe_diagnostics": tool_action_probe_diagnostics,
+        "reserve_arrival_diagnostics": reserve_arrival_diagnostics,
+        "reserves_arrival_search_metrics": reserves_arrival_search_metrics,
         "replay_session_id": replay_session_id if replay_path is not None else "",
         "replay_path": str(replay_path) if replay_path is not None else "",
         "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
@@ -576,6 +633,9 @@ def _run_single_game_job(
         "winner_army_label": str(result.get("winner_army_label", "") or ""),
         "winner_score_line": str(result.get("winner_score_line", "") or ""),
         "scoreboard": _json_safe(dict(result.get("scoreboard", {}) or {})),
+        "tool_action_probe_diagnostics": _json_safe(list(result.get("tool_action_probe_diagnostics", []) or [])),
+        "reserve_arrival_diagnostics": _json_safe(list(result.get("reserve_arrival_diagnostics", []) or [])),
+        "reserves_arrival_search_metrics": _json_safe(list(result.get("reserves_arrival_search_metrics", []) or [])),
         "replay_session_id": str(result.get("replay_session_id", "") or ""),
         "replay_path": str(result.get("replay_path", "") or ""),
         "snapshot_path": str(result.get("snapshot_path", "") or ""),
@@ -615,6 +675,8 @@ def run_headless_self_play(
     all_records: list[dict[str, Any]] = []
     total_phase_steps = 0
     decision_type_counts: Counter[str] = Counter()
+    tool_probe_diagnostic_counts: Counter[str] = Counter()
+    reserve_arrival_diagnostic_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
 
@@ -643,6 +705,11 @@ def run_headless_self_play(
                 f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
                 f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
             )
+            diagnostic_summary = _tool_action_probe_diagnostic_summary(
+                list(result.get("tool_action_probe_diagnostics", []) or [])
+            )
+            if diagnostic_summary:
+                print(f"Tool probe diagnostics for game {game_index + 1}: {diagnostic_summary}")
     else:
         max_workers = min(workers, games)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -676,6 +743,11 @@ def run_headless_self_play(
                     f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
                     f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
                 )
+                diagnostic_summary = _tool_action_probe_diagnostic_summary(
+                    list(result.get("tool_action_probe_diagnostics", []) or [])
+                )
+                if diagnostic_summary:
+                    print(f"Tool probe diagnostics for game {game_index + 1}: {diagnostic_summary}")
 
     per_game_outputs.sort(key=lambda item: int(item.get("game_index", 0) or 0))
     for payload in per_game_outputs:
@@ -697,6 +769,17 @@ def run_headless_self_play(
             decision_type = str(record.get("decision_type", "") or "")
             if decision_type:
                 decision_type_counts[decision_type] += 1
+        for diagnostic in list(result.get("tool_action_probe_diagnostics", []) or []):
+            item = dict(diagnostic or {})
+            tool_name = str(item.get("tool_name", "") or "<unknown>")
+            code = str(item.get("code", "") or "<unknown>")
+            severity = str(item.get("severity", "") or "WARNING")
+            tool_probe_diagnostic_counts[f"{severity}:{tool_name}:{code}"] += 1
+        for diagnostic in list(result.get("reserve_arrival_diagnostics", []) or []):
+            item = dict(diagnostic or {})
+            code = str(item.get("code", "") or "<unknown>")
+            severity = str(item.get("severity", "") or "WARNING")
+            reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
 
     exported_records = all_records
     if not bool(no_reward_annotation):
@@ -729,6 +812,10 @@ def run_headless_self_play(
         print(f"Winner counts: {dict(winner_counts)}")
         print(f"Game outcomes: {game_outcomes}")
     print(f"Top decision types: {dict(decision_type_counts.most_common(10))}")
+    if tool_probe_diagnostic_counts:
+        print(f"Tool probe diagnostics: {dict(tool_probe_diagnostic_counts.most_common(20))}")
+    if reserve_arrival_diagnostic_counts:
+        print(f"Reserve arrival diagnostics: {dict(reserve_arrival_diagnostic_counts.most_common(20))}")
     print(f"Wrote: {output_path}")
     replay_root = _resolved_replay_base_dir(str(replay_dir))
     if replay_root is not None:
@@ -760,6 +847,8 @@ def run_headless_self_play(
         "phase_steps": int(total_phase_steps),
         "decision_record_count": int(len(exported_records)),
         "decision_type_counts": dict(decision_type_counts),
+        "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
+        "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
         "game_outcomes": game_outcomes,
         "records_output_path": str(output_path.resolve()),
         "replay_dir": "" if replay_root is None else str(replay_root),

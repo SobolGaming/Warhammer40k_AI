@@ -38,6 +38,90 @@ def _find_points_limit(raw_lines: list[str], *, file_path: str) -> int:
     raise ValueError(f"Could not find points limit in army list header: {file_path!r}")
 
 
+def _normalized_detachment_name(value: object) -> str:
+    text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _datasheet_has_keyword(datasheet: object, keyword: str) -> bool:
+    target = str(keyword or "").strip().upper()
+    if not target or datasheet is None:
+        return False
+    keywords = [
+        str(value or "").strip().upper()
+        for value in list(getattr(datasheet, "keywords", []) or [])
+        if str(value or "").strip()
+    ]
+    faction_keywords = [
+        str(value or "").strip().upper()
+        for value in list(getattr(datasheet, "faction_keywords", []) or [])
+        if str(value or "").strip()
+    ]
+    return target in set(keywords + faction_keywords)
+
+
+def _pact_ally_datasheet_metadata(
+    datasheet: object,
+    *,
+    faction_id: str,
+    detachment_type: str,
+) -> dict[str, str]:
+    if str(getattr(datasheet, "faction_id", "") or "").strip().upper() != "CD":
+        return {}
+    primary = str(faction_id or "").strip().upper()
+    detachment_key = _normalized_detachment_name(detachment_type)
+    if primary == "WE" and "khorne daemonkin" in detachment_key and _datasheet_has_keyword(datasheet, "KHORNE"):
+        return {
+            "ally_source_rule": "Pact of Blood",
+            "allied_faction": "Blood Legions",
+            "parent_faction": "World Eaters",
+            "parent_faction_id": "WE",
+        }
+    if primary == "EC" and "carnival of excess" in detachment_key and _datasheet_has_keyword(datasheet, "SLAANESH"):
+        return {
+            "ally_source_rule": "Pact of Excess",
+            "allied_faction": "Legions of Excess",
+            "parent_faction": "Emperor's Children",
+            "parent_faction_id": "EC",
+        }
+    return {}
+
+
+def _resolve_pact_ally_datasheet(
+    waha_helper: WahaHelper,
+    unit_name: str,
+    *,
+    faction_id: str,
+    detachment_type: str,
+) -> tuple[object | None, dict[str, str]]:
+    if str(faction_id or "").strip().upper() not in {"WE", "EC"}:
+        return (None, {})
+    datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id="CD")
+    metadata = _pact_ally_datasheet_metadata(
+        datasheet,
+        faction_id=faction_id,
+        detachment_type=detachment_type,
+    )
+    if not metadata:
+        return (None, {})
+    return (datasheet, metadata)
+
+
+def _apply_pact_ally_metadata(unit: Unit, metadata: dict[str, str]) -> None:
+    if not metadata:
+        return
+    build_metadata = dict(getattr(unit, "build_metadata", {}) or {})
+    build_metadata["ally_context"] = dict(metadata)
+    build_metadata.update(dict(metadata))
+    unit.build_metadata = build_metadata
+    special_rules = getattr(unit, "special_rules", None)
+    if not isinstance(special_rules, dict):
+        special_rules = {}
+    special_rules["ally_context"] = dict(metadata)
+    special_rules.update(dict(metadata))
+    unit.special_rules = special_rules
+
+
 def _is_app_export(raw_lines: list[str]) -> bool:
     return any("exported with app version" in (line or "").lower() for line in raw_lines)
 
@@ -231,6 +315,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 is_warlord = False
 
             unit_name = line.split(" (")[0].strip()
+            ally_metadata: dict[str, str] = {}
             if faction_id:
                 datasheet = waha_helper.get_full_datasheet_info_by_name(
                     unit_name,
@@ -242,11 +327,18 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                         unit_name,
                         faction_id,
                     )
+                    datasheet, ally_metadata = _resolve_pact_ally_datasheet(
+                        waha_helper,
+                        unit_name,
+                        faction_id=faction_id,
+                        detachment_type=detachment_type,
+                    )
             else:
                 datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
 
             if datasheet:
                 current_unit = Unit(datasheet)
+                _apply_pact_ally_metadata(current_unit, ally_metadata)
             else:
                 logger.warning("Warning: Datasheet not found for %s", unit_name)
             continue

@@ -2976,6 +2976,85 @@ class Army:
         ]
         return kw in set(keywords + faction_keywords)
 
+    def _detachment_daemon_pact_config(self) -> dict[str, str]:
+        faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if faction_id == "WE" and self.has_detachment_type("Khorne Daemonkin", faction_id="WE"):
+            return {
+                "ally_source_rule": "Pact of Blood",
+                "allied_faction": "Blood Legions",
+                "parent_faction": "World Eaters",
+                "parent_faction_id": "WE",
+                "god_keyword": "KHORNE",
+            }
+        if faction_id == "EC" and self.has_detachment_type("Carnival of Excess", faction_id="EC"):
+            return {
+                "ally_source_rule": "Pact of Excess",
+                "allied_faction": "Legions of Excess",
+                "parent_faction": "Emperor's Children",
+                "parent_faction_id": "EC",
+                "god_keyword": "SLAANESH",
+            }
+        return {}
+
+    @staticmethod
+    def _detachment_daemon_pact_context(unit) -> dict[str, str]:
+        context: dict[str, str] = {}
+        for source in (
+            getattr(unit, "build_metadata", None),
+            getattr(unit, "special_rules", None),
+        ):
+            if not isinstance(source, dict):
+                continue
+            nested = source.get("ally_context")
+            if isinstance(nested, dict):
+                for key, value in nested.items():
+                    if str(value or "").strip():
+                        context[str(key)] = str(value)
+            for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id"):
+                value = source.get(key)
+                if str(value or "").strip():
+                    context[key] = str(value)
+        return context
+
+    def _is_detachment_daemon_pact_unit(self, unit, config: dict[str, str]) -> bool:
+        if unit is None or not config:
+            return False
+        context = self._detachment_daemon_pact_context(unit)
+        if not context:
+            return False
+        for key in ("ally_source_rule", "parent_faction_id"):
+            if str(context.get(key, "") or "").strip().upper() != str(config.get(key, "") or "").strip().upper():
+                return False
+        allied_faction = str(context.get("allied_faction", "") or "").strip().upper()
+        if allied_faction and allied_faction != str(config.get("allied_faction", "") or "").strip().upper():
+            return False
+        parent_faction = str(context.get("parent_faction", "") or "").strip().upper()
+        if parent_faction and parent_faction != str(config.get("parent_faction", "") or "").strip().upper():
+            return False
+        god_keyword = str(config.get("god_keyword", "") or "").strip().upper()
+        return bool(god_keyword and self._unit_has_any_keyword(unit, god_keyword))
+
+    def _validate_detachment_daemon_pact_units(self, pact_units: list, config: dict[str, str]) -> None:
+        if not pact_units:
+            return
+        source_rule = str(config.get("ally_source_rule", "Pact") or "Pact")
+        allied_faction = str(config.get("allied_faction", "daemon") or "daemon")
+        for unit in pact_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"{source_rule}: allied unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            if getattr(unit, "enhancement", None) is not None:
+                raise ArmyValidationError(
+                    f"{source_rule}: allied unit '{getattr(unit, 'name', 'Unknown')}' cannot take Enhancements."
+                )
+        cap = self._daemonic_pact_points_cap()
+        total = sum(int(unit.get_unit_cost()) for unit in pact_units)
+        if cap <= 0 or total > cap:
+            raise ArmyValidationError(
+                f"{source_rule}: {allied_faction} allies total {total} points (cap {cap})."
+            )
+
     def _validate_daemonic_pact(self) -> None:
         """
         Chaos Daemons army rule (Daemonic Pact):
@@ -2991,6 +3070,13 @@ class Army:
         faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
         if faction_id == "CD":
             return
+        pact_config = self._detachment_daemon_pact_config()
+        pact_units = [unit for unit in daemon_units if self._is_detachment_daemon_pact_unit(unit, pact_config)]
+        if pact_units:
+            self._validate_detachment_daemon_pact_units(pact_units, pact_config)
+            daemon_units = [unit for unit in daemon_units if unit not in pact_units]
+            if not daemon_units:
+                return
         if faction_id not in {"CSM", "QT"}:
             raise ArmyValidationError("Daemonic Pact: LEGIONES DAEMONICA units are only allowed in Chaos Knights or Heretic Astartes armies.")
 

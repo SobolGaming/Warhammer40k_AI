@@ -831,6 +831,58 @@ def _option_matches_army_faction(
     return bool(faction_keywords & _faction_keyword_aliases(faction_id, blueprint_faction))
 
 
+def _pact_ally_metadata_for_option(
+    *,
+    primary_faction_id: str,
+    detachment_name: str,
+    option: CatalogUnitOption,
+) -> dict[str, str]:
+    if str(option.faction_id or "").strip().upper() != "CD":
+        return {}
+    primary = str(primary_faction_id or "").strip().upper()
+    detachment_key = _normalize_text(detachment_name)
+    keywords = option.keyword_set
+    if primary == "WE" and "khorne daemonkin" in detachment_key:
+        if "blood legions" in keywords or "khorne" in keywords:
+            return {
+                "ally_source_rule": "Pact of Blood",
+                "allied_faction": "Blood Legions",
+                "parent_faction": "World Eaters",
+            }
+    if primary == "EC" and "carnival of excess" in detachment_key:
+        if "legions of excess" in keywords or "slaanesh" in keywords:
+            return {
+                "ally_source_rule": "Pact of Excess",
+                "allied_faction": "Legions of Excess",
+                "parent_faction": "Emperor's Children",
+            }
+    return {}
+
+
+def _pact_ally_options_for_detachment(
+    catalog: RosterSynthesisCatalog,
+    *,
+    primary_faction_id: str,
+    detachment_name: str,
+    max_points: int,
+) -> list[CatalogUnitOption]:
+    if str(primary_faction_id or "").strip().upper() not in {"WE", "EC"}:
+        return []
+    if int(max_points or 0) < 1000:
+        return []
+    options: list[CatalogUnitOption] = []
+    for option in catalog.unit_options("CD"):
+        if option.points > max_points:
+            continue
+        if _pact_ally_metadata_for_option(
+            primary_faction_id=primary_faction_id,
+            detachment_name=detachment_name,
+            option=option,
+        ):
+            options.append(option)
+    return options
+
+
 def _style_unit_score(option: CatalogUnitOption, style_tags: Sequence[str]) -> float:
     tags = set(style_tags or ())
     keyword_set = option.keyword_set
@@ -930,6 +982,8 @@ def _entry_for_option(
     entry_index: int,
     detachment_selection_id: str,
     is_warlord: bool = False,
+    primary_faction_id: str = "",
+    ally_metadata: Mapping[str, str] | None = None,
 ) -> RosterEntry:
     wargear_by_model = catalog.default_wargear_by_model(option)
     flattened_wargear: list[str] = []
@@ -938,6 +992,20 @@ def _entry_for_option(
             flattened_wargear.append(
                 f"{model_name}: {int(assignment['quantity'])}x {assignment['name']}"
             )
+    metadata = {
+        "source": "roster_synthesis",
+        "datasheet_id": option.datasheet_id,
+        "catalog_points": option.points,
+        "role": option.role,
+        "keywords": list(option.keywords),
+        "faction_keywords": list(option.faction_keywords),
+        "catalog_faction_id": option.faction_id,
+        "wargear_by_model": wargear_by_model,
+    }
+    if ally_metadata:
+        metadata.update(dict(ally_metadata))
+        metadata["ally_context"] = dict(ally_metadata)
+        metadata["parent_faction_id"] = str(primary_faction_id or "")
     return RosterEntry(
         entry_id=f"synth_unit_{entry_index:03d}",
         name=option.name,
@@ -946,15 +1014,7 @@ def _entry_for_option(
         wargear=flattened_wargear,
         enhancement_names=[],
         is_warlord=bool(is_warlord),
-        metadata={
-            "source": "roster_synthesis",
-            "datasheet_id": option.datasheet_id,
-            "catalog_points": option.points,
-            "role": option.role,
-            "keywords": list(option.keywords),
-            "faction_keywords": list(option.faction_keywords),
-            "wargear_by_model": wargear_by_model,
-        },
+        metadata=metadata,
     )
 
 
@@ -1431,6 +1491,16 @@ def _construct_candidate_blueprint(
             blueprint_faction=blueprint_faction,
         )
     ]
+    all_options.extend(
+        option
+        for option in _pact_ally_options_for_detachment(
+            catalog,
+            primary_faction_id=faction_id,
+            detachment_name=detachment.name,
+            max_points=seed.max_points,
+        )
+        if option.normalized_name not in exclude_names
+    )
     cheapest_by_name: dict[str, CatalogUnitOption] = {}
     for option in all_options:
         if option.normalized_name not in cheapest_by_name:
@@ -1457,6 +1527,22 @@ def _construct_candidate_blueprint(
     def can_add(option: CatalogUnitOption, points_so_far: int) -> bool:
         if points_so_far + option.points > seed.max_points:
             return False
+        ally_metadata = _pact_ally_metadata_for_option(
+            primary_faction_id=faction_id,
+            detachment_name=detachment.name,
+            option=option,
+        )
+        if ally_metadata:
+            ally_points = sum(
+                int((entry.metadata or {}).get("catalog_points", 0) or 0)
+                for entry in entries
+                if (entry.metadata or {}).get("ally_source_rule") == ally_metadata["ally_source_rule"]
+            )
+            cap = 500 if int(seed.max_points or 0) <= 2000 else 750
+            if int(seed.max_points or 0) <= 1000:
+                cap = 250
+            if ally_points + option.points > cap:
+                return False
         if used_datasheets[option.datasheet_id] >= _datasheet_entry_limit(option):
             return False
         if option.is_supreme_commander and _has_warlord(entries):
@@ -1476,6 +1562,12 @@ def _construct_candidate_blueprint(
                 entry_index=len(entries) + 1,
                 detachment_selection_id=detachment_selection.selection_id,
                 is_warlord=is_warlord,
+                primary_faction_id=faction_id,
+                ally_metadata=_pact_ally_metadata_for_option(
+                    primary_faction_id=faction_id,
+                    detachment_name=detachment.name,
+                    option=option,
+                ),
             )
         )
         used_names[option.normalized_name] += 1

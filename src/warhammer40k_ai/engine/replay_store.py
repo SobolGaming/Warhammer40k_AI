@@ -371,7 +371,7 @@ class ReplayStoreRecorder:
         )
         controller_kind = _player_controller_kind(game, actor_player_id)
         with self._connect() as conn:
-            cursor = conn.execute(
+            conn.execute(
                 """
                 INSERT INTO decision_steps(
                     decision_id,
@@ -391,6 +391,42 @@ class ReplayStoreRecorder:
                     decision_record_blob
                 )
                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(decision_id) DO UPDATE SET
+                    event_start_id = CASE
+                        WHEN decision_steps.event_start_id IS NULL THEN excluded.event_start_id
+                        WHEN excluded.event_start_id IS NULL THEN decision_steps.event_start_id
+                        WHEN excluded.event_start_id < decision_steps.event_start_id THEN excluded.event_start_id
+                        ELSE decision_steps.event_start_id
+                    END,
+                    event_end_id = CASE
+                        WHEN decision_steps.event_end_id IS NULL THEN excluded.event_end_id
+                        WHEN excluded.event_end_id IS NULL THEN decision_steps.event_end_id
+                        WHEN excluded.event_end_id > decision_steps.event_end_id THEN excluded.event_end_id
+                        ELSE decision_steps.event_end_id
+                    END,
+                    request_blob = CASE
+                        WHEN decision_steps.request_blob IS NULL AND excluded.request_blob IS NOT NULL
+                            THEN excluded.request_blob
+                        ELSE decision_steps.request_blob
+                    END,
+                    decision_record_blob = CASE
+                        WHEN excluded.decision_record_blob IS NOT NULL THEN excluded.decision_record_blob
+                        ELSE decision_steps.decision_record_blob
+                    END,
+                    chosen_option_id = CASE
+                        WHEN excluded.chosen_option_id != '' THEN excluded.chosen_option_id
+                        ELSE decision_steps.chosen_option_id
+                    END,
+                    chosen_action_id = CASE
+                        WHEN excluded.chosen_action_id != '' THEN excluded.chosen_action_id
+                        ELSE decision_steps.chosen_action_id
+                    END,
+                    valid = excluded.valid,
+                    wall_clock_ms = CASE
+                        WHEN excluded.wall_clock_ms > decision_steps.wall_clock_ms THEN excluded.wall_clock_ms
+                        ELSE decision_steps.wall_clock_ms
+                    END,
+                    time_budget_ms = COALESCE(decision_steps.time_budget_ms, excluded.time_budget_ms)
                 """,
                 (
                     str(record.get("decision_id", "") or ""),
@@ -414,7 +450,11 @@ class ReplayStoreRecorder:
                     _pack_json(record),
                 ),
             )
-            decision_idx = int(cursor.lastrowid or 0)
+            row = conn.execute(
+                "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                (str(record.get("decision_id", "") or ""),),
+            ).fetchone()
+            decision_idx = int(row["decision_idx"] or 0) if row is not None else 0
         if decision_idx <= 0:
             raise RuntimeError("Failed to persist replay decision step.")
         self.last_decision_idx = max(self.last_decision_idx, decision_idx)

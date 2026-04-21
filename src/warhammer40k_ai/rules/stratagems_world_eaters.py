@@ -77,6 +77,210 @@ class WorldEatersStratagemMixin:
             return bool(has_any_keyword("WORLD EATERS"))
         return False
 
+    def _is_khorne_daemonkin_detachment(self) -> bool:
+        mgr = self._get_world_eaters_mgr()
+        checker = getattr(mgr, "is_khorne_daemonkin", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_blood_legions_unit(self, unit: Any, mgr=None) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if mgr is None:
+            mgr = self._get_world_eaters_mgr()
+        unit_is_blood_legions = getattr(mgr, "unit_is_blood_legions", None) if mgr is not None else None
+        if callable(unit_is_blood_legions):
+            return bool(unit_is_blood_legions(root))
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            return bool(has_any_keyword("BLOOD LEGIONS"))
+        return False
+
+    def _we_friendly_battlefield_units(self) -> List[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._is_unit_alive(root):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            if self._is_unit_in_reserves(root):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._goretrack_sort_key)
+
+    def _we_distance_between_units(self, first: Any, second: Any) -> Optional[float]:
+        if self.game is None or first is None or second is None:
+            return None
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return None
+        distance_fn = getattr(game_map, "get_distance_between_units", None)
+        if not callable(distance_fn):
+            return None
+        try:
+            distance = distance_fn(first, second)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if distance is None:
+            return None
+        return float(distance)
+
+    @staticmethod
+    def _we_has_returnable_blood_legions_model(unit: Any) -> bool:
+        root = unit
+        if root is None:
+            return False
+        has_keyword = getattr(root, "has_keyword", None)
+        if not callable(has_keyword):
+            return False
+        try:
+            if not (has_keyword("MOUNTED") or has_keyword("BEAST") or has_keyword("INFANTRY")):
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return bool(list(getattr(root, "models_lost", []) or []))
+
+    def _we_khorne_daemonkin_daemonic_fury_supports(self, blood_legions_unit: Any) -> List[Any]:
+        target_root = self._goretrack_root(blood_legions_unit)
+        if target_root is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        supports: List[Any] = []
+        for candidate in self._we_friendly_battlefield_units():
+            root = self._goretrack_root(candidate)
+            if root is None or root is target_root:
+                continue
+            if not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            distance = self._we_distance_between_units(target_root, root)
+            if distance is None or distance > 6.0 + 1e-6:
+                continue
+            supports.append(root)
+        return sorted(supports, key=self._goretrack_sort_key)
+
+    def _we_khorne_daemonkin_daemontide_supports(self, world_eaters_unit: Any) -> List[Any]:
+        target_root = self._goretrack_root(world_eaters_unit)
+        if target_root is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        supports: List[Any] = []
+        for candidate in self._we_friendly_battlefield_units():
+            root = self._goretrack_root(candidate)
+            if root is None or root is target_root:
+                continue
+            if not self._is_blood_legions_unit(root, mgr=mgr):
+                continue
+            if not self._we_has_returnable_blood_legions_model(root):
+                continue
+            distance = self._we_distance_between_units(target_root, root)
+            if distance is None or distance > 6.0 + 1e-6:
+                continue
+            supports.append(root)
+        return sorted(supports, key=self._goretrack_sort_key)
+
+    def _we_khorne_daemonkin_tool_action_context(self, stratagem_name: str) -> Dict[str, Any]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if not self._is_khorne_daemonkin_detachment():
+            return {}
+        mgr = self._get_world_eaters_mgr()
+        candidates: List[Any] = []
+        support_by_unit: Dict[str, List[Any]] = {}
+        for unit in self._we_friendly_battlefield_units():
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if name_u == "DAEMONIC FURY":
+                if not self._is_blood_legions_unit(root, mgr=mgr):
+                    continue
+                supports = self._we_khorne_daemonkin_daemonic_fury_supports(root)
+            elif name_u == "DAEMONTIDE":
+                if not self._is_world_eaters_unit(root, mgr=mgr):
+                    continue
+                supports = self._we_khorne_daemonkin_daemontide_supports(root)
+            else:
+                return {}
+            if not supports:
+                continue
+            candidates.append(root)
+            uid = self._goretrack_sort_key(root)
+            if uid:
+                support_by_unit[uid] = list(supports)
+        candidates = sorted(candidates, key=self._goretrack_sort_key)
+        if not candidates:
+            return {}
+        return {
+            "candidates": candidates,
+            "support_candidates_by_unit": support_by_unit,
+        }
+
+    def _we_can_use_khorne_daemonkin_tool_action(self, stratagem_name: str, kwargs: Dict[str, Any]) -> bool:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"DAEMONIC FURY", "DAEMONTIDE"}:
+            return False
+        if not self._is_khorne_daemonkin_detachment():
+            return False
+        phase_name = str((kwargs or {}).get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if name_u == "DAEMONIC FURY" and phase_name != "fight phase":
+            return False
+        if name_u == "DAEMONTIDE" and phase_name != "command phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+
+        context = dict(kwargs or {})
+        target_unit = context.get("target_unit") or context.get("unit")
+        support_unit = context.get("support_unit")
+        if name_u == "DAEMONIC FURY":
+            target_unit = target_unit or context.get("blood_legions_unit")
+            support_unit = support_unit or context.get("world_eaters_unit") or context.get("we_unit")
+        else:
+            target_unit = target_unit or context.get("world_eaters_unit")
+            support_unit = support_unit or context.get("blood_legions_unit") or context.get("bl_unit")
+
+        if target_unit is None:
+            candidate_context = self._we_khorne_daemonkin_tool_action_context(name_u)
+            return bool(candidate_context.get("candidates"))
+
+        target_root = self._goretrack_root(target_unit)
+        if target_root is None or self._unit_cannot_be_target_of_stratagem(target_root):
+            return False
+        mgr = self._get_world_eaters_mgr()
+        if name_u == "DAEMONIC FURY":
+            if not self._is_blood_legions_unit(target_root, mgr=mgr):
+                return False
+            supports = self._we_khorne_daemonkin_daemonic_fury_supports(target_root)
+        else:
+            if not self._is_world_eaters_unit(target_root, mgr=mgr):
+                return False
+            supports = self._we_khorne_daemonkin_daemontide_supports(target_root)
+        if not supports:
+            return False
+        if support_unit is None:
+            return True
+        support_root = self._goretrack_root(support_unit)
+        if support_root is None:
+            return False
+        support_id = self._goretrack_sort_key(support_root)
+        return any(self._goretrack_sort_key(candidate) == support_id for candidate in supports)
+
     def _goretrack_embarked_units(
         self,
         transport_unit: Any,

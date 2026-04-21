@@ -383,6 +383,76 @@ def test_headless_policy_controller_does_not_handle_dice_decisions() -> None:
     assert game.commands == []
 
 
+def test_headless_policy_controller_forced_only_policy_prefers_forced_reserve_allocation() -> None:
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False, reserve_policy="forced_only")
+    request = DecisionRequest.create(
+        DECISION_DECLARE_RESERVES,
+        "Declare reserves",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Optional pressure",
+                payload={
+                    "action_id": "reserve:b",
+                    "strategy_id": "deep_strike_pressure",
+                    "unit_ids_by_bucket": {"deploy": ["unit:1"], "reserves": ["unit:2"]},
+                },
+            ),
+            DecisionOption.create(
+                "Forced-only",
+                payload={
+                    "action_id": "reserve:z",
+                    "strategy_id": "forced_only",
+                    "unit_ids_by_bucket": {"deploy": ["unit:1", "unit:2"], "reserves": []},
+                },
+            ),
+        ],
+    )
+
+    ranked = controller._rank_legal_candidates(request)
+
+    assert ranked
+    assert ranked[0].action_id == "reserve:z"
+
+
+def test_headless_policy_controller_forced_only_policy_prefers_teacher_duplicate_of_forced_allocation() -> None:
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False, reserve_policy="forced_only")
+    request = DecisionRequest.create(
+        DECISION_DECLARE_RESERVES,
+        "Declare reserves",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Optional pressure",
+                payload={
+                    "action_id": "reserve:a",
+                    "strategy_id": "deep_strike_pressure",
+                    "reserve_units": 3,
+                    "reserve_points_ratio": 0.45,
+                    "strategic_points_ratio": 0.62,
+                    "unit_ids_by_bucket": {"deploy": ["unit:1"], "reserves": ["unit:2"], "strategic_reserves": ["unit:3"]},
+                },
+            ),
+            DecisionOption.create(
+                "Teacher allocation",
+                payload={
+                    "action_id": "reserve:z",
+                    "strategy_id": "teacher",
+                    "reserve_units": 0,
+                    "reserve_points_ratio": 0.0,
+                    "strategic_points_ratio": 0.0,
+                    "unit_ids_by_bucket": {"deploy": ["unit:1", "unit:2", "unit:3"], "reserves": []},
+                },
+            ),
+        ],
+    )
+
+    ranked = controller._rank_legal_candidates(request)
+
+    assert ranked
+    assert ranked[0].action_id == "reserve:z"
+
+
 def test_headless_policy_controller_skips_deployment_manager_owned_setup_requests() -> None:
     game = _FakeGame()
     controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)

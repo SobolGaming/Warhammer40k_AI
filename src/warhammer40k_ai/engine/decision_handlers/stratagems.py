@@ -29,6 +29,9 @@ def _option_payload(request: DecisionRequest, result: DecisionResult) -> dict:
 
 def _resolve_tool_action_value(game: object, value: Any) -> Any:
     if isinstance(value, dict):
+        enum_ref = value.get("__enum_ref__")
+        if isinstance(enum_ref, dict):
+            return enum_ref.get("value")
         entity_ref = value.get("__entity_ref__")
         if isinstance(entity_ref, dict):
             entity_id = str(entity_ref.get("id", "") or "")
@@ -83,6 +86,36 @@ def _prepare_tool_action(game: object, request: DecisionRequest, result: Decisio
     return manager, tool_name, kwargs, payload
 
 
+def _missing_tool_action_bindings(manager: object, tool_name: str, kwargs: dict[str, Any]) -> list[str]:
+    get_by_name = getattr(manager, "get_by_name", None)
+    stratagem = get_by_name(tool_name) if callable(get_by_name) else None
+    missing_fn = getattr(manager, "_tool_action_missing_required_bindings", None)
+    if stratagem is None or not callable(missing_fn):
+        return []
+    return list(missing_fn(stratagem, kwargs) or [])
+
+
+def _record_escaped_malformed_tool_action(
+    manager: object,
+    tool_name: str,
+    kwargs: dict[str, Any],
+    missing_keys: list[str],
+) -> None:
+    get_by_name = getattr(manager, "get_by_name", None)
+    stratagem = get_by_name(tool_name) if callable(get_by_name) else None
+    record_fn = getattr(manager, "_record_tool_action_probe_diagnostic", None)
+    if stratagem is None or not callable(record_fn):
+        return
+    record_fn(
+        stratagem=stratagem,
+        kwargs=kwargs,
+        missing_keys=missing_keys,
+        severity="ERROR",
+        code="malformed_tool_candidate_escaped_preflight",
+        resolver="select_tool_action_handler",
+    )
+
+
 def _validate_select_tool_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -97,6 +130,10 @@ def _validate_select_tool_action(game: object, request: DecisionRequest, result:
         manager, tool_name, kwargs, payload = _prepare_tool_action(game, request, result)
     except RuntimeError as exc:
         return (str(exc),)
+    missing = _missing_tool_action_bindings(manager, tool_name, kwargs)
+    if missing:
+        _record_escaped_malformed_tool_action(manager, tool_name, kwargs, missing)
+        return (f"{tool_name} missing required tool context: {', '.join(missing)}.",)
     if not bool(getattr(manager, "can_use", None) and manager.can_use(tool_name, **kwargs)):
         return (f"{tool_name} is no longer a valid tool action.",)
     return ()
@@ -109,6 +146,10 @@ def _apply_select_tool_action(game: object, request: DecisionRequest, result: De
         kwargs = {}
     else:
         manager, tool_name, kwargs, payload = _prepare_tool_action(game, request, result)
+        missing = _missing_tool_action_bindings(manager, tool_name, kwargs)
+        if missing:
+            _record_escaped_malformed_tool_action(manager, tool_name, kwargs, missing)
+            raise RuntimeError(f"{tool_name} missing required tool context: {', '.join(missing)}.")
     signature = str(dict(getattr(request, "context", {}) or {}).get("tool_action_signature", "") or "")
     if is_skip_choice(request, result):
         mark_skipped = getattr(manager, "_mark_tool_action_signature_skipped", None)

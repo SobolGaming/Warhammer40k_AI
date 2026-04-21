@@ -309,6 +309,171 @@ class EmperorsChildrenStratagemMixin:
             out.append(model)
         return sorted(out, key=lambda m: str(get_entity_id(m) or ""))
 
+    def _ec_carnival_sycophantic_surge_enemy_candidates(self, unit: Any) -> list[Any]:
+        root = self._ec_root(unit)
+        if root is None or self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        get_enemies = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemies):
+            return []
+
+        original_sr = dict(getattr(root, "special_rules", {}) or {})
+        sr = dict(original_sr)
+        sr["carnival_sycophantic_surge_active"] = True
+        sr["carnival_sycophantic_surge_charge_after_advance"] = True
+        sr["carnival_sycophantic_surge_charge_after_fall_back"] = True
+        sr["carnival_sycophantic_surge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["carnival_sycophantic_surge_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        sr["carnival_sycophantic_surge_expires_phase"] = "CHARGE_PHASE"
+        root.special_rules = sr
+        try:
+            enemy_candidates: list[Any] = []
+            seen: set[str] = set()
+            for enemy in list(get_enemies(root) or []):
+                enemy_root = self._ec_root(enemy)
+                if enemy_root is None:
+                    continue
+                eid = self._ec_sort_key(enemy_root)
+                if eid and eid in seen:
+                    continue
+                if eid:
+                    seen.add(eid)
+                if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+                    continue
+                if not self._ec_enemy_within_engagement_of_friendly(enemy_root):
+                    continue
+                can_charge = getattr(root, "can_declare_charge_against", None)
+                if not callable(can_charge):
+                    continue
+                try:
+                    if not bool(can_charge(enemy_root, self.game, out_of_turn=False)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                enemy_candidates.append(enemy_root)
+            return sorted(enemy_candidates, key=self._ec_sort_key)
+        finally:
+            root.special_rules = original_sr
+
+    def _ec_carnival_sycophantic_surge_tool_action_context(self) -> dict[str, Any]:
+        if not self._is_carnival_of_excess_detachment():
+            return {}
+        candidates: list[Any] = []
+        enemy_by_unit: dict[str, list[Any]] = {}
+        enemy_union: list[Any] = []
+        seen_enemy: set[str] = set()
+        for unit in self._ec_friendly_battlefield_units():
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_legions_of_excess_unit(root):
+                continue
+            enemies = self._ec_carnival_sycophantic_surge_enemy_candidates(root)
+            if not enemies:
+                continue
+            candidates.append(root)
+            uid = self._ec_sort_key(root)
+            if uid:
+                enemy_by_unit[uid] = list(enemies)
+            for enemy in enemies:
+                eid = self._ec_sort_key(enemy)
+                if eid and eid in seen_enemy:
+                    continue
+                if eid:
+                    seen_enemy.add(eid)
+                enemy_union.append(enemy)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return {}
+        return {
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_by_unit,
+            "enemy_candidates": sorted(enemy_union, key=self._ec_sort_key),
+        }
+
+    def _ec_can_use_carnival_sycophantic_surge_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str((kwargs or {}).get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        unit = (kwargs or {}).get("unit") or (kwargs or {}).get("target_unit")
+        if unit is None:
+            context = self._ec_carnival_sycophantic_surge_tool_action_context()
+            return bool(context.get("candidates"))
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return False
+        if not self._is_legions_of_excess_unit(root):
+            return False
+        enemy_candidates = self._ec_carnival_sycophantic_surge_enemy_candidates(root)
+        if not enemy_candidates:
+            return False
+        selected_enemy = (kwargs or {}).get("enemy_unit") or (kwargs or {}).get("target_enemy_unit")
+        if selected_enemy is None:
+            return True
+        selected_root = self._ec_resolve_unit_entry(selected_enemy)
+        return self._ec_unit_in_candidates(selected_root, enemy_candidates)
+
+    def _ec_carnival_violent_crescendo_candidates(self) -> list[Any]:
+        if not self._is_carnival_of_excess_detachment():
+            return []
+        candidates: list[Any] = []
+        for unit in self._ec_friendly_battlefield_units():
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_slaanesh_unit(root):
+                continue
+            if not (
+                self._ec_has_keyword(root, "BEAST")
+                or self._ec_has_keyword(root, "BEASTS")
+                or self._ec_has_keyword(root, "INFANTRY")
+                or self._ec_has_keyword(root, "MOUNTED")
+            ):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._ec_sort_key)
+
+    def _ec_carnival_violent_crescendo_tool_action_context(self) -> dict[str, Any]:
+        candidates = self._ec_carnival_violent_crescendo_candidates()
+        if not candidates:
+            return {}
+        return {"candidates": candidates}
+
+    def _ec_can_use_carnival_violent_crescendo_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str((kwargs or {}).get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        unit = (kwargs or {}).get("unit") or (kwargs or {}).get("target_unit")
+        if unit is None:
+            return bool(self._ec_carnival_violent_crescendo_candidates())
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        root_id = self._ec_sort_key(root)
+        return any(self._ec_sort_key(candidate) == root_id for candidate in self._ec_carnival_violent_crescendo_candidates())
+
     @staticmethod
     def _ec_total_current_wounds(unit: Any) -> int:
         root = unit

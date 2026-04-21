@@ -785,6 +785,44 @@ class GameMissionsScoringActionsMixin:
                     if getattr(u, "is_in_reserves", lambda: False)() and bool(getattr(u, "_started_in_reserves", False)):
                         to_remove.append(u)
                 for u in to_remove:
+                    special_rules = getattr(u, "special_rules", None)
+                    if not isinstance(special_rules, dict):
+                        special_rules = {}
+                    last_failure = (
+                        getattr(u, "reserve_last_arrival_failure", None)
+                        or special_rules.get("reserve_last_arrival_failure")
+                    )
+                    diagnostic = {
+                        "code": "reserve_destroyed_round3",
+                        "severity": "WARNING",
+                        "unit_id": str(get_entity_id(u) or ""),
+                        "unit_name": str(getattr(u, "name", "Unit") or "Unit"),
+                        "player_id": str(getattr(p, "id", "") or ""),
+                        "battle_round": int(getattr(self, "turn", 0) or 0),
+                        "reserve_source": str(
+                            getattr(u, "reserve_source", "")
+                            or special_rules.get("reserve_source", "")
+                            or ""
+                        ),
+                        "reserve_mandatory_start": bool(
+                            getattr(u, "reserve_mandatory_start", False)
+                            or special_rules.get("reserve_mandatory_start", False)
+                        ),
+                        "reserve_latest_arrival_round": int(
+                            getattr(u, "reserve_latest_arrival_round", 0)
+                            or special_rules.get("reserve_latest_arrival_round", 0)
+                            or 0
+                        ),
+                        "last_failed_placement_reason": last_failure,
+                    }
+                    diagnostics = getattr(self, "reserve_arrival_diagnostics", None)
+                    if not isinstance(diagnostics, list):
+                        diagnostics = []
+                        setattr(self, "reserve_arrival_diagnostics", diagnostics)
+                    diagnostics.append(dict(diagnostic))
+                    special_rules["reserve_last_arrival_failure"] = dict(diagnostic)
+                    u.special_rules = special_rules
+                    setattr(u, "reserve_last_arrival_failure", dict(diagnostic))
                     logger.warning(
                         "%s destroyed - still in reserves at end of battle round 3",
                         getattr(u, "name", "Unit"),

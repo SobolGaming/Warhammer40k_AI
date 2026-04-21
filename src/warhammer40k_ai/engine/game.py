@@ -12731,6 +12731,34 @@ class Game(
                         setattr(member, "_started_in_reserves", bool(started))
                     except Exception:
                         pass
+                    special_rules = getattr(member, "special_rules", None)
+                    if not isinstance(special_rules, dict):
+                        special_rules = {}
+                    if started:
+                        source = "must_start_in_reserves" if bool(must_reserves) else "deployment_choice"
+                        special_rules["reserve_source"] = source
+                        special_rules["reserve_mandatory_start"] = bool(must_reserves)
+                        special_rules["reserve_latest_arrival_round"] = 3
+                        setattr(member, "reserve_source", source)
+                        setattr(member, "reserve_mandatory_start", bool(must_reserves))
+                        setattr(member, "reserve_latest_arrival_round", 3)
+                    else:
+                        for key in (
+                            "reserve_source",
+                            "reserve_mandatory_start",
+                            "reserve_latest_arrival_round",
+                            "reserve_last_arrival_failure",
+                        ):
+                            special_rules.pop(key, None)
+                        for attr in (
+                            "reserve_source",
+                            "reserve_mandatory_start",
+                            "reserve_latest_arrival_round",
+                            "reserve_last_arrival_failure",
+                        ):
+                            if hasattr(member, attr):
+                                delattr(member, attr)
+                    member.special_rules = special_rules
                 for member in members:
                     if member is root:
                         continue

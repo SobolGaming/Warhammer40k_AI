@@ -89,6 +89,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         tie_break_salt: str = "headless_policy_v1",
         max_reserves_anchor_points: int = 4096,
         max_reserves_arrival_seconds: float = 10.0,
+        reserve_policy: str = "forced_only",
         require_authoritative: bool = True,
         auto_attach: bool = True,
     ) -> None:
@@ -106,6 +107,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
         self._reserves_exhaustive_anchor_limit = int(max(32, min(self._max_reserves_anchor_points, 512)))
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
+        self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
         self._attached = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
@@ -478,6 +480,8 @@ class HeadlessPolicyDecisionController(DecisionController):
                 break
 
         timed_out = bool(time.perf_counter() >= deadline)
+        failure_reason = "timed_out" if timed_out else "no_valid_arrival_position"
+        metric["timed_out"] = bool(timed_out)
         if timed_out:
             logger.warning(
                 "Headless reserves-arrival search timed out for unit %s after %.2fs (%d anchors attempted).",
@@ -503,6 +507,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             metric["consumed_anchor_count"] = int(consumed)
             metric["returned_candidate_count"] = 0
             metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+            metric["failure_reason"] = "forced_arrival_failed" if skip_is_forced_arrival_failure else failure_reason
+            self._record_reserves_arrival_failure(unit, reason=str(metric["failure_reason"]), metric=metric)
             self._record_reserves_metric(metric)
             return bool(apply_result is not None and getattr(apply_result, "ok", False))
         if timed_out and skip_option_id:
@@ -517,6 +523,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             metric["consumed_anchor_count"] = int(consumed)
             metric["returned_candidate_count"] = 0
             metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+            metric["failure_reason"] = failure_reason
+            self._record_reserves_arrival_failure(unit, reason=failure_reason, metric=metric)
             self._record_reserves_metric(metric)
             if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                 return True
@@ -524,6 +532,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         metric["consumed_anchor_count"] = int(consumed)
         metric["returned_candidate_count"] = 0
         metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
+        metric["failure_reason"] = failure_reason
+        self._record_reserves_arrival_failure(unit, reason=failure_reason, metric=metric)
         self._record_reserves_metric(metric)
         return False
 
@@ -599,6 +609,32 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     def _record_reserves_metric(self, metric: dict[str, object]) -> None:
         self._reserves_arrival_search_metrics.append(dict(metric or {}))
+
+    @staticmethod
+    def _record_reserves_arrival_failure(unit: object, *, reason: str, metric: dict[str, object]) -> None:
+        reason_text = str(reason or "no_valid_arrival_position").strip() or "no_valid_arrival_position"
+        payload = {
+            "reason": reason_text,
+            "anchor_attempts": int(metric.get("anchor_attempts", 0) or 0),
+            "build_calls": int(metric.get("build_calls", 0) or 0),
+            "validation_rejects": int(metric.get("validation_rejects", 0) or 0),
+            "quick_rejects": int(metric.get("quick_rejects", 0) or 0),
+            "timed_out": bool(metric.get("timed_out", False)),
+            "elapsed_ms": int(metric.get("elapsed_ms", 0) or 0),
+        }
+        special_rules = getattr(unit, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["reserve_last_arrival_failure"] = dict(payload)
+        unit.special_rules = special_rules
+        setattr(unit, "reserve_last_arrival_failure", dict(payload))
+
+    @staticmethod
+    def _normalize_reserve_policy(value: str) -> str:
+        policy = str(value or "").strip().lower()
+        if policy in {"forced_only", "balanced"}:
+            return policy
+        raise ValueError(f"Unknown reserve policy: {value!r}. Expected 'forced_only' or 'balanced'.")
 
     @staticmethod
     def _should_skip_request(request: DecisionRequest) -> bool:
@@ -1569,6 +1605,14 @@ class HeadlessPolicyDecisionController(DecisionController):
             score -= 0.1
         if str(metadata.get("candidate_kind", "") or "").strip().lower() == "noop":
             score -= 0.05
+        if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_RESERVES:
+            strategy_id = str(params.get("strategy_id", "") or "").strip().lower()
+            if self._reserve_policy == "forced_only":
+                score -= 100.0 * self._num(params.get("reserve_units"))
+                score -= 10.0 * self._num(params.get("reserve_points_ratio"))
+                score -= 5.0 * self._num(params.get("strategic_points_ratio"))
+                if strategy_id == "forced_only":
+                    score += 1000.0
         action = str(params.get("action", "") or "").strip().lower()
         if action in {"pass", "skip"} or bool(params.get("skipped", False)):
             score -= 1.0

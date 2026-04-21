@@ -80,7 +80,13 @@ This document describes deterministic headless placement behavior for deployment
   validation seam.
 - Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`.
 - Reserves diagnostics are available from `HeadlessPolicyDecisionController.get_reserves_arrival_search_metrics()`.
-  - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
+  - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, failure reason, timeout status, and elapsed wall-clock time.
+  - Failed reserve-arrival searches write `reserve_last_arrival_failure` back to the unit as structured metadata (`reason`, anchor/build/reject counters, timeout flag, elapsed milliseconds). State blobs expose this metadata for hidden state and for the owning player's observation.
+- Reserve-arrival requests include reserve provenance in context:
+  - `reserve_source` (`must_start_in_reserves` or `deployment_choice`)
+  - `reserve_mandatory_start`
+  - `reserve_latest_arrival_round`
+  - `reserve_last_arrival_failure`
 - Forced arrivals still search legal reserve zones first. If every generated placement is rejected, the
   controller resolves the same `MOVE_UNIT` request through an explicit `Unable to arrive`
   fallback option. This is not a voluntary pass: the unit remains in reserves and existing
@@ -99,6 +105,20 @@ This document describes deterministic headless placement behavior for deployment
   - per-unit deployment diagnostics;
   - reserves-arrival synthetic benchmark cases for crowded Deep Strike and strategic-reserve edge entry;
   - aggregated summaries for validation calls, fallback usage, and first-valid anchor sources.
+
+## Self-Play Diagnostics
+
+- `scripts/run_headless_self_play.py --report-output <path>` writes per-game
+  `tool_action_probe_diagnostics`, `reserve_arrival_diagnostics`, and
+  `reserves_arrival_search_metrics` into the JSON report.
+- The runner prints a per-game tool-probe diagnostic summary grouped by
+  severity, tool name, and code. Candidate-build filtering caused by missing
+  required stratagem/ability context is logged as `WARNING`; any malformed tool
+  candidate that reaches execute/apply is logged as `ERROR` with
+  `malformed_tool_candidate_escaped_preflight`.
+- Units destroyed at the battle round 3 reserves cutoff emit
+  `reserve_destroyed_round3` diagnostics with reserve provenance and the last
+  failed placement reason, when one was recorded.
 
 ## Pregame Decision Surfaces
 

@@ -2462,6 +2462,25 @@ class GameSetupDeploymentReservesMixin:
             "phase_step": "REINFORCEMENTS",
             "battle_round": int(getattr(self, "turn", 0) or 0),
             "reserve_status": str(getattr(unit, "reserve_status", "") or ""),
+            "reserve_source": str(
+                getattr(unit, "reserve_source", "")
+                or (getattr(unit, "special_rules", {}) or {}).get("reserve_source", "")
+                or ""
+            ),
+            "reserve_mandatory_start": bool(
+                getattr(unit, "reserve_mandatory_start", False)
+                or (getattr(unit, "special_rules", {}) or {}).get("reserve_mandatory_start", False)
+            ),
+            "reserve_latest_arrival_round": int(
+                getattr(unit, "reserve_latest_arrival_round", 0)
+                or (getattr(unit, "special_rules", {}) or {}).get("reserve_latest_arrival_round", 0)
+                or 0
+            ),
+            "reserve_last_arrival_failure": str(
+                getattr(unit, "reserve_last_arrival_failure", "")
+                or (getattr(unit, "special_rules", {}) or {}).get("reserve_last_arrival_failure", "")
+                or ""
+            ),
             "reserve_entry_kind": self._reserve_entry_kind_for_unit(unit),
             "allow_forced_arrival_failure": bool(forced_arrival_failure_allowed),
         }

@@ -25,6 +25,9 @@ Canonical runtime module:
 
 ### `decision_steps`
 - One row per accepted, settled decision in chronological order.
+- `decision_id` is unique. If the recorder sees the same resolved decision more
+  than once, persistence is idempotent: the existing step is updated instead of
+  inserting a duplicate timeline row.
 - Includes:
   - `decision_idx` (1-based timeline index)
   - decision identity (`decision_id`, `decision_type`)
@@ -35,6 +38,9 @@ Canonical runtime module:
   - full DecisionRecord blob (compressed JSON)
 - Step rows are persisted at `decision_resolved`, so nested follow-up decisions keep
   the same parent-before-child ordering that the engine validated at runtime.
+- Duplicate-resolution updates preserve the existing `decision_idx`, widen the
+  stored event range (`event_start_id` minimum / `event_end_id` maximum), and keep
+  non-empty request/record blobs instead of replacing them with emptier data.
 - Successful `RESOLVE_DECISION` commands extend the matching step's `event_end_id`
   immediately after the authoritative command event is recorded and before any
   post-command tool windows are queued, so the originating

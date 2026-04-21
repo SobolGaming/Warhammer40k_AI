@@ -294,6 +294,25 @@ def materialize_roster_entry(
         waha_helper=waha_helper,
     )
     unit = Unit(datasheet)
+    entry_metadata = dict(entry.metadata or {})
+    ally_context = dict(entry_metadata.get("ally_context", {}) or {})
+    if ally_context:
+        build_metadata = dict(getattr(unit, "build_metadata", {}) or {})
+        build_metadata["ally_context"] = dict(ally_context)
+        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id"):
+            value = entry_metadata.get(key)
+            if value:
+                build_metadata[key] = value
+        unit.build_metadata = build_metadata
+        special_rules = getattr(unit, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["ally_context"] = dict(ally_context)
+        for key in ("ally_source_rule", "allied_faction", "parent_faction", "parent_faction_id"):
+            value = entry_metadata.get(key)
+            if value:
+                special_rules[key] = value
+        unit.special_rules = special_rules
     assignments = list(enhancement_assignments or [])
     enhancement = None
     assignment_metadata = None

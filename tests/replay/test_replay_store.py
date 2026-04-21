@@ -257,6 +257,38 @@ def test_replay_store_records_decisions_events_and_keyframes(tmp_path) -> None:
     assert "decision_resolved" in event_types
 
 
+def test_replay_store_record_resolution_is_idempotent_by_decision_id(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "idempotent_decision.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-idempotent",
+        label="Idempotent Replay",
+    )
+    request = _queue_confirmation(game, player)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=request.player_id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+    apply_result = game.resolve_decision(result)
+    assert bool(getattr(apply_result, "ok", False))
+
+    recorder = getattr(game, "_decision_replay_recorder")
+    recorder.record_resolution(game, request, result)
+
+    reader = ReplayStoreReader(replay_path)
+    assert reader.decision_count() == 1
+    step = reader.get_step(1)
+    assert step.decision_id == request.decision_id
+    assert step.event_start_id is not None
+    assert step.event_end_id is not None
+    assert step.event_end_id >= step.event_start_id
+
+
 def test_pack_json_normalizes_dice_roll_state_objects() -> None:
     state = DiceRollState(
         roll_id=7,
