@@ -85,33 +85,56 @@ class DatasheetWargearMixin:
         logger.warning(f"WARNING: {self.name}: base size for '{model_name or 'model'}' is unspecified; "
             f"using {fallback_desc}.")
 
+    def _strip_flying_base_marker(self, raw: str) -> tuple[str, bool]:
+        cleaned = str(raw or "")
+        is_flying = "flying base" in cleaned.lower()
+        if is_flying:
+            cleaned = re.sub(r"flying base", "", cleaned, flags=re.IGNORECASE).strip()
+        return cleaned, is_flying
+
+    def _unknown_base_fallback_desc(self) -> str:
+        if bool(getattr(self, "is_vehicle", False)) or bool(getattr(self, "is_monster", False)) or bool(getattr(self, "is_transport", False)):
+            return "80x40mm hull"
+        return "32mm base"
+
+    def _base_size_fallback_warning_desc(
+        self,
+        base_size: str,
+        *,
+        fallback_base_size: Optional[str] = None,
+    ) -> Optional[str]:
+        cleaned, _ = self._strip_flying_base_marker(base_size)
+        if self._is_unknown_base_size(cleaned):
+            if fallback_base_size and not self._is_unknown_base_size(self._strip_flying_base_marker(fallback_base_size)[0]):
+                return None
+            return self._unknown_base_fallback_desc()
+        if cleaned.replace("mm", "").strip().lower() == "hull":
+            return "80x40mm hull"
+        return None
+
     def _parse_base_size(
         self,
         base_size: str,
         *,
         fallback_base_size: Optional[str] = None,
         model_name: str = "",
+        emit_unknown_base_warning: bool = True,
     ) -> Base:
-        def _strip_flying(raw: str) -> tuple[str, bool]:
-            cleaned = str(raw or "")
-            is_flying = "flying base" in cleaned.lower()
-            if is_flying:
-                cleaned = re.sub(r"flying base", "", cleaned, flags=re.IGNORECASE).strip()
-            return cleaned, is_flying
-
-        cleaned, is_flying = _strip_flying(base_size)
+        cleaned, is_flying = self._strip_flying_base_marker(base_size)
         if self._is_unknown_base_size(cleaned):
             if fallback_base_size and not self._is_unknown_base_size(fallback_base_size):
-                cleaned, fallback_flying = _strip_flying(fallback_base_size)
+                cleaned, fallback_flying = self._strip_flying_base_marker(fallback_base_size)
                 is_flying = is_flying or fallback_flying
             else:
                 # No reliable base size provided; use a conservative default and warn once.
                 if bool(getattr(self, "is_vehicle", False)) or bool(getattr(self, "is_monster", False)) or bool(getattr(self, "is_transport", False)):
                     base = Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
-                    self._warn_unknown_base_size(model_name, "80x40mm hull")
+                    if emit_unknown_base_warning:
+                        self._warn_unknown_base_size(model_name, "80x40mm hull")
                 else:
                     base = Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
-                    self._warn_unknown_base_size(model_name, "32mm base")
+                    if emit_unknown_base_warning:
+                        self._warn_unknown_base_size(model_name, "32mm base")
                 if is_flying:
                     setattr(base, "is_flying_base", True)
                 return base
@@ -120,7 +143,8 @@ class DatasheetWargearMixin:
         low_cleaned = cleaned.lower().strip()
         if low_cleaned == "hull":
             base = Base(BaseType.HULL, (convert_mm_to_inches(80 / 2.0), convert_mm_to_inches(40 / 2.0)))
-            self._warn_unknown_base_size(model_name, "80x40mm hull")
+            if emit_unknown_base_warning:
+                self._warn_unknown_base_size(model_name, "80x40mm hull")
         elif "x" in cleaned:
             major, minor = cleaned.split("x")
             major = convert_mm_to_inches(float(major.strip()) / 2.0)
@@ -133,9 +157,9 @@ class DatasheetWargearMixin:
             setattr(base, "is_flying_base", True)
         return base
 
-    def _apply_resolved_model_geometry(self, model: Model, datasheet, model_name: str) -> None:
+    def _apply_resolved_model_geometry(self, model: Model, datasheet, model_name: str):
         if model is None or getattr(model, "model_base", None) is None:
-            return
+            return None
         unit_keywords = list(getattr(self, "keywords", []) or [])
         unit_keywords.extend(list(getattr(self, "faction_keywords", []) or []))
         datasheet_id = str(getattr(datasheet, "id", "") or "")
@@ -159,6 +183,7 @@ class DatasheetWargearMixin:
         if bool(getattr(old_base, "is_flying_base", False)):
             setattr(new_base, "is_flying_base", True)
         model.model_base = new_base
+        return resolved
 
     def _normalize_base_size_name(self, text: str) -> str:
         text = (text or "").lower()
@@ -420,6 +445,41 @@ class DatasheetWargearMixin:
 
         return best
 
+    def _resolve_composition_model_name(self, datasheet, model_name: str, *, model_count: int = 1) -> str:
+        """
+        Convert a composition entry into the per-model name used at runtime.
+
+        Composition rows often pluralize model names ("Jakhals"), but some
+        canonical model names legitimately end in "s" ("Khorne Lord of Skulls").
+        Preserve exact profile names for single-model rows, then strip a
+        trailing "s" when the singular form is explicitly supported by one of
+        the model profiles, or when the composition row is creating more than
+        one runtime model and therefore represents a plural label.
+        """
+        name = str(model_name or "").strip()
+        if not name:
+            return name
+
+        count = int(model_count or 0)
+        normalized_name = self._normalize_model_name(name)
+        profile_names = {
+            self._normalize_model_name(str(profile.get("name", "") or ""))
+            for profile in list(getattr(datasheet, "datasheets_models", []) or [])
+        }
+
+        if count <= 1 and normalized_name in profile_names:
+            return name
+        if not name.endswith("s"):
+            return name
+
+        singular = name[:-1].strip()
+        if not singular:
+            return name
+        normalized_singular = self._normalize_model_name(singular)
+        if normalized_singular in profile_names or count > 1:
+            return singular
+        return name
+
     def _select_fallback_base_size(self, datasheet) -> Optional[str]:
         try:
             profiles = list(getattr(datasheet, "datasheets_models", []) or [])
@@ -444,6 +504,10 @@ class DatasheetWargearMixin:
             )
             or profile.get("base_size", datasheet.datasheets_models[0]["base_size"])
         )
+        fallback_warning_desc = self._base_size_fallback_warning_desc(
+            base_size_value,
+            fallback_base_size=fallback_base_size,
+        )
         model = Model(
             name=model_name,
             movement=self._parse_attribute(profile.get("M", datasheet.datasheets_models[0]["M"])),
@@ -456,6 +520,7 @@ class DatasheetWargearMixin:
                 base_size_value,
                 fallback_base_size=fallback_base_size,
                 model_name=model_name,
+                emit_unknown_base_warning=False,
             ),
             inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
             inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower(),
@@ -469,7 +534,10 @@ class DatasheetWargearMixin:
             keywords=list(getattr(datasheet, 'keywords', []) or []),
             faction_keywords=list(getattr(datasheet, 'faction_keywords', []) or []),
         )
-        self._apply_resolved_model_geometry(model, datasheet, model_name)
+        resolved_geometry = self._apply_resolved_model_geometry(model, datasheet, model_name)
+        geometry_source = str(getattr(resolved_geometry, "geometry_source", "") or "")
+        if fallback_warning_desc and not geometry_source.startswith("geometry_override:"):
+            self._warn_unknown_base_size(model_name, fallback_warning_desc)
         return model
 
     def _initialize_horrors_state(self) -> None:
@@ -984,13 +1052,15 @@ class DatasheetWargearMixin:
         except Exception:
             pass
 
-        for model_name, (min_size, max_size) in self.unit_composition.items():
+        for composition_model_name, (min_size, max_size) in self.unit_composition.items():
             if isinstance(max_size, tuple):
                 max_size = max_size[1]  # Use the second value if it's a tuple
             model_count = min(max_size, max(min_size, quantity - total_models))
-            # Remove 's' from the end of model_name if it's plural
-            if model_name.endswith('s'):
-                model_name = model_name[:-1]
+            model_name = self._resolve_composition_model_name(
+                datasheet,
+                composition_model_name,
+                model_count=model_count,
+            )
 
             profile = self._pick_profile_for_model(datasheet, model_name)
             # Default to first profile if anything is missing

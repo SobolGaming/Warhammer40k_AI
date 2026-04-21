@@ -1,4 +1,5 @@
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -278,6 +279,84 @@ def test_unit_model_build_uses_geometry_override_for_lord_of_skulls():
     assert model.model_base.radius[0] == pytest.approx(convert_mm_to_inches(190.5) / 2.0, abs=1e-4)
     assert model.model_base.radius[1] == pytest.approx(convert_mm_to_inches(127.0) / 2.0, abs=1e-4)
     assert model.model_base.model_height == pytest.approx(convert_mm_to_inches(178.0), abs=1e-4)
+
+
+def test_create_models_preserves_lord_of_skulls_name_and_suppresses_fallback_warning(caplog):
+    from warhammer40k_ai.units.unit import Unit
+
+    unit = Unit.__new__(Unit)
+    unit.name = "Khorne Lord of Skulls"
+    unit.keywords = ["Vehicle", "Monster"]
+    unit.faction_keywords = []
+    unit.unit_composition = {"Khorne Lord of Skulls": (1, 1)}
+    unit.unit_composition_options = []
+    unit.unit_models_maximum = None
+
+    profile = {
+        "name": "Khorne Lord of Skulls",
+        "M": '10"',
+        "T": "13",
+        "Sv": "2+",
+        "inv_sv": "-",
+        "inv_sv_descr": "",
+        "W": "24",
+        "Ld": "7+",
+        "OC": "8",
+        "base_size": "Use model",
+        "base_size_descr": "",
+    }
+    datasheet = SimpleNamespace(
+        id="000002642",
+        name="Khorne Lord of Skulls",
+        datasheets_models=[profile],
+        keywords=["Vehicle", "Monster"],
+        faction_keywords=[],
+    )
+
+    caplog.set_level(logging.WARNING, logger="warhammer40k_ai.units.unit_mixins.datasheet_wargear_mixin")
+    models = unit._create_models(datasheet, quantity=1)
+
+    assert [model.name for model in models] == ["Khorne Lord of Skulls"]
+    assert models[0].model_base.base_type == BaseType.HULL
+    assert models[0].model_base.radius[0] == pytest.approx(convert_mm_to_inches(190.5) / 2.0, abs=1e-4)
+    assert "base size for 'Khorne Lord of Skulls' is unspecified" not in caplog.text
+    assert "base size for 'Khorne Lord of Skull' is unspecified" not in caplog.text
+
+
+def test_unit_model_build_still_warns_when_unknown_base_has_no_override(caplog):
+    from warhammer40k_ai.units.unit import Unit
+
+    unit = Unit.__new__(Unit)
+    unit.name = "Test Tank"
+    unit.keywords = ["Vehicle"]
+    unit.faction_keywords = []
+
+    profile = {
+        "name": "Test Tank",
+        "M": '10"',
+        "T": "10",
+        "Sv": "3+",
+        "inv_sv": "-",
+        "inv_sv_descr": "",
+        "W": "12",
+        "Ld": "7+",
+        "OC": "3",
+        "base_size": "Use model",
+        "base_size_descr": "",
+    }
+    datasheet = SimpleNamespace(
+        id="test_tank_no_geometry_override",
+        name="Test Tank",
+        datasheets_models=[profile],
+        keywords=["Vehicle"],
+        faction_keywords=[],
+    )
+
+    caplog.set_level(logging.WARNING, logger="warhammer40k_ai.units.unit_mixins.datasheet_wargear_mixin")
+    model = unit._build_model_from_profile(datasheet, "Test Tank", profile)
+
+    assert model.model_base.base_type == BaseType.HULL
+    assert "base size for 'Test Tank' is unspecified; using 80x40mm hull" in caplog.text
 
 
 def test_unit_model_build_applies_z_offset_for_flying_base():

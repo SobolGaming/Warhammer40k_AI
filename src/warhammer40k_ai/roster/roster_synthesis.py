@@ -103,6 +103,7 @@ _STYLE_ORDER = (
 
 def _normalize_text(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
+    text = text.replace("'", "").replace("\u2019", "")
     text = text.encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
     return re.sub(r"\s+", " ", text)

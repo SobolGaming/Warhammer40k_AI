@@ -99,7 +99,37 @@ class TestDatasheetsModelsProfileSelection(unittest.TestCase):
         self.assertEqual(len(spectres), 5)
         self.assertTrue(all(m._base_wounds == 1 for m in spectres))
 
+    def test_plural_profile_name_is_singularized_for_multiple_runtime_models(self):
+        from warhammer40k_ai.units.unit import Unit
+
+        u = Unit.__new__(Unit)
+        u.name = "Khorne Berzerkers"
+        u.unit_composition = {"Khorne Berzerkers": (2, 2)}
+        u.unit_models_maximum = None
+
+        datasheet = SimpleNamespace(
+            id="test_khorne_berzerkers",
+            name="Khorne Berzerkers",
+            datasheets_models=[
+                {
+                    "name": "Khorne Berzerkers",
+                    "M": '8"',
+                    "T": "4",
+                    "Sv": "3+",
+                    "inv_sv": "-",
+                    "inv_sv_descr": "",
+                    "W": "2",
+                    "Ld": "6+",
+                    "OC": "2",
+                    "base_size": "32mm",
+                },
+            ],
+        )
+
+        models = u._create_models(datasheet, quantity=2)
+
+        self.assertEqual([model.name for model in models], ["Khorne Berzerker", "Khorne Berzerker"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -44,6 +44,7 @@ SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS: set[str] = {
 
 def _normalize_faction_name(name: str) -> str:
     text = unicodedata.normalize("NFKD", str(name or ""))
+    text = text.replace("'", "").replace("\u2019", "")
     text = text.encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
     return re.sub(r"\s+", " ", text)
