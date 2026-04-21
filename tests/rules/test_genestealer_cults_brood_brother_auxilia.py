@@ -1214,6 +1214,75 @@ def test_brood_brother_tool_candidates_emit_only_fully_bound_specialized_context
     assert gsc_player.stratagems.get_tool_action_probe_diagnostics() == []
 
 
+def test_symbiotic_destruction_tool_candidates_cache_unit_enemy_legality(monkeypatch):
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 6
+
+    astra_units = [
+        _make_unit(
+            f"Brood Brothers Squad {idx}",
+            faction_name="Astra Militarum",
+            keywords=["ASTRA MILITARUM", "INFANTRY"],
+            faction_keywords=["ASTRA MILITARUM"],
+        )
+        for idx in range(4)
+    ]
+    gsc_units = [
+        _make_unit(
+            f"Neophyte Hybrids {idx}",
+            faction_name="Genestealer Cults",
+            keywords=["INFANTRY"],
+            faction_keywords=["GENESTEALER CULTS"],
+        )
+        for idx in range(4)
+    ]
+    enemy_units = [
+        _make_unit(
+            f"Enemy Target {idx}",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        for idx in range(3)
+    ]
+    for idx, unit in enumerate(astra_units + gsc_units):
+        gsc_army.add_unit(unit)
+        _attach_ranged_weapons(unit, weapon_name="Ranged weapon")
+        _set_unit_position(unit, float(idx), 0.0)
+    for idx, unit in enumerate(enemy_units):
+        enemy_army.add_unit(unit)
+        _set_unit_position(unit, 10.0 + float(idx), 0.0)
+    game.map.units = [*astra_units, *gsc_units, *enemy_units]
+    game.rebuild_entity_registry()
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    visibility_calls: list[tuple[str, str]] = []
+
+    def fake_visible(source, target):
+        visibility_calls.append((get_entity_id(source), get_entity_id(target)))
+        return True
+
+    def fake_add_probe(*, specs, seen, stratagem, item, kwargs, label_suffix):
+        specs.append({"label": str(label_suffix), "payload": {"resolved_kwargs": dict(kwargs)}})
+
+    monkeypatch.setattr(gsc_player.stratagems, "_gsc_is_visible_to_unit", fake_visible)
+    monkeypatch.setattr(gsc_player.stratagems, "_gsc_unit_has_ranged_weapon_in_range", lambda source, target: True)
+    monkeypatch.setattr(gsc_player.stratagems, "_tool_action_add_probe", fake_add_probe)
+
+    specs = gsc_player.stratagems._build_tool_action_specs_for_item(
+        {"available": True, "name": "SYMBIOTIC DESTRUCTION", "context": {"phase_name": "Shooting phase"}}
+    )
+
+    assert len(specs) == 8
+    assert all({"astra_unit", "gsc_unit", "enemy_unit"}.issubset(spec["payload"]["resolved_kwargs"]) for spec in specs)
+    assert len(visibility_calls) <= (len(astra_units) + len(gsc_units)) * len(enemy_units)
+
+
 def test_brood_brother_malformed_tool_candidate_escape_persists_error_diagnostic():
     game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
     game.phase = BattleRoundPhases.SHOOTING_PHASE

@@ -460,6 +460,48 @@ def test_bloodcrushers_resolve_curly_possessive_horn_alias(
     assert assigned_names.count("Bladed horn") == 3
 
 
+def test_bloodcrushers_resolve_short_horn_alias_against_possessive_datasheet_name(
+    waha_helper: WahaHelper,
+) -> None:
+    blueprint = ArmyBlueprint(
+        faction="World Eaters",
+        points_limit=2000,
+        battle_size="Strike Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_khorne_daemonkin",
+                detachment_type="Khorne Daemonkin",
+            )
+        ],
+        unit_entries=[
+            RosterEntry(
+                entry_id="unit_master_of_executions",
+                name="Master of Executions",
+                count=1,
+                detachment_selection_id="detachment_khorne_daemonkin",
+                is_warlord=True,
+            ),
+            RosterEntry(
+                entry_id="unit_bloodcrushers",
+                name="Bloodcrushers",
+                count=3,
+                detachment_selection_id="detachment_khorne_daemonkin",
+                wargear=["3x Bladed horn"],
+            ),
+        ],
+    )
+
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(blueprint)
+
+    bloodcrushers = next(unit for unit in army.units if unit.name == "Bloodcrushers")
+    assigned_names = [
+        str(getattr(wargear, "name", "") or "")
+        for model in list(bloodcrushers.models or [])
+        for wargear in list(getattr(model, "wargear", []) or [])
+    ]
+    assert assigned_names.count("Bladed horn") == 3
+
+
 def test_muster_blueprint_materializes_authored_support_binding(
     waha_helper: WahaHelper,
 ) -> None:

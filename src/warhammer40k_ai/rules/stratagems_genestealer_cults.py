@@ -8,6 +8,9 @@ from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
 
+_GSC_TOOL_ACTION_MAX_SPECS = 8
+_GSC_VISIBILITY_MODEL_SAMPLE_LIMIT = 3
+
 
 class GenestealerCultsStratagemMixin:
     @staticmethod
@@ -2136,27 +2139,6 @@ class GenestealerCultsStratagemMixin:
         if not source_models:
             return False
 
-        can_see_unit = getattr(game, "_model_can_see_unit", None)
-        if callable(can_see_unit):
-            for model in list(source_models or []):
-                try:
-                    if bool(can_see_unit(model, target_root, game_map=game_map)):
-                        return True
-                except TypeError:
-                    if bool(can_see_unit(model, target_root)):
-                        return True
-            return False
-
-        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
-        if callable(has_los):
-            for model in list(source_models or []):
-                try:
-                    if bool(has_los(model, target_root, game_map)):
-                        return True
-                except Exception:
-                    continue
-            return False
-
         can_see_model = getattr(game_map, "can_model_see_model", None)
         if not callable(can_see_model):
             return True
@@ -2172,14 +2154,12 @@ class GenestealerCultsStratagemMixin:
             alive_attr = getattr(model, "is_alive", False)
             if bool(alive_attr() if callable(alive_attr) else alive_attr):
                 target_models_alive.append(model)
-        target_models = target_models_alive
-        for source_model in list(source_models or []):
-            for target_model in list(target_models or []):
-                try:
-                    if bool(can_see_model(source_model, target_model)):
-                        return True
-                except Exception:
-                    continue
+        source_models = source_models[:_GSC_VISIBILITY_MODEL_SAMPLE_LIMIT]
+        target_models = target_models_alive[:_GSC_VISIBILITY_MODEL_SAMPLE_LIMIT]
+        for source_model in source_models:
+            for target_model in target_models:
+                if bool(can_see_model(source_model, target_model)):
+                    return True
         return False
 
     def _gsc_unit_has_any_ranged_weapon(self, unit: Any) -> bool:
@@ -2391,11 +2371,49 @@ class GenestealerCultsStratagemMixin:
         specs: List[Dict[str, Any]] = []
         seen: set[str] = set()
         if name_u == "SYMBIOTIC DESTRUCTION":
-            for astra_unit in self._gsc_symbiotic_destruction_astra_candidates():
-                for gsc_unit in self._gsc_symbiotic_destruction_gsc_candidates():
+            astra_candidates = self._gsc_symbiotic_destruction_astra_candidates()
+            gsc_candidates = self._gsc_symbiotic_destruction_gsc_candidates()
+            enemy_candidates = self._gsc_enemy_on_battlefield_candidates()
+            enemy_by_id = {
+                enemy_id: enemy_unit
+                for enemy_unit in enemy_candidates
+                for enemy_id in [self._gsc_sort_key(enemy_unit)]
+                if enemy_id
+            }
+            valid_enemy_ids_by_unit_id: dict[str, set[str]] = {}
+
+            def _valid_enemy_ids_for_source(source_unit: Any) -> set[str]:
+                source_id = self._gsc_sort_key(source_unit)
+                if not source_id:
+                    return set()
+                cached = valid_enemy_ids_by_unit_id.get(source_id)
+                if cached is not None:
+                    return set(cached)
+                valid_ids: set[str] = set()
+                for enemy_unit in enemy_candidates:
+                    enemy_id = self._gsc_sort_key(enemy_unit)
+                    if not enemy_id:
+                        continue
+                    if not self._gsc_unit_has_ranged_weapon_in_range(source_unit, enemy_unit):
+                        continue
+                    if not self._gsc_is_visible_to_unit(source_unit, enemy_unit):
+                        continue
+                    valid_ids.add(enemy_id)
+                valid_enemy_ids_by_unit_id[source_id] = set(valid_ids)
+                return valid_ids
+
+            for astra_unit in astra_candidates:
+                astra_enemy_ids = _valid_enemy_ids_for_source(astra_unit)
+                if not astra_enemy_ids:
+                    continue
+                for gsc_unit in gsc_candidates:
                     if astra_unit is gsc_unit:
                         continue
-                    for enemy_unit in self._gsc_symbiotic_enemy_candidates(astra_unit, gsc_unit):
+                    shared_enemy_ids = sorted(astra_enemy_ids.intersection(_valid_enemy_ids_for_source(gsc_unit)))
+                    for enemy_id in shared_enemy_ids:
+                        enemy_unit = enemy_by_id.get(enemy_id)
+                        if enemy_unit is None:
+                            continue
                         self._tool_action_add_probe(
                             specs=specs,
                             seen=seen,
@@ -2420,6 +2438,15 @@ class GenestealerCultsStratagemMixin:
                                 f"{self._tool_action_label_value(enemy_unit)}"
                             ),
                         )
+                        if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                            specs.sort(
+                                key=lambda spec: (
+                                    str(spec.get("label", "")),
+                                    str(spec.get("payload", {}).get("action_id", "")),
+                                    str(spec.get("payload", {}).get("resolved_kwargs", "")),
+                                )
+                            )
+                            return specs
         else:
             for astra_unit in self._gsc_symbiotic_destruction_astra_candidates():
                 for enemy_unit in self._gsc_acceptable_losses_enemy_candidates():
@@ -2444,6 +2471,15 @@ class GenestealerCultsStratagemMixin:
                             f"{self._tool_action_label_value(enemy_unit)}"
                         ),
                     )
+                    if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                        specs.sort(
+                            key=lambda spec: (
+                                str(spec.get("label", "")),
+                                str(spec.get("payload", {}).get("action_id", "")),
+                                str(spec.get("payload", {}).get("resolved_kwargs", "")),
+                            )
+                        )
+                        return specs
         specs.sort(
             key=lambda spec: (
                 str(spec.get("label", "")),

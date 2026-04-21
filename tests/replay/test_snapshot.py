@@ -119,6 +119,24 @@ def _build_materialized_muster_army(waha_helper: WahaHelper) -> Army:
     return army
 
 
+def test_phoenix_gem_pending_queue_does_not_store_raw_map(waha_helper):
+    game, unit_one, _unit_two, _player_one, _player_two = _build_game(waha_helper)
+
+    game.queue_phoenix_gem_return(
+        unit=unit_one,
+        model=unit_one.models[0],
+        position=unit_one.models[0].get_location(),
+        phase_name="SHOOTING_PHASE",
+        game_map=game.map,
+        spec={"name": "Phoenix Gem"},
+    )
+
+    assert game._phoenix_gem_pending
+    assert "game_map" not in game._phoenix_gem_pending[0]
+    snapshot = snapshot_game(game)
+    assert "game_map" not in snapshot["game"]["_phoenix_gem_pending"][0]
+
+
 def test_snapshot_roundtrip_core_state(waha_helper):
     game, unit_one, unit_two, player_one, player_two = _build_game(waha_helper)
 

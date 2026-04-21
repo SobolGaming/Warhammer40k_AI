@@ -46,8 +46,9 @@ def _gear_name_match_keys(text: object) -> set[str]:
 
 
 def _matches_requested_gear_name(candidate_name: object, requested_name: object) -> bool:
-    candidate_key = _normalize_gear_name(str(candidate_name or ""))
-    return bool(candidate_key and candidate_key in _gear_name_match_keys(requested_name))
+    candidate_keys = _gear_name_match_keys(candidate_name)
+    requested_keys = _gear_name_match_keys(requested_name)
+    return bool(candidate_keys and requested_keys and candidate_keys.intersection(requested_keys))
 
 
 def _coerce_positive_int(value: object, *, field_name: str) -> int:

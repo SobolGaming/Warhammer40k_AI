@@ -545,6 +545,10 @@ def test_scout_move_request_generates_rankable_destination_candidates() -> None:
         isinstance(dict(option.payload or {}).get("destination"), list)
         for option in scout_options
     )
+    assert all(
+        isinstance(dict(option.payload or {}).get("model_positions"), list)
+        for option in scout_options
+    )
     scout_candidates = [
         candidate
         for candidate in list(request.candidates or [])

@@ -370,7 +370,6 @@ class Map:
         # Attached units are treated as aggregates for rules purposes.
         source_models = source_unit.get_models_for_collision()
         target_models = target_unit.get_models_for_collision()
-        geometry = geometry_profile_for_context(source_unit=source_unit, target_unit=target_unit)
 
         for source_model in source_models:
             if not source_model.is_alive:
@@ -388,6 +387,7 @@ class Map:
                     logger.debug(f"DEBUG: ENGAGEMENT DETECTED!")
                     logger.debug(f"DEBUG: {source_unit.name} model at {source_pos}")
                     logger.debug(f"DEBUG: {target_unit.name} model at {target_pos}")
+                    geometry = geometry_profile_for_context(source_unit=source_unit, target_unit=target_unit)
                     logger.debug(
                         "DEBUG: Engagement profile: horizontal %.2f\" / vertical %.2f\"",
                         float(geometry.engagement_range_horizontal or 0.0),

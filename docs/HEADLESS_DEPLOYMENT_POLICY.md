@@ -133,6 +133,6 @@ This document describes deterministic headless placement behavior for deployment
   option; formation-phase orchestration suppresses the request rather than
   queuing malformed options for empty or temporarily unrepresentable setup
   states.
-- `SCOUT_MOVE` now emits deterministic destination options plus skip, and solver metadata keyed to reserve denial, entry-lane quality, and exposure. If no legal destination can be generated, the request emits only skip rather than an invalid placeholder Scout action.
+- `SCOUT_MOVE` now emits deterministic destination options plus skip, including exact translated `model_positions` for generated scout choices so headless resolution can apply the selected endpoint without invoking full surface-graph pathfinding. Validation still requires destination coordinates and rejects generated endpoints that exceed Scout distance or end within 9" of enemy models. If no legal destination can be generated, the request emits only skip rather than an invalid placeholder Scout action.
 - Deployment-scoped `MOVE_UNIT` now emits deterministic multi-option exact-placement candidates at runtime (anchor + exact `model_positions` per option), with per-option deployment semantic metadata.
 - With rollout enabled, deployment pregame candidates include deterministic shallow-lookahead metadata (`lookahead_*`) and adjusted round/trade projections for ranker consumption.

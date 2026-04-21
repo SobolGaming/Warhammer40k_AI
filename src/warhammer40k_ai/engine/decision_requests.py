@@ -3454,6 +3454,45 @@ def _scout_candidate_destinations(
     return destinations
 
 
+def _scout_model_positions_for_destination(
+    unit: object,
+    destination: tuple[float, float, float],
+) -> list[dict[str, object]]:
+    origin = _unit_anchor_location(unit)
+    if origin is None:
+        return []
+    dx = float(destination[0]) - float(origin[0])
+    dy = float(destination[1]) - float(origin[1])
+    dz = float(destination[2]) - float(origin[2])
+    positions: list[dict[str, object]] = []
+    for model in list(getattr(unit, "models", []) or []):
+        model_id = str(get_entity_id(model) or "")
+        if not model_id:
+            continue
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            continue
+        location = get_location()
+        if not isinstance(location, (list, tuple)) or len(location) < 2:
+            continue
+        x = _safe_float(location[0]) + dx
+        y = _safe_float(location[1]) + dy
+        z = (_safe_float(location[2]) if len(location) > 2 else 0.0) + dz
+        facing = (
+            _safe_float(location[3])
+            if len(location) > 3
+            else _safe_float(getattr(getattr(model, "model_base", None), "facing", 0.0))
+        )
+        positions.append(
+            {
+                "model_id": model_id,
+                "position": [float(x), float(y), float(z)],
+                "facing": float(facing),
+            }
+        )
+    return positions
+
+
 def build_scout_move_request(game: object, unit: object) -> Optional[DecisionRequest]:
     if unit is None:
         return None
@@ -3470,6 +3509,7 @@ def build_scout_move_request(game: object, unit: object) -> Optional[DecisionReq
     options: list[DecisionOption] = []
     for idx, destination in enumerate(list(destinations or [])):
         x, y, z = destination
+        model_positions = _scout_model_positions_for_destination(unit, destination)
         options.append(
             DecisionOption.create(
                 f"Scout to ({float(x):.1f}, {float(y):.1f})",
@@ -3477,6 +3517,7 @@ def build_scout_move_request(game: object, unit: object) -> Optional[DecisionReq
                     "unit_id": unit_id,
                     "action": "scout",
                     "destination": [float(x), float(y), float(z)],
+                    "model_positions": model_positions,
                     "scout_candidate_index": int(idx),
                     "action_id": f"{DECISION_SCOUT_MOVE}:{player_key}:{unit_id}:scout:{int(idx):02d}",
                 },

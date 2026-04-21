@@ -21,6 +21,7 @@ from ...rules.imperial_agents_shadow_assignment import (
     shadow_assignment_candidates_for_unit,
     unit_has_shadow_assignment,
 )
+from ...utility.aura_utils import distance_between_bases_3d
 from ...utility.entity_ids import get_entity_id
 
 
@@ -36,6 +37,87 @@ def _get_unit(game: object, unit_id: str):
     if registry is None:
         return None
     return registry.get(unit_id, kind="unit")
+
+
+def _scout_distance_for_unit(unit: object) -> float:
+    has_scout = getattr(unit, "has_scout", None)
+    if callable(has_scout):
+        value = has_scout()
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            return float(value[1] or 0.0) if bool(value[0]) else 0.0
+        if bool(value):
+            return float(getattr(unit, "scout_move_distance", 0.0) or 0.0)
+    return float(getattr(unit, "scout_move_distance", 0.0) or 0.0)
+
+
+def _model_positions_from_payload(payload: dict, result_payload: dict) -> list:
+    model_positions = result_payload.get("model_positions")
+    if not isinstance(model_positions, list) or not model_positions:
+        model_positions = payload.get("model_positions")
+    return list(model_positions or []) if isinstance(model_positions, list) else []
+
+
+def _destination_from_payload(payload: dict, result_payload: dict):
+    dest = result_payload.get("destination")
+    if not isinstance(dest, (list, tuple)) or len(dest) < 2:
+        dest = payload.get("destination")
+    return dest
+
+
+def _validate_scout_model_positions(game: object, unit: object, model_positions: list) -> Sequence[str]:
+    unit_models_by_id = {
+        str(get_entity_id(model) or ""): model
+        for model in list(getattr(unit, "models", []) or [])
+        if str(get_entity_id(model) or "")
+    }
+    scout_distance = _scout_distance_for_unit(unit)
+    game_map = getattr(game, "map", None)
+    get_enemy_units = getattr(game_map, "get_enemy_units", None)
+    enemy_models = []
+    if callable(get_enemy_units):
+        for enemy_unit in list(get_enemy_units(unit) or []):
+            is_alive = getattr(enemy_unit, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if not bool(getattr(enemy_unit, "deployed", False)):
+                continue
+            for enemy_model in list(getattr(enemy_unit, "models", []) or []):
+                enemy_alive = getattr(enemy_model, "is_alive", False)
+                if bool(enemy_alive() if callable(enemy_alive) else enemy_alive):
+                    enemy_models.append(enemy_model)
+    create_base = getattr(unit, "_create_potential_base", None)
+
+    for entry in model_positions:
+        if not isinstance(entry, dict):
+            return ("Model position entry must be a dict.",)
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            return ("Model position entry missing model_id.",)
+        model = unit_models_by_id.get(model_id)
+        if model is None:
+            return (f"Scout model is not part of the selected unit: {model_id}",)
+        pos = entry.get("position")
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return ("Model position entry missing position.",)
+        start = model.get_location() if callable(getattr(model, "get_location", None)) else None
+        if not isinstance(start, (list, tuple)) or len(start) < 2:
+            return (f"Scout model has no starting position: {model_id}",)
+        x = float(pos[0])
+        y = float(pos[1])
+        z = float(pos[2]) if len(pos) > 2 else float(getattr(getattr(model, "model_base", None), "z", 0.0) or 0.0)
+        sx = float(start[0])
+        sy = float(start[1])
+        sz = float(start[2]) if len(start) > 2 else 0.0
+        move_distance = ((x - sx) ** 2 + (y - sy) ** 2 + (z - sz) ** 2) ** 0.5
+        if move_distance > scout_distance + 1e-6:
+            return ("Scout model position exceeds scout distance.",)
+        if callable(create_base):
+            facing = entry.get("facing", getattr(getattr(model, "model_base", None), "facing", 0.0))
+            potential_base = create_base(x, y, z, float(facing), model=model)
+            for enemy_model in enemy_models:
+                if float(distance_between_bases_3d(potential_base, enemy_model.model_base)) < 9.0:
+                    return ("Scout model position ends within 9 inches of an enemy model.",)
+    return ()
 
 
 def _validate_choose_deployment_zone(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -474,26 +556,12 @@ def _validate_scout_move(game: object, request: DecisionRequest, result: Decisio
     if action not in ("scout", "skip"):
         return ("Scout move action must be 'scout' or 'skip'.",)
     if action == "scout":
-        model_positions = result_payload.get("model_positions")
-        if isinstance(model_positions, list) and model_positions:
-            for entry in model_positions:
-                if not isinstance(entry, dict):
-                    return ("Model position entry must be a dict.",)
-                model_id = str(entry.get("model_id", "") or "")
-                if not model_id:
-                    return ("Model position entry missing model_id.",)
-                model = getattr(game, "entity_registry", None).get(model_id, kind="model") if getattr(game, "entity_registry", None) else None
-                if model is None:
-                    return (f"Model not found: {model_id}",)
-                pos = entry.get("position")
-                if not isinstance(pos, (list, tuple)) or len(pos) < 2:
-                    return ("Model position entry missing position.",)
-            return ()
-        dest = result_payload.get("destination")
-        if not isinstance(dest, (list, tuple)) or len(dest) < 2:
-            dest = payload.get("destination")
+        dest = _destination_from_payload(payload, result_payload)
         if not isinstance(dest, (list, tuple)) or len(dest) < 2:
             return ("Scout move requires destination coordinates.",)
+        model_positions = _model_positions_from_payload(payload, result_payload)
+        if model_positions:
+            return _validate_scout_model_positions(game, unit, model_positions)
     return ()
 
 
@@ -508,8 +576,8 @@ def _apply_scout_move(game: object, request: DecisionRequest, result: DecisionRe
     if action == "skip":
         setattr(unit, "scout_move_made", True)
         return None
-    model_positions = result_payload.get("model_positions")
-    if isinstance(model_positions, list) and model_positions:
+    model_positions = _model_positions_from_payload(payload, result_payload)
+    if model_positions:
         for entry in model_positions:
             model_id = str(entry.get("model_id", "") or "")
             model = getattr(game, "entity_registry", None).get(model_id, kind="model") if getattr(game, "entity_registry", None) else None
@@ -527,9 +595,7 @@ def _apply_scout_move(game: object, request: DecisionRequest, result: DecisionRe
             model.set_location(x, y, z, float(facing))
         setattr(unit, "scout_move_made", True)
         return None
-    dest = result_payload.get("destination")
-    if not isinstance(dest, (list, tuple)) or len(dest) < 2:
-        dest = payload.get("destination")
+    dest = _destination_from_payload(payload, result_payload)
     if not isinstance(dest, (list, tuple)) or len(dest) < 2:
         raise RuntimeError("Scout move destination missing.")
     x = float(dest[0])

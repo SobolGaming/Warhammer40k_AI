@@ -28,7 +28,7 @@ Key goals:
   `choose_next_deploy_unit_option` / `choose_deployment_move_option`) so learned rankers
   can consume engine-generated candidate metadata directly.
 - `DECLARE_RESERVES` requests now expose deterministic multi-option allocation plans (not a single confirm-only option).
-- `SCOUT_MOVE` requests now expose deterministic destination options plus skip, with deployment-semantic metadata.
+- `SCOUT_MOVE` requests now expose deterministic destination options plus skip, with deployment-semantic metadata and exact generated `model_positions` for headless application.
 - Deployment `MOVE_UNIT` placement now exposes deterministic multi-candidate exact-placement options at runtime
   (`placement_candidate_id`, anchor, exact `model_positions`) instead of a single confirm-only payload.
 - Deployment candidate generation now supports an optional bounded pregame lookahead layer

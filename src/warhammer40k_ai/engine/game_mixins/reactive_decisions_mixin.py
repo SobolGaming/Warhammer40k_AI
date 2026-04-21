@@ -170,7 +170,6 @@ class GameReactiveDecisionsMixin:
             "model": model,
             "position": position,
             "phase_name": phase_name,
-            "game_map": game_map,
             "spec": spec or {},
             "reattach_bodyguard_unit": reattach_bodyguard_unit,
             "was_attached_when_destroyed": bool(was_attached_when_destroyed),

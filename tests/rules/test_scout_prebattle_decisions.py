@@ -1,8 +1,10 @@
 from warhammer40k_ai.engine.decision_kinds import DECISION_SCOUT_MOVE
+from warhammer40k_ai.engine.decision_requests import build_scout_move_request
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
 class _MockDatasheet:
@@ -94,3 +96,34 @@ def test_remote_only_scout_move_request_queue_is_deduplicated():
 
     assert len(second_ids) == 2
     assert second_ids == first_ids
+
+
+def test_headless_scout_move_applies_generated_model_positions_without_pathfinding():
+    game, p1, _p2, unit1, unit2 = _build_remote_only_game()
+    unit2.models[0].set_location(50.0, 40.0, 0.0, 0.0)
+    game.map.units = [unit1, unit2]
+    game.rebuild_entity_registry()
+    request = build_scout_move_request(game, unit1)
+    scout_option = next(
+        option
+        for option in list(request.options or [])
+        if str(dict(option.payload or {}).get("action", "") or "") == "scout"
+    )
+    payload = dict(scout_option.payload or {})
+    model_positions = list(payload.get("model_positions") or [])
+    assert model_positions
+
+    def fail_slow_scout_move(*_args, **_kwargs):
+        raise AssertionError("generated scout model positions should avoid unit.scout_move pathfinding")
+
+    unit1.scout_move = fail_slow_scout_move
+
+    result = resolve_decision_command(game, request, scout_option.option_id, player_id=p1.id)
+
+    assert bool(result.ok) is True
+    assert unit1.scout_move_made is True
+    expected_position = model_positions[0]["position"]
+    actual_position = unit1.models[0].get_location()
+    assert [round(float(value), 6) for value in actual_position[:3]] == [
+        round(float(value), 6) for value in expected_position
+    ]
