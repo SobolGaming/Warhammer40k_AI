@@ -190,6 +190,62 @@ def test_queue_headless_tool_action_decision_skips_under_specified_base_probe_fo
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
 
 
+def test_queue_headless_tool_action_decision_infers_blitzing_firepower_unit_and_phase_from_descriptor() -> None:
+    valid_unit = SimpleNamespace(id="unit:valid", name="Dire Avengers")
+    invalid_unit = SimpleNamespace(id="unit:invalid", name="Rangers")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="BLITZING FIREPOWER",
+        stratagem_id="000009900005",
+        descriptor_target="asuryani_unit_not_yet_shot",
+        context={"phase_name": ""},
+        can_use=lambda _name, **kwargs: (
+            kwargs.get("unit") is valid_unit
+            and kwargs.get("target_unit") is valid_unit
+            and kwargs.get("phase_name") == "Shooting phase"
+        ),
+    )
+    manager._current_phase_name = ""
+    manager._tool_action_friendly_units = lambda: [invalid_unit, valid_unit]
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    assert len(payloads) == 2
+    resolved = payloads[0]["resolved_kwargs"]
+    assert resolved["phase_name"] == "Shooting phase"
+    assert resolved["unit"]["__entity_ref__"]["id"] == valid_unit.id
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == valid_unit.id
+
+
+def test_queue_headless_tool_action_decision_infers_enemy_target_and_phase_from_descriptor() -> None:
+    enemy_unit = SimpleNamespace(id="unit:enemy", name="Chaos Marines")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC ENEMY TEST",
+        descriptor_target="enemy_unit",
+        context={"phase_name": ""},
+        can_use=lambda _name, **kwargs: (
+            kwargs.get("enemy_unit") is enemy_unit
+            and kwargs.get("target_enemy_unit") is enemy_unit
+            and kwargs.get("phase_name") == "Fight phase"
+        ),
+    )
+    manager._current_phase_name = ""
+    manager._tool_action_enemy_units = lambda: [enemy_unit]
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    assert len(payloads) == 2
+    resolved = payloads[0]["resolved_kwargs"]
+    assert resolved["phase_name"] == "Fight phase"
+    assert resolved["enemy_unit"]["__entity_ref__"]["id"] == enemy_unit.id
+    assert resolved["target_enemy_unit"]["__entity_ref__"]["id"] == enemy_unit.id
+
+
 def test_queue_headless_tool_action_decision_builds_model_target_from_reaction_context() -> None:
     unit = SimpleNamespace(id="unit:source", name="Champion Unit")
     model = SimpleNamespace(id="model:hero", name="Hero", parent_unit=unit)

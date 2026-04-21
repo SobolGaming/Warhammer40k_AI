@@ -3601,6 +3601,100 @@ class StratagemManager(
         return base
 
     @staticmethod
+    def _canonical_phase_name(phase_value: Any) -> str:
+        phase_map = {
+            "COMMAND_PHASE": "Command phase",
+            "MOVEMENT_PHASE": "Movement phase",
+            "SHOOTING_PHASE": "Shooting phase",
+            "CHARGE_PHASE": "Charge phase",
+            "FIGHT_PHASE": "Fight phase",
+            "command phase": "Command phase",
+            "movement phase": "Movement phase",
+            "shooting phase": "Shooting phase",
+            "charge phase": "Charge phase",
+            "fight phase": "Fight phase",
+        }
+        raw_name = getattr(phase_value, "name", None)
+        raw = str(raw_name or phase_value or "").strip()
+        if not raw:
+            return ""
+        return str(phase_map.get(raw, phase_map.get(raw.lower(), raw)) or "")
+
+    def _resolved_phase_name(self) -> str:
+        current = self._canonical_phase_name(getattr(self, "_current_phase_name", ""))
+        if current:
+            return current
+        game = getattr(self, "game", None)
+        phase = getattr(game, "phase", None) if game is not None else None
+        return self._canonical_phase_name(phase)
+
+    @staticmethod
+    def _tool_action_descriptor_requires_friendly_unit(descriptor_target: str) -> bool:
+        target_text = str(descriptor_target or "").strip().lower()
+        if "unit" not in target_text:
+            return False
+        return not any(
+            token in target_text
+            for token in (
+                "enemy_unit",
+                "target_enemy_unit",
+                "attacker_unit",
+            )
+        )
+
+    @staticmethod
+    def _tool_action_descriptor_requires_enemy_unit(descriptor_target: str) -> bool:
+        target_text = str(descriptor_target or "").strip().lower()
+        return any(
+            token in target_text
+            for token in (
+                "enemy_unit",
+                "target_enemy_unit",
+                "attacker_unit",
+            )
+        )
+
+    @staticmethod
+    def _tool_action_descriptor_requires_objective(descriptor_target: str) -> bool:
+        return "objective" in str(descriptor_target or "").strip().lower()
+
+    @staticmethod
+    def _tool_action_descriptor_requires_transport(descriptor_target: str) -> bool:
+        target_text = str(descriptor_target or "").strip().lower()
+        return "transport" in target_text or "embarked" in target_text
+
+    @staticmethod
+    def _tool_action_descriptor_requires_terrain(descriptor_target: str) -> bool:
+        return "terrain" in str(descriptor_target or "").strip().lower()
+
+    @staticmethod
+    def _tool_action_descriptor_requires_model(descriptor_target: str) -> bool:
+        return "model" in str(descriptor_target or "").strip().lower()
+
+    def _tool_action_probe_has_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> bool:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        transport = kwargs.get("transport_unit") or kwargs.get("transport")
+        terrain = kwargs.get("terrain_feature") or kwargs.get("terrain")
+        model = kwargs.get("model") or kwargs.get("target_model")
+        if self._tool_action_descriptor_requires_friendly_unit(target_text) and unit is None:
+            return False
+        if self._tool_action_descriptor_requires_enemy_unit(target_text) and enemy_unit is None:
+            return False
+        if self._tool_action_descriptor_requires_objective(target_text) and objective is None:
+            return False
+        if self._tool_action_descriptor_requires_transport(target_text) and transport is None and unit is None:
+            return False
+        if self._tool_action_descriptor_requires_terrain(target_text) and terrain is None:
+            return False
+        if self._tool_action_descriptor_requires_model(target_text) and model is None:
+            return False
+        return True
+
+    @staticmethod
     def _tool_action_sort_key(value: Any) -> str:
         return str(get_entity_id(value) or getattr(value, "id", "") or getattr(value, "_id", "") or "")
 
@@ -3864,6 +3958,12 @@ class StratagemManager(
         label_suffix: str = "",
     ) -> None:
         probe = dict(kwargs or {})
+        if not str(probe.get("phase_name", "") or "").strip():
+            resolved_phase_name = self._resolved_phase_name()
+            if resolved_phase_name:
+                probe["phase_name"] = resolved_phase_name
+        if not self._tool_action_probe_has_required_bindings(stratagem, probe):
+            return
         if not self.can_use(str(getattr(stratagem, "name", "") or ""), **probe):
             return
         serialized_kwargs = self._serialize_tool_action_value(probe)
@@ -3919,6 +4019,11 @@ class StratagemManager(
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
         descriptor_target = str(getattr(getattr(stratagem, "tool_descriptor", None), "target", "") or "")
+        requires_friendly_unit = self._tool_action_descriptor_requires_friendly_unit(descriptor_target)
+        requires_enemy_unit = self._tool_action_descriptor_requires_enemy_unit(descriptor_target)
+        requires_objective = self._tool_action_descriptor_requires_objective(descriptor_target)
+        requires_transport = self._tool_action_descriptor_requires_transport(descriptor_target)
+        requires_terrain = self._tool_action_descriptor_requires_terrain(descriptor_target)
 
         explicit_unit = base_ctx.get("unit") or base_ctx.get("target_unit")
         explicit_enemy = base_ctx.get("enemy_unit") or base_ctx.get("target_enemy_unit")
@@ -3934,23 +4039,35 @@ class StratagemManager(
             or list(original_ctx.get("source_candidates") or [])
             or ([explicit_unit] if explicit_unit is not None else [])
         )
+        if explicit_unit is None and not friendly_units and requires_friendly_unit:
+            friendly_units = self._tool_action_friendly_units()
         source_units = self._tool_action_root_units(
             list(original_ctx.get("source_candidates") or [])
             or ([explicit_unit] if explicit_unit is not None else [])
         )
+        if explicit_unit is None and not source_units and requires_friendly_unit:
+            source_units = list(friendly_units)
         enemy_units = self._tool_action_root_units(
             list(original_ctx.get("enemy_candidates") or [])
             or ([explicit_enemy] if explicit_enemy is not None else [])
         )
+        if explicit_enemy is None and not enemy_units and requires_enemy_unit:
+            enemy_units = self._tool_action_enemy_units()
         objectives = list(original_ctx.get("objective_candidates") or [])
         if not objectives and explicit_objective is not None:
             objectives = [explicit_objective]
+        if explicit_objective is None and not objectives and requires_objective:
+            objectives = self._tool_action_objectives()
         objectives = [objective for objective in objectives if objective is not None]
         objectives.sort(key=self._tool_action_sort_key)
         terrains = [explicit_terrain] if explicit_terrain is not None else list(original_ctx.get("terrain_candidates") or [])
+        if explicit_terrain is None and not terrains and requires_terrain:
+            terrains = self._tool_action_terrain_features()
         terrains = [terrain for terrain in terrains if terrain is not None]
         terrains.sort(key=self._tool_action_sort_key)
         transports = [explicit_transport] if explicit_transport is not None else list(original_ctx.get("transport_candidates") or [])
+        if explicit_transport is None and not transports and requires_transport:
+            transports = self._tool_action_transports()
         transports = [transport for transport in transports if transport is not None]
         transports.sort(key=self._tool_action_sort_key)
         embarked_units = list(original_ctx.get("embarked_candidates") or [])
@@ -4435,7 +4552,7 @@ class StratagemManager(
             }
             for spec in specs
         ]
-        phase_name = str(self._current_phase_name or "").strip()
+        phase_name = self._resolved_phase_name()
         battle_round = int(getattr(game, "turn", 0) or 0)
         signature_blob = json.dumps(
             {
@@ -11639,21 +11756,7 @@ class StratagemManager(
             raise
         # Track phase for phase-aware filtering
         try:
-            # Phase may be an Enum; normalize to a friendly string
-            name = getattr(phase, 'name', None)
-            if name:
-                # Convert ENUM_NAME to 'Name phase'
-                name_map = {
-                    'COMMAND_PHASE': 'Command phase',
-                    'MOVEMENT_PHASE': 'Movement phase',
-                    'SHOOTING_PHASE': 'Shooting phase',
-                    'CHARGE_PHASE': 'Charge phase',
-                    'FIGHT_PHASE': 'Fight phase',
-                }
-                self._current_phase_name = name_map.get(name, name.title().replace('_', ' '))
-            else:
-                # If provided as string already
-                self._current_phase_name = str(phase)
+            self._current_phase_name = self._canonical_phase_name(phase)
         except Exception:
             raise
         try:
@@ -30810,7 +30913,7 @@ class StratagemManager(
     # -------- UI helpers for non-disruptive prompts --------
     def get_phase_stratagem_items(self) -> List[Dict[str, Any]]:
         self._prune_expired_reactions()
-        phase_name = self._current_phase_name or ""
+        phase_name = self._resolved_phase_name()
         active_player = self.game.get_current_player() if self.game else None
         is_active_turn = active_player is self.player
         now = self._now()

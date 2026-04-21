@@ -77,7 +77,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 ## Shooting And Ranged Attacks
 
-- `SELECT_TOOL_ACTION` - Choose a generic stratagem tool action or skip.
+- `SELECT_TOOL_ACTION` - Choose a generic stratagem tool action or skip. Only fully bound legal stratagem payloads are exposed.
 - `SELECT_WEAPON` - Choose a weapon or profile to use.
 - `DECLARE_SHOTS` - Declare shooting targets and split-fire assignments.
 - `DECLARE_FIRING_DECK` - Select firing-deck participants.
@@ -233,7 +233,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `PICK_POINT` | A rule requires an exact battlefield point. | UI | `Policy` | `T3` |
 | `PICK_OBJECTIVE` | A rule requires an objective marker. | UI | `Policy` | `T2` |
 | `PICK_TERRAIN_FEATURE` | A rule requires a terrain feature. | UI | `Policy` | `T2` |
-| `SELECT_TOOL_ACTION` | A generic headless/non-local stratagem window exposes one or more legal tool actions plus skip. | UI | `Policy` | `T2/T3` |
+| `SELECT_TOOL_ACTION` | A generic headless/non-local stratagem window exposes one or more legal tool actions plus skip. Target-required malformed payloads are filtered before exposure. | UI | `Policy` | `T2/T3` |
 | `SELECT_WEAPON` | An activation needs a weapon or profile choice. | UI | `Policy` | `T3` |
 | `DECLARE_SHOTS` | A shooting unit must declare targets and split fire. | UI | `Policy` | `T3` |
 | `DECLARE_FIRING_DECK` | A transport must choose firing-deck participants. | UI | `Policy` | `T3` |
