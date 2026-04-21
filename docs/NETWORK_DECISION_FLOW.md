@@ -208,6 +208,8 @@ simply **presents valid choices** and validates all selections.
 1. **Server enters SHOOTING_PHASE** and queues `SELECT_UNIT` for the active player.
 2. **Client chooses a unit** to shoot by resolving `SELECT_UNIT`.
 3. **Server queues `DECLARE_SHOTS`** for that selected unit and validates the submitted declarations.
+   Resolving the `Skip` option consumes that unit's normal shooting activation
+   for the phase, so subsequent `SELECT_UNIT` requests exclude it.
 4. **Server then queues**:
    - target selection (and split‑fire decisions if needed)
    - weapon/profile selection

@@ -427,6 +427,13 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
     if unit is None:
         raise RuntimeError("Shooting unit missing.")
     if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
+        if not bool(request.context.get("out_of_phase", False)):
+            round_state = getattr(unit, "round_state", None)
+            if round_state is not None:
+                round_state.shot_this_round = True
+        clear_rerolls = getattr(unit, "clear_selected_to_shoot_rerolls", None)
+        if callable(clear_rerolls):
+            clear_rerolls()
         return False
     game_map = getattr(game, "map", None)
     out_of_phase = bool(request.context.get("out_of_phase", False))

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
@@ -31,6 +33,8 @@ class _DummyUnit:
         is_leader: bool = False,
         is_transport: bool = False,
         is_titanic: bool = False,
+        must_start_in_reserves: bool = False,
+        cost: int = 100,
         model_count: int = 5,
         keywords: list[str] | None = None,
     ) -> None:
@@ -43,6 +47,8 @@ class _DummyUnit:
         self.is_leader = bool(is_leader)
         self.is_transport = bool(is_transport)
         self.is_titanic = bool(is_titanic)
+        self._must_start_in_reserves = bool(must_start_in_reserves)
+        self._cost = int(cost)
         self.keywords = list(keywords or [])
         self.faction_keywords = []
         self.models = [_DummyModel(f"{unit_id}:model:{idx}") for idx in range(max(1, int(model_count)))]
@@ -61,8 +67,11 @@ class _DummyUnit:
             return (True, float(self.scout_move_distance))
         return (False, 0.0)
 
+    def must_start_in_reserves(self) -> bool:
+        return bool(self._must_start_in_reserves)
+
     def get_unit_cost(self) -> int:
-        return 100
+        return int(self._cost)
 
 
 class _DummyModel:
@@ -483,6 +492,41 @@ def test_reserves_request_generates_rankable_candidates_with_semantic_metadata()
     assert "deep_strike_pressure_delta" in first_metadata
     assert "reserve_entry_lane_delta" in first_metadata
     assert "reserve_denial_delta" in first_metadata
+
+
+def test_reserves_request_rejects_illegal_forced_reserve_allocation_without_fallback() -> None:
+    p1 = Player("P1")
+    p2 = Player("P2")
+    bomber_a = _DummyUnit("unit:bomber:a", "Bomber A", must_start_in_reserves=True, cost=700)
+    bomber_b = _DummyUnit("unit:bomber:b", "Bomber B", must_start_in_reserves=True, cost=700)
+    p1.army = _DummyArmy("army-1", [bomber_a, bomber_b])
+    p2.army = _DummyArmy("army-2", [])
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+
+    with pytest.raises(ValueError, match="No legal reserves allocation options"):
+        build_reserves_allocation_request(game, p1.army, queue_requests=True)
+
+
+def test_reserves_request_no_ops_for_empty_army() -> None:
+    p1 = Player("P1")
+    p2 = Player("P2")
+    p1.army = _DummyArmy("army-1", [])
+    p2.army = _DummyArmy("army-2", [])
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+
+    assert build_reserves_allocation_request(game, p1.army, queue_requests=True) is None
+
+
+def test_reserves_request_can_suppress_strict_error_without_fallback_options() -> None:
+    p1 = Player("P1")
+    p2 = Player("P2")
+    bomber_a = _DummyUnit("unit:bomber:a", "Bomber A", must_start_in_reserves=True, cost=700)
+    bomber_b = _DummyUnit("unit:bomber:b", "Bomber B", must_start_in_reserves=True, cost=700)
+    p1.army = _DummyArmy("army-1", [bomber_a, bomber_b])
+    p2.army = _DummyArmy("army-2", [])
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+
+    assert build_reserves_allocation_request(game, p1.army, queue_requests=True, strict_no_legal=False) is None
 
 
 def test_scout_move_request_generates_rankable_destination_candidates() -> None:

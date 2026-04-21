@@ -12,6 +12,7 @@ from warhammer40k_ai.roster.roster_synthesis import (
     synthesize_rosters,
 )
 from warhammer40k_ai.roster.muster_record import validate_muster_record
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.waha_helper import WahaHelper
 
 RULES_BUNDLE_ID = "rules_bundle:10th_local_wahapedia"
@@ -179,6 +180,34 @@ def test_omitted_faction_searches_multiple_supported_factions_deterministically(
     assert [candidate.army_blueprint.army_blueprint_hash for candidate in first.candidates] == [
         candidate.army_blueprint.army_blueprint_hash for candidate in second.candidates
     ]
+
+
+@pytest.mark.integration
+def test_synthesis_filters_candidates_with_illegal_mandatory_reserves(
+    waha_helper: WahaHelper,
+) -> None:
+    report = synthesize_rosters(
+        RosterSynthesisSeed(
+            max_points=2000,
+            max_under_cap_allowance=0,
+        ),
+        waha_helper=waha_helper,
+        rules_bundle_id=RULES_BUNDLE_ID,
+        top_k=1,
+        random_seed=41101,
+    )
+    assert report.candidates
+    assert any("mandatory reserves allocation invalid" in item for item in report.diagnostics)
+    muster = ArmyMusterer(waha_helper)
+    for candidate in report.candidates:
+        army = muster.validate_runtime_legality(candidate.army_blueprint)
+        decisions = {}
+        for root in list(army._reserve_group_roots() or []):
+            must_start = getattr(root, "must_start_in_reserves", None)
+            status = "reserves" if callable(must_start) and bool(must_start()) else "deploy"
+            decisions[str(get_entity_id(root) or "")] = status
+        reserve_status = army.validate_reserves_decisions(decisions)
+        assert bool(reserve_status["valid"]), reserve_status
 
 
 @pytest.mark.integration

@@ -21,6 +21,7 @@ from typing import Any
 
 from ..waha_helper import WahaHelper
 from ..units.unit import Unit
+from ..utility.entity_ids import get_entity_id
 from .army import (
     ArmyValidationError,
     SPACE_MARINE_EXPLICIT_CHAPTERS,
@@ -994,6 +995,7 @@ def _entry_can_receive_basic_enhancement(entry: RosterEntry) -> bool:
 
 def _validation_summary(army: Any) -> dict[str, Any]:
     units = list(getattr(army, "units", []) or [])
+    forced_reserves = _forced_reserves_validation(army)
     return {
         "valid": True,
         "unit_count": len(units),
@@ -1001,7 +1003,41 @@ def _validation_summary(army: Any) -> dict[str, Any]:
         "faction": str(getattr(army, "faction", "") or ""),
         "faction_id": str(getattr(army, "faction_id", "") or ""),
         "warlord_count": sum(1 for unit in units if bool(getattr(unit, "is_warlord", False))),
+        "forced_reserves_valid": bool(forced_reserves.get("valid", True)),
+        "forced_reserve_units": int(forced_reserves.get("reserve_units", 0) or 0),
+        "forced_reserve_points": int(forced_reserves.get("reserve_points", 0) or 0),
     }
+
+
+def _unit_must_start_in_reserves(unit: Any) -> bool:
+    must_start = getattr(unit, "must_start_in_reserves", None)
+    return bool(must_start()) if callable(must_start) else False
+
+
+def _forced_reserves_validation(army: Any) -> dict[str, Any]:
+    reserve_roots = getattr(army, "_reserve_group_roots", None)
+    validate = getattr(army, "validate_reserves_decisions", None)
+    if not callable(reserve_roots) or not callable(validate):
+        return {"valid": True, "errors": []}
+    decisions: dict[str, str] = {}
+    for root in list(reserve_roots() or []):
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            continue
+        decisions[unit_id] = "reserves" if _unit_must_start_in_reserves(root) else "deploy"
+    return dict(validate(decisions) or {})
+
+
+def _forced_reserves_rejection_detail(army: Any) -> str:
+    status = _forced_reserves_validation(army)
+    errors = [
+        str(error or "").strip()
+        for error in list(status.get("errors", []) or [])
+        if str(error or "").strip()
+    ]
+    if errors:
+        return "; ".join(errors)
+    return "mandatory reserves allocation is invalid"
 
 
 def _candidate_style_breakdown(
@@ -1641,6 +1677,13 @@ def synthesize_rosters(
                         f"Rejected {blueprint_faction} / {detachment.name}: {exc}"
                     )
                     continue
+                forced_reserves_status = _forced_reserves_validation(army)
+                if not bool(forced_reserves_status.get("valid", False)):
+                    diagnostics.append(
+                        f"Rejected {blueprint_faction} / {detachment.name}: mandatory reserves "
+                        f"allocation invalid: {_forced_reserves_rejection_detail(army)}"
+                    )
+                    continue
                 points = int(army.get_total_points())
                 if points > seed.max_points:
                     diagnostics.append(
@@ -1692,6 +1735,13 @@ def synthesize_rosters(
                     diagnostics.append(
                         f"Rejected {blueprint_faction} / {detachment.name}: exported roster "
                         f"did not round-trip: {exc}"
+                    )
+                    continue
+                parsed_forced_reserves_status = _forced_reserves_validation(parsed_army)
+                if not bool(parsed_forced_reserves_status.get("valid", False)):
+                    diagnostics.append(
+                        f"Rejected {blueprint_faction} / {detachment.name}: exported roster mandatory "
+                        f"reserves allocation invalid: {_forced_reserves_rejection_detail(parsed_army)}"
                     )
                     continue
                 parsed_points = int(parsed_army.get_total_points())

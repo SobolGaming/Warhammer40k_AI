@@ -340,6 +340,24 @@ def test_manager_can_use_grenade_requires_unit_and_enemy_context() -> None:
     assert manager.can_use("GRENADE", phase_name="Shooting phase", unit=grenadier, enemy_unit=enemy) is True
 
 
+def test_grenade_candidate_scan_rejects_out_of_range_before_visibility() -> None:
+    grenadier = SimpleNamespace(id="unit:grenadier", name="Grenadier")
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy", is_alive=lambda: True)
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = SimpleNamespace(map=SimpleNamespace(get_enemy_units=lambda _unit: [enemy]))
+    manager._grenade_unit_is_eligible = lambda _unit: True
+    manager._grenade_extended_range_profile = lambda _unit: (False, 18.0, "")
+    manager._grenade_enemy_within_friendly_engagement = lambda _enemy: False
+    manager._grenade_enemy_within_range = lambda _unit, _enemy, *, max_range: False
+
+    def _unexpected_visibility_check(_unit, _enemy):
+        raise AssertionError("visibility should not be checked for out-of-range grenade targets")
+
+    manager._grenade_enemy_visible_from_unit = _unexpected_visibility_check
+
+    assert manager._grenade_enemy_candidates_for_unit(grenadier) == []
+
+
 def test_manager_can_use_tank_shock_requires_vehicle_and_enemy_context() -> None:
     charger = SimpleNamespace(id="unit:charger", name="Tank", is_vehicle=True)
     enemy = SimpleNamespace(id="unit:enemy", name="Enemy", is_alive=lambda: True)

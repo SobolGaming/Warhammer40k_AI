@@ -196,12 +196,18 @@ class GamePhaseHandlersMixin:
         army = self._get_player_army(active_player)
         if army is None:
             return []
-        from ..decision_requests import _eligible_units_for_phase_step, build_declare_shots_request
+        from ..decision_requests import (
+            _eligible_units_for_phase_step,
+            _unit_has_consumed_normal_shooting,
+            build_declare_shots_request,
+        )
 
         candidates = _eligible_units_for_phase_step(getattr(army, "units", []) or [], require_in_reserves=False)
         eligible: list[object] = []
         for unit in list(candidates or []):
             if unit is None:
+                continue
+            if _unit_has_consumed_normal_shooting(unit):
                 continue
             if build_declare_shots_request(
                 unit,

@@ -3208,7 +3208,7 @@ class GameSetupDeploymentReservesMixin:
             army = player.get_army()
             if army is None:
                 raise RuntimeError(f"Reserves declarations require an army for {player.name}.")
-            req = build_reserves_allocation_request(self, army, queue_requests=False)
+            req = build_reserves_allocation_request(self, army, queue_requests=False, strict_no_legal=False)
             if req is None:
                 continue
             self.request_decision(req)

@@ -247,6 +247,19 @@ def _unit_is_embarked(unit: object) -> bool:
     return getattr(unit, "embarked_in", None) is not None
 
 
+def _unit_has_consumed_normal_shooting(unit: object) -> bool:
+    round_state = getattr(unit, "round_state", None)
+    if round_state is None:
+        return False
+    if not bool(getattr(round_state, "shot_this_round", False)):
+        return False
+    action_shoot_exception_available = bool(
+        getattr(round_state, "action_locked_until_turn_end", False)
+        and not bool(getattr(round_state, "action_permitted_shoot_used", False))
+    )
+    return not action_shoot_exception_available
+
+
 def _unit_has_resolved_round_movement(unit: object) -> bool:
     round_state = getattr(unit, "round_state", None)
     if round_state is None:
@@ -953,6 +966,8 @@ def build_declare_shots_request(
     if not bool(getattr(unit, "deployed", True)):
         return None
     if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+        return None
+    if not bool(out_of_phase) and _unit_has_consumed_normal_shooting(unit):
         return None
     reserve_fn = getattr(unit, "is_in_reserves", None)
     if callable(reserve_fn) and bool(reserve_fn()):
@@ -1775,6 +1790,17 @@ def _reserve_status_choices(army: object, unit: object) -> list[str]:
     return choices
 
 
+def _forced_reserves_decisions(army: object) -> dict[str, str]:
+    forced: dict[str, str] = {}
+    for unit in _reserve_group_roots(army):
+        unit_id = str(get_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        choices = _reserve_status_choices(army, unit)
+        forced[unit_id] = choices[0] if choices else "deploy"
+    return forced
+
+
 def _reserve_unit_priority(army: object, unit: object) -> float:
     unit_id = str(get_entity_id(unit) or "")
     has_deep_strike = 1.0 if _unit_supports_standard_reserves(army, unit) else 0.0
@@ -1949,13 +1975,7 @@ def _reserves_option_payloads(
     roots = _reserve_group_roots(army)
     if not roots:
         return []
-    forced = {}
-    for unit in roots:
-        unit_id = str(get_entity_id(unit) or "")
-        if not unit_id:
-            continue
-        choices = _reserve_status_choices(army, unit)
-        forced[unit_id] = choices[0] if choices else "deploy"
+    forced = _forced_reserves_decisions(army)
     candidate_specs: list[tuple[str, str, dict[str, str]]] = []
     preferred_normalized = _normalize_reserves_decisions(army, preferred_decisions)
     if preferred_normalized:
@@ -2036,24 +2056,20 @@ def _reserves_option_payloads(
         entries.append({"label": str(label), "payload": payload})
         if len(entries) >= max_count:
             break
-    if not entries:
-        buckets = _reserves_buckets_from_decisions(forced)
-        entries.append(
-            {
-                "label": "Forced-only reserves",
-                "payload": {
-                    "strategy_id": "forced_only",
-                    "unit_ids_by_bucket": buckets,
-                    "reserve_units": 0,
-                    "reserve_points": 0,
-                    "strategic_points": 0,
-                    "reserve_unit_slots_ratio": 0.0,
-                    "reserve_points_ratio": 0.0,
-                    "strategic_points_ratio": 0.0,
-                },
-            }
-        )
     return entries
+
+
+def _no_legal_reserves_allocation_error(army: object) -> ValueError:
+    forced = _forced_reserves_decisions(army)
+    validated = _reserves_validation(army, forced)
+    errors = [
+        str(error or "").strip()
+        for error in list(validated.get("errors", []) or [])
+        if str(error or "").strip()
+    ]
+    detail = "; ".join(errors) if errors else "all generated reserve allocation candidates were illegal"
+    army_label = str(getattr(army, "name", "") or getattr(army, "faction", "") or "army").strip()
+    return ValueError(f"No legal reserves allocation options for {army_label}: {detail}")
 
 
 def _normalized_zone_vertices(zone: dict) -> list[list[list[float]]]:
@@ -2369,8 +2385,11 @@ def build_reserves_allocation_request(
     preferred_decisions: Optional[dict[str, str]] = None,
     max_options: int = 6,
     queue_requests: bool = True,
+    strict_no_legal: bool = True,
 ) -> Optional[DecisionRequest]:
     if army is None:
+        return None
+    if not _reserve_group_roots(army):
         return None
     player = getattr(army, "player", None)
     player_id = getattr(player, "id", None) if player is not None else None
@@ -2381,6 +2400,10 @@ def build_reserves_allocation_request(
         preferred_decisions=preferred_decisions,
         max_options=max_options,
     )
+    if not option_entries:
+        if not bool(strict_no_legal):
+            return None
+        raise _no_legal_reserves_allocation_error(army)
     options: list[DecisionOption] = []
     option_refs: list[dict[str, object]] = []
     for idx, entry in enumerate(list(option_entries or [])):
@@ -2411,9 +2434,6 @@ def build_reserves_allocation_request(
                 "strategic_points_ratio": float(payload.get("strategic_points_ratio", 0.0) or 0.0),
             }
         )
-    if not options:
-        options = [DecisionOption.create("Forced-only reserves")]
-
     zone_type = ""
     if isinstance(extra_context, dict):
         zone_type = str(dict(extra_context or {}).get("deployment_zone_type", "") or "")

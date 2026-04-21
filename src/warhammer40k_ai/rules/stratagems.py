@@ -6486,12 +6486,15 @@ class StratagemManager(
                 continue
             if self._grenade_enemy_within_friendly_engagement(enemy):
                 continue
-            if not self._grenade_enemy_visible_from_unit(unit, enemy):
+            within_base_range = self._grenade_enemy_within_range(unit, enemy, max_range=8.0)
+            within_extended_range = (
+                bool(gheistskull_available)
+                and not within_base_range
+                and self._grenade_enemy_within_range(unit, enemy, max_range=gheistskull_range)
+            )
+            if not within_base_range and not within_extended_range:
                 continue
-            if self._grenade_enemy_within_range(unit, enemy, max_range=8.0):
-                valid_enemies.append(enemy)
-                continue
-            if gheistskull_available and self._grenade_enemy_within_range(unit, enemy, max_range=gheistskull_range):
+            if self._grenade_enemy_visible_from_unit(unit, enemy):
                 valid_enemies.append(enemy)
         valid_enemies.sort(key=lambda enemy: str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or ""))
         return valid_enemies

@@ -99,6 +99,11 @@ This document describes deterministic headless placement behavior for deployment
 ## Pregame Decision Surfaces
 
 - `DECLARE_RESERVES` now emits deterministic multi-option allocation candidates (forced-only, pressure, balanced variants) with semantic metadata.
+- If no legal reserve allocation exists, strict request-builder calls raise an
+  explicit roster/setup legality error instead of exposing an invalid fallback
+  option; formation-phase orchestration suppresses the request rather than
+  queuing malformed options for empty or temporarily unrepresentable setup
+  states.
 - `SCOUT_MOVE` now emits deterministic destination options (plus skip) and solver metadata keyed to reserve denial, entry-lane quality, and exposure.
 - Deployment-scoped `MOVE_UNIT` now emits deterministic multi-option exact-placement candidates at runtime (anchor + exact `model_positions` per option), with per-option deployment semantic metadata.
 - With rollout enabled, deployment pregame candidates include deterministic shallow-lookahead metadata (`lookahead_*`) and adjusted round/trade projections for ranker consumption.

@@ -89,6 +89,13 @@ validation remains responsible for point caps, warlords, enhancements,
 duplicate datasheet limits, Epic Hero limits, attachment legality, detachment
 rules, and wargear legality.
 
+Candidates must also pass the minimal Declare Battle Formations reserve
+allocation: every unit that must start in Reserves is placed in Reserves and all
+other units deploy normally. This prevents the synthesizer from emitting
+otherwise valid 2000-point lists whose mandatory reserve footprint already
+exceeds the matched-play reserve unit or points caps before any optional reserve
+choices are made.
+
 ## CLI
 
 The CLI writes a report, candidate blueprints, and army-list text exports:

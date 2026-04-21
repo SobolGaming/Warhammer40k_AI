@@ -20,6 +20,7 @@ from warhammer40k_ai.engine.decision_requests import (
     build_declare_shots_request,
     build_select_unit_request,
 )
+from warhammer40k_ai.engine.decision_handlers.shooting import _apply_declare_shots
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.fight_phase_manager import FightStage
 from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
@@ -171,7 +172,7 @@ class _FlowGame(GamePhaseHandlersMixin):
         self.decision_queue = _DecisionQueueStub()
         self.queued_requests: list[DecisionRequest] = []
         self.map = _MapStub(enemy_units or [])
-        registry_items = [unit]
+        registry_items = list(getattr(unit.parent_army, "units", []) or [unit])
         registry_items.extend(list(enemy_units or []))
         self.entity_registry = _RegistryStub(registry_items)
         self._player = unit.parent_army.player
@@ -288,10 +289,40 @@ def test_shooting_followup_requeues_select_unit_after_in_phase_shots() -> None:
         payload={"skipped": True},
     )
 
+    _apply_declare_shots(game, request, result)
+    game._maybe_queue_shooting_phase_followup(request, result)
+
+    assert unit.round_state.shot_this_round is True
+    assert game.queued_requests == []
+
+
+def test_shooting_followup_after_skip_requeues_only_remaining_unactivated_units() -> None:
+    player, army, unit, _enemy = _build_players_with_unit()
+    second_unit = _UnitStub("unit-2", army)
+    army.units.append(second_unit)
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit)
+    request = build_declare_shots_request(
+        unit,
+        player_id=player.id,
+        out_of_phase=False,
+        context={"phase_name": "SHOOTING_PHASE", "phase_step": "SHOOT_UNITS"},
+    )
+    assert request is not None
+    skip_option = next(opt for opt in request.options if opt.payload.get("action") == "skip")
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=skip_option.option_id,
+        payload={"skipped": True},
+    )
+
+    _apply_declare_shots(game, request, result)
     game._maybe_queue_shooting_phase_followup(request, result)
 
     assert len(game.queued_requests) == 1
-    assert game.queued_requests[0].decision_type == DECISION_SELECT_UNIT
+    followup = game.queued_requests[0]
+    assert followup.decision_type == DECISION_SELECT_UNIT
+    assert followup.context["allowed_unit_ids"] == [second_unit.id]
 
 
 def test_charge_phase_selection_request_is_queued() -> None:
