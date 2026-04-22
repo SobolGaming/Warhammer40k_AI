@@ -23713,6 +23713,8 @@ class GamePhaseHandlersMixin:
             for source_unit in list(getattr(army, "units", []) or []):
                 if source_unit is None:
                     continue
+                if _army_used_resurrection_orb_this_turn(army):
+                    break
                 source_unit_id = str(get_entity_id(source_unit) or "")
                 if not source_unit_id or source_unit_id in seen_sources:
                     continue
@@ -23805,6 +23807,8 @@ class GamePhaseHandlersMixin:
                     phase_label=pname.replace("_", " ").title(),
                     variant=orb_variant,
                 )
+                if _army_used_resurrection_orb_this_turn(army):
+                    break
 
     def _on_phase_end_sweeping_advance(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: optional Sweeping Advance move for eligible models."""

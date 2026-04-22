@@ -23,6 +23,15 @@ coverage in the rules engine.
   unit as eligible while at least one bodyguard model from that attached unit
   remains on the battlefield.
 
+## Resurrection Orb
+
+- End-of-phase Resurrection Orb prompts remain optional. If one Orb has already
+  resurrected a unit this turn, stale queued Orb prompts can still resolve to
+  `None` so headless, remote, and replay flows can drain the decision queue
+  without consuming another Orb.
+- When a headless controller resolves an Orb during phase-end prompt generation,
+  later Orb sources in the same army are no longer queued for that turn.
+
 ## Reactive movement parity
 
 - Deterministic `DECISION_MOVE_UNIT` resolution now emits the same

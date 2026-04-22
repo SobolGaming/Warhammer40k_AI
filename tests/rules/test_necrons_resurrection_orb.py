@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
@@ -334,3 +335,55 @@ def test_resurrection_orb_enforces_one_resurrected_unit_per_turn(monkeypatch):
     second = resolve_decision_command(game, second_request, option_two, player_id=p1.id)
     assert not bool(getattr(second, "ok", False))
     assert not bool(source_two.has_used_unit_once_per_battle("resurrection_orb"))
+
+    skip_two = _skip_option_id(second_request)
+    assert skip_two
+    skipped = resolve_decision_command(game, second_request, skip_two, player_id=p1.id)
+    assert bool(getattr(skipped, "ok", False))
+    assert _find_resurrection_orb_request(game, source_unit=source_two) is None
+
+
+def test_resurrection_orb_headless_phase_end_stops_after_auto_resolved_use(monkeypatch):
+    game, necrons, _enemy, p1, _p2 = _build_game()
+    source_one = _make_unit(
+        "Catacomb Command Barge A",
+        abilities=[_ability("Resurrection Orb", NEARBY_RESURRECTION_ORB_TEXT)],
+        keywords=["NECRONS", "VEHICLE"],
+        faction_keywords=["NECRONS"],
+    )
+    source_two = _make_unit(
+        "Catacomb Command Barge B",
+        abilities=[_ability("Resurrection Orb", NEARBY_RESURRECTION_ORB_TEXT)],
+        keywords=["NECRONS", "VEHICLE"],
+        faction_keywords=["NECRONS"],
+    )
+    target_one = _make_unit(
+        "Necron Warriors A",
+        abilities=[_ability("Reanimation Protocols", "Reanimation Protocols.")],
+        keywords=["NECRONS", "INFANTRY"],
+        faction_keywords=["NECRONS"],
+    )
+    target_two = _make_unit(
+        "Necron Warriors B",
+        abilities=[_ability("Reanimation Protocols", "Reanimation Protocols.")],
+        keywords=["NECRONS", "INFANTRY"],
+        faction_keywords=["NECRONS"],
+    )
+    for unit in (source_one, source_two, target_one, target_two):
+        necrons.add_unit(unit)
+    _deploy(source_one, 0.0, 0.0)
+    _deploy(source_two, 10.0, 0.0)
+    _deploy(target_one, 4.0, 0.0)
+    _deploy(target_two, 14.0, 0.0)
+    target_one.models[0].wounds = 1
+    target_two.models[0].wounds = 1
+    game.map.units = [source_one, source_two, target_one, target_two]
+    game.rebuild_entity_registry()
+    HeadlessPolicyDecisionController(game=game, auto_attach=True)
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda _spec: 6)
+    game._on_phase_end_resurrection_orb(player=p1, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    assert bool(source_one.has_used_unit_once_per_battle("resurrection_orb"))
+    assert not bool(source_two.has_used_unit_once_per_battle("resurrection_orb"))
+    assert _find_resurrection_orb_request(game, source_unit=source_two) is None

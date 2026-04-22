@@ -268,6 +268,17 @@ class PowerFromPainManager:
             except Exception:
                 return False
 
+    def _unit_has_destroyed_bodyguard_models(self, unit) -> bool:
+        if unit is None:
+            return False
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return False
+        if bool(getattr(root, "is_leader", False)):
+            return False
+        return bool(list(getattr(root, "models_lost", []) or []))
+
     def _unit_in_reserves(self, unit) -> bool:
         if unit is None:
             return False
@@ -778,6 +789,9 @@ class PowerFromPainManager:
         if spec is None or unit is None:
             return False
         key = str(getattr(spec, "key", "") or "").strip().upper()
+        if key == "FLESHCRAFT":
+            if not self._unit_has_destroyed_bodyguard_models(unit):
+                return False
         if key == "SWOOPING_DESCENT":
             if not self._unit_in_reserves(unit):
                 return False
@@ -874,6 +888,53 @@ class PowerFromPainManager:
             pass
         if roll >= 4:
             self.gain_tokens(1, reason="Pain Adept (4+)")
+
+    def _command_phase_action_units(self, *, game=None, player=None) -> list:
+        if not self._army_has_power_from_pain():
+            return []
+        if player is None or player is not getattr(self.army, "player", None):
+            return []
+        if str(self._phase_name(game) or "").strip().upper() != "COMMAND_PHASE":
+            return []
+        units = list(getattr(self.army, "units", []) or [])
+        candidates = []
+        seen: set[str] = set()
+        for unit in sorted(
+            units,
+            key=lambda item: (
+                str(getattr(item, "name", "") or ""),
+                str(get_entity_id(item) or ""),
+            ),
+        ):
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            specs = self._applicable_pain_specs(root, trigger=TRIGGER_COMMAND, game=game)
+            if not specs:
+                continue
+            if self._unit_has_dark_vitality(root) or int(self.tokens or 0) > 0:
+                candidates.append(root)
+        return candidates
+
+    def has_command_phase_action(self, *, game=None, player=None) -> bool:
+        return bool(self._command_phase_action_units(game=game, player=player))
+
+    def resolve_command_phase_action(self, *, game=None, player=None) -> bool:
+        for unit in self._command_phase_action_units(game=game, player=player):
+            queue = getattr(game, "decision_queue", None)
+            before_pending = len(list(queue.list() or [])) if queue is not None and hasattr(queue, "list") else 0
+            if self.empower_unit_for_trigger(unit, trigger=TRIGGER_COMMAND, game=game):
+                return True
+            after_pending = len(list(queue.list() or [])) if queue is not None and hasattr(queue, "list") else 0
+            if after_pending > before_pending:
+                return True
+        return False
 
     def on_enemy_unit_destroyed(self, unit, *, destroyed_by_unit=None) -> None:
         if not self._army_has_power_from_pain():

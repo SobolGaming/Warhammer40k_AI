@@ -88,6 +88,51 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
 
         self.assertEqual(mgr.tokens, 2)
 
+    def test_command_phase_action_absent_without_destroyed_fleshcraft_models(self):
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
+
+        army = _ArmyStub()
+        player = _PlayerStub("Drukhari", army)
+        army.player = player
+        unit = _UnitStub(
+            name="Haemonculus",
+            army=army,
+            abilities=[SimpleNamespace(name="Fleshcraft (Pain)")],
+        )
+        army.units.append(unit)
+        mgr = PowerFromPainManager(army)
+        mgr.tokens = 1
+        game = _GameStub(phase_name="COMMAND_PHASE", current_player=player)
+
+        self.assertFalse(mgr.has_command_phase_action(game=game, player=player))
+
+    def test_command_phase_action_resolves_fleshcraft_when_models_are_lost(self):
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
+
+        army = _ArmyStub()
+        player = _PlayerStub("Drukhari", army)
+        army.player = player
+        unit = _UnitStub(
+            name="Haemonculus",
+            army=army,
+            abilities=[SimpleNamespace(name="Fleshcraft (Pain)")],
+        )
+        lost_models = [SimpleNamespace(is_alive=False), SimpleNamespace(is_alive=False)]
+        unit.models_lost.extend(lost_models)
+        army.units.append(unit)
+        mgr = PowerFromPainManager(army)
+        mgr.tokens = 1
+        game = _GameStub(phase_name="COMMAND_PHASE", current_player=player)
+
+        self.assertTrue(mgr.has_command_phase_action(game=game, player=player))
+        with patch("warhammer40k_ai.rules.power_from_pain.get_roll", return_value=1):
+            self.assertTrue(mgr.resolve_command_phase_action(game=game, player=player))
+
+        self.assertEqual(mgr.tokens, 0)
+        self.assertEqual(len(unit.models_lost), 0)
+        self.assertIn(lost_models[0], unit.models)
+        self.assertIn(lost_models[1], unit.models)
+
     def test_token_gain_on_enemy_destroy_and_battleshock(self):
         from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 

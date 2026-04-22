@@ -7471,6 +7471,8 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
         source_unit = resolve_unit(
             game,
             payload.get("source_unit_id")
@@ -7506,8 +7508,6 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         variant = str(ctx.get("resurrection_orb_variant", "") or "").strip().lower()
         if variant not in ("nearby", "leading"):
             return ("Resurrection Orb context is missing a supported variant.",)
-        if is_skip_choice(request, result):
-            return ()
 
         target_unit = resolve_unit(
             game,
@@ -19047,6 +19047,25 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return target_root
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
+        ability_name = str(ctx.get("ability_name", "") or "Resurrection Orb").strip() or "Resurrection Orb"
+        if is_skip_choice(request, result):
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                source_unit = resolve_unit(
+                    game,
+                    payload.get("source_unit_id")
+                    or ctx.get("source_unit_id")
+                    or payload.get("unit_id")
+                    or ctx.get("unit_id"),
+                )
+                source_army = (
+                    source_unit.get_parent_army()
+                    if source_unit is not None and hasattr(source_unit, "get_parent_army")
+                    else None
+                )
+                player = getattr(source_army, "player", None) if source_army is not None else None
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
         source_unit = resolve_unit(
             game,
             payload.get("source_unit_id")
@@ -19071,11 +19090,6 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         turn_owner_id = str(getattr(current_player, "id", "") or "")
         turn = int(getattr(game, "turn", 0) or 0)
         if _resurrection_orb_army_used_this_turn(source_army, turn=turn, turn_owner_id=turn_owner_id):
-            return None
-
-        ability_name = str(ctx.get("ability_name", "") or "Resurrection Orb").strip() or "Resurrection Orb"
-        if is_skip_choice(request, result):
-            _log_action_for_players(game, player, f"{ability_name}: selected none.")
             return None
 
         bearer_model = resolve_model(game, payload.get("bearer_model_id") or ctx.get("bearer_model_id"))
