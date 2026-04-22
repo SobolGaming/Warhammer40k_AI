@@ -36,6 +36,7 @@ from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
 from .stratagems_imperial_knights import ImperialKnightsStratagemMixin
 from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
+from .tool_action_validation import ToolActionCandidateValidator, ToolActionValidationIssue
 
 logger = logging.getLogger(__name__)
 
@@ -4119,23 +4120,27 @@ class StratagemManager(
         kwargs: Dict[str, Any],
         label_suffix: str = "",
     ) -> None:
-        probe = dict(kwargs or {})
-        if not str(probe.get("phase_name", "") or "").strip():
-            resolved_phase_name = self._resolved_phase_name()
-            if resolved_phase_name:
-                probe["phase_name"] = resolved_phase_name
-        missing_bindings = self._tool_action_missing_required_bindings(stratagem, probe)
-        if missing_bindings:
+        validation = ToolActionCandidateValidator(self).validate_probe(stratagem, kwargs)
+        probe = dict(validation.kwargs or {})
+        missing_issue = next(
+            (
+                issue
+                for issue in validation.issues
+                if str(issue.code or "") == "missing_tool_action_context"
+            ),
+            None,
+        )
+        if missing_issue is not None:
             self._record_tool_action_probe_diagnostic(
                 stratagem=stratagem,
                 kwargs=probe,
-                missing_keys=missing_bindings,
+                missing_keys=list(missing_issue.missing_keys or ()),
                 severity="WARNING",
                 code="missing_tool_action_context",
                 resolver="generic_tool_action_builder",
             )
             return
-        if not self.can_use(str(getattr(stratagem, "name", "") or ""), **probe):
+        if validation.issues:
             return
         serialized_kwargs = self._serialize_tool_action_value(probe)
         stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -4174,6 +4179,50 @@ class StratagemManager(
                 },
             }
         )
+
+    def _record_tool_action_validation_issue(
+        self,
+        *,
+        stratagem: Stratagem,
+        kwargs: Dict[str, Any],
+        issue: ToolActionValidationIssue,
+    ) -> None:
+        missing_keys = list(issue.missing_keys or ())
+        if not missing_keys:
+            missing_keys = [str(issue.code or "tool_action_validation")]
+        self._record_tool_action_probe_diagnostic(
+            stratagem=stratagem,
+            kwargs=dict(kwargs or {}),
+            missing_keys=missing_keys,
+            severity=str(issue.severity or "WARNING"),
+            code=str(issue.code or "tool_action_validation"),
+            resolver="tool_action_candidate_firewall",
+        )
+
+    def _filter_legal_tool_action_specs(self, specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        validator = ToolActionCandidateValidator(self)
+        filtered: List[Dict[str, Any]] = []
+        for spec in list(specs or []):
+            if not isinstance(spec, dict):
+                continue
+            payload = dict(spec.get("payload", {}) or {})
+            tool_name = str(payload.get("tool_name", "") or payload.get("stratagem_name", "") or "").strip()
+            if not tool_name:
+                continue
+            stratagem = self.get_by_name(tool_name)
+            if stratagem is None:
+                continue
+            validation = validator.validate_serialized_payload(stratagem, payload)
+            if validation.issues:
+                for issue in validation.issues:
+                    self._record_tool_action_validation_issue(
+                        stratagem=stratagem,
+                        kwargs=dict(validation.kwargs or {}),
+                        issue=issue,
+                    )
+                continue
+            filtered.append(spec)
+        return filtered
 
     def _build_tool_action_specs_for_item(self, item: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not bool(item.get("available", False)):
@@ -4732,6 +4781,7 @@ class StratagemManager(
         specs: List[Dict[str, Any]] = []
         for item in items:
             specs.extend(self._build_tool_action_specs_for_item(item))
+        specs = self._filter_legal_tool_action_specs(specs)
         if not specs:
             return None
 

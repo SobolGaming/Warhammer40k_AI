@@ -118,7 +118,12 @@ This document describes deterministic headless placement behavior for deployment
   `reserves_arrival_search_metrics` into the JSON report.
 - The runner prints a per-game tool-probe diagnostic summary grouped by
   severity, tool name, and code. Candidate-build filtering caused by missing
-  required stratagem/ability context is logged as `WARNING`; any malformed tool
+  required stratagem/ability context is logged as `WARNING`. A shared tool-action
+  preflight firewall filters emitted specs that fail descriptor-derived
+  eligibility, entity-reference roundtrip resolution, or final `can_use(...)`
+  validation before exposing `SELECT_TOOL_ACTION`; those diagnostics use
+  `illegal_tool_candidate_filtered_preflight` or
+  `malformed_tool_candidate_filtered_preflight`. Any malformed tool
   candidate that reaches execute/apply is logged as `ERROR` with
   `malformed_tool_candidate_escaped_preflight`.
 - Units destroyed at the battle round 3 reserves cutoff emit

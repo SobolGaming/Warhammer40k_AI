@@ -301,6 +301,125 @@ def test_queue_headless_tool_action_decision_builds_model_target_from_reaction_c
     assert resolved["target_model"]["__entity_ref__"]["id"] == model.id
 
 
+def test_tool_action_firewall_filters_emitted_spec_that_fails_can_use() -> None:
+    valid_unit = SimpleNamespace(id="unit:valid", name="Valid Unit")
+    invalid_unit = SimpleNamespace(id="unit:invalid", name="Invalid Unit")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC FIREWALL TEST",
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase"},
+        can_use=lambda _name, **kwargs: kwargs.get("unit") is valid_unit,
+    )
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: (
+            valid_unit
+            if kind == "unit" and entity_id == valid_unit.id
+            else invalid_unit
+            if kind == "unit" and entity_id == invalid_unit.id
+            else None
+        )
+    )
+
+    def _spec_for(unit):
+        return {
+            "label": unit.name,
+            "payload": {
+                "tool_family": "stratagem",
+                "tool_type": "stratagem",
+                "tool_name": "GENERIC FIREWALL TEST",
+                "resolved_kwargs": manager._serialize_tool_action_value(
+                    {
+                        "phase_name": "Shooting phase",
+                        "unit": unit,
+                        "target_unit": unit,
+                    }
+                ),
+            },
+        }
+
+    manager._build_tool_action_specs_for_item = lambda _item: [_spec_for(invalid_unit), _spec_for(valid_unit)]
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == valid_unit.id
+    diagnostics = manager.get_tool_action_probe_diagnostics()
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["code"] == "illegal_tool_candidate_filtered_preflight"
+    assert diagnostics[0]["missing_keys"] == ["can_use"]
+
+
+def test_tool_action_firewall_filters_unresolvable_emitted_entity_ref() -> None:
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC MALFORMED TEST",
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase"},
+        can_use=lambda *_args, **_kwargs: True,
+    )
+    game.entity_registry = SimpleNamespace(get=lambda _entity_id, kind=None: None)
+    manager._build_tool_action_specs_for_item = lambda _item: [
+        {
+            "label": "Missing Unit",
+            "payload": {
+                "tool_family": "stratagem",
+                "tool_type": "stratagem",
+                "tool_name": "GENERIC MALFORMED TEST",
+                "resolved_kwargs": {
+                    "phase_name": "Shooting phase",
+                    "unit": {"__entity_ref__": {"id": "unit:missing", "kind": "unit"}},
+                    "target_unit": {"__entity_ref__": {"id": "unit:missing", "kind": "unit"}},
+                },
+            },
+        }
+    ]
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+    diagnostics = manager.get_tool_action_probe_diagnostics()
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["code"] == "malformed_tool_candidate_filtered_preflight"
+    assert diagnostics[0]["severity"] == "ERROR"
+    assert "resolved_kwargs.unit" in diagnostics[0]["missing_keys"]
+
+
+def test_generic_tool_action_descriptor_filters_invalid_unit_keywords_before_emit() -> None:
+    aspect = SimpleNamespace(
+        id="unit:aspect",
+        name="Dire Avengers",
+        keywords=["ASPECT WARRIORS", "INFANTRY"],
+        faction_keywords=["AELDARI"],
+        round_state=SimpleNamespace(shot_this_round=False),
+    )
+    guardians = SimpleNamespace(
+        id="unit:guardians",
+        name="Guardian Defenders",
+        keywords=["GUARDIANS", "INFANTRY"],
+        faction_keywords=["AELDARI"],
+        round_state=SimpleNamespace(shot_this_round=False),
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC ASPECT TEST",
+        descriptor_target="aspect_warriors_unit_not_yet_shot",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [guardians, aspect],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == aspect.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
 def test_manager_can_use_denizens_requires_selected_unit_context() -> None:
     reserve_unit = SimpleNamespace(id="unit:reserve", name="Reserve Unit")
     reserve_unit.get_attached_unit_root = lambda: reserve_unit
