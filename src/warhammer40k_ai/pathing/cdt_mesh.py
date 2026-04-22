@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import hypot
 from typing import Optional
 
-from shapely import STRtree
-from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon
+from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import triangulate
 
@@ -62,29 +62,51 @@ def _geometry_sort_key(geometry: BaseGeometry) -> tuple[float, float, float, flo
     )
 
 
-def _extract_line_segment(geometry: BaseGeometry) -> Optional[LineString]:
-    if isinstance(geometry, LineString):
-        if float(geometry.length) > _LENGTH_EPSILON:
-            return geometry
+def _polygon_edges(polygon: Polygon) -> tuple[tuple[tuple[float, float], tuple[float, float]], ...]:
+    coords = tuple((float(x), float(y)) for x, y in polygon.exterior.coords)
+    edges: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for index in range(1, len(coords)):
+        start = coords[index - 1]
+        end = coords[index]
+        if start == end:
+            continue
+        edges.append((start, end))
+    return tuple(edges)
+
+
+def _edge_line_record(
+    tri_index: int,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> tuple[tuple[float, float, float], tuple[int, float, float, float, float, float]] | None:
+    dx = float(end[0]) - float(start[0])
+    dy = float(end[1]) - float(start[1])
+    length = hypot(dx, dy)
+    if length <= _LENGTH_EPSILON:
         return None
-    if isinstance(geometry, MultiLineString):
-        segments = sorted(
-            (
-                line
-                for line in geometry.geoms
-                if isinstance(line, LineString) and float(line.length) > _LENGTH_EPSILON
-            ),
-            key=lambda line: (-float(line.length), _geometry_sort_key(line)),
-        )
-        if segments:
-            return segments[0]
-        return None
-    if isinstance(geometry, GeometryCollection):
-        for geom in geometry.geoms:
-            segment = _extract_line_segment(geom)
-            if segment is not None:
-                return segment
-    return None
+    ux = dx / length
+    uy = dy / length
+    if ux < -1e-12 or (abs(ux) <= 1e-12 and uy < 0.0):
+        ux = -ux
+        uy = -uy
+    nx = -uy
+    ny = ux
+    offset = (nx * float(start[0])) + (ny * float(start[1]))
+    t0 = (ux * float(start[0])) + (uy * float(start[1]))
+    t1 = (ux * float(end[0])) + (uy * float(end[1]))
+    return (
+        (round(ux, 8), round(uy, 8), round(offset, 8)),
+        (int(tri_index), min(t0, t1), max(t0, t1), ux, uy, offset),
+    )
+
+
+def _point_on_edge_line(ux: float, uy: float, offset: float, projection: float) -> tuple[float, float]:
+    nx = -uy
+    ny = ux
+    return (
+        float(ux) * float(projection) + float(nx) * float(offset),
+        float(uy) * float(projection) + float(ny) * float(offset),
+    )
 
 
 def _constrained_delaunay_available() -> bool:
@@ -155,37 +177,68 @@ def _build_portals(
     if not triangles:
         return ()
 
-    tree = STRtree(triangles)
-    portals: list[SurfacePortal] = []
-
+    edge_records: dict[tuple[float, float, float], list[tuple[int, float, float, float, float, float]]] = {}
     for tri_index, triangle in enumerate(triangles):
-        candidate_indices = tree.query(triangle)
-        if candidate_indices is None:
+        for start, end in _polygon_edges(triangle):
+            record = _edge_line_record(tri_index, start, end)
+            if record is None:
+                continue
+            line_key, edge_record = record
+            edge_records.setdefault(line_key, []).append(edge_record)
+
+    portals: list[SurfacePortal] = []
+    seen_pairs: set[tuple[int, int, tuple[float, float, float], float, float]] = set()
+
+    for edge_key, records in edge_records.items():
+        if len(records) < 2:
             continue
-        for other_index in tuple(int(index) for index in candidate_indices):
-            if other_index <= tri_index:
-                continue
-            other_triangle = triangles[other_index]
-            if not triangle.touches(other_triangle):
-                continue
-
-            shared_boundary = triangle.boundary.intersection(other_triangle.boundary)
-            segment = _extract_line_segment(shared_boundary)
-            if segment is None or float(segment.length) <= _LENGTH_EPSILON:
-                continue
-
-            midpoint: Point = segment.interpolate(0.5, normalized=True)
-            portals.append(
-                SurfacePortal(
-                    portal_id=f"{surface_id}:portal:{tri_index}:{other_index}",
-                    surface_id=surface_id,
-                    triangle_a=tri_index,
-                    triangle_b=other_index,
-                    segment=segment,
-                    midpoint_xy=(float(midpoint.x), float(midpoint.y)),
-                    length=float(segment.length),
+        records.sort(key=lambda record: (float(record[1]), float(record[2]), int(record[0])))
+        for left_index in range(len(records)):
+            tri_index, start_projection, end_projection, ux, uy, offset = records[left_index]
+            for right_index in range(left_index + 1, len(records)):
+                other_index, other_start, other_end, _other_ux, _other_uy, _other_offset = records[right_index]
+                if other_start >= end_projection - _LENGTH_EPSILON:
+                    break
+                if other_index == tri_index:
+                    continue
+                overlap_start = max(float(start_projection), float(other_start))
+                overlap_end = min(float(end_projection), float(other_end))
+                if overlap_end - overlap_start <= _LENGTH_EPSILON:
+                    continue
+                triangle_a = min(int(tri_index), other_index)
+                triangle_b = max(int(tri_index), other_index)
+                pair_key = (
+                    triangle_a,
+                    triangle_b,
+                    edge_key,
+                    round(overlap_start, 8),
+                    round(overlap_end, 8),
                 )
-            )
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                segment = LineString(
+                    [
+                        _point_on_edge_line(float(ux), float(uy), float(offset), overlap_start),
+                        _point_on_edge_line(float(ux), float(uy), float(offset), overlap_end),
+                    ]
+                )
+                length = float(segment.length)
+                if length <= _LENGTH_EPSILON:
+                    continue
+                midpoint: Point = segment.interpolate(0.5, normalized=True)
+                portals.append(
+                    SurfacePortal(
+                        portal_id=f"{surface_id}:portal:{triangle_a}:{triangle_b}",
+                        surface_id=surface_id,
+                        triangle_a=triangle_a,
+                        triangle_b=triangle_b,
+                        segment=segment,
+                        midpoint_xy=(float(midpoint.x), float(midpoint.y)),
+                        length=length,
+                    )
+                )
 
     portals.sort(
         key=lambda portal: (

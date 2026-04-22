@@ -7,10 +7,11 @@ from typing import Optional
 from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
+from shapely.prepared import prep
 
 from .cdt_mesh import SurfaceCdtMesh
 from .corridor import CorridorResult
-from .dynamic_overlay import DynamicOverlay
+from .dynamic_overlay import DynamicOverlay, query_enemy_blockers, query_friendly_blockers
 from .surfaces import GROUND_LAYER_KIND, SupportSurface, validate_pose_support_on_surface
 from .types import MovementProfile, SurfaceId
 
@@ -18,6 +19,7 @@ _ANGLE_EPSILON = 1e-6
 _DISTANCE_EPSILON = 1e-9
 _START_THETA_KEY = -1
 _GOAL_THETA_KEY = -2
+_POSE_SHAPE_CACHE_SIZE = 4096
 
 
 @dataclass(frozen=True, eq=False)
@@ -397,9 +399,24 @@ def _pose_valid(
     x: float,
     y: float,
     theta: float,
+    corridor_prepared: object = None,
+    pose_shape_cache: dict[tuple[float, float, float], BaseGeometry] | None = None,
 ) -> tuple[bool, Optional[str]]:
-    pose_shape = request.model_base.get_base_shape_at(float(x), float(y), float(theta))
-    if not corridor_geometry.covers(pose_shape):
+    shape_key = (round(float(x), 6), round(float(y), 6), round(float(theta), 6))
+    pose_shape = pose_shape_cache.get(shape_key) if pose_shape_cache is not None else None
+    if pose_shape is None:
+        pose_shape = request.model_base.get_base_shape_at(float(x), float(y), float(theta))
+        if pose_shape_cache is not None:
+            if len(pose_shape_cache) >= _POSE_SHAPE_CACHE_SIZE:
+                pose_shape_cache.clear()
+            pose_shape_cache[shape_key] = pose_shape
+
+    corridor_covers = (
+        bool(corridor_prepared.covers(pose_shape))
+        if corridor_prepared is not None
+        else bool(corridor_geometry.covers(pose_shape))
+    )
+    if not corridor_covers:
         return False, "footprint_outside_corridor"
 
     if request.surface.layer_kind != GROUND_LAYER_KIND:
@@ -417,12 +434,18 @@ def _pose_valid(
         return True, None
 
     z_here = float(request.surface.surface_z)
-    for blocker in request.dynamic_overlay.blockers:
+    blocker_candidates = (
+        query_friendly_blockers(request.dynamic_overlay, pose_shape)
+        + query_enemy_blockers(request.dynamic_overlay, pose_shape)
+    )
+    for blocker in blocker_candidates:
         if _enemy_blocker_ignored_for_profile(blocker, request.movement_profile):
             continue
         if blocker.is_friendly and request.movement_profile.can_move_through_friendly_models:
             continue
         if z_here < (float(blocker.z_bottom) - 1.0) or z_here > (float(blocker.z_top) + 1.0):
+            continue
+        if not pose_shape.intersects(blocker.footprint):
             continue
         overlap_area = float(pose_shape.intersection(blocker.footprint).area)
         if overlap_area > 1e-6:
@@ -438,6 +461,8 @@ def _transition_valid(
     next_x: float,
     next_y: float,
     next_theta: float,
+    corridor_prepared: object = None,
+    pose_shape_cache: dict[tuple[float, float, float], BaseGeometry] | None = None,
 ) -> tuple[bool, Optional[str]]:
     dx = float(next_x) - float(prev_pose.x)
     dy = float(next_y) - float(prev_pose.y)
@@ -460,6 +485,8 @@ def _transition_valid(
             x=sample_x,
             y=sample_y,
             theta=sample_theta,
+            corridor_prepared=corridor_prepared,
+            pose_shape_cache=pose_shape_cache,
         )
         if not valid:
             return False, reason
@@ -527,6 +554,8 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
             debug_artifacts={},
         )
 
+    corridor_prepared = prep(corridor_geometry)
+    pose_shape_cache: dict[tuple[float, float, float], BaseGeometry] = {}
     min_width, max_width = _footprint_dimensions(request.model_base)
     theta_count = _theta_bin_count(request.model_base, request.theta_bins_default, request.theta_bins_hull)
     theta_bins = _build_theta_bins(theta_count)
@@ -551,6 +580,8 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
         x=float(start_anchor_xy[0]),
         y=float(start_anchor_xy[1]),
         theta=float(start_facing),
+        corridor_prepared=corridor_prepared,
+        pose_shape_cache=pose_shape_cache,
     )
     if start_valid:
         first_layer[start_key] = _StateRecord(
@@ -600,6 +631,8 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
             x=float(start_anchor_xy[0]),
             y=float(start_anchor_xy[1]),
             theta=theta,
+            corridor_prepared=corridor_prepared,
+            pose_shape_cache=pose_shape_cache,
         )
         if not valid:
             continue
@@ -660,7 +693,15 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
                     is_in_place_rotation = _pose_distance_cost(prev_record.pose, x, y) <= _DISTANCE_EPSILON
                     if yaw_delta > float(request.max_turn_per_step) and not is_in_place_rotation:
                         continue
-                    valid, reason = _pose_valid(request, corridor_geometry, x=x, y=y, theta=theta)
+                    valid, reason = _pose_valid(
+                        request,
+                        corridor_geometry,
+                        x=x,
+                        y=y,
+                        theta=theta,
+                        corridor_prepared=corridor_prepared,
+                        pose_shape_cache=pose_shape_cache,
+                    )
                     if not valid:
                         if reason is not None:
                             transition_failures[reason] = transition_failures.get(reason, 0) + 1
@@ -673,6 +714,8 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
                         next_x=x,
                         next_y=y,
                         next_theta=theta,
+                        corridor_prepared=corridor_prepared,
+                        pose_shape_cache=pose_shape_cache,
                     )
                     if not transition_ok:
                         if transition_reason is not None:

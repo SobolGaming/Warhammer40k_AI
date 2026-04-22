@@ -1,6 +1,7 @@
 import logging
 import typing
 import math
+from collections import OrderedDict
 from enum import Enum
 from shapely.geometry import Point, Polygon as Poly
 from shapely import affinity
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 DEGREES_IN_CIRCLE = 360
 RADIANS_IN_CIRCLE = 2 * math.pi
 _ELLIPSE_UNIT_TEMPLATE = Point(0.0, 0.0).buffer(1, quad_segs=64)
+_SHAPE_AT_CACHE_SIZE = 128
 
 # Create a shapely ellipse
 def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
@@ -77,6 +79,7 @@ class Base:
         self.z_offset: float = 0.0
         self._compound_parts: typing.Tuple[dict, ...] = tuple()
         self._shape_template_cache: dict[typing.Tuple[str, float], Poly] = {}
+        self._shape_at_cache: OrderedDict[typing.Tuple[float, float, float], Poly] = OrderedDict()
 
     def _normalize_radius(self, radius: typing.Union[float, typing.Tuple[float, float]]) -> typing.Tuple[float, float]:
         if isinstance(radius, (float, int)):
@@ -122,10 +125,12 @@ class Base:
             normalized.append(part)
         self._compound_parts = tuple(normalized)
         self._shape_template_cache.clear()
+        self._shape_at_cache.clear()
 
     def clear_compound_parts(self) -> None:
         self._compound_parts = tuple()
         self._shape_template_cache.clear()
+        self._shape_at_cache.clear()
 
     def has_compound_parts(self) -> bool:
         return bool(self._compound_parts)
@@ -245,15 +250,33 @@ class Base:
         self._shape_template_cache[key] = template
         return template
 
+    def _shape_at_cache_key(self, x: float, y: float, facing: float) -> typing.Tuple[float, float, float]:
+        facing_key = round(float(facing), 6)
+        if self.base_type == BaseType.CIRCULAR and not self._compound_parts:
+            facing_key = 0.0
+        return (round(float(x), 6), round(float(y), 6), facing_key)
+
     def get_base_shape_at(self, x: float, y: float, facing: float) -> Poly:
+        key = self._shape_at_cache_key(x, y, facing)
+        cached = self._shape_at_cache.get(key)
+        if cached is not None:
+            self._shape_at_cache.move_to_end(key)
+            return cached
+
         if self._compound_parts:
-            return self._compound_shape_at(x, y, facing)
-        template = self._base_shape_template(facing)
-        tx = float(x)
-        ty = float(y)
-        if abs(tx) <= 1e-12 and abs(ty) <= 1e-12:
-            return template
-        return affinity.translate(template, xoff=tx, yoff=ty)
+            shape = self._compound_shape_at(x, y, facing)
+        else:
+            template = self._base_shape_template(facing)
+            tx = float(x)
+            ty = float(y)
+            if abs(tx) <= 1e-12 and abs(ty) <= 1e-12:
+                shape = template
+            else:
+                shape = affinity.translate(template, xoff=tx, yoff=ty)
+        self._shape_at_cache[key] = shape
+        if len(self._shape_at_cache) > _SHAPE_AT_CACHE_SIZE:
+            self._shape_at_cache.popitem(last=False)
+        return shape
 
     def _compound_part_shape_at(self, part: dict, x: float, y: float, facing: float):
         local_x, local_y = part["offset"]
