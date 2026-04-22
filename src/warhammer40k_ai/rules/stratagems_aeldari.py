@@ -10836,6 +10836,72 @@ class AeldariStratagemMixin:
                 out.append(unit)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_candidate_selected(self, unit: Any, candidates: List[Any]) -> bool:
+        candidate_ids = {
+            self._aeldari_sort_key(self._aeldari_root(candidate))
+            for candidate in list(candidates or [])
+            if self._aeldari_root(candidate) is not None
+        }
+        if not candidate_ids:
+            return True
+        return self._aeldari_sort_key(unit) in candidate_ids
+
+    def _aeldari_aspect_host_tool_action_candidates(self, stratagem_name: str, *, phase_name: str = "") -> List[Any]:
+        name_u = self._aeldari_norm_name(stratagem_name)
+        phase_name_l = str(phase_name or self._current_phase_name or "").strip().lower()
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+
+        if name_u == "WARRIOR FOCUS":
+            if phase_name_l == "shooting phase":
+                if active_player is not self.player:
+                    return []
+                return self._aeldari_aspect_warriors_avatar_candidates(require_not_shot=True)
+            if phase_name_l == "fight phase":
+                return self._aeldari_aspect_warriors_avatar_candidates(require_not_fought=True)
+            return []
+        if name_u == "PRETERNATURAL PRECISION":
+            if phase_name_l != "shooting phase" or active_player is not self.player:
+                return []
+            return self._aeldari_aspect_warriors_candidates(require_not_shot=True)
+        if name_u == "DOOM INESCAPABLE":
+            if phase_name_l != "shooting phase" or active_player is not self.player:
+                return []
+            return self._aeldari_avatar_candidates(require_not_shot=True)
+        return []
+
+    def _aeldari_aspect_host_tool_action_context(self, stratagem_name: str, *, phase_name: str = "") -> Dict[str, Any]:
+        candidates = self._aeldari_aspect_host_tool_action_candidates(stratagem_name, phase_name=phase_name)
+        if not candidates:
+            return {}
+        return {"candidates": list(candidates)}
+
+    def _aeldari_can_use_aspect_host_tool_action(self, stratagem_name: str, kwargs: Dict[str, Any]) -> Optional[bool]:
+        name_u = self._aeldari_norm_name(stratagem_name)
+        if name_u not in {"WARRIOR FOCUS", "PRETERNATURAL PRECISION", "DOOM INESCAPABLE"}:
+            return None
+        if not self._is_aspect_host_detachment():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        target = kwargs.get("unit") or kwargs.get("target_unit")
+        target_root = self._aeldari_root(target) if target is not None else None
+        explicit_candidates = list(kwargs.get("candidates") or [])
+        allowed_candidates = list(explicit_candidates or [])
+        if not allowed_candidates:
+            allowed_candidates = self._aeldari_aspect_host_tool_action_candidates(name_u, phase_name=phase_name)
+        if target_root is None:
+            return bool(allowed_candidates)
+        if not allowed_candidates:
+            return False
+        if not self._aeldari_candidate_selected(target_root, explicit_candidates):
+            return False
+        if allowed_candidates:
+            allowed_ids = {self._aeldari_sort_key(candidate) for candidate in allowed_candidates}
+            if self._aeldari_sort_key(target_root) not in allowed_ids:
+                return False
+        return True
+
     def _queue_aeldari_aspect_host_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
         if game is None or not self._is_aspect_host_detachment():

@@ -154,6 +154,25 @@ def _army_label_from_path(path: str) -> str:
     return parsed.stem or parsed.name or path_text
 
 
+def _army_labels_from_paths(player1_army_file: str, player2_army_file: str) -> tuple[str, str]:
+    player1_label = _army_label_from_path(player1_army_file)
+    player2_label = _army_label_from_path(player2_army_file)
+    if player1_label != player2_label:
+        return player1_label, player2_label
+
+    def _with_parent(path: str, label: str, fallback_prefix: str) -> str:
+        parent_name = Path(str(path or "")).parent.name
+        if parent_name:
+            return f"{parent_name}:{label}"
+        return f"{fallback_prefix}:{label}"
+
+    player1_disambiguated = _with_parent(player1_army_file, player1_label, "player1")
+    player2_disambiguated = _with_parent(player2_army_file, player2_label, "player2")
+    if player1_disambiguated == player2_disambiguated:
+        return f"player1:{player1_label}", f"player2:{player2_label}"
+    return player1_disambiguated, player2_disambiguated
+
+
 def _resolved_replay_base_dir(path: str | None) -> Path | None:
     path_text = str(path or "").strip()
     if not path_text:
@@ -470,8 +489,7 @@ def _run_single_game(
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
 ) -> dict[str, Any]:
     stable_game_id = str(game_id or "")
-    player1_label = _army_label_from_path(player1_army_file)
-    player2_label = _army_label_from_path(player2_army_file)
+    player1_label, player2_label = _army_labels_from_paths(player1_army_file, player2_army_file)
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])

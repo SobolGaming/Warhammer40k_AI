@@ -22338,6 +22338,12 @@ class StratagemManager(
             return False
         if name_u in {"DAEMONIC FURY", "DAEMONTIDE"} and not self._we_can_use_khorne_daemonkin_tool_action(name_u, kwargs):
             return False
+        possessed_result = self._we_can_use_possessed_tool_action(name_u, kwargs)
+        if possessed_result is not None and not possessed_result:
+            return False
+        aeldari_aspect_result = self._aeldari_can_use_aspect_host_tool_action(name_u, kwargs)
+        if aeldari_aspect_result is not None and not aeldari_aspect_result:
+            return False
         if name_u == "SYCOPHANTIC SURGE" and not self._ec_can_use_carnival_sycophantic_surge_tool_action(kwargs):
             return False
         if name_u == "VIOLENT CRESCENDO" and not self._ec_can_use_carnival_violent_crescendo_tool_action(kwargs):
@@ -31081,6 +31087,20 @@ class StratagemManager(
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "VIOLENT CRESCENDO":
             return dict(self._ec_carnival_violent_crescendo_tool_action_context() or {})
+        if name_u in {
+            "DAEMONIC STRENGTH",
+            "IMMORTAL FURY",
+            "HORRIFYING VIOLENCE",
+            "RAPID MANIFESTATION",
+            "WARP STALKERS",
+        }:
+            return dict(self._we_possessed_tool_action_context(name_u, phase_name=phase_label) or {})
+        if name_u in {
+            "DOOM INESCAPABLE",
+            "PRETERNATURAL PRECISION",
+            "WARRIOR FOCUS",
+        }:
+            return dict(self._aeldari_aspect_host_tool_action_context(name_u, phase_name=phase_label) or {})
         if not is_active_turn:
             return {}
         if name_u == "DENIZENS OF THE WARP":

@@ -290,6 +290,51 @@ class TestAeldariAspectHostStratagems(unittest.TestCase):
         )
         self.assertFalse(bool(bonus_after))
 
+    def test_aspect_host_tool_actions_filter_invalid_units_and_turns(self):
+        game, p1, p2, aeldari_army, _enemy_army = _build_game()
+        aspect = _make_unit(
+            "Dire Avengers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "ASPECT WARRIORS", "INFANTRY"],
+        )
+        guardians = _make_unit(
+            "Guardian Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "GUARDIANS", "INFANTRY"],
+        )
+        aeldari_army.add_unit(aspect)
+        aeldari_army.add_unit(guardians)
+        _place_unit(game, aspect, 10.0, 10.0)
+        _place_unit(game, guardians, 14.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        self.assertFalse(p1.stratagems.can_use("WARRIOR FOCUS", unit=aspect, phase_name="Shooting phase"))
+        self.assertFalse(p1.stratagems.can_use("PRETERNATURAL PRECISION", unit=aspect, phase_name="Shooting phase"))
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        self.assertTrue(p1.stratagems.can_use("WARRIOR FOCUS", unit=aspect, phase_name="Shooting phase"))
+        self.assertFalse(p1.stratagems.can_use("WARRIOR FOCUS", unit=guardians, phase_name="Shooting phase"))
+        self.assertTrue(p1.stratagems.can_use("PRETERNATURAL PRECISION", unit=aspect, phase_name="Shooting phase"))
+        self.assertFalse(p1.stratagems.can_use("PRETERNATURAL PRECISION", unit=guardians, phase_name="Shooting phase"))
+
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        wanted = {"WARRIOR FOCUS", "PRETERNATURAL PRECISION"}
+        items = [
+            item
+            for item in p1.stratagems.get_phase_stratagem_items()
+            if str(item.get("name", "")).upper() in wanted and bool(item.get("available", False))
+        ]
+        self.assertTrue(items)
+        for item in items:
+            specs = p1.stratagems._build_tool_action_specs_for_item(item)
+            self.assertEqual(len(specs), 1)
+            resolved = specs[0]["payload"]["resolved_kwargs"]
+            self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
+            self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
+
     def test_doom_inescapable_sets_wailing_doom_range_and_damage(self):
         game, p1, _p2, aeldari_army, enemy_army = _build_game()
         avatar = _make_unit(

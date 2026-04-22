@@ -96,6 +96,17 @@ def test_army_label_from_path_uses_file_stem() -> None:
     assert mod._army_label_from_path("army_lists/chaos_test_2.txt") == "chaos_test_2"
 
 
+def test_army_labels_from_paths_disambiguates_duplicate_file_stems() -> None:
+    mod = _load_script_module()
+
+    labels = mod._army_labels_from_paths(
+        "data/profiled_matchups/example/world_eaters/candidate_01_army_list.txt",
+        "data/profiled_matchups/example/aeldari/candidate_01_army_list.txt",
+    )
+
+    assert labels == ("world_eaters:candidate_01_army_list", "aeldari:candidate_01_army_list")
+
+
 def test_resolved_replay_base_dir_returns_absolute_path(tmp_path) -> None:
     mod = _load_script_module()
 

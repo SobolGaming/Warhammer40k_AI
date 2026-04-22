@@ -1351,6 +1351,142 @@ class WorldEatersStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._goretrack_sort_key)
 
+    def _possessed_unit_has_engaged_enemy(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._goretrack_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._is_unit_alive(enemy_root):
+                continue
+            if not bool(getattr(enemy_root, "deployed", True)):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _possessed_candidate_selected(self, unit: Any, candidates: list[Any]) -> bool:
+        candidate_ids = self._candidate_ids(candidates)
+        if not candidate_ids:
+            return True
+        return self._goretrack_sort_key(unit) in candidate_ids
+
+    def _we_possessed_tool_action_candidates(self, stratagem_name: str, *, phase_name: str = "") -> list[Any]:
+        name_u = str(stratagem_name or "").strip().upper()
+        phase_name_l = str(phase_name or self._current_phase_name or "").strip().lower()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if name_u == "DAEMONIC STRENGTH":
+            if phase_name_l != "fight phase":
+                return []
+            return self._possessed_slaughterband_candidates(
+                require_on_battlefield=True,
+                require_not_fought=True,
+            )
+        if name_u == "IMMORTAL FURY":
+            if phase_name_l != "fight phase":
+                return []
+            return self._possessed_slaughterband_candidates(
+                require_on_battlefield=True,
+                require_not_fought=True,
+            )
+        if name_u == "HORRIFYING VIOLENCE":
+            if phase_name_l != "command phase" or active_player is self.player:
+                return []
+            return [
+                unit
+                for unit in self._possessed_slaughterband_candidates(require_on_battlefield=True)
+                if self._possessed_unit_has_engaged_enemy(unit)
+            ]
+        if name_u == "RAPID MANIFESTATION":
+            if phase_name_l != "movement phase" or active_player is not self.player:
+                return []
+            turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            candidates: list[Any] = []
+            for unit in self._possessed_slaughterband_candidates(
+                require_on_battlefield=False,
+                require_in_reserves=True,
+                require_deep_strike=True,
+                require_exalted_eightbound=True,
+            ):
+                can_arrive = getattr(unit, "can_arrive_from_reserves", None)
+                if callable(can_arrive) and not bool(can_arrive(turn)):
+                    continue
+                candidates.append(unit)
+            return candidates
+        if name_u == "WARP STALKERS":
+            if phase_name_l == "movement phase":
+                if active_player is not self.player:
+                    return []
+                return self._possessed_slaughterband_candidates(
+                    require_on_battlefield=True,
+                    require_not_moved=True,
+                )
+            if phase_name_l == "charge phase":
+                if active_player is not self.player:
+                    return []
+                return self._possessed_slaughterband_candidates(
+                    require_on_battlefield=True,
+                    require_not_attempted_charge=True,
+                )
+            return []
+        return []
+
+    def _we_possessed_tool_action_context(self, stratagem_name: str, *, phase_name: str = "") -> Dict[str, Any]:
+        candidates = self._we_possessed_tool_action_candidates(stratagem_name, phase_name=phase_name)
+        if not candidates:
+            return {}
+        return {"candidates": list(candidates)}
+
+    def _we_can_use_possessed_tool_action(self, stratagem_name: str, kwargs: Dict[str, Any]) -> Optional[bool]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {
+            "DAEMONIC STRENGTH",
+            "IMMORTAL FURY",
+            "HORRIFYING VIOLENCE",
+            "RAPID MANIFESTATION",
+            "WARP STALKERS",
+        }:
+            return None
+        if not self._is_possessed_slaughterband():
+            return False
+
+        unit, candidates, attacking_unit = self._possessed_target_from_kwargs(name_u, kwargs)
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        allowed_candidates = list(candidates or [])
+        if not allowed_candidates:
+            allowed_candidates = self._we_possessed_tool_action_candidates(name_u, phase_name=phase_name)
+        if unit is None:
+            return bool(allowed_candidates)
+
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not allowed_candidates:
+            return False
+        if not self._possessed_candidate_selected(root, candidates):
+            return False
+        if allowed_candidates:
+            allowed_ids = self._candidate_ids(allowed_candidates)
+            if self._goretrack_sort_key(root) not in allowed_ids:
+                return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            return False
+        if name_u == "IMMORTAL FURY" and attacking_unit is not None and self._goretrack_owned_by_player(attacking_unit, self.player):
+            return False
+        return True
+
     def _possessed_reaction_already_queued(
         self,
         *,

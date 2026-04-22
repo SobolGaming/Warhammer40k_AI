@@ -340,6 +340,42 @@ class TestWorldEatersPossessedSlaughterbandStratagems(unittest.TestCase):
         self.assertFalse(sr.get("bearer_unit_phase_move_block_monster_vehicle_types"))
         self.assertFalse(sr.get("bearer_unit_auto_pass_desperate_escape", False))
 
+    def test_warp_stalkers_tool_action_filters_non_possessed_units(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        possessed = _make_unit(
+            "Possessed",
+            keywords=["INFANTRY", "POSSESSED"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        berzerkers = _make_unit(
+            "Khorne Berzerkers",
+            keywords=["INFANTRY", "KHORNE BERZERKERS"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army1.add_unit(possessed)
+        army1.add_unit(berzerkers)
+        _place_unit(game, possessed, 10.0, 10.0)
+        _place_unit(game, berzerkers, 14.0, 10.0)
+
+        phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.phase = phase
+        game.current_player_index = 0
+        game.event_system.publish("phase_start", player=p1, phase=phase)
+
+        self.assertTrue(p1.stratagems.can_use("WARP STALKERS", unit=possessed, phase_name="Movement phase"))
+        self.assertFalse(p1.stratagems.can_use("WARP STALKERS", unit=berzerkers, phase_name="Movement phase"))
+
+        items = p1.stratagems.get_phase_stratagem_items()
+        warp_item = next(item for item in items if str(item.get("name", "")).upper() == "WARP STALKERS")
+        self.assertTrue(warp_item["available"])
+        specs = p1.stratagems._build_tool_action_specs_for_item(warp_item)
+        self.assertEqual(len(specs), 1)
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        resolved = specs[0]["payload"]["resolved_kwargs"]
+        self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], get_entity_id(possessed))
+        self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], get_entity_id(possessed))
+
 
 if __name__ == "__main__":
     unittest.main()
