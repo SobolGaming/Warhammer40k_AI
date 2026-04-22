@@ -7,6 +7,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import logging
+import os
 from pathlib import Path
 import time
 from typing import Any
@@ -28,8 +29,36 @@ from warhammer40k_ai.engine.session_store import (
 )
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.utility.profiling_controller import ProfilingController
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_profile_label(value: str) -> str:
+    raw = str(value or "profile").strip() or "profile"
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in raw)
+    return cleaned.strip("._") or "profile"
+
+
+def _dump_profile_artifacts(
+    controller: ProfilingController,
+    *,
+    label: str,
+    metadata: dict[str, object],
+) -> dict[str, str]:
+    controller.disable()
+    try:
+        txt_path, prof_path = controller.dump(
+            label=_safe_profile_label(label),
+            write_binary_prof=True,
+            metadata=dict(metadata or {}),
+        )
+    except RuntimeError:
+        return {}
+    artifacts = {"profile_text": str(txt_path.resolve())}
+    if prof_path is not None:
+        artifacts["profile_binary"] = str(prof_path.resolve())
+    return artifacts
 
 
 def _json_safe(value: Any) -> Any:
@@ -349,6 +378,32 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="Optional JSON report path with per-game outcomes, diagnostics, and aggregate self-play metadata.",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable per-game cProfile and section-timer profiling artifacts.",
+    )
+    parser.add_argument(
+        "--profile-dir",
+        default="profiles",
+        help="Directory for profiling artifacts when --profile is enabled.",
+    )
+    parser.add_argument(
+        "--profile-sort",
+        default="tottime",
+        help="pstats sort key for readable profiling reports.",
+    )
+    parser.add_argument(
+        "--profile-lines",
+        type=int,
+        default=120,
+        help="Number of pstats rows to include in readable profiling reports.",
+    )
+    parser.add_argument(
+        "--profile-label",
+        default="",
+        help="Optional label prefix for profiling artifact filenames.",
+    )
     return parser.parse_args()
 
 
@@ -606,26 +661,58 @@ def _run_single_game_job(
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+    profile: bool = False,
+    profile_dir: str = "profiles",
+    profile_sort: str = "tottime",
+    profile_lines: int = 120,
+    profile_label: str = "",
 ) -> dict[str, Any]:
     _setup_logging(str(log_level or "WARNING"))
     game_seed = None
     if seed_base is not None:
         game_seed = int(seed_base) + int(game_index)
     game_id = _game_id_for_index(int(game_index), seed_base=seed_base)
+    profile_controller: ProfilingController | None = None
+    profile_artifacts: dict[str, str] = {}
+    label_prefix = str(profile_label or "headless_self_play")
+    if bool(profile):
+        profile_controller = ProfilingController(
+            out_dir=str(profile_dir or "profiles"),
+            sort_by=str(profile_sort or "tottime"),
+            lines=max(1, int(profile_lines or 120)),
+        )
+        profile_controller.reset()
+        profile_controller.enable()
     started_at = time.perf_counter()
-    result = _run_single_game(
-        game_id=str(game_id),
-        player1_army_file=player1_army_file,
-        player2_army_file=player2_army_file,
-        max_phase_steps=max_phase_steps,
-        game_seed=game_seed,
-        reserve_policy=str(reserve_policy or "forced_only"),
-        max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
-        deployment_ranker_model=str(deployment_ranker_model or ""),
-        log_phase_transitions=bool(log_phase_transitions),
-        replay_dir=str(replay_dir or ""),
-        replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
-    )
+    try:
+        result = _run_single_game(
+            game_id=str(game_id),
+            player1_army_file=player1_army_file,
+            player2_army_file=player2_army_file,
+            max_phase_steps=max_phase_steps,
+            game_seed=game_seed,
+            reserve_policy=str(reserve_policy or "forced_only"),
+            max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+            deployment_ranker_model=str(deployment_ranker_model or ""),
+            log_phase_transitions=bool(log_phase_transitions),
+            replay_dir=str(replay_dir or ""),
+            replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
+        )
+        elapsed_s = float(time.perf_counter() - started_at)
+    finally:
+        if profile_controller is not None:
+            elapsed_for_profile = float(time.perf_counter() - started_at)
+            profile_artifacts = _dump_profile_artifacts(
+                profile_controller,
+                label=f"{label_prefix}_{game_id}_pid{os.getpid()}",
+                metadata={
+                    "script": "scripts/run_headless_self_play.py",
+                    "game_id": str(game_id),
+                    "game_index": int(game_index),
+                    "workers_profile_scope": "worker_game_job",
+                    "elapsed_wall_seconds": round(elapsed_for_profile, 6),
+                },
+            )
     serialized_result = {
         "game_id": str(result.get("game_id", "") or ""),
         "records": _json_safe(list(result.get("records", []) or [])),
@@ -641,7 +728,8 @@ def _run_single_game_job(
         "replay_path": str(result.get("replay_path", "") or ""),
         "snapshot_path": str(result.get("snapshot_path", "") or ""),
     }
-    elapsed_s = float(time.perf_counter() - started_at)
+    if profile_artifacts:
+        serialized_result["profile_artifacts"] = dict(profile_artifacts)
     return {
         "game_index": int(game_index),
         "elapsed_seconds": elapsed_s,
@@ -668,6 +756,11 @@ def run_headless_self_play(
     replay_dir: str = "",
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
     report_output: str = "",
+    profile: bool = False,
+    profile_dir: str = "profiles",
+    profile_sort: str = "tottime",
+    profile_lines: int = 120,
+    profile_label: str = "",
 ) -> dict[str, Any]:
     _setup_logging(str(log_level))
     games = max(1, int(games or 1))
@@ -696,6 +789,11 @@ def run_headless_self_play(
                 log_phase_transitions=bool(log_phase_transitions),
                 replay_dir=str(replay_dir),
                 replay_keyframe_interval=int(replay_keyframe_interval),
+                profile=bool(profile),
+                profile_dir=str(profile_dir),
+                profile_sort=str(profile_sort),
+                profile_lines=int(profile_lines),
+                profile_label=str(profile_label),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
@@ -729,6 +827,11 @@ def run_headless_self_play(
                     log_phase_transitions=bool(log_phase_transitions),
                     replay_dir=str(replay_dir),
                     replay_keyframe_interval=int(replay_keyframe_interval),
+                    profile=bool(profile),
+                    profile_dir=str(profile_dir),
+                    profile_sort=str(profile_sort),
+                    profile_lines=int(profile_lines),
+                    profile_label=str(profile_label),
                 )
                 for game_index in range(games)
             ]
@@ -822,11 +925,21 @@ def run_headless_self_play(
     if replay_root is not None:
         print(f"Replay sessions: {replay_root}")
     report_games: list[dict[str, Any]] = []
+    profile_artifact_paths: list[dict[str, object]] = []
     for payload in per_game_outputs:
         game_payload = dict(payload or {})
         result = dict(game_payload.get("result", {}) or {})
         sanitized_result = dict(result)
         sanitized_result.pop("records", None)
+        profile_artifacts = dict(sanitized_result.get("profile_artifacts", {}) or {})
+        if profile_artifacts:
+            profile_artifact_paths.append(
+                {
+                    "game_index": int(game_payload.get("game_index", 0) or 0),
+                    "game_id": str(result.get("game_id", "") or ""),
+                    **profile_artifacts,
+                }
+            )
         report_games.append(
             {
                 "game_index": int(game_payload.get("game_index", 0) or 0),
@@ -853,6 +966,7 @@ def run_headless_self_play(
         "game_outcomes": game_outcomes,
         "records_output_path": str(output_path.resolve()),
         "replay_dir": "" if replay_root is None else str(replay_root),
+        "profile_artifacts": profile_artifact_paths,
         "games": report_games,
     }
     report_output_text = str(report_output or "").strip()
@@ -886,6 +1000,11 @@ def main() -> int:
         replay_dir=str(args.replay_dir),
         replay_keyframe_interval=int(args.replay_keyframe_interval),
         report_output=str(args.report_output),
+        profile=bool(args.profile),
+        profile_dir=str(args.profile_dir),
+        profile_sort=str(args.profile_sort),
+        profile_lines=int(args.profile_lines),
+        profile_label=str(args.profile_label),
     )
     return 0
 

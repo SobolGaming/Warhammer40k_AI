@@ -17,12 +17,14 @@ Review expectations and PR status for this work are documented in
 
 - **Local interactive game**: `python3 scripts/main.py ...` runs the engine and pygame UI in one process.
   - Local composition uses `engine/local_runtime.py` (`LocalAuthoritativeRuntime`) for shared authoritative setup orchestration without websocket loopback.
+  - Add `--profile` to write launch-time cProfile and section-timer artifacts for UI runs.
 - **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui|client-headless ...`.
 - **Headless/controller-driven**: the engine can be driven purely by Commands + DecisionResults (see `docs/NETWORK_SAVELOAD_DESIGN.md`).
   - Local self-play (`scripts/run_headless_self_play.py`) now reuses the same local authoritative runtime shell (`LocalAuthoritativeRuntime` + `AuthoritativeSessionDriver`) as interactive local play.
   - Headless local setup/deployment is split by ownership: `DeterministicDeploymentDecisionMaker` answers deployment-manager-owned setup choices, while `HeadlessPolicyDecisionController` answers the remaining masked `DecisionRequest`s.
   - `MOVE_UNIT` is the shared movement decision surface for deployment placement, reserves arrival, battle movement, charge movement, and fight-phase pile-in/consolidate. UI and headless differ in who chooses the payload, not in the authoritative validation path.
   - Self-play exports authoritative `DecisionRecord`s from the live game store and can bound long-running games with `--max-phase-steps` plus per-decision reserve-arrival search limits.
+  - Add `--profile` to write per-worker/per-game profiling artifacts for movement, deployment, and line-of-sight hotspot analysis. Details live in `docs/PROFILING.md`.
 
 ## Core architectural idea
 

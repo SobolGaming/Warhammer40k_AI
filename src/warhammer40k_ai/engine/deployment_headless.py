@@ -33,6 +33,7 @@ from ..utility.placement_search import (
     estimate_unit_pack_footprint,
     stable_board_occupancy_key,
 )
+from ..utility.profiling_sections import profiled_section
 
 
 class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
@@ -430,6 +431,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             f"(player_id={player_id})."
         )
 
+    @profiled_section("deployment.headless_build_move_candidates")
     def build_deployment_move_candidates(
         self,
         unit: object,
@@ -785,6 +787,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             forward_positive=forward_positive,
         )
 
+    @profiled_section("deployment.position_validation")
     def _select_valid_deployment_payload(
         self,
         unit: object,

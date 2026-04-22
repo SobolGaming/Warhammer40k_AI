@@ -8,6 +8,7 @@ from shapely.geometry import Point
 from shapely import STRtree
 
 from ..utility.entity_ids import maybe_entity_id
+from ..utility.profiling_sections import profiled_section
 from .dynamic_overlay import build_dynamic_overlay
 from .rules_profile import build_movement_profile
 from .surface_graph import plan_surface_graph_path
@@ -392,6 +393,7 @@ def _build_collision_trees_for_query(query: PathQuery, movement_profile: object)
     )
 
 
+@profiled_section("movement.final_pose_validation")
 def _validate_final_pose_with_context(
     query: PathQuery,
     pose: Pose,
@@ -461,6 +463,7 @@ def _validate_final_pose_with_context(
     return ValidationResult(valid=True, reason=str(legacy_validation.get("reason", "Valid final position")))
 
 
+@profiled_section("movement.transit_validation")
 def _validate_transit_path_with_context(
     query: PathQuery,
     poses: tuple[Pose, ...],
@@ -539,6 +542,7 @@ def _validate_transit_path_with_context(
     return ValidationResult(valid=True, reason="Valid path")
 
 
+@profiled_section("movement.path_plan")
 def plan_model_path(query: PathQuery) -> PathResult:
     model = query.model
     if model is None:
@@ -775,6 +779,7 @@ def validate_final_pose(query: PathQuery, pose: Pose) -> ValidationResult:
     )
 
 
+@profiled_section("movement.swept_interactions")
 def compute_swept_interactions(query: PathQuery, path: PathResult) -> SweepResult:
     if not path.poses:
         return SweepResult(

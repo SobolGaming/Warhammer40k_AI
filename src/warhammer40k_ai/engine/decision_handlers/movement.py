@@ -47,6 +47,7 @@ from ...utility.deployment_special_rules import (
 )
 from ...utility.dice import get_roll
 from ...utility.entity_ids import get_entity_id
+from ...utility.profiling_sections import profiled_section
 
 
 def _movement_members(unit) -> list:
@@ -1386,6 +1387,7 @@ def _resolve_charge_targets(game: object, ctx: dict | None) -> list[object]:
     return resolved
 
 
+@profiled_section("movement.payload_validation")
 def validate_move_unit_payload(
     game: object,
     request: DecisionRequest,

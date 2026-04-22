@@ -108,6 +108,30 @@ python scripts/run_headless_self_play.py \
   --output data/headless_self_play_decision_records.json
 ```
 
+Profiling controls:
+- `--profile` enables per-game cProfile and section-timer reports.
+- `--profile-dir profiles` chooses the output directory.
+- `--profile-sort tottime` and `--profile-lines 120` control the readable pstats summary.
+- `--profile-label <label>` adds a filename prefix for baseline/comparison runs.
+- In multi-worker runs, each worker game job writes its own `.txt` and `.prof` artifacts.
+
+Example:
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 4 \
+  --workers 4 \
+  --profile \
+  --profile-label movement_baseline \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt \
+  --output data/headless_self_play_decision_records.json \
+  --report-output data/headless_self_play_report.json
+```
+
+The optional machine-readable report records profile artifact paths only; timing details stay in the profile logs.
+See `docs/PROFILING.md` for report contents and section timer names.
+
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
 

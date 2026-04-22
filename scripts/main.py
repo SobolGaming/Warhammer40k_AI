@@ -21,6 +21,34 @@ from warhammer40k_ai.battlefield.map import Map
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.engine.deployment import HumanDeploymentDecisionMaker
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
+from warhammer40k_ai.utility.profiling_controller import ProfilingController
+
+
+def _safe_profile_label(value: str) -> str:
+    raw = str(value or "profile").strip() or "profile"
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in raw)
+    return cleaned.strip("._") or "profile"
+
+
+def _dump_profile_artifacts(
+    controller: ProfilingController,
+    *,
+    label: str,
+    metadata: dict[str, object],
+) -> dict[str, str]:
+    controller.disable()
+    try:
+        txt_path, prof_path = controller.dump(
+            label=_safe_profile_label(label),
+            write_binary_prof=True,
+            metadata=dict(metadata or {}),
+        )
+    except RuntimeError:
+        return {}
+    artifacts = {"profile_text": str(txt_path.resolve())}
+    if prof_path is not None:
+        artifacts["profile_binary"] = str(prof_path.resolve())
+    return artifacts
 
 
 def setup_logging(log_level) -> logging.Logger:
@@ -257,7 +285,7 @@ def run_game_loop(player_configs: dict) -> None:
             pygame.time.Clock().tick(60)
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Warhammer 40,000 UI Gameplay Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -287,10 +315,49 @@ def main() -> None:
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable cProfile and section-timer profiling artifacts for the UI run.",
+    )
+    parser.add_argument(
+        "--profile-dir",
+        default="profiles",
+        help="Directory for profiling artifacts when --profile is enabled.",
+    )
+    parser.add_argument(
+        "--profile-sort",
+        default="tottime",
+        help="pstats sort key for readable profiling reports.",
+    )
+    parser.add_argument(
+        "--profile-lines",
+        type=int,
+        default=120,
+        help="Number of pstats rows to include in readable profiling reports.",
+    )
+    parser.add_argument(
+        "--profile-label",
+        default="",
+        help="Optional label prefix for profiling artifact filenames.",
+    )
+    return parser
 
 
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
     setup_logging(args.log_level)
+    profile_controller: ProfilingController | None = None
+    if bool(args.profile):
+        profile_controller = ProfilingController(
+            out_dir=str(args.profile_dir or "profiles"),
+            sort_by=str(args.profile_sort or "tottime"),
+            lines=max(1, int(args.profile_lines or 120)),
+        )
+        profile_controller.reset()
+        profile_controller.enable()
+        logger.info("Launch-time profiling enabled.")
 
     player_configs = {
         "player1_army_file": args.player1_army,
@@ -313,6 +380,24 @@ def main() -> None:
         import traceback
 
         traceback.print_exc()
+    finally:
+        if profile_controller is not None:
+            artifacts = _dump_profile_artifacts(
+                profile_controller,
+                label=f"{str(args.profile_label or 'main')}_pid{os.getpid()}",
+                metadata={
+                    "script": "scripts/main.py",
+                    "player1_army": str(args.player1_army),
+                    "player2_army": str(args.player2_army),
+                    "manual_phases": bool(args.manual_phases),
+                },
+            )
+            if artifacts:
+                logger.info(
+                    "Profiling reports saved to %s and %s.",
+                    artifacts.get("profile_text", ""),
+                    artifacts.get("profile_binary", ""),
+                )
 
 
 if __name__ == "__main__":

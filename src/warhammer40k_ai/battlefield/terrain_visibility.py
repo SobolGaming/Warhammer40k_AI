@@ -7,6 +7,7 @@ from shapely.errors import GEOSException
 from shapely.geometry import LineString
 
 from .terrain_runtime import iter_terrain_areas
+from ..utility.profiling_sections import profiled_section
 
 
 def _json_safe(value: Any) -> Any:
@@ -90,6 +91,7 @@ def _line_intersection_point(line2d: LineString, geometry: object):
     return intersection.representative_point()
 
 
+@profiled_section("los.segment_blocked_by_terrain")
 def segment_blocked_by_terrain_feature(
     p0: tuple[float, float, float],
     p1: tuple[float, float, float],
@@ -345,6 +347,7 @@ def preview_visibility_semantics_enabled(game_map: object) -> bool:
     return bool(getattr(game_map, "preview_visibility_semantics_enabled", False))
 
 
+@profiled_section("los.visibility_context")
 def get_visibility_context_for_models(
     game_map: object,
     shooter_model: object,

@@ -12,6 +12,7 @@ from .decision_kinds import (
 )
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
 from .deployment_intent import DeploymentIntent
+from ..utility.profiling_sections import profiled_section
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -1460,6 +1461,7 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: Deploymen
     return _copy_request_candidates(request, fallback_mode=False)
 
 
+@profiled_section("deployment.generate_candidates")
 def generate_deployment_candidates(
     game: object,
     request: DecisionRequest,

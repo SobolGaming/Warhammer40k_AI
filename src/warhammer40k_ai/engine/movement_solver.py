@@ -9,6 +9,7 @@ from .decisions import CandidateAction, DecisionRequest
 from .fight_move import plan_deterministic_fight_move
 from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
+from ..utility.profiling_sections import profiled_section
 
 
 def _deadline_exceeded(deadline: float | None) -> bool:
@@ -1040,6 +1041,7 @@ def _solver_candidates(
     return candidates, mask
 
 
+@profiled_section("movement.generate_candidates")
 def generate_move_unit_candidates(game: object, request: DecisionRequest, intent: MovementIntent) -> tuple[list[CandidateAction], list[bool], int, bool]:
     ctx = dict(getattr(request, "context", {}) or {})
     budget_ms = int(ctx.get("time_budget_ms", 0) or 0)

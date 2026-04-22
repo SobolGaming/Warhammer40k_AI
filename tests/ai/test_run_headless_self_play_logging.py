@@ -4,6 +4,7 @@ import importlib.util
 import json
 import logging
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 
@@ -59,6 +60,34 @@ def test_game_id_for_index_uses_seed_base_when_present() -> None:
 
     assert mod._game_id_for_index(3, seed_base=200) == "selfplay:203"
     assert mod._game_id_for_index(3, seed_base=None) == "selfplay:000003"
+
+
+def test_parse_args_supports_profile_options(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_headless_self_play.py",
+            "--profile",
+            "--profile-dir",
+            str(tmp_path),
+            "--profile-sort",
+            "cumtime",
+            "--profile-lines",
+            "25",
+            "--profile-label",
+            "baseline",
+        ],
+    )
+
+    args = mod._parse_args()
+
+    assert args.profile is True
+    assert args.profile_dir == str(tmp_path)
+    assert args.profile_sort == "cumtime"
+    assert args.profile_lines == 25
+    assert args.profile_label == "baseline"
 
 
 def test_army_label_from_path_uses_file_stem() -> None:
@@ -244,6 +273,51 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
     assert result["snapshot_path"] == "/tmp/replays/selfplay:000000/snapshot.json"
 
 
+def test_run_single_game_job_writes_profile_artifacts(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+
+    def _fake_run_single_game(**_kwargs):
+        from warhammer40k_ai.utility.profiling_sections import profile_section
+
+        with profile_section("test.fake_headless_job"):
+            total = 0
+            for value in range(2000):
+                total += value
+        return {
+            "game_id": "selfplay:000000",
+            "records": [{"decision_type": "MOVE_UNIT", "total": total}],
+            "phase_steps": 1,
+            "winner_player_id": "player-1",
+            "winner_army_label": "chaos_test",
+            "winner_score_line": "<SCORE: 1 vs 0>",
+            "scoreboard": {"chaos_test": 1, "aeldari_test": 0},
+        }
+
+    monkeypatch.setattr(mod, "_run_single_game", _fake_run_single_game)
+
+    payload = mod._run_single_game_job(
+        0,
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
+        max_phase_steps=1,
+        profile=True,
+        profile_dir=str(tmp_path),
+        profile_label="unit_profile",
+    )
+
+    artifacts = dict(dict(payload.get("result", {}) or {}).get("profile_artifacts", {}) or {})
+    profile_text = Path(str(artifacts.get("profile_text", "")))
+    profile_binary = Path(str(artifacts.get("profile_binary", "")))
+
+    assert profile_text.exists()
+    assert profile_binary.exists()
+    assert "selfplay_000000" in profile_text.name
+    text = profile_text.read_text(encoding="utf-8")
+    assert "script: scripts/run_headless_self_play.py" in text
+    assert "game_id: selfplay:000000" in text
+    assert "test.fake_headless_job" in text
+
+
 def test_run_single_game_preserves_stable_game_id_when_replay_session_suffixes(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
     created_games: list[object] = []
@@ -380,3 +454,53 @@ def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_
     assert persisted["records_output_path"] == str(output_path.resolve())
     assert "records" not in persisted["games"][0]["result"]
     assert persisted["games"][0]["result"]["winner_army_label"] == "chaos_test"
+
+
+def test_run_headless_self_play_report_includes_profile_artifact_paths(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+
+    def _fake_run_single_game_job(*_args, **_kwargs):
+        return {
+            "game_index": 0,
+            "elapsed_seconds": 0.1,
+            "result": {
+                "game_id": "selfplay:000000",
+                "records": [{"decision_type": "MOVE_UNIT"}],
+                "phase_steps": 1,
+                "winner_player_id": "player-1",
+                "winner_army_label": "chaos_test",
+                "winner_score_line": "<SCORE: 1 vs 0>",
+                "scoreboard": {"chaos_test": 1, "aeldari_test": 0},
+                "profile_artifacts": {
+                    "profile_text": "/tmp/profile.txt",
+                    "profile_binary": "/tmp/profile.prof",
+                },
+            },
+        }
+
+    monkeypatch.setattr(mod, "_run_single_game_job", _fake_run_single_game_job)
+    output_path = tmp_path / "records.json"
+    report_path = tmp_path / "report.json"
+
+    report = mod.run_headless_self_play(
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        games=1,
+        workers=1,
+        max_phase_steps=1,
+        output=str(output_path),
+        no_reward_annotation=True,
+        report_output=str(report_path),
+        profile=True,
+    )
+
+    assert report["profile_artifacts"] == [
+        {
+            "game_index": 0,
+            "game_id": "selfplay:000000",
+            "profile_text": "/tmp/profile.txt",
+            "profile_binary": "/tmp/profile.prof",
+        }
+    ]
+    persisted = json.loads(report_path.read_text(encoding="utf-8"))
+    assert persisted["profile_artifacts"][0]["profile_text"] == "/tmp/profile.txt"

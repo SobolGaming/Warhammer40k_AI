@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..utility.call_utils import call_with_supported_kwargs
+from ..utility.profiling_sections import profiled_section
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -50,6 +51,7 @@ def restore_unit_model_state(snapshot: list[tuple[object, float, float, float, f
         base.facing = float(facing)
 
 
+@profiled_section("deployment.prospective_model_positions")
 def calculate_prospective_model_positions(
     unit: object,
     start_x: float,
