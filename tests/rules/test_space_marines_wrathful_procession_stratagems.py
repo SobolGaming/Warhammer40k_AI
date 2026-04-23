@@ -6,6 +6,7 @@ from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
+from warhammer40k_ai.rules.tool_action_validation import ToolActionCandidateValidator
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -458,6 +459,41 @@ def test_relentless_momentum_enables_fight_within_three_and_cleans_up():
     game.event_system.publish("phase_end", player=sm_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
     assert crusaders.fight_within_3_active() is False
     assert crusaders.get_fight_within_3_sources() == []
+
+
+def test_relentless_momentum_tool_validation_filters_stale_non_engaged_candidate():
+    game, sm_player, _enemy_player, sm_army, enemy_army = _build_game()
+    crusaders = _make_unit(
+        "Primaris Crusader Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    sm_army.add_unit(crusaders)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, crusaders, 10.0, 10.0)
+    _deploy_unit(game, enemy, 30.0, 10.0)
+    game.rebuild_entity_registry()
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    stratagem = sm_player.stratagems.get_by_name("RELENTLESS MOMENTUM")
+    assert stratagem is not None
+
+    validation = ToolActionCandidateValidator(sm_player.stratagems).validate_probe(
+        stratagem,
+        {
+            "phase_name": "Fight phase",
+            "unit": crusaders,
+            "target_unit": crusaders,
+        },
+    )
+
+    assert [issue.code for issue in validation.issues] == ["illegal_tool_candidate_filtered_preflight"]
+    assert [issue.missing_keys for issue in validation.issues] == [("engagement_range",)]
 
 
 def test_brute_fervour_applies_reroll_and_modifier_ignore_rules_then_cleans_up():

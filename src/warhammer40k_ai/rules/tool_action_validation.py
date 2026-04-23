@@ -156,6 +156,11 @@ class ToolActionCandidateValidator:
         if "arriving_from_deep_strike" in target_text:
             if not self._unit_is_in_reserves(root) or not self._unit_has_deep_strike(root):
                 return self._descriptor_issue("deep_strike_arrival")
+        if "not_in_engagement_range" in target_text or "not_within_engagement_range" in target_text:
+            if self._unit_is_in_engagement_range(root):
+                return self._descriptor_issue("not_in_engagement_range")
+        elif "engagement_range" in target_text and not self._unit_is_in_engagement_range(root):
+            return self._descriptor_issue("engagement_range")
 
         phase_name = str(kwargs.get("phase_name") or self._resolved_phase_name() or "").strip().lower()
         round_state = getattr(root, "round_state", None)
@@ -242,6 +247,53 @@ class ToolActionCandidateValidator:
             return True
         reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
         return reserve_status in {"reserves", "strategic_reserves", "deep_strike"}
+
+    def _unit_is_in_engagement_range(self, unit: Any) -> bool:
+        game = getattr(self.manager, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(is_within_engagement):
+            return False
+        try:
+            enemies = list(get_enemy_units(root) or [])
+        except (AttributeError, TypeError, ValueError):
+            enemies = []
+        for enemy in enemies:
+            enemy_root = self._unit_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._unit_is_on_battlefield(enemy_root):
+                continue
+            try:
+                if bool(is_within_engagement(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    @staticmethod
+    def _unit_is_on_battlefield(unit: Any) -> bool:
+        if unit is None:
+            return False
+        alive = getattr(unit, "is_alive", None)
+        if callable(alive):
+            try:
+                if not bool(alive()):
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+        if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+            return False
+        if getattr(unit, "deployed", True) is False:
+            return False
+        reserve_status = str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower()
+        return reserve_status == "deployed"
 
     @staticmethod
     def _unit_has_deep_strike(unit: Any) -> bool:
