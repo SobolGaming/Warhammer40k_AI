@@ -23234,7 +23234,7 @@ class StratagemManager(
             eff_cost = s.cp_cost
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit).get("cost", s.cp_cost))
             except Exception:
                 raise
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):

@@ -80,6 +80,11 @@ Throughput controls:
 - `--reserve-policy forced_only` avoids optional reserve declarations (default; faster and more stable).
 - `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
 
+Default shooting policy:
+- Headless `DECLARE_SHOTS` synthesis declares one legal profile for each ranged weapon carried by an eligible model.
+- Hazardous profiles are eligible during default shooting.
+- For weapons with multiple legal targetable profiles, the controller chooses the profile/target pair with the best hit-probability x wound-probability, using expected damage only as a tie-breaker.
+
 Logging controls:
 - `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.

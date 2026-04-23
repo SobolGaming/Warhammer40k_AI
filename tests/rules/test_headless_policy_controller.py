@@ -746,6 +746,388 @@ def test_headless_policy_controller_auto_builds_declare_shots_payload_for_confir
     assert metadata["resolution_strategy"] == "ranked_candidate"
 
 
+def test_headless_policy_controller_ignores_shooting_unit_without_legal_declarations() -> None:
+    class _Profile:
+        def __init__(self, name: str, *, legal: bool) -> None:
+            self.name = name
+            self.legal = bool(legal)
+            self.parent_wargear = None
+
+        def is_hazardous(self) -> bool:
+            return False
+
+        def get_damage_potential(self, _target) -> float:
+            return 3.0 if self.legal else 0.0
+
+    class _Wargear:
+        def __init__(self, wargear_id: str, *, legal: bool) -> None:
+            self.id = wargear_id
+            self.name = wargear_id
+            self.profile = _Profile("standard", legal=legal)
+            self.profile.parent_wargear = self
+            self.profiles = {"standard": self.profile}
+
+        def is_ranged(self) -> bool:
+            return True
+
+    class _Model:
+        def __init__(self, model_id: str, *, legal: bool) -> None:
+            self.id = model_id
+            self.is_alive = True
+            self.wargear = [_Wargear(f"wargear:{model_id}", legal=legal)]
+
+    class _Unit:
+        def __init__(self, unit_id: str, *, legal: bool) -> None:
+            self.id = unit_id
+            self.name = unit_id
+            self.deployed = True
+            self.is_embarked = False
+            self.embarked_in = None
+            self.models = [_Model(f"model:{unit_id}", legal=legal)] if unit_id != "unit:target" else []
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return False
+
+        def _validate_shooting_declaration(self, profile, target_unit, models, _game_map):
+            return {"valid": bool(getattr(profile, "legal", False) and target_unit is not None and models)}
+
+    class _Map:
+        def __init__(self, target) -> None:
+            self._target = target
+
+        def get_enemy_units(self, _unit):
+            return [self._target]
+
+    class _ShootingGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.blocked = _Unit("unit:blocked", legal=False)
+            self.shooter = _Unit("unit:shooter", legal=True)
+            self.target = _Unit("unit:target", legal=False)
+            self.map = _Map(self.target)
+            self.units = {
+                self.blocked.id: self.blocked,
+                self.shooter.id: self.shooter,
+                self.target.id: self.target,
+            }
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self.units.get(str(unit_id or ""))
+
+    game = _ShootingGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select shooting unit",
+        player_id="p1",
+        options=[
+            DecisionOption("opt:blocked", "Blocked", {"unit_id": "unit:blocked", "action_id": "select:blocked"}),
+            DecisionOption("opt:shooter", "Shooter", {"unit_id": "unit:shooter", "action_id": "select:shooter"}),
+            DecisionOption("opt:pass", "Pass", {"action": "pass", "action_id": "select:pass"}),
+        ],
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "phase_step": "SHOOT_UNITS",
+            "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+            "allow_pass": True,
+        },
+        candidates=[
+            CandidateAction(
+                action_id="select:blocked",
+                params={"unit_id": "unit:blocked"},
+                metadata={"projected_score_delta_next_window": 100.0},
+            ),
+            CandidateAction(
+                action_id="select:shooter",
+                params={"unit_id": "unit:shooter"},
+                metadata={"projected_score_delta_next_window": 1.0},
+            ),
+            CandidateAction(
+                action_id="select:pass",
+                params={"action": "pass"},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == "opt:shooter"
+
+
+def test_headless_policy_controller_passes_shooting_selection_when_no_unit_can_declare_shots() -> None:
+    class _Profile:
+        name = "Blocked"
+        parent_wargear = None
+
+        def is_hazardous(self) -> bool:
+            return False
+
+    class _Wargear:
+        id = "wargear:blocked"
+        name = "Blocked"
+
+        def __init__(self) -> None:
+            self.profile = _Profile()
+            self.profile.parent_wargear = self
+            self.profiles = {"standard": self.profile}
+
+        def is_ranged(self) -> bool:
+            return True
+
+    class _Model:
+        id = "model:blocked"
+        is_alive = True
+
+        def __init__(self) -> None:
+            self.wargear = [_Wargear()]
+
+    class _Unit:
+        def __init__(self, unit_id: str) -> None:
+            self.id = unit_id
+            self.name = unit_id
+            self.deployed = True
+            self.is_embarked = False
+            self.embarked_in = None
+            self.models = [_Model()] if unit_id == "unit:blocked" else []
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return False
+
+        def _validate_shooting_declaration(self, _profile, _target_unit, _models, _game_map):
+            return {"valid": False}
+
+    class _Map:
+        def __init__(self, target) -> None:
+            self._target = target
+
+        def get_enemy_units(self, _unit):
+            return [self._target]
+
+    class _ShootingGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.blocked = _Unit("unit:blocked")
+            self.target = _Unit("unit:target")
+            self.map = _Map(self.target)
+            self.units = {self.blocked.id: self.blocked, self.target.id: self.target}
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self.units.get(str(unit_id or ""))
+
+    game = _ShootingGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select shooting unit",
+        player_id="p1",
+        options=[
+            DecisionOption("opt:blocked", "Blocked", {"unit_id": "unit:blocked", "action_id": "select:blocked"}),
+            DecisionOption("opt:pass", "Pass", {"action": "pass", "action_id": "select:pass"}),
+        ],
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "phase_step": "SHOOT_UNITS",
+            "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+            "allow_pass": True,
+        },
+        candidates=[
+            CandidateAction(
+                action_id="select:blocked",
+                params={"unit_id": "unit:blocked"},
+                metadata={"projected_score_delta_next_window": 100.0},
+            ),
+            CandidateAction(
+                action_id="select:pass",
+                params={"action": "pass"},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == "opt:pass"
+
+
+def test_headless_policy_controller_declares_each_ranged_weapon_with_best_profile() -> None:
+    class _Profile:
+        def __init__(
+            self,
+            name: str,
+            *,
+            legal: bool = True,
+            hazardous: bool = False,
+            damage: float = 1.0,
+            skill: int = 3,
+            strength: int = 4,
+        ) -> None:
+            self.name = name
+            self.legal = bool(legal)
+            self._hazardous = bool(hazardous)
+            self._damage = float(damage)
+            self.skill = int(skill)
+            self.strength = int(strength)
+            self.parent_wargear = None
+
+        def is_hazardous(self) -> bool:
+            return self._hazardous
+
+        def get_anti_specs(self):
+            return []
+
+        def get_damage_potential(self, _target) -> float:
+            return self._damage
+
+    class _Wargear:
+        def __init__(self, wargear_id: str, profiles: dict[str, _Profile], *, ranged: bool = True) -> None:
+            self.id = wargear_id
+            self.name = wargear_id
+            self.profiles = dict(profiles)
+            self._ranged = bool(ranged)
+            for profile in self.profiles.values():
+                profile.parent_wargear = self
+
+        def is_ranged(self) -> bool:
+            return self._ranged
+
+    class _Model:
+        id = "model:shooter"
+        is_alive = True
+
+        def __init__(self) -> None:
+            self.wargear = [
+                _Wargear("wargear:launcher", {"frag": _Profile("frag", damage=5.0)}),
+                _Wargear("wargear:melee", {"strike": _Profile("strike")}, ranged=False),
+                _Wargear(
+                    "wargear:multi",
+                    {
+                        "accurate": _Profile("accurate", damage=1.0, skill=2, strength=5),
+                        "clumsy": _Profile("clumsy", damage=6.0, skill=4, strength=10),
+                    },
+                ),
+                _Wargear("wargear:out-of-range", {"short": _Profile("short", legal=False)}),
+                _Wargear(
+                    "wargear:plasma",
+                    {"supercharge": _Profile("supercharge", hazardous=True, damage=4.0, skill=3, strength=8)},
+                ),
+                _Wargear("wargear:rifle", {"standard": _Profile("standard", damage=3.0)}),
+            ]
+
+    class _Unit:
+        def __init__(self, unit_id: str) -> None:
+            self.id = unit_id
+            self.name = unit_id
+            self.deployed = True
+            self.is_embarked = False
+            self.embarked_in = None
+            self.models = [_Model()] if unit_id == "unit:shooter" else []
+            self.toughness = 4
+            self.keywords = ["INFANTRY"]
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return False
+
+        def _validate_shooting_declaration(self, profile, target_unit, models, _game_map):
+            return {"valid": bool(getattr(profile, "legal", False) and target_unit is not None and models)}
+
+    class _Map:
+        def __init__(self, target) -> None:
+            self._target = target
+
+        def get_enemy_units(self, _unit):
+            return [self._target]
+
+    class _ShootingGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.shooter = _Unit("unit:shooter")
+            self.target = _Unit("unit:target")
+            self.map = _Map(self.target)
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            if unit_id == "unit:shooter":
+                return self.shooter
+            if unit_id == "unit:target":
+                return self.target
+            return None
+
+    game = _ShootingGame()
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        player_id="p1",
+        options=[DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": "unit:shooter"})],
+        context={"unit_id": "unit:shooter"},
+    )
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "unit:shooter"},
+    )
+
+    assert declarations == [
+        {
+            "wargear_id": "wargear:launcher",
+            "profile_name": "frag",
+            "model_ids": ["model:shooter"],
+            "target_unit_id": "unit:target",
+        },
+        {
+            "wargear_id": "wargear:multi",
+            "profile_name": "accurate",
+            "model_ids": ["model:shooter"],
+            "target_unit_id": "unit:target",
+        },
+        {
+            "wargear_id": "wargear:plasma",
+            "profile_name": "supercharge",
+            "model_ids": ["model:shooter"],
+            "target_unit_id": "unit:target",
+        },
+        {
+            "wargear_id": "wargear:rifle",
+            "profile_name": "standard",
+            "model_ids": ["model:shooter"],
+            "target_unit_id": "unit:target",
+        },
+    ]
+
+
 def test_headless_policy_controller_falls_back_to_skip_when_declare_shots_confirm_rejected() -> None:
     class _SkipGame(_FakeGame):
         def apply_command(self, command):

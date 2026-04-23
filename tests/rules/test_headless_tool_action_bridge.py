@@ -626,6 +626,40 @@ def test_validate_select_tool_action_skip_is_side_effect_free_until_apply() -> N
     assert signature in manager._skipped_tool_action_signatures
 
 
+def test_smokescreen_uses_target_unit_for_cp_cost_modifier() -> None:
+    target_unit = SimpleNamespace(
+        id="unit:smoke",
+        name="Smoke Unit",
+        special_rules={},
+        is_embarked=False,
+        embarked_in=None,
+        has_keyword=lambda keyword: str(keyword or "").upper() == "SMOKE",
+    )
+    cp_targets = []
+
+    def _apply_cp_cost(_stratagem, *, target_unit=None):
+        cp_targets.append(target_unit)
+        return {"cost": 0}
+
+    player = SimpleNamespace(
+        command_points=1,
+        apply_stratagem_cp_cost=_apply_cp_cost,
+        spend_command_points=lambda _cost, **_kwargs: True,
+    )
+    stratagem = SimpleNamespace(name="SMOKESCREEN", cp_cost=1)
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = SimpleNamespace()
+    manager.player = player
+    manager._current_phase_name = "Shooting phase"
+    manager._pending_reactions = []
+    manager._used_stratagems_this_phase = set()
+    manager.get_by_name = lambda _name: stratagem
+
+    assert manager.use("SMOKESCREEN", target_unit=target_unit) is True
+    assert cp_targets == [target_unit]
+    assert target_unit.special_rules["smokescreen_active"] is True
+
+
 def test_maybe_queue_post_command_tool_decisions_prioritizes_reactions_before_phase_actions() -> None:
     calls: list[tuple[str, bool]] = []
     current_player = SimpleNamespace(

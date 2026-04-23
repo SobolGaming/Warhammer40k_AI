@@ -22,6 +22,7 @@ from .decision_kinds import (
     DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_UNIT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
@@ -385,16 +386,6 @@ class HeadlessPolicyDecisionController(DecisionController):
         return [by_id[enemy_id] for enemy_id in sorted(by_id.keys())]
 
     @staticmethod
-    def _profile_is_hazardous(profile: object) -> bool:
-        is_hazardous = getattr(profile, "is_hazardous", None)
-        if callable(is_hazardous):
-            try:
-                return bool(is_hazardous())
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                return False
-        return False
-
-    @staticmethod
     def _profile_is_plasma_warhead(profile: object) -> bool:
         is_plasma_warhead = getattr(profile, "is_plasma_warhead", None)
         if callable(is_plasma_warhead):
@@ -413,6 +404,107 @@ class HeadlessPolicyDecisionController(DecisionController):
             return float(score_fn(target_unit) or 0.0)
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _profile_hit_probability(profile: object) -> float:
+        is_torrent = getattr(profile, "is_torrent", None)
+        if callable(is_torrent):
+            try:
+                if bool(is_torrent()):
+                    return 1.0
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        try:
+            skill = int(getattr(profile, "skill", 0) or 0)
+        except (TypeError, ValueError):
+            skill = 0
+        if skill <= 0:
+            return 1.0
+        needed = max(2, min(6, int(skill)))
+        return max(0.0, min(1.0, float(7 - needed) / 6.0))
+
+    @staticmethod
+    def _target_has_keyword(target_unit: object | None, keyword: str) -> bool:
+        if target_unit is None:
+            return False
+        text = str(keyword or "").strip().upper()
+        if not text:
+            return False
+        has_keyword = getattr(target_unit, "has_keyword", None)
+        if callable(has_keyword):
+            try:
+                if bool(has_keyword(text)):
+                    return True
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        has_any_keyword = getattr(target_unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                return bool(has_any_keyword(text))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        keywords = getattr(target_unit, "keywords", None)
+        if isinstance(keywords, (list, tuple, set)):
+            return text in {str(value or "").strip().upper() for value in keywords}
+        return False
+
+    @classmethod
+    def _profile_wound_probability(cls, profile: object, target_unit: object | None) -> float:
+        chance_to_wound = 0.5
+        try:
+            strength = int(getattr(profile, "strength", 0) or 0)
+        except (TypeError, ValueError):
+            strength = 0
+        try:
+            target_toughness = int(getattr(target_unit, "toughness", 0) or 0)
+        except (TypeError, ValueError):
+            target_toughness = 0
+        if strength > 0 and target_toughness > 0:
+            if strength >= target_toughness * 2:
+                chance_to_wound = 5.0 / 6.0
+            elif strength > target_toughness:
+                chance_to_wound = 4.0 / 6.0
+            elif strength == target_toughness:
+                chance_to_wound = 3.0 / 6.0
+            elif strength <= target_toughness / 2.0:
+                chance_to_wound = 1.0 / 6.0
+            else:
+                chance_to_wound = 2.0 / 6.0
+
+        get_anti_specs = getattr(profile, "get_anti_specs", None)
+        if callable(get_anti_specs):
+            try:
+                anti_specs = list(get_anti_specs() or [])
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                anti_specs = []
+            for keyword, threshold in anti_specs:
+                if not cls._target_has_keyword(target_unit, str(keyword or "")):
+                    continue
+                try:
+                    needed = max(2, min(6, int(threshold)))
+                except (TypeError, ValueError):
+                    continue
+                chance_to_wound = max(chance_to_wound, float(7 - needed) / 6.0)
+
+        is_twin_linked = getattr(profile, "is_twin_linked", None)
+        if callable(is_twin_linked):
+            try:
+                if bool(is_twin_linked()):
+                    chance_to_wound = 1.0 - (1.0 - chance_to_wound) ** 2
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        return max(0.0, min(1.0, float(chance_to_wound)))
+
+    @classmethod
+    def _profile_accuracy_key(cls, profile: object, target_unit: object | None) -> tuple[float, float, float, float]:
+        hit_prob = cls._profile_hit_probability(profile)
+        wound_prob = cls._profile_wound_probability(profile, target_unit)
+        return (
+            float(hit_prob * wound_prob),
+            float(hit_prob),
+            float(wound_prob),
+            cls._profile_damage_score(profile, target_unit),
+        )
 
     @staticmethod
     def _shooting_profile_valid(
@@ -496,8 +588,10 @@ class HeadlessPolicyDecisionController(DecisionController):
                 if allowed_wargear_ids and wargear_id not in allowed_wargear_ids:
                     continue
                 profiles = dict(getattr(wargear, "profiles", {}) or {})
+                best_declaration: dict[str, object] | None = None
+                best_key: tuple[float, float, float, float, str, str] | None = None
                 for profile_name, profile in sorted(profiles.items(), key=lambda item: str(item[0])):
-                    if profile is None or cls._profile_is_hazardous(profile):
+                    if profile is None:
                         continue
                     if cls._profile_is_plasma_warhead(profile):
                         can_shoot = getattr(profile, "can_shoot_plasma_warhead", None)
@@ -508,39 +602,47 @@ class HeadlessPolicyDecisionController(DecisionController):
                             except (AttributeError, RuntimeError, TypeError, ValueError):
                                 allowed = False
                         if allowed:
-                            declarations.append(
-                                {
+                            key = (
+                                0.0,
+                                0.0,
+                                0.0,
+                                cls._profile_damage_score(profile, None),
+                                "",
+                                str(profile_name or ""),
+                            )
+                            if best_key is None or key > best_key:
+                                best_key = key
+                                best_declaration = {
                                     "wargear_id": wargear_id,
                                     "profile_name": str(profile_name or ""),
                                     "model_ids": [model_id],
                                 }
-                            )
-                        if max_declarations > 0 and len(declarations) >= max_declarations:
-                            return declarations[:max_declarations]
                         continue
-                    best_target = None
-                    best_key: tuple[float, str] | None = None
                     for target in targets:
                         target_id = str(maybe_entity_id(target) or "")
                         if not target_id:
                             continue
                         if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
                             continue
-                        score = cls._profile_damage_score(profile, target)
-                        key = (score, target_id)
+                        accuracy_key = cls._profile_accuracy_key(profile, target)
+                        key = (
+                            accuracy_key[0],
+                            accuracy_key[1],
+                            accuracy_key[2],
+                            accuracy_key[3],
+                            target_id,
+                            str(profile_name or ""),
+                        )
                         if best_key is None or key > best_key:
                             best_key = key
-                            best_target = target
-                    if best_target is None:
-                        continue
-                    declarations.append(
-                        {
-                            "wargear_id": wargear_id,
-                            "profile_name": str(profile_name or ""),
-                            "model_ids": [model_id],
-                            "target_unit_id": str(maybe_entity_id(best_target) or ""),
-                        }
-                    )
+                            best_declaration = {
+                                "wargear_id": wargear_id,
+                                "profile_name": str(profile_name or ""),
+                                "model_ids": [model_id],
+                                "target_unit_id": target_id,
+                            }
+                if best_declaration is not None:
+                    declarations.append(best_declaration)
                     if max_declarations > 0 and len(declarations) >= max_declarations:
                         return declarations[:max_declarations]
         return declarations
@@ -616,6 +718,37 @@ class HeadlessPolicyDecisionController(DecisionController):
             return cls._support_attachment_option_is_currently_valid(game, request, option_id)
         if decision_type == DECISION_ASSIGN_TRANSPORT:
             return cls._transport_assignment_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_SELECT_UNIT:
+            return cls._select_unit_option_is_currently_valid(game, request, option_id)
+        return True
+
+    @classmethod
+    def _select_unit_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        payload = cls._option_payload(request, option_id)
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action in {"pass", "skip"} or bool(payload.get("skip", False)) or bool(payload.get("skipped", False)):
+            return True
+
+        ctx = dict(getattr(request, "context", {}) or {})
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
+        selection_purpose = str(ctx.get("selection_purpose", "") or "").strip().upper()
+        if (
+            phase_name == "SHOOTING_PHASE"
+            and phase_step == "SHOOT_UNITS"
+            and selection_purpose == "ACTIVATE_SHOOTING_UNIT"
+        ):
+            unit_id = str(payload.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return False
+            declarations = cls._default_shooting_declarations(game, request, {"unit_id": unit_id})
+            return bool(declarations)
+
         return True
 
     @classmethod
