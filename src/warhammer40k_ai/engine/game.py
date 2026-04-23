@@ -6855,19 +6855,20 @@ class Game(
             key_singular = key_norm[:-1] if key_norm.endswith("s") else key_norm
 
             def _matches_keyword(model_obj) -> bool:
-                try:
-                    name = str(getattr(model_obj, "name", "") or "").lower()
-                except Exception:
-                    name = ""
-                if not name:
-                    return False
-                name_norm = re.sub(r"[^a-z0-9]+", " ", name).strip()
-                if not name_norm:
-                    return False
-                if key_norm and (key_norm in name_norm or name_norm in key_norm):
-                    return True
-                if key_singular and (key_singular in name_norm or name_norm in key_singular):
-                    return True
+                tokens = [str(getattr(model_obj, "name", "") or "")]
+                for attr_name in ("keywords", "faction_keywords"):
+                    raw_values = getattr(model_obj, attr_name, None)
+                    if raw_values is None:
+                        continue
+                    tokens.extend(str(value or "") for value in list(raw_values or []))
+                for token in tokens:
+                    token_norm = re.sub(r"[^a-z0-9]+", " ", str(token or "").lower()).strip()
+                    if not token_norm:
+                        continue
+                    if key_norm and (key_norm in token_norm or token_norm in key_norm):
+                        return True
+                    if key_singular and (key_singular in token_norm or token_norm in key_singular):
+                        return True
                 return False
 
             try:

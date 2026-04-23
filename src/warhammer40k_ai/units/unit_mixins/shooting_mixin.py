@@ -1,8 +1,165 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+from collections import OrderedDict
 import logging
 logger = logging.getLogger(__name__)
+
+
+_SHOOTING_LOS_CACHE_MAX = 8192
+
+
+def _shooting_los_entity_key(entity: object | None) -> str:
+    if entity is None:
+        return ""
+    value = getattr(entity, "id", None) or getattr(entity, "_id", None)
+    return str(value or id(entity))
+
+
+def _shooting_los_alive(entity: object) -> bool:
+    alive = getattr(entity, "is_alive", True)
+    return bool(alive() if callable(alive) else alive)
+
+
+def _shooting_los_model_key(model: object) -> tuple:
+    base = getattr(model, "model_base", None)
+    if base is None:
+        return (_shooting_los_entity_key(model), _shooting_los_alive(model), None)
+    radius = getattr(base, "radius", None)
+    if isinstance(radius, (list, tuple)):
+        radius_key = tuple(round(float(value), 4) for value in radius)
+    else:
+        try:
+            radius_key = round(float(radius), 4)
+        except (TypeError, ValueError):
+            radius_key = None
+    return (
+        _shooting_los_entity_key(model),
+        _shooting_los_alive(model),
+        round(float(getattr(base, "x", 0.0) or 0.0), 4),
+        round(float(getattr(base, "y", 0.0) or 0.0), 4),
+        round(float(getattr(base, "z", 0.0) or 0.0), 4),
+        round(float(getattr(base, "facing", 0.0) or 0.0), 4),
+        str(getattr(getattr(base, "base_type", None), "name", "") or ""),
+        radius_key,
+    )
+
+
+def _shooting_los_unit_key(unit: object | None) -> tuple:
+    if unit is None:
+        return ("",)
+    model_rows = tuple(
+        _shooting_los_model_key(model)
+        for model in list(getattr(unit, "models", []) or [])
+        if _shooting_los_alive(model)
+    )
+    return (
+        _shooting_los_entity_key(unit),
+        _shooting_los_alive(unit),
+        bool(getattr(unit, "deployed", True)),
+        bool(getattr(unit, "is_aircraft", False)),
+        bool(getattr(unit, "is_towering", False)),
+        model_rows,
+    )
+
+
+def _shooting_los_bounds(value: object) -> tuple[float, float, float, float]:
+    bounds = tuple(getattr(value, "bounds", ()) or ())
+    if len(bounds) != 4:
+        return (0.0, 0.0, 0.0, 0.0)
+    return tuple(round(float(item), 4) for item in bounds)  # type: ignore[return-value]
+
+
+def _shooting_los_terrain_key(game_map: object) -> tuple:
+    rows: list[tuple] = []
+    for terrain in list(getattr(game_map, "terrain_features", []) or []):
+        wall_rows: list[tuple] = []
+        for wall in list(getattr(terrain, "walls", []) or []):
+            if not isinstance(wall, dict):
+                continue
+            wall_rows.append(
+                (
+                    _shooting_los_bounds(wall.get("polygon")),
+                    round(float(wall.get("z_bottom", 0.0) or 0.0), 4),
+                    round(float(wall.get("z_top", wall.get("z_bottom", 0.0)) or 0.0), 4),
+                )
+            )
+        opening_rows: list[tuple] = []
+        for opening in list(getattr(terrain, "openings", []) or []):
+            if not isinstance(opening, dict):
+                continue
+            opening_rows.append(
+                (
+                    _shooting_los_bounds(opening.get("polygon")),
+                    round(float(opening.get("z_bottom", 0.0) or 0.0), 4),
+                    round(float(opening.get("z_top", 0.0) or 0.0), 4),
+                    bool(opening.get("allows_los", False)),
+                )
+            )
+        rows.append(
+            (
+                str(getattr(terrain, "id", "") or id(terrain)),
+                str(getattr(getattr(terrain, "terrain_type", None), "name", "") or ""),
+                _shooting_los_bounds(getattr(terrain, "footprint", None)),
+                round(float(getattr(terrain, "height", 0.0) or 0.0), 4),
+                round(float(getattr(terrain, "rim_height", 0.0) or 0.0), 4),
+                tuple(sorted(wall_rows, key=lambda item: str(item))),
+                tuple(sorted(opening_rows, key=lambda item: str(item))),
+            )
+        )
+    return tuple(sorted(rows, key=lambda item: str(item[0])))
+
+
+def _shooting_los_blocker_key(game_map: object, shooter_unit: object, target_unit: object) -> tuple:
+    get_enemy_units = getattr(game_map, "get_enemy_units", None)
+    enemy_units = list(get_enemy_units(shooter_unit) or []) if callable(get_enemy_units) else []
+    rows: list[tuple] = []
+    target_id = _shooting_los_entity_key(target_unit)
+    for enemy_unit in enemy_units:
+        if _shooting_los_entity_key(enemy_unit) == target_id:
+            continue
+        rows.append(_shooting_los_unit_key(enemy_unit))
+    return tuple(sorted(rows, key=lambda item: str(item[0])))
+
+
+def _shooting_los_cache_key(shooter_unit: object, shooting_model: object, target_unit: object, game_map: object) -> tuple:
+    return (
+        "shooting_los_v1",
+        id(game_map),
+        _shooting_los_entity_key(shooter_unit),
+        _shooting_los_model_key(shooting_model),
+        _shooting_los_unit_key(target_unit),
+        _shooting_los_blocker_key(game_map, shooter_unit, target_unit),
+        _shooting_los_terrain_key(game_map),
+    )
+
+
+def _shooting_los_cache(game_map: object) -> OrderedDict:
+    cache = getattr(game_map, "_shooting_los_cache", None)
+    if isinstance(cache, OrderedDict):
+        return cache
+    cache = OrderedDict()
+    try:
+        setattr(game_map, "_shooting_los_cache", cache)
+    except (AttributeError, TypeError):
+        pass
+    return cache
+
+
+def _shooting_los_cache_get(game_map: object, key: tuple) -> bool | None:
+    cache = _shooting_los_cache(game_map)
+    if key not in cache:
+        return None
+    cache.move_to_end(key)
+    return bool(cache[key])
+
+
+def _shooting_los_cache_set(game_map: object, key: tuple, value: bool) -> None:
+    cache = _shooting_los_cache(game_map)
+    cache[key] = bool(value)
+    cache.move_to_end(key)
+    while len(cache) > _SHOOTING_LOS_CACHE_MAX:
+        cache.popitem(last=False)
 
 
 class ShootingMixin:
@@ -1814,6 +1971,17 @@ class ShootingMixin:
         to ANY point on the 3D volume of ANY model in the target unit without being
         blocked by terrain or enemy models. Friendly models are ignored for blocking.
         """
+        if shooting_model is None or target_unit is None or game_map is None:
+            return False
+        cache_key = _shooting_los_cache_key(self, shooting_model, target_unit, game_map)
+        cached = _shooting_los_cache_get(game_map, cache_key)
+        if cached is not None:
+            return bool(cached)
+
+        def _cache_and_return(value: bool) -> bool:
+            _shooting_los_cache_set(game_map, cache_key, bool(value))
+            return bool(value)
+
         # Late imports to avoid circulars
         from shapely.geometry import LineString
 
@@ -2111,13 +2279,11 @@ class ShootingMixin:
             return False
 
         # Validate inputs
-        if shooting_model is None or target_unit is None or game_map is None:
-            return False
         if not _model_alive(shooting_model) or not _unit_alive(target_unit):
-            return False
+            return _cache_and_return(False)
         shooter_geometry = _model_geometry(shooting_model)
         if shooter_geometry is None:
-            return False
+            return _cache_and_return(False)
         shooter_shape, _shooter_bounds, _shooter_z_bounds = shooter_geometry
         shooter_unit = getattr(shooting_model, "parent_unit", None)
         shooter_is_aircraft = _unit_flag(shooter_unit, "is_aircraft")
@@ -2151,9 +2317,9 @@ class ShootingMixin:
                         shooter_is_aircraft=shooter_is_aircraft,
                         shooter_is_towering=shooter_is_towering,
                     ):
-                        return True
+                        return _cache_and_return(True)
 
-        return False
+        return _cache_and_return(False)
     
 
     def _can_shoot_while_engaged(self, model, weapon_profile, target_unit, game_map) -> bool:

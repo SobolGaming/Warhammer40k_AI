@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+from collections import OrderedDict
 from math import hypot
 from typing import Any
 
@@ -7,7 +9,11 @@ from shapely.errors import GEOSException
 from shapely.geometry import LineString
 
 from .terrain_runtime import iter_terrain_areas
+from ..utility.entity_ids import get_entity_id
 from ..utility.profiling_sections import profiled_section
+
+
+_VISIBILITY_CONTEXT_CACHE_MAX = 8192
 
 
 def _json_safe(value: Any) -> Any:
@@ -91,6 +97,185 @@ def _line_intersection_point(line2d: LineString, geometry: object):
     return intersection.representative_point()
 
 
+def _bounds_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return not (
+        float(a[2]) < float(b[0])
+        or float(a[0]) > float(b[2])
+        or float(a[3]) < float(b[1])
+        or float(a[1]) > float(b[3])
+    )
+
+
+def _segment_bounds_2d(p0: tuple[float, float, float], p1: tuple[float, float, float]) -> tuple[float, float, float, float]:
+    x0 = float(p0[0])
+    y0 = float(p0[1])
+    x1 = float(p1[0])
+    y1 = float(p1[1])
+    return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+
+
+def _rounded_bounds(value: object) -> tuple[float, float, float, float]:
+    bounds = tuple(getattr(value, "bounds", ()) or ())
+    if len(bounds) != 4:
+        return (0.0, 0.0, 0.0, 0.0)
+    return tuple(round(float(item), 4) for item in bounds)  # type: ignore[return-value]
+
+
+def _cache_entity_key(entity: object | None) -> str:
+    if entity is None:
+        return ""
+    try:
+        return str(get_entity_id(entity) or id(entity))
+    except ValueError:
+        return str(id(entity))
+
+
+def _model_visibility_key(model: object) -> tuple[Any, ...]:
+    base = getattr(model, "model_base", None)
+    alive_value = getattr(model, "is_alive", True)
+    alive = bool(alive_value() if callable(alive_value) else alive_value)
+    if base is None:
+        return (_cache_entity_key(model), alive, None)
+    radius = getattr(base, "radius", None)
+    if isinstance(radius, (list, tuple)):
+        radius_key: Any = tuple(round(float(value), 4) for value in radius)
+    else:
+        try:
+            radius_key = round(float(radius), 4)
+        except (TypeError, ValueError):
+            radius_key = None
+    base_type = str(getattr(getattr(base, "base_type", None), "name", "") or "")
+    return (
+        _cache_entity_key(model),
+        alive,
+        round(float(getattr(base, "x", 0.0) or 0.0), 4),
+        round(float(getattr(base, "y", 0.0) or 0.0), 4),
+        round(float(getattr(base, "z", 0.0) or 0.0), 4),
+        round(float(getattr(base, "facing", 0.0) or 0.0), 4),
+        base_type,
+        radius_key,
+    )
+
+
+def _unit_visibility_key(unit: object | None) -> tuple[Any, ...]:
+    if unit is None:
+        return ("",)
+    return (
+        _cache_entity_key(unit),
+        bool(getattr(unit, "is_aircraft", False)),
+        bool(getattr(unit, "is_towering", False)),
+        bool(getattr(unit, "terrain_hidden_active", False)),
+        getattr(unit, "terrain_hidden_detection_range", None),
+        str(getattr(unit, "terrain_hidden_current_player_turn", "") or ""),
+        str(getattr(unit, "terrain_hidden_previous_player_turn", "") or ""),
+        str(getattr(unit, "terrain_hidden_last_shot_player_turn", "") or ""),
+    )
+
+
+def _terrain_visibility_signature(game_map: object) -> tuple[Any, ...]:
+    rows: list[tuple[Any, ...]] = []
+    for terrain in list(getattr(game_map, "terrain_features", []) or []):
+        footprint = getattr(terrain, "footprint", None)
+        wall_rows: list[tuple[Any, ...]] = []
+        for wall in list(getattr(terrain, "walls", []) or []):
+            if not isinstance(wall, dict):
+                continue
+            wall_rows.append(
+                (
+                    _rounded_bounds(wall.get("polygon")),
+                    round(float(wall.get("z_bottom", 0.0) or 0.0), 4),
+                    round(float(wall.get("z_top", wall.get("z_bottom", 0.0)) or 0.0), 4),
+                )
+            )
+        opening_rows: list[tuple[Any, ...]] = []
+        for opening in list(getattr(terrain, "openings", []) or []):
+            if not isinstance(opening, dict):
+                continue
+            opening_rows.append(
+                (
+                    _rounded_bounds(opening.get("polygon")),
+                    round(float(opening.get("z_bottom", 0.0) or 0.0), 4),
+                    round(float(opening.get("z_top", 0.0) or 0.0), 4),
+                    bool(opening.get("allows_los", False)),
+                )
+            )
+        wall_rows.sort(key=lambda item: str(item))
+        opening_rows.sort(key=lambda item: str(item))
+        rows.append(
+            (
+                str(getattr(terrain, "id", "") or id(terrain)),
+                str(getattr(getattr(terrain, "terrain_type", None), "name", "") or ""),
+                _rounded_bounds(footprint),
+                bool(getattr(terrain, "obscuring", False)),
+                round(float(getattr(terrain, "height", 0.0) or 0.0), 4),
+                round(float(getattr(terrain, "rim_height", 0.0) or 0.0), 4),
+                tuple(wall_rows),
+                tuple(opening_rows),
+            )
+        )
+    rows.sort(key=lambda item: str(item[0]))
+    area_rows: list[tuple[Any, ...]] = []
+    for area in iter_terrain_areas(game_map):
+        footprint = getattr(area, "footprint", None)
+        area_rows.append(
+            (
+                str(getattr(area, "id", "") or id(area)),
+                _rounded_bounds(footprint),
+                bool(getattr(area, "obscuring", False)),
+                getattr(area, "detection_range", None),
+                tuple(sorted(str(tag or "") for tag in list(getattr(area, "effect_tags", []) or []))),
+            )
+        )
+    area_rows.sort(key=lambda item: str(item[0]))
+    return (tuple(rows), tuple(area_rows))
+
+
+def _visibility_context_cache_key(game_map: object, shooter_model: object, target_model: object) -> tuple[Any, ...]:
+    target_unit = getattr(target_model, "parent_unit", None)
+    shooter_unit = getattr(shooter_model, "parent_unit", None)
+    return (
+        "visibility_context_v2",
+        bool(preview_visibility_semantics_enabled(game_map)),
+        str(getattr(game_map, "preview_visibility_ruleset", "") or ""),
+        str(getattr(game_map, "terrain_hidden_current_player_turn", "") or ""),
+        str(getattr(game_map, "terrain_hidden_previous_player_turn", "") or ""),
+        _model_visibility_key(shooter_model),
+        _model_visibility_key(target_model),
+        _unit_visibility_key(shooter_unit),
+        _unit_visibility_key(target_unit),
+        _terrain_visibility_signature(game_map),
+    )
+
+
+def _visibility_context_cache(game_map: object) -> OrderedDict:
+    cache = getattr(game_map, "_visibility_context_cache", None)
+    if isinstance(cache, OrderedDict):
+        return cache
+    cache = OrderedDict()
+    try:
+        setattr(game_map, "_visibility_context_cache", cache)
+    except (AttributeError, TypeError):
+        pass
+    return cache
+
+
+def _visibility_context_cache_get(game_map: object, key: tuple[Any, ...]) -> dict[str, Any] | None:
+    cache = _visibility_context_cache(game_map)
+    cached = cache.get(key)
+    if cached is None:
+        return None
+    cache.move_to_end(key)
+    return copy.deepcopy(cached)
+
+
+def _visibility_context_cache_set(game_map: object, key: tuple[Any, ...], result: dict[str, Any]) -> None:
+    cache = _visibility_context_cache(game_map)
+    cache[key] = copy.deepcopy(result)
+    cache.move_to_end(key)
+    while len(cache) > _VISIBILITY_CONTEXT_CACHE_MAX:
+        cache.popitem(last=False)
+
+
 @profiled_section("los.segment_blocked_by_terrain")
 def segment_blocked_by_terrain_feature(
     p0: tuple[float, float, float],
@@ -100,16 +285,20 @@ def segment_blocked_by_terrain_feature(
     target_model: object,
 ) -> bool:
     """Return True if the segment is blocked by this terrain feature."""
+    footprint = getattr(terrain, "footprint", None)
+    if footprint is None:
+        return False
+    line_bounds = _segment_bounds_2d(p0, p1)
+    footprint_bounds = tuple(getattr(footprint, "bounds", ()) or ())
+    if len(footprint_bounds) == 4 and not _bounds_overlap(line_bounds, footprint_bounds):
+        return False
+
     line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
     if line2d.length == 0:
         return False
 
     def z_at_fraction(fraction: float) -> float:
         return float(p0[2]) + fraction * (float(p1[2]) - float(p0[2]))
-
-    footprint = getattr(terrain, "footprint", None)
-    if footprint is None:
-        return False
 
     is_ruins = hasattr(terrain, "walls") and hasattr(terrain, "openings")
     if is_ruins:
@@ -353,6 +542,11 @@ def get_visibility_context_for_models(
     shooter_model: object,
     target_model: object,
 ) -> dict[str, Any]:
+    cache_key = _visibility_context_cache_key(game_map, shooter_model, target_model)
+    cached = _visibility_context_cache_get(game_map, cache_key)
+    if cached is not None:
+        return cached
+
     reason_trace: list[dict[str, Any]] = []
     result: dict[str, Any] = {
         "visible": False,
@@ -366,11 +560,15 @@ def get_visibility_context_for_models(
         "reason_trace": reason_trace,
     }
 
+    def _cache_and_return() -> dict[str, Any]:
+        _visibility_context_cache_set(game_map, cache_key, result)
+        return result
+
     shooter_shape = _model_base_shape(shooter_model)
     target_shape = _model_base_shape(target_model)
     if shooter_shape is None or target_shape is None:
         _append_reason(reason_trace, "INVALID_MODEL_GEOMETRY", "Shooter or target model lacks base geometry.")
-        return result
+        return _cache_and_return()
 
     target_areas = _target_areas_for_model(game_map, target_model)
     if result["preview_visibility_semantics_enabled"]:
@@ -393,7 +591,7 @@ def get_visibility_context_for_models(
                     "Target remains hidden because the shooter is outside detection range.",
                     metadata={"distance": distance, "detection_range": detection_range},
                 )
-                return result
+                return _cache_and_return()
             result["detection_range_override_applies"] = True
             _append_reason(
                 reason_trace,
@@ -428,13 +626,13 @@ def get_visibility_context_for_models(
                 "An obscuring terrain area blocks visibility between the models.",
                 metadata={"terrain_area_id": str(getattr(area, "id", "") or "")},
             )
-            return result
+            return _cache_and_return()
 
     shooter_points = sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
     target_points = sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
     if not shooter_points or not target_points:
         _append_reason(reason_trace, "NO_SAMPLE_POINTS", "Visibility sampling could not resolve model points.")
-        return result
+        return _cache_and_return()
 
     terrain_features = list(getattr(game_map, "terrain_features", []) or [])
     first_blocking_terrain_id = ""
@@ -454,7 +652,7 @@ def get_visibility_context_for_models(
             if not blocked:
                 result["visible"] = True
                 _append_reason(reason_trace, "LEGACY_LOS_CLEAR", "A sampled line of sight path is clear.")
-                return result
+                return _cache_and_return()
 
     _append_reason(
         reason_trace,
@@ -462,7 +660,7 @@ def get_visibility_context_for_models(
         "All sampled line of sight paths are blocked by terrain.",
         metadata={"terrain_id": first_blocking_terrain_id},
     )
-    return result
+    return _cache_and_return()
 
 
 def can_model_see_model(game_map: object, shooter_model: object, target_model: object) -> bool:

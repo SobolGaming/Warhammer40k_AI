@@ -271,7 +271,7 @@ def test_deployment_builder_relaxed_fallback_bypasses_quick_reject(
     monkeypatch.setattr(
         maker,
         "_quick_reject_deployment_anchor",
-        lambda *_args, **_kwargs: True,
+        lambda *_args, **kwargs: bool(kwargs.get("already_deployed")),
     )
     monkeypatch.setattr(
         maker,
@@ -295,7 +295,7 @@ def test_deployment_builder_relaxed_fallback_bypasses_quick_reject(
     candidates = maker.build_deployment_move_candidates(
         unit,
         {"name": "zone", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
-        already_deployed=[],
+        already_deployed=[_StubUnit("unit:blocker", must_start_in_reserves=False)],
         max_candidates=1,
     )
 
@@ -305,6 +305,23 @@ def test_deployment_builder_relaxed_fallback_bypasses_quick_reject(
     assert metrics
     assert metrics[-1]["relaxed_fallback_used"] is True
     assert metrics[-1]["returned_candidate_sources"] == ["lattice_relaxed_no_quick_reject"]
+
+
+def test_relaxed_deployment_fallback_anchor_count_is_bounded() -> None:
+    class _StubGame:
+        def __init__(self) -> None:
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+    unit = _StubUnit("unit:bounded", must_start_in_reserves=False)
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), exhaustive_anchor_limit=512)
+
+    anchors = maker._relaxed_deployment_anchor_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 60.0], "y_range": [0.0, 44.0]},
+        already_deployed=[],
+    )
+
+    assert 1 <= len(anchors) <= 128
 
 
 def test_zone_choice_uses_pregame_teacher_when_player_context_available(
@@ -870,3 +887,83 @@ def test_cached_search_context_matches_uncached_deployment_validation() -> None:
         search_context=search_context,
     )
     assert cached is uncached
+
+
+def test_headless_deployment_reuses_prospective_positions_for_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+    class _CountingUnit(_StubUnit):
+        def __init__(self, unit_id: str) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=_FlatMap())
+            self.models = [_StubModel(f"{unit_id}:model:0"), _StubModel(f"{unit_id}:model:1")]
+            self.reserve_status = "deployed"
+            self.calculate_calls = 0
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            self.calculate_calls += 1
+            return [
+                (float(x), float(y), 0.0, 0.0),
+                (float(x) + 1.0, float(y), 0.0, 0.0),
+            ]
+
+    class _ProbeGame(GameSetupDeploymentReservesMixin):
+        def __init__(self) -> None:
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def get_boundary_repulsors(self, unit, context="deployment"):
+            del unit, context
+            return []
+
+        def is_position_wholly_in_deployment_zone(self, x: float, y: float, base: object, player_id: str) -> bool:
+            del x, y, base, player_id
+            return True
+
+        def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
+            del x, y, player_id
+            return False
+
+        def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+        def get_distance_to_enemy_models(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game = _ProbeGame()
+    unit = _CountingUnit("unit:reuse")
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=game, placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("single_anchor", [(5.0, 5.0)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    assert unit.calculate_calls == 1

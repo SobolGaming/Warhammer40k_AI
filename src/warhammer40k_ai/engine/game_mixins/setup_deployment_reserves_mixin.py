@@ -1098,6 +1098,7 @@ class GameSetupDeploymentReservesMixin:
         *,
         boundary_repulsors=None,
         search_context=None,
+        model_positions=None,
     ) -> bool:
         """Check if a position is valid for deploying a unit during deployment phase."""
         # Units in reserves don't need position validation
@@ -1151,24 +1152,27 @@ class GameSetupDeploymentReservesMixin:
             deployment_repulsors = boundary_repulsors
             if deployment_repulsors is None:
                 deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
-            model_positions = calculate_prospective_model_positions(
-                unit,
-                x,
-                y,
-                self.map,
-                avoid_friendly_units=False,
-                boundary_repulsors=deployment_repulsors,
-                search_context=search_context,
-            )
+            if model_positions is None:
+                resolved_model_positions = calculate_prospective_model_positions(
+                    unit,
+                    x,
+                    y,
+                    self.map,
+                    avoid_friendly_units=False,
+                    boundary_repulsors=deployment_repulsors,
+                    search_context=search_context,
+                )
+            else:
+                resolved_model_positions = list(model_positions or [])
 
-            if not model_positions:
+            if not resolved_model_positions:
                 return False
 
-            if not _validate_datasheet_deployment_rules(model_positions):
+            if not _validate_datasheet_deployment_rules(resolved_model_positions):
                 return False
 
             from ...battlefield.map import validate_ruins_placement
-            for model, position in zip(unit.models, model_positions):
+            for model, position in zip(unit.models, resolved_model_positions):
                 model_x, model_y = position[0], position[1]
 
                 # Check if any part of the model is in enemy deployment zone
@@ -1217,24 +1221,27 @@ class GameSetupDeploymentReservesMixin:
             deployment_repulsors = boundary_repulsors
             if deployment_repulsors is None:
                 deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
-            model_positions = calculate_prospective_model_positions(
-                unit,
-                x,
-                y,
-                self.map,
-                avoid_friendly_units=False,
-                boundary_repulsors=deployment_repulsors,
-                search_context=search_context,
-            )
+            if model_positions is None:
+                resolved_model_positions = calculate_prospective_model_positions(
+                    unit,
+                    x,
+                    y,
+                    self.map,
+                    avoid_friendly_units=False,
+                    boundary_repulsors=deployment_repulsors,
+                    search_context=search_context,
+                )
+            else:
+                resolved_model_positions = list(model_positions or [])
 
-            if not model_positions:
+            if not resolved_model_positions:
                 return False
 
-            if not _validate_datasheet_deployment_rules(model_positions):
+            if not _validate_datasheet_deployment_rules(resolved_model_positions):
                 return False
 
             from ...battlefield.map import validate_ruins_placement
-            for model, position in zip(unit.models, model_positions):
+            for model, position in zip(unit.models, resolved_model_positions):
                 model_x, model_y, model_z = position[0], position[1], position[2]
 
                 # Check if this model would be wholly within the deployment zone

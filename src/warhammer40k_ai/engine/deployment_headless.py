@@ -477,12 +477,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             already_deployed=list(already_deployed or []),
         )
         started = time.perf_counter()
+        footprint = estimate_unit_pack_footprint(unit)
         candidate_groups = self._deployment_anchor_candidate_groups(
             unit,
             deployment_zone,
             already_deployed=list(already_deployed or []),
             player=player,
-            footprint=estimate_unit_pack_footprint(unit),
+            footprint=footprint,
         )
         seen_anchor: set[tuple[float, float]] = set()
         seen_payload: set[tuple[tuple[str, float, float, float, float], ...]] = set()
@@ -502,6 +503,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     unit,
                     deployment_zone,
                     already_deployed=list(already_deployed or []),
+                    footprint=footprint,
                     x=float(x),
                     y=float(y),
                 ):
@@ -556,6 +558,17 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 if key in rescue_seen_anchor:
                     continue
                 rescue_seen_anchor.add(key)
+                if self._quick_reject_deployment_anchor(
+                    unit,
+                    deployment_zone,
+                    already_deployed=[],
+                    footprint=footprint,
+                    x=float(x),
+                    y=float(y),
+                ):
+                    metric["quick_rejects"] = int(metric.get("quick_rejects", 0) or 0) + 1
+                    self._bump_metric_counter(metric, "source_quick_rejects", source)
+                    continue
                 payload = self._select_valid_deployment_payload(
                     unit,
                     player_id=str(player_id),
@@ -663,10 +676,11 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         )
         if bounds is None:
             return []
+        relaxed_limit = min(128, max(32, int(self._exhaustive_anchor_limit)))
         return self._candidate_positions_exhaustive_for_bounds(
             unit,
             bounds=bounds,
-            anchor_limit=max(512, int(self._exhaustive_anchor_limit)),
+            anchor_limit=int(relaxed_limit),
         )
 
     @staticmethod
@@ -696,24 +710,29 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         deployment_zone: dict,
         *,
         already_deployed: list[object],
+        footprint: dict[str, float] | None = None,
         x: float,
         y: float,
     ) -> bool:
         if not self._unit_has_infiltrate(unit) and not self._point_in_zone(deployment_zone, float(x), float(y)):
             return True
         bounds = self._zone_bounds(deployment_zone)
-        footprint = estimate_unit_pack_footprint(unit)
-        conservative_margin = max(0.25, float(footprint["largest_radius"]) * 0.75)
+        footprint = dict(footprint or estimate_unit_pack_footprint(unit))
         if bounds is not None and not self._unit_has_infiltrate(unit):
             min_x, max_x, min_y, max_y = bounds
-            if (
-                float(x) < float(min_x) + conservative_margin
-                or float(x) > float(max_x) - conservative_margin
-                or float(y) < float(min_y) + conservative_margin
-                or float(y) > float(max_y) - conservative_margin
+            span_x = float(max_x) - float(min_x)
+            span_y = float(max_y) - float(min_y)
+            margin_x = max(0.25, float(footprint.get("width", 0.0) or 0.0) * 0.5)
+            margin_y = max(0.25, float(footprint.get("depth", 0.0) or 0.0) * 0.5)
+            if span_x >= margin_x * 2.0 and (
+                float(x) < float(min_x) + margin_x or float(x) > float(max_x) - margin_x
             ):
                 return True
-        clearance = max(0.25, float(footprint["largest_radius"]) + 0.25)
+            if span_y >= margin_y * 2.0 and (
+                float(y) < float(min_y) + margin_y or float(y) > float(max_y) - margin_y
+            ):
+                return True
+        clearance = max(0.25, float(footprint.get("radius", footprint.get("largest_radius", 0.0)) or 0.0) + 0.25)
         for deployed_unit in list(already_deployed or []):
             unit_bounds = deployed_unit_bounds(deployed_unit)
             if unit_bounds is None:
@@ -803,18 +822,6 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
     ) -> list[dict]:
         metric["validate_calls"] = int(metric.get("validate_calls", 0) or 0) + 1
         self._bump_metric_counter(metric, "source_validate_calls", str(source))
-        if not bool(
-            call_with_supported_kwargs(
-                fast_validate_fn,
-                unit,
-                float(x),
-                float(y),
-                str(player_id),
-                boundary_repulsors=boundary_repulsors,
-                search_context=search_context,
-            )
-        ):
-            return []
         unit_id = str(get_entity_id(unit) or "")
         if not unit_id:
             return []
@@ -829,6 +836,24 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         for model_positions in payload_variants:
             allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
             if not all(allowed_model_ids):
+                continue
+            tuple_positions = self._tuple_positions_from_payload(model_positions)
+            if not tuple_positions:
+                continue
+            if not bool(
+                call_with_supported_kwargs(
+                    fast_validate_fn,
+                    unit,
+                    float(x),
+                    float(y),
+                    str(player_id),
+                    boundary_repulsors=boundary_repulsors,
+                    search_context=search_context,
+                    model_positions=tuple_positions,
+                )
+            ):
+                metric["fast_validation_rejects"] = int(metric.get("fast_validation_rejects", 0) or 0) + 1
+                self._bump_metric_counter(metric, "source_fast_validation_rejects", str(source))
                 continue
             metric["full_validation_calls"] = int(metric.get("full_validation_calls", 0) or 0) + 1
             request = DecisionRequest.create(
@@ -866,6 +891,25 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     metric["first_valid_source"] = str(source or "")
                 return list(model_positions)
         return []
+
+    @staticmethod
+    def _tuple_positions_from_payload(model_positions: list[dict]) -> list[tuple[float, float, float, float]]:
+        tuple_positions: list[tuple[float, float, float, float]] = []
+        for entry in list(model_positions or []):
+            if not isinstance(entry, dict):
+                return []
+            pos = list(entry.get("position", []) or [])
+            if len(pos) < 2:
+                return []
+            try:
+                x = float(pos[0])
+                y = float(pos[1])
+                z = float(pos[2]) if len(pos) >= 3 else 0.0
+                facing = float(entry.get("facing", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                return []
+            tuple_positions.append((x, y, z, facing))
+        return tuple_positions
 
     def _build_model_positions(
         self,

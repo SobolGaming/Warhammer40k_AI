@@ -36,7 +36,7 @@ from .reserve_entry_geometry import (
 from .reserve_entry_rules import masters_of_void_enemy_dz_override_active
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.decision_utils import resolve_decision_command
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..utility.placement_search import (
     build_placement_search_context,
     deployed_unit_bounds,
@@ -181,7 +181,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 candidate = self._candidate_from_option_payload(action_id, option_payload)
             if not self._candidate_is_structurally_resolvable(request, candidate):
                 continue
-            result_payload = self._normalized_result_payload(request, option_payload)
+            result_payload = self._normalized_result_payload(request, option_payload, game=game)
             if bool(option_payload.get("skip", False)):
                 result_payload["skipped"] = True
             if str(option_payload.get("action", "") or "").strip().lower() == "skip":
@@ -201,7 +201,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         option_id = self._option_id_for_action_id(request, str(candidate.action_id or ""))
         if not option_id:
             return False
-        payload = self._normalized_result_payload(request, dict(getattr(candidate, "params", {}) or {}))
+        payload = self._normalized_result_payload(request, dict(getattr(candidate, "params", {}) or {}), game=game)
         if bool(payload.get("skip", False)):
             payload["skipped"] = True
         if str(payload.get("action", "") or "").strip().lower() == "skip":
@@ -253,8 +253,13 @@ class HeadlessPolicyDecisionController(DecisionController):
             )
             return None
 
-    @staticmethod
-    def _normalized_result_payload(request: DecisionRequest, payload: dict[str, Any]) -> dict[str, Any]:
+    def _normalized_result_payload(
+        self,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+        *,
+        game: object | None = None,
+    ) -> dict[str, Any]:
         normalized = dict(payload or {})
         if str(getattr(request, "decision_type", "") or "") == DECISION_RESOLVE_COHERENCY:
             model_ids = [str(value or "") for value in list(normalized.get("model_ids", []) or []) if str(value or "")]
@@ -264,7 +269,270 @@ class HeadlessPolicyDecisionController(DecisionController):
                     model_ids = [model_id]
             if model_ids:
                 normalized["model_ids"] = model_ids
+        if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_SHOTS:
+            action = str(normalized.get("action", "") or "").strip().lower()
+            if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
+                declarations = normalized.get("declarations")
+                if not isinstance(declarations, list) or not declarations:
+                    default_declarations = self._default_shooting_declarations(game, request, normalized)
+                    if default_declarations:
+                        normalized["declarations"] = default_declarations
         return normalized
+
+    @staticmethod
+    def _alive(value: object) -> bool:
+        alive = getattr(value, "is_alive", True)
+        if callable(alive):
+            try:
+                return bool(alive())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        return bool(alive)
+
+    @staticmethod
+    def _entity_sort_key(value: object) -> str:
+        return str(maybe_entity_id(value) or getattr(value, "name", "") or "")
+
+    @classmethod
+    def _attached_alive_models(cls, unit: object) -> list[object]:
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        return sorted(
+            [model for model in models if model is not None and cls._alive(model)],
+            key=cls._entity_sort_key,
+        )
+
+    @staticmethod
+    def _resolve_unit(game: object | None, unit_id: str) -> object | None:
+        if game is None or not unit_id:
+            return None
+        resolver = getattr(game, "_resolve_unit_by_id", None)
+        if callable(resolver):
+            unit = resolver(unit_id)
+            if unit is not None:
+                return unit
+        registry = getattr(game, "entity_registry", None)
+        get_entity = getattr(registry, "get", None) if registry is not None else None
+        if callable(get_entity):
+            unit = get_entity(unit_id, kind="unit")
+            if unit is not None:
+                return unit
+        for player in list(getattr(game, "players", []) or []):
+            army = getattr(player, "army", None)
+            for unit in list(getattr(army, "units", []) or []):
+                if str(maybe_entity_id(unit) or "") == str(unit_id):
+                    return unit
+        return None
+
+    @classmethod
+    def _enemy_units_for_shooting(cls, game: object | None, unit: object) -> list[object]:
+        if game is None or unit is None:
+            return []
+        game_map = getattr(game, "map", None)
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if callable(get_enemy_units):
+            try:
+                enemies = list(get_enemy_units(unit) or [])
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                enemies = []
+        else:
+            enemies = []
+        if not enemies:
+            get_army = getattr(unit, "get_parent_army", None)
+            try:
+                army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                army = None
+            player = getattr(army, "player", None) if army is not None else None
+            game_get_enemy_units = getattr(game, "get_enemy_units", None)
+            if callable(game_get_enemy_units) and player is not None:
+                try:
+                    enemies = list(game_get_enemy_units(player) or [])
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    enemies = []
+            else:
+                enemies = []
+        by_id: dict[str, object] = {}
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            root_getter = getattr(enemy, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else enemy
+            enemy_id = str(maybe_entity_id(root) or "")
+            if not enemy_id or enemy_id in by_id:
+                continue
+            if not cls._alive(root):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            reserve_check = getattr(root, "is_in_reserves", None)
+            if callable(reserve_check) and bool(reserve_check()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            by_id[enemy_id] = root
+        return [by_id[enemy_id] for enemy_id in sorted(by_id.keys())]
+
+    @staticmethod
+    def _profile_is_hazardous(profile: object) -> bool:
+        is_hazardous = getattr(profile, "is_hazardous", None)
+        if callable(is_hazardous):
+            try:
+                return bool(is_hazardous())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        return False
+
+    @staticmethod
+    def _profile_is_plasma_warhead(profile: object) -> bool:
+        is_plasma_warhead = getattr(profile, "is_plasma_warhead", None)
+        if callable(is_plasma_warhead):
+            try:
+                return bool(is_plasma_warhead())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        return False
+
+    @staticmethod
+    def _profile_damage_score(profile: object, target_unit: object | None) -> float:
+        score_fn = getattr(profile, "get_damage_potential", None)
+        if not callable(score_fn):
+            return 0.0
+        try:
+            return float(score_fn(target_unit) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _shooting_profile_valid(
+        unit: object,
+        model: object,
+        profile: object,
+        target_unit: object,
+        game_map: object | None,
+    ) -> bool:
+        validate = getattr(unit, "_validate_shooting_declaration", None)
+        if callable(validate):
+            try:
+                validation = validate(profile, target_unit, [model], game_map)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+            return bool(isinstance(validation, dict) and validation.get("valid", False))
+        can_shoot = getattr(unit, "_can_model_shoot_weapon_at_target", None)
+        if callable(can_shoot):
+            try:
+                return bool(can_shoot(model, profile, target_unit, game_map))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        return False
+
+    @classmethod
+    def _default_shooting_declarations(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+    ) -> list[dict[str, object]]:
+        ctx = dict(getattr(request, "context", {}) or {})
+        unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
+        unit = cls._resolve_unit(game, unit_id)
+        if unit is None:
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        allowed_model_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        allowed_wargear_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_wargear_ids", []) or [])
+            if str(value or "").strip()
+        }
+        force_target_id = str(ctx.get("force_target_unit_id", "") or "").strip()
+        try:
+            max_declarations = int(ctx.get("max_declarations", 0) or 0)
+        except (TypeError, ValueError):
+            max_declarations = 0
+        targets = cls._enemy_units_for_shooting(game, unit)
+        if force_target_id:
+            targets = [target for target in targets if str(maybe_entity_id(target) or "") == force_target_id]
+        declarations: list[dict[str, object]] = []
+        out_of_phase = bool(ctx.get("out_of_phase", False))
+        for model in cls._attached_alive_models(unit):
+            model_id = str(maybe_entity_id(model) or "")
+            if not model_id:
+                continue
+            if allowed_model_ids and model_id not in allowed_model_ids:
+                continue
+            wargear_items = sorted(
+                list(getattr(model, "wargear", []) or []),
+                key=lambda item: (str(maybe_entity_id(item) or ""), str(getattr(item, "name", "") or "")),
+            )
+            for wargear in wargear_items:
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    ranged = bool(is_ranged())
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    ranged = False
+                if not ranged:
+                    continue
+                wargear_id = str(maybe_entity_id(wargear) or "")
+                if not wargear_id:
+                    continue
+                if allowed_wargear_ids and wargear_id not in allowed_wargear_ids:
+                    continue
+                profiles = dict(getattr(wargear, "profiles", {}) or {})
+                for profile_name, profile in sorted(profiles.items(), key=lambda item: str(item[0])):
+                    if profile is None or cls._profile_is_hazardous(profile):
+                        continue
+                    if cls._profile_is_plasma_warhead(profile):
+                        can_shoot = getattr(profile, "can_shoot_plasma_warhead", None)
+                        allowed = True
+                        if callable(can_shoot):
+                            try:
+                                allowed, _reason = can_shoot(model, game_map=game_map, out_of_phase=out_of_phase)
+                            except (AttributeError, RuntimeError, TypeError, ValueError):
+                                allowed = False
+                        if allowed:
+                            declarations.append(
+                                {
+                                    "wargear_id": wargear_id,
+                                    "profile_name": str(profile_name or ""),
+                                    "model_ids": [model_id],
+                                }
+                            )
+                        if max_declarations > 0 and len(declarations) >= max_declarations:
+                            return declarations[:max_declarations]
+                        continue
+                    best_target = None
+                    best_key: tuple[float, str] | None = None
+                    for target in targets:
+                        target_id = str(maybe_entity_id(target) or "")
+                        if not target_id:
+                            continue
+                        if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
+                            continue
+                        score = cls._profile_damage_score(profile, target)
+                        key = (score, target_id)
+                        if best_key is None or key > best_key:
+                            best_key = key
+                            best_target = target
+                    if best_target is None:
+                        continue
+                    declarations.append(
+                        {
+                            "wargear_id": wargear_id,
+                            "profile_name": str(profile_name or ""),
+                            "model_ids": [model_id],
+                            "target_unit_id": str(maybe_entity_id(best_target) or ""),
+                        }
+                    )
+                    if max_declarations > 0 and len(declarations) >= max_declarations:
+                        return declarations[:max_declarations]
+        return declarations
 
     @staticmethod
     def _candidate_requests_skip(candidate: CandidateAction | None) -> bool:
@@ -325,7 +593,9 @@ class HeadlessPolicyDecisionController(DecisionController):
             return isinstance(model_positions, list) and bool(model_positions)
         if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_SHOTS:
             declarations = params.get("declarations")
-            return isinstance(declarations, list) and bool(declarations)
+            if isinstance(declarations, list) and bool(declarations):
+                return True
+            return action == "confirm"
         return True
 
     @staticmethod

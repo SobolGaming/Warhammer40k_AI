@@ -68,3 +68,10 @@ Initial section timers cover:
 - `movement.swept_interactions`
 - `los.visibility_context`
 - `los.segment_blocked_by_terrain`
+
+When reading deployment/LoS profile output, note that headless deployment validation reuses the
+candidate's generated model-position payload across fast deployment validation and Decision API
+validation, and both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
+checks of the same model pair at the same positions and terrain/blocker state. Section timer call
+counts should therefore be interpreted as cache miss/work counts rather than every high-level
+shooting or deployment policy probe.

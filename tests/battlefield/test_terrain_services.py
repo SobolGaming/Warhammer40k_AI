@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from shapely.geometry import Polygon
 
+import warhammer40k_ai.battlefield.terrain_visibility as terrain_visibility
 from warhammer40k_ai.battlefield.map import Map, TerrainArea, TerrainFactory, TerrainFeature, TerrainType
 from warhammer40k_ai.battlefield.terrain_runtime import iter_terrain_areas
 from warhammer40k_ai.units.model import Model
@@ -169,6 +170,36 @@ def test_visibility_context_leaves_preview_semantics_disabled_until_explicitly_e
     assert context["hidden_state_active"] is False
     assert context["hidden_blocked"] is False
     assert context["obscuring_state"] is False
+
+
+def test_visibility_context_reuses_cached_model_pair_geometry(monkeypatch) -> None:
+    game_map, attacker, _attacker_unit, target_unit = _build_units((8.0, 12.0, 0.0), [(28.0, 12.0, 0.0)])
+    blocking_feature = TerrainFeature(
+        TerrainType.HILLS_AND_SEALED_BUILDINGS,
+        Polygon([(14.0, 8.0), (22.0, 8.0), (22.0, 16.0), (14.0, 16.0)]),
+        bounding_box={"min": (14.0, 8.0, 0.0), "max": (22.0, 16.0, 3.0)},
+    )
+    game_map.add_terrain_feature(blocking_feature)
+    call_count = {"segments": 0}
+    original = terrain_visibility.segment_blocked_by_terrain_feature
+
+    def _counted_segment(*args, **kwargs):
+        call_count["segments"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(terrain_visibility, "segment_blocked_by_terrain_feature", _counted_segment)
+
+    first = game_map.get_visibility_context_for_models(attacker, target_unit.models[0])
+    first_call_count = int(call_count["segments"])
+    assert first_call_count > 0
+
+    first["reason_trace"].append({"code": "MUTATED_BY_TEST", "detail": "", "metadata": {}})
+    call_count["segments"] = 0
+    second = game_map.get_visibility_context_for_models(attacker, target_unit.models[0])
+
+    assert call_count["segments"] == 0
+    assert second["visible"] is first["visible"]
+    assert all(entry.get("code") != "MUTATED_BY_TEST" for entry in second["reason_trace"])
 
 
 def test_plunging_fire_context_reports_preview_height_query_separately_from_legacy_threshold() -> None:

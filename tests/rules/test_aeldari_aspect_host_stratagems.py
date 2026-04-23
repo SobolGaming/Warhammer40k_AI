@@ -330,10 +330,17 @@ class TestAeldariAspectHostStratagems(unittest.TestCase):
         self.assertTrue(items)
         for item in items:
             specs = p1.stratagems._build_tool_action_specs_for_item(item)
-            self.assertEqual(len(specs), 1)
-            resolved = specs[0]["payload"]["resolved_kwargs"]
-            self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
-            self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
+            expected_count = 3 if str(item.get("name", "")).upper() == "PRETERNATURAL PRECISION" else 1
+            self.assertEqual(len(specs), expected_count)
+            choice_keys = set()
+            for spec in specs:
+                resolved = spec["payload"]["resolved_kwargs"]
+                self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
+                self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], get_entity_id(aspect))
+                if "choice_key" in resolved:
+                    choice_keys.add(str(resolved["choice_key"]))
+            if str(item.get("name", "")).upper() == "PRETERNATURAL PRECISION":
+                self.assertEqual(choice_keys, {"IGNORES COVER", "LETHAL HITS", "SUSTAINED HITS 1"})
 
     def test_doom_inescapable_sets_wailing_doom_range_and_damage(self):
         game, p1, _p2, aeldari_army, enemy_army = _build_game()

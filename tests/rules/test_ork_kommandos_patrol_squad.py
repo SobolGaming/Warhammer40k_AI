@@ -182,6 +182,8 @@ def test_patrol_squad_invalid_option_is_rejected() -> None:
 
 
 def test_patrol_squad_request_requires_ten_alive_models() -> None:
-    game, _player, army, _unit = _build_game_with_kommandos(quantity=5)
+    game, _player, army, unit = _build_game_with_kommandos(quantity=10)
+    for model in list(unit.models or [])[:5]:
+        model.wounds = 0
     requests = build_patrol_squad_requests(game, army.units, queue_requests=False)
     assert requests == []

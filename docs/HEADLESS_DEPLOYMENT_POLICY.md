@@ -12,6 +12,13 @@ This document describes deterministic headless placement behavior for deployment
 - Deployment search now reuses a cached occupancy snapshot per board state instead of rebuilding terrain/blocker geometry for every anchor.
   - terrain blockers, boundary repulsors, live blocker polygons, and the Shapely `STRtree` are built once per search;
   - unit formation templates are cached by model count and spacing.
+- Headless deployment candidate validation now reuses the prospective model positions generated for
+  each anchor when calling both `Game.is_valid_deployment_position(...)` and the authoritative
+  `MOVE_UNIT` Decision API validation. This avoids recomputing formation placement for the same
+  candidate during setup profiling runs.
+- Standard deployment quick-rejects use the estimated packed unit width/depth when rejecting anchors
+  near deployment-zone edges, which prevents large multi-model units from invoking full placement
+  synthesis for obviously edge-clipped anchors.
 - The headless decision maker now uses a deterministic heuristic pregame teacher (`PregameDeploymentAgent`) when player context is available.
   - Deployment zone choice is teacher-scored from army-role inference and board affordances.
   - Board affordances include terrain-agnostic LOS/route signals (not RUINS-only), including
@@ -42,8 +49,8 @@ This document describes deterministic headless placement behavior for deployment
   engine logs a warning, skips battlefield placement, and removes the unit from play instead of
   crashing the whole headless run.
 - Deployment diagnostics are available from `DeterministicDeploymentDecisionMaker.get_deployment_search_metrics()`.
-  - Per-unit metrics include deployment order, anchor attempts, quick rejects, validation calls, calls to first valid result, returned candidate count, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
-  - If all normal anchor groups are rejected, deployment runs one deterministic relaxed fallback search that bypasses conservative occupancy quick-rejects and relies on the authoritative exact-placement validation path instead. This is intended for crowded deployments where a coarse anchor bounding-box test can be too pessimistic for multi-model units.
+  - Per-unit metrics include deployment order, anchor attempts, quick rejects, validation calls, fast-validation rejects, calls to first valid result, returned candidate count, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
+  - If all normal anchor groups are rejected, deployment runs one deterministic relaxed fallback search that bypasses conservative occupied-unit quick-rejects, still rejects edge-impossible anchors, and caps the relaxed scan. This is intended for crowded deployments where a coarse anchor bounding-box test can be too pessimistic for multi-model units without letting impossible placements dominate runtime.
 
 ## Ruins Floors (Headless Deployment Payloads)
 
