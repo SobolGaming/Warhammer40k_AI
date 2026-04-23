@@ -592,6 +592,63 @@ def plan_model_path(query: PathQuery) -> PathResult:
     validation_rules = _build_validation_rules(query, movement_profile)
     move_tag = str(getattr(query.movement_type, "value", query.movement_type) or "").strip().lower()
     enable_exact_refine = bool(query.enable_exact_refine) and move_tag not in {"pile_in", "consolidate"}
+    direct_waypoints = (
+        (float(start_x), float(start_y), float(start_z)),
+        (float(target[0]), float(target[1]), float(target[2])),
+    )
+    direct_distance_cost = _waypoint_distance_cost(
+        direct_waypoints,
+        ignore_vertical=bool(movement_profile.can_ignore_vertical_distance),
+    )
+    direct_poses = _build_pose_sequence(
+        direct_waypoints,
+        start_facing=float(start_facing),
+        goal_facing=float(query.goal_facing) if query.goal_facing is not None else None,
+    )
+    direct_pivot_cost = _pivot_cost_for_path(query, direct_poses, movement_profile)
+    if float(direct_distance_cost) + float(direct_pivot_cost) <= float(query.max_distance) + 1e-6:
+        collision_trees = _build_collision_trees_for_query(query, movement_profile)
+        final_validation = _validate_final_pose_with_context(
+            query,
+            direct_poses[-1],
+            movement_profile=movement_profile,
+            validation_rules=validation_rules,
+            collision_trees=collision_trees,
+        )
+        if final_validation.valid:
+            transit_validation = _validate_transit_path_with_context(
+                query,
+                direct_poses,
+                validation_rules=validation_rules,
+                collision_trees=collision_trees,
+            )
+            if transit_validation.valid:
+                provisional = PathResult(
+                    valid=True,
+                    poses=direct_poses,
+                    waypoints=direct_waypoints,
+                    distance_cost=float(direct_distance_cost),
+                    pivot_cost=float(direct_pivot_cost),
+                    used_exact_refiner=False,
+                    moved_over_enemy_model_ids=(),
+                    failure_reason=None,
+                    debug_artifacts={"path_mode": "direct"} if query.debug_enabled else {},
+                )
+                sweep = compute_swept_interactions(query, provisional)
+                debug_artifacts = dict(provisional.debug_artifacts)
+                if query.debug_enabled:
+                    debug_artifacts["sweep"] = dict(sweep.debug_artifacts)
+                return PathResult(
+                    valid=True,
+                    poses=direct_poses,
+                    waypoints=direct_waypoints,
+                    distance_cost=float(direct_distance_cost),
+                    pivot_cost=float(direct_pivot_cost),
+                    used_exact_refiner=False,
+                    moved_over_enemy_model_ids=tuple(sweep.moved_over_enemy_model_ids),
+                    failure_reason=None,
+                    debug_artifacts=debug_artifacts,
+                )
     world_snapshot = build_world_snapshot(query.game_map, movement_profile, moving_model=model)
     dynamic_overlay = build_dynamic_overlay(
         query.game_map,

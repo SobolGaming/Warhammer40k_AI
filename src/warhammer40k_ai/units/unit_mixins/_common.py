@@ -6,7 +6,7 @@ from typing import List, Tuple, Optional, Callable
 from typing import TYPE_CHECKING
 
 from ..model import Model
-from ...utility.model_base import Base, BaseType
+from ...utility.model_base import Base, BaseType, clone_base
 from ..wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from ..ability import Ability
 from ...utility.range import Range

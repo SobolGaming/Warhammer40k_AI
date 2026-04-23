@@ -367,12 +367,31 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             quantity = 1
             item_name = data
 
-        if current_unit and any(
-            item_name.strip() in model_name.rstrip("s")
-            for model_name in current_unit.unit_composition.keys()
-        ):
+        matched_model_name = None
+        if current_unit:
+            item_label = item_name.strip()
+            item_key = item_label.casefold()
+            for model_name in current_unit.unit_composition.keys():
+                model_label = str(model_name or "").strip()
+                model_key = model_label.casefold()
+                singular_model_key = model_key.rstrip("s")
+                if item_key in {model_key, singular_model_key} or item_key in singular_model_key:
+                    resolve_model_name = getattr(current_unit, "_resolve_composition_model_name", None)
+                    if callable(resolve_model_name):
+                        matched_model_name = str(
+                            resolve_model_name(
+                                getattr(current_unit, "_datasheet", None),
+                                model_label,
+                                model_count=quantity,
+                            )
+                        ).strip()
+                    else:
+                        matched_model_name = model_label
+                    break
+
+        if matched_model_name:
             current_model_count += quantity
-            current_model_name = item_name.strip()
+            current_model_name = matched_model_name
             current_wargear[current_model_name] = set()
             continue
 

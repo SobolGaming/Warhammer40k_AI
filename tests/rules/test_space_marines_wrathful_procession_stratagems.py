@@ -245,6 +245,92 @@ def test_wrathful_procession_phase_start_reactions_queue_expected_stratagems():
     }
 
 
+def test_voice_of_devotion_generic_tool_candidates_bind_unit_and_litany_choice():
+    game, sm_player, _enemy_player, sm_army, _enemy_army = _build_game()
+    crusaders = _make_unit(
+        "Crusader Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    outriders = _make_unit(
+        "Outriders",
+        keywords=["MOUNTED"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+        move=12,
+    )
+    sm_army.add_unit(crusaders)
+    sm_army.add_unit(outriders)
+    _deploy_unit(game, crusaders, 10.0, 10.0)
+    _deploy_unit(game, outriders, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, sm_player, "COMMAND_PHASE", 0)
+    pending = _pending_by_name(sm_player.stratagems, "VOICE OF DEVOTION")
+    assert pending is not None
+
+    item = {
+        "name": "VOICE OF DEVOTION",
+        "available": True,
+        "is_reaction": True,
+        "context": pending,
+    }
+    specs = sm_player.stratagems._build_tool_action_specs_for_item(item)
+
+    assert len(specs) == 6
+    assert sm_player.stratagems.get_tool_action_probe_diagnostics() == []
+    for spec in specs:
+        kwargs = spec["payload"]["resolved_kwargs"]
+        assert kwargs["unit"] == kwargs["target_unit"]
+        assert "__entity_ref__" in kwargs["unit"]
+        assert kwargs["choice_key"] in {
+            "CHORUS_OF_RELENTLESS_HATE",
+            "RITE_OF_PERFERVID_WRATH",
+            "CHANT_OF_DEATHLESS_DEVOTION",
+        }
+        assert kwargs["override_key"] == kwargs["choice_key"]
+
+
+def test_voice_of_devotion_descriptor_choices_prevent_incomplete_generic_probes():
+    game, sm_player, _enemy_player, sm_army, _enemy_army = _build_game()
+    crusaders = _make_unit(
+        "Crusader Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    outriders = _make_unit(
+        "Outriders",
+        keywords=["MOUNTED"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+        move=12,
+    )
+    sm_army.add_unit(crusaders)
+    sm_army.add_unit(outriders)
+    _deploy_unit(game, crusaders, 10.0, 10.0)
+    _deploy_unit(game, outriders, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, sm_player, "COMMAND_PHASE", 0)
+    item = {
+        "name": "VOICE OF DEVOTION",
+        "available": True,
+        "context": {"phase_name": "Command phase"},
+    }
+    specs = sm_player.stratagems._build_tool_action_specs_for_item(item)
+
+    assert len(specs) == 6
+    assert sm_player.stratagems.get_tool_action_probe_diagnostics() == []
+    for spec in specs:
+        kwargs = spec["payload"]["resolved_kwargs"]
+        assert kwargs["unit"] == kwargs["target_unit"]
+        assert "allowed_choice_keys" not in kwargs
+        assert "choice_options" not in kwargs
+        assert kwargs["choice_key"] in {
+            "CHORUS_OF_RELENTLESS_HATE",
+            "RITE_OF_PERFERVID_WRATH",
+            "CHANT_OF_DEATHLESS_DEVOTION",
+        }
+
+
 def test_voice_of_devotion_overrides_only_the_selected_unit_until_battle_round_end():
     game, sm_player, _enemy_player, sm_army, enemy_army = _build_game()
     primary = _make_unit(

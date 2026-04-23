@@ -1105,6 +1105,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BLAZING EARTH",
     "BLAZING ADVANCE",
+    "ANGELIC GRACE",
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
     "FOCUSED HATRED",
@@ -1154,6 +1155,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID TACTICAL RELOCATION",
     "STEEL HEART",
     "FRENZIED RESILIENCE",
+    "FUELLED BY FAITH",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
     "GUERRILLA WARRIORS",
@@ -1163,6 +1165,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HYPERSENSORY SCILLIA",
     "GRAV-INHIBITOR FIELD",
     "IMPLACABLE GUARDIANS",
+    "INCANTATION OF THE IRON SOUL",
     "IMPETUOSITY",
     "IN THE SHADOW OF IRON",
     "INESCAPABLE JUSTICE",
@@ -3607,6 +3610,8 @@ class StratagemManager(
             "war_dog_candidates",
             "miracle_dice_pool",
             "candidates_outside_shadow",
+            "allowed_choice_keys",
+            "choice_options",
         }
 
     def _tool_action_base_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -3714,6 +3719,7 @@ class StratagemManager(
         transport = kwargs.get("transport_unit") or kwargs.get("transport")
         terrain = kwargs.get("terrain_feature") or kwargs.get("terrain")
         model = kwargs.get("model") or kwargs.get("target_model")
+        choice_key = kwargs.get("choice_key") or kwargs.get("override_key")
         support_unit = (
             kwargs.get("support_unit")
             or kwargs.get("secondary_unit")
@@ -3741,6 +3747,8 @@ class StratagemManager(
             key_text = str(key or "").strip()
             if key_text and _context_value_missing(kwargs.get(key_text)):
                 missing.append(key_text)
+        if effect_params.get("choices") and _context_value_missing(choice_key):
+            missing.append("choice_key")
         needs_support = (
             "source_and" in target_text
             or ("within_6" in target_text and "_and_" in target_text)
@@ -4021,6 +4029,31 @@ class StratagemManager(
         return max(0, min(value, 3))
 
     @staticmethod
+    def _tool_action_choice_keys(context: Dict[str, Any]) -> List[str]:
+        keys: List[str] = []
+        for raw_choice in list((context or {}).get("allowed_choice_keys") or []):
+            choice_key = str(raw_choice or "").strip().upper()
+            if choice_key:
+                keys.append(choice_key)
+        if not keys:
+            for option in list((context or {}).get("choice_options") or []):
+                if isinstance(option, dict):
+                    raw_choice = option.get("choice_key") or option.get("key") or option.get("id") or option.get("value")
+                else:
+                    raw_choice = option
+                choice_key = str(raw_choice or "").strip().upper()
+                if choice_key:
+                    keys.append(choice_key)
+        seen: set[str] = set()
+        ordered: List[str] = []
+        for choice_key in keys:
+            if choice_key in seen:
+                continue
+            seen.add(choice_key)
+            ordered.append(choice_key)
+        return ordered
+
+    @staticmethod
     def _tool_action_text_blob(stratagem: Stratagem, context: Dict[str, Any]) -> str:
         descriptor = getattr(stratagem, "tool_descriptor", None)
         parts = [
@@ -4072,11 +4105,14 @@ class StratagemManager(
         transport_candidates = bool(original_ctx.get("transport_candidates") or original_ctx.get("transport_candidates_by_unit"))
         terrain_candidates = bool(original_ctx.get("terrain_candidates"))
         model_candidates = bool(original_ctx.get("model_candidates") or original_ctx.get("model_candidates_by_unit") or original_ctx.get("eligible_models"))
+        descriptor = getattr(getattr(base_ctx.get("stratagem"), "tool_descriptor", None), "effect_params", None)
+        descriptor_choices = list(descriptor.get("choices") or []) if isinstance(descriptor, dict) else []
+        choice_candidates = bool(StratagemManager._tool_action_choice_keys(original_ctx) or descriptor_choices)
         needs_unit = explicit_unit is None and (
             descriptor_candidates
             or "target_unit" in target_text
             or "source_unit" in target_text
-            or target_text in {"unit", "friendly_unit"}
+            or StratagemManager._tool_action_descriptor_requires_friendly_unit(target_text)
         )
         needs_enemy = explicit_enemy is None and (
             enemy_candidates
@@ -4088,9 +4124,7 @@ class StratagemManager(
         needs_transport = explicit_transport is None and (transport_candidates or "transport" in target_text or "embarked" in target_text)
         needs_terrain = explicit_terrain is None and (terrain_candidates or "terrain" in target_text)
         needs_secondary = explicit_secondary is None and bool(original_ctx.get("secondary_candidates"))
-        needs_choice = explicit_choice in (None, "") and (
-            bool(original_ctx.get("allowed_choice_keys") or [])
-        )
+        needs_choice = explicit_choice in (None, "") and choice_candidates
         needs_model = explicit_model is None and (model_candidates or "model" in target_text)
         needs_miracle_discard = (
             bool(original_ctx.get("requires_miracle_dice_discard"))
@@ -4232,6 +4266,16 @@ class StratagemManager(
             return []
 
         original_ctx = dict(item.get("context", {}) or {})
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
+        if not self._tool_action_choice_keys(original_ctx):
+            descriptor_choice_keys: list[str] = []
+            for raw_choice in list(effect_params.get("choices") or []):
+                choice_key = str(raw_choice or "").strip().upper()
+                if choice_key:
+                    descriptor_choice_keys.append(choice_key)
+            if descriptor_choice_keys:
+                original_ctx["allowed_choice_keys"] = descriptor_choice_keys
         base_ctx = self._tool_action_base_context(original_ctx)
         specs: List[Dict[str, Any]] = []
         seen: set[str] = set()
@@ -4244,7 +4288,7 @@ class StratagemManager(
 
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
-        descriptor_target = str(getattr(getattr(stratagem, "tool_descriptor", None), "target", "") or "")
+        descriptor_target = str(getattr(descriptor, "target", "") or "")
         requires_friendly_unit = self._tool_action_descriptor_requires_friendly_unit(descriptor_target)
         requires_enemy_unit = self._tool_action_descriptor_requires_enemy_unit(descriptor_target)
         requires_objective = self._tool_action_descriptor_requires_objective(descriptor_target)
@@ -4308,7 +4352,7 @@ class StratagemManager(
         enemy_by_unit = dict(original_ctx.get("enemy_candidates_by_unit") or {})
         support_by_unit = dict(original_ctx.get("support_candidates_by_unit") or {})
         transport_by_unit = dict(original_ctx.get("transport_candidates_by_unit") or {})
-        allowed_choice_keys = list(original_ctx.get("allowed_choice_keys") or [])
+        allowed_choice_keys = self._tool_action_choice_keys(original_ctx)
 
         if self._tool_action_base_probe_allowed(
             base_ctx=base_ctx,
@@ -4331,7 +4375,7 @@ class StratagemManager(
                 kwargs=base_ctx,
             )
 
-        if explicit_unit is None:
+        if explicit_unit is None and not allowed_choice_keys:
             for unit in friendly_units:
                 label_suffix = self._tool_action_label_value(unit)
                 self._tool_action_add_probe(
@@ -4616,9 +4660,35 @@ class StratagemManager(
                 )
 
         if needs_choice:
+            choice_unit_pool = [explicit_unit] if explicit_unit is not None else list(candidate_units or [])
+            requires_choice_unit = bool(requires_friendly_unit or friendly_units)
             for raw_choice in allowed_choice_keys:
                 choice_key = str(raw_choice or "").strip().upper()
                 if not choice_key:
+                    continue
+                if choice_unit_pool:
+                    for unit in choice_unit_pool:
+                        if unit is None:
+                            continue
+                        self._tool_action_add_probe(
+                            specs=specs,
+                            seen=seen,
+                            stratagem=stratagem,
+                            item=item,
+                            kwargs={
+                                **base_ctx,
+                                "unit": unit,
+                                "target_unit": unit,
+                                "choice_key": choice_key,
+                                "override_key": choice_key,
+                            },
+                            label_suffix=(
+                                f"{self._tool_action_label_value(unit)} -> "
+                                f"{choice_key.replace('_', ' ').title()}"
+                            ),
+                        )
+                    continue
+                if requires_choice_unit:
                     continue
                 if explicit_unit is not None:
                     probe_kwargs = {
@@ -6707,7 +6777,12 @@ class StratagemManager(
             gheistskull_available = False
         return bool(gheistskull_available), float(gheistskull_range), gheistskull_source
 
-    def _grenade_enemy_candidates_for_unit(self, unit) -> List[Any]:
+    def _grenade_enemy_candidates_for_unit(
+        self,
+        unit,
+        *,
+        engaged_enemy_ids: set[str] | None = None,
+    ) -> List[Any]:
         if not self._grenade_unit_is_eligible(unit):
             return []
         game_map = getattr(self.game, "map", None) if self.game is not None else None
@@ -6724,7 +6799,11 @@ class StratagemManager(
                     continue
             elif not bool(getattr(enemy, "is_alive", True)):
                 continue
-            if self._grenade_enemy_within_friendly_engagement(enemy):
+            enemy_id = str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or "")
+            if engaged_enemy_ids is not None:
+                if enemy_id and enemy_id in engaged_enemy_ids:
+                    continue
+            elif self._grenade_enemy_within_friendly_engagement(enemy):
                 continue
             within_base_range = self._grenade_enemy_within_range(unit, enemy, max_range=8.0)
             within_extended_range = (
@@ -6752,6 +6831,7 @@ class StratagemManager(
         candidates: List[Any] = []
         enemy_candidates_by_unit: Dict[str, List[Any]] = {}
         seen: set[str] = set()
+        friendly_roots: list[Any] = []
         for unit in list(getattr(army, "units", []) or []):
             get_root = getattr(unit, "get_attached_unit_root", None)
             root = get_root() if callable(get_root) else unit
@@ -6762,7 +6842,28 @@ class StratagemManager(
                 continue
             if uid:
                 seen.add(uid)
-            enemy_candidates = self._grenade_enemy_candidates_for_unit(root)
+            friendly_roots.append(root)
+
+        engaged_enemy_ids: set[str] = set()
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is not None:
+            for root in list(friendly_roots or []):
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    enemy_id = str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or "")
+                    if enemy_id and enemy_id in engaged_enemy_ids:
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        if enemy_id:
+                            engaged_enemy_ids.add(enemy_id)
+
+        for root in list(friendly_roots or []):
+            uid = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "")
+            enemy_candidates = self._grenade_enemy_candidates_for_unit(
+                root,
+                engaged_enemy_ids=engaged_enemy_ids,
+            )
             if not enemy_candidates:
                 continue
             candidates.append(root)
@@ -31169,6 +31270,17 @@ class StratagemManager(
             if phase_label.lower() != "shooting phase":
                 return {}
             return dict(self._grenade_phase_action_context() or {})
+        if name_u == "VOICE OF DEVOTION":
+            if phase_label.lower() != "command phase":
+                return {}
+            candidate_fn = getattr(self, "_space_marines_wrathful_procession_voice_of_devotion_candidates", None)
+            choice_fn = getattr(self, "_sm_wrathful_procession_litany_options", None)
+            context = {
+                "candidates": list(candidate_fn() or []) if callable(candidate_fn) else [],
+            }
+            if callable(choice_fn):
+                context["choice_options"] = list(choice_fn() or [])
+            return context
         if name_u in {"DAEMONIC FURY", "DAEMONTIDE"}:
             return dict(self._we_khorne_daemonkin_tool_action_context(name_u) or {})
         if name_u == "SYCOPHANTIC SURGE":

@@ -890,8 +890,8 @@ class PositioningFightMovementMixin:
         # Create a new base with the same properties as the specified model's base
         if model is None:
             model = self.models[0]  # Default to first model
-        new_base = copy.deepcopy(model.model_base)
-        new_base.x, new_base.y, new_base.z = x, y, z
+        new_base = clone_base(model.model_base)
+        new_base.set_position(float(x), float(y), float(z))
         new_base.set_facing(facing)
         return new_base
 

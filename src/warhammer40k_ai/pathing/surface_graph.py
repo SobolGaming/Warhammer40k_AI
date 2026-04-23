@@ -654,10 +654,24 @@ def _blocked_triangles_by_overlay(
 
         if not applicable_blockers:
             continue
-        for triangle_index, triangle in enumerate(mesh.triangles):
-            centroid = triangle.centroid
-            for blocker in applicable_blockers:
-                if blocker.footprint.covers(centroid):
+        blocker_records = tuple(
+            (
+                blocker.footprint,
+                tuple(float(value) for value in blocker.footprint.bounds),
+            )
+            for blocker in applicable_blockers
+        )
+        for triangle_index, centroid_xy in enumerate(mesh.triangle_centroids):
+            centroid_x = float(centroid_xy[0])
+            centroid_y = float(centroid_xy[1])
+            centroid_point = None
+            for footprint, bounds in blocker_records:
+                min_x, min_y, max_x, max_y = bounds
+                if centroid_x < min_x or centroid_x > max_x or centroid_y < min_y or centroid_y > max_y:
+                    continue
+                if centroid_point is None:
+                    centroid_point = Point(centroid_x, centroid_y)
+                if footprint.covers(centroid_point):
                     blocked[surface_id].add(triangle_index)
                     break
 

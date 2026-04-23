@@ -136,6 +136,21 @@ def test_space_marines_mortal_wound_stratagem_descriptors_registered():
         assert "mortal" in str((descriptor.effect_params or {}).get("condition", "") or "").lower()
 
 
+def test_fuelled_by_faith_is_not_phase_available_without_mortal_wound_trigger():
+    game, sm_player, _enemy_player, _sm_army, _enemy_army = _build_game("Wrathful Procession")
+
+    _set_phase(game, sm_player, "COMMAND_PHASE", 0)
+    items = [
+        item
+        for item in list(sm_player.stratagems.get_phase_stratagem_items() or [])
+        if str(item.get("name", "") or "").strip().upper() == "FUELLED BY FAITH"
+    ]
+
+    assert items
+    assert all(not bool(item.get("available", False)) for item in items)
+    assert {str(item.get("reason", "") or "") for item in items} == {"No trigger"}
+
+
 @pytest.mark.parametrize(
     "detachment_type,stratagem_name",
     [

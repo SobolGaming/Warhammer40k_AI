@@ -1087,10 +1087,25 @@ class DatasheetWargearMixin:
         except Exception:
             pass
 
+        composition_allocations: list[tuple[str, int]] = []
+        minimum_total = 0
+        for _composition_model_name, (min_size, _max_size) in self.unit_composition.items():
+            minimum_total += int(min_size or 0)
+        if quantity < minimum_total:
+            quantity = minimum_total
+
+        remaining_models = int(quantity or 0) - minimum_total
         for composition_model_name, (min_size, max_size) in self.unit_composition.items():
             if isinstance(max_size, tuple):
                 max_size = max_size[1]  # Use the second value if it's a tuple
-            model_count = min(max_size, max(min_size, quantity - total_models))
+            min_count = int(min_size or 0)
+            max_count = int(max_size or min_count)
+            extra_count = min(max(max_count - min_count, 0), max(remaining_models, 0))
+            model_count = min_count + extra_count
+            remaining_models -= extra_count
+            composition_allocations.append((composition_model_name, model_count))
+
+        for composition_model_name, model_count in composition_allocations:
             model_name = self._resolve_composition_model_name(
                 datasheet,
                 composition_model_name,

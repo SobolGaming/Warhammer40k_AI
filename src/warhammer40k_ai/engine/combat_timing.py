@@ -413,6 +413,20 @@ def build_combat_timing_profile(
 
 def profile_for_game(game: object, *, context: dict[str, Any] | None = None) -> CombatRulesProfile:
     bundle = getattr(game, "ruleset_bundle", None)
+    if not context:
+        key = str(getattr(bundle, "rules_bundle_id", "") or "")
+        cache = getattr(game, "_combat_rules_profile_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(game, "_combat_rules_profile_cache", cache)
+        if key in cache:
+            return cache[key]
+        if isinstance(bundle, RulesetBundle):
+            profile = build_combat_timing_profile(ruleset_bundle=bundle, context=None)
+        else:
+            profile = build_combat_timing_profile(context=None)
+        cache[key] = profile
+        return profile
     if isinstance(bundle, RulesetBundle):
         return build_combat_timing_profile(ruleset_bundle=bundle, context=context)
     return build_combat_timing_profile(context=context)
@@ -420,6 +434,20 @@ def profile_for_game(game: object, *, context: dict[str, Any] | None = None) -> 
 
 def geometry_profile_for_game(game: object, *, context: dict[str, Any] | None = None) -> CombatGeometryProfile:
     bundle = getattr(game, "ruleset_bundle", None)
+    if not context:
+        key = str(getattr(bundle, "rules_bundle_id", "") or "")
+        cache = getattr(game, "_combat_geometry_profile_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(game, "_combat_geometry_profile_cache", cache)
+        if key in cache:
+            return cache[key]
+        if isinstance(bundle, RulesetBundle):
+            profile = build_combat_geometry_profile(ruleset_bundle=bundle, context=None)
+        else:
+            profile = build_combat_geometry_profile(context=None)
+        cache[key] = profile
+        return profile
     if isinstance(bundle, RulesetBundle):
         return build_combat_geometry_profile(ruleset_bundle=bundle, context=context)
     return build_combat_geometry_profile(context=context)
