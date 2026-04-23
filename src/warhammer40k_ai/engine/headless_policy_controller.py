@@ -10,6 +10,9 @@ from typing import Any, Iterable
 from .combat_timing import geometry_profile_for_game
 from .decision_controller import DecisionController
 from .decision_kinds import (
+    DECISION_ATTACH_LEADER,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
     DECISION_DECLARE_RESERVES,
@@ -188,6 +191,8 @@ class HeadlessPolicyDecisionController(DecisionController):
                 result_payload["skipped"] = True
             if not self._result_payload_is_structurally_resolvable(request, result_payload):
                 continue
+            if not self._candidate_passes_current_game_precheck(game, request, option_id):
+                continue
             apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
@@ -209,6 +214,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         if str(payload.get("action", "") or "").strip().lower() == "skip":
             payload["skipped"] = True
         if not self._result_payload_is_structurally_resolvable(request, payload):
+            return False
+        if not self._candidate_passes_current_game_precheck(game, request, option_id):
             return False
         if self._is_reserves_arrival_request(request):
             validation_errors = validate_move_unit_payload(
@@ -594,6 +601,118 @@ class HeadlessPolicyDecisionController(DecisionController):
             return True
         declarations = params.get("declarations")
         return isinstance(declarations, list) and bool(declarations)
+
+    @classmethod
+    def _candidate_passes_current_game_precheck(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type == DECISION_ATTACH_LEADER:
+            return cls._leader_attachment_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_ATTACH_SUPPORT_ARTILLERY:
+            return cls._support_attachment_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_ASSIGN_TRANSPORT:
+            return cls._transport_assignment_option_is_currently_valid(game, request, option_id)
+        return True
+
+    @classmethod
+    def _leader_attachment_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        payload = cls._option_payload(request, option_id)
+        leader_id = str(payload.get("leader_id", "") or "")
+        if not leader_id:
+            return False
+        leader = cls._resolve_unit(game, leader_id)
+        if leader is None or not bool(getattr(leader, "is_leader", False)):
+            return False
+        bodyguard_id = payload.get("bodyguard_id")
+        if bodyguard_id is None:
+            return True
+        bodyguard = cls._resolve_unit(game, str(bodyguard_id or ""))
+        if bodyguard is None:
+            return False
+        can_attach = getattr(leader, "can_attach_to", None)
+        if not callable(can_attach):
+            return False
+        try:
+            return bool(can_attach(bodyguard))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+    @classmethod
+    def _support_attachment_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        payload = cls._option_payload(request, option_id)
+        support_id = str(payload.get("support_unit_id", "") or "")
+        if not support_id:
+            return False
+        support = cls._resolve_unit(game, support_id)
+        has_support = getattr(support, "has_joined_support_ability", None) if support is not None else None
+        if support is None or not callable(has_support):
+            return False
+        try:
+            if not bool(has_support()):
+                return False
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+        bodyguard_id = payload.get("bodyguard_id")
+        if bodyguard_id is None:
+            requires_attach = getattr(support, "joined_support_requires_attachment", None)
+            if not callable(requires_attach):
+                return True
+            try:
+                return not bool(requires_attach())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        bodyguard = cls._resolve_unit(game, str(bodyguard_id or ""))
+        if bodyguard is None:
+            return False
+        can_join = getattr(support, "can_join_support_artillery", None)
+        if not callable(can_join):
+            return False
+        try:
+            return bool(can_join(bodyguard))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+    @classmethod
+    def _transport_assignment_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        payload = cls._option_payload(request, option_id)
+        unit_id = str(payload.get("unit_id", "") or "")
+        if not unit_id:
+            return False
+        unit = cls._resolve_unit(game, unit_id)
+        if unit is None:
+            return False
+        transport_id = payload.get("transport_id")
+        if transport_id is None:
+            return True
+        transport = cls._resolve_unit(game, str(transport_id or ""))
+        if transport is None or not bool(getattr(transport, "is_transport", False)):
+            return False
+        can_transport = getattr(transport, "can_transport", None)
+        if not callable(can_transport):
+            return False
+        try:
+            return bool(can_transport(unit))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
 
     @staticmethod
     def _candidate_is_structurally_resolvable(request: DecisionRequest, candidate: CandidateAction | None) -> bool:

@@ -6,6 +6,8 @@ import time
 from shapely.geometry import Point
 
 from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ATTACH_LEADER,
+    DECISION_ASSIGN_TRANSPORT,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
     DECISION_CONFIRM_YES_NO,
@@ -854,6 +856,176 @@ def test_headless_policy_controller_prunes_move_candidates_without_model_positio
     assert metadata["candidate_action_id"] == "move:skip"
     assert metadata["candidate_kind"] == "skip"
     assert metadata["resolution_strategy"] == "ranked_candidate"
+
+
+def test_headless_policy_controller_prunes_stale_leader_attachment_candidate() -> None:
+    class _Unit:
+        def __init__(self, unit_id: str, *, is_leader: bool = False, allowed_targets: set[str] | None = None) -> None:
+            self.id = unit_id
+            self.is_leader = bool(is_leader)
+            self._allowed_targets = set(allowed_targets or set())
+
+        def can_attach_to(self, bodyguard) -> bool:
+            return str(getattr(bodyguard, "id", "") or "") in self._allowed_targets
+
+    class _SetupGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.leader = _Unit("unit:leader", is_leader=True, allowed_targets={"unit:valid"})
+            self.invalid_bodyguard = _Unit("unit:invalid")
+            self.valid_bodyguard = _Unit("unit:valid")
+            self.units = {
+                self.leader.id: self.leader,
+                self.invalid_bodyguard.id: self.invalid_bodyguard,
+                self.valid_bodyguard.id: self.valid_bodyguard,
+            }
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self.units.get(str(unit_id or ""))
+
+    game = _SetupGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_ATTACH_LEADER,
+        "Attach leader",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Invalid",
+                payload={
+                    "leader_id": "unit:leader",
+                    "bodyguard_id": "unit:invalid",
+                    "action_id": "attach:invalid",
+                },
+            ),
+            DecisionOption.create(
+                "Valid",
+                payload={
+                    "leader_id": "unit:leader",
+                    "bodyguard_id": "unit:valid",
+                    "action_id": "attach:valid",
+                },
+            ),
+            DecisionOption.create(
+                "Unattached",
+                payload={"leader_id": "unit:leader", "bodyguard_id": None, "action_id": "attach:none"},
+            ),
+        ],
+        candidates=[
+            CandidateAction(
+                action_id="attach:invalid",
+                params={"leader_id": "unit:leader", "bodyguard_id": "unit:invalid"},
+                metadata={"projected_score_delta_next_window": 10.0},
+            ),
+            CandidateAction(
+                action_id="attach:valid",
+                params={"leader_id": "unit:leader", "bodyguard_id": "unit:valid"},
+                metadata={"projected_score_delta_next_window": 1.0},
+            ),
+            CandidateAction(
+                action_id="attach:none",
+                params={"leader_id": "unit:leader", "bodyguard_id": None},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(request.options[1].option_id)
+
+
+def test_headless_policy_controller_prunes_stale_transport_assignment_candidate() -> None:
+    class _Unit:
+        def __init__(
+            self,
+            unit_id: str,
+            *,
+            is_transport: bool = False,
+            allowed_passengers: set[str] | None = None,
+        ) -> None:
+            self.id = unit_id
+            self.is_transport = bool(is_transport)
+            self._allowed_passengers = set(allowed_passengers or set())
+
+        def can_transport(self, passenger) -> bool:
+            return str(getattr(passenger, "id", "") or "") in self._allowed_passengers
+
+    class _SetupGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.passenger = _Unit("unit:passenger")
+            self.invalid_transport = _Unit("unit:invalid_transport", is_transport=True)
+            self.valid_transport = _Unit(
+                "unit:valid_transport",
+                is_transport=True,
+                allowed_passengers={"unit:passenger"},
+            )
+            self.units = {
+                self.passenger.id: self.passenger,
+                self.invalid_transport.id: self.invalid_transport,
+                self.valid_transport.id: self.valid_transport,
+            }
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self.units.get(str(unit_id or ""))
+
+    game = _SetupGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_ASSIGN_TRANSPORT,
+        "Assign transport",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Invalid transport",
+                payload={
+                    "unit_id": "unit:passenger",
+                    "transport_id": "unit:invalid_transport",
+                    "action_id": "transport:invalid",
+                },
+            ),
+            DecisionOption.create(
+                "Valid transport",
+                payload={
+                    "unit_id": "unit:passenger",
+                    "transport_id": "unit:valid_transport",
+                    "action_id": "transport:valid",
+                },
+            ),
+            DecisionOption.create(
+                "No transport",
+                payload={"unit_id": "unit:passenger", "transport_id": None, "action_id": "transport:none"},
+            ),
+        ],
+        candidates=[
+            CandidateAction(
+                action_id="transport:invalid",
+                params={"unit_id": "unit:passenger", "transport_id": "unit:invalid_transport"},
+                metadata={"projected_score_delta_next_window": 10.0},
+            ),
+            CandidateAction(
+                action_id="transport:valid",
+                params={"unit_id": "unit:passenger", "transport_id": "unit:valid_transport"},
+                metadata={"projected_score_delta_next_window": 1.0},
+            ),
+            CandidateAction(
+                action_id="transport:none",
+                params={"unit_id": "unit:passenger", "transport_id": None},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(request.options[1].option_id)
 
 
 def test_headless_policy_controller_resolves_coherency_with_model_ids_payload() -> None:
