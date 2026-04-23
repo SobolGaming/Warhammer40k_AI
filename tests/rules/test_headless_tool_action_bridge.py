@@ -353,6 +353,58 @@ def test_tool_action_firewall_filters_emitted_spec_that_fails_can_use() -> None:
     assert diagnostics[0]["missing_keys"] == ["can_use"]
 
 
+def test_tool_action_provider_records_error_when_all_candidates_are_filtered() -> None:
+    invalid_a = SimpleNamespace(id="unit:invalid-a", name="Invalid A")
+    invalid_b = SimpleNamespace(id="unit:invalid-b", name="Invalid B")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC ALL FILTERED TEST",
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase", "candidates": [invalid_a, invalid_b]},
+        can_use=lambda *_args, **_kwargs: False,
+    )
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: (
+            invalid_a
+            if kind == "unit" and entity_id == invalid_a.id
+            else invalid_b
+            if kind == "unit" and entity_id == invalid_b.id
+            else None
+        )
+    )
+
+    def _spec_for(unit):
+        return {
+            "label": unit.name,
+            "payload": {
+                "tool_family": "stratagem",
+                "tool_type": "stratagem",
+                "tool_name": "GENERIC ALL FILTERED TEST",
+                "resolved_kwargs": manager._serialize_tool_action_value(
+                    {
+                        "phase_name": "Shooting phase",
+                        "unit": unit,
+                        "target_unit": unit,
+                    }
+                ),
+            },
+        }
+
+    manager._build_tool_action_specs_for_item = lambda _item: [_spec_for(invalid_a), _spec_for(invalid_b)]
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+    diagnostics = manager.get_tool_action_probe_diagnostics()
+    assert any(entry["code"] == "illegal_tool_candidate_filtered_preflight" for entry in diagnostics)
+    provider_errors = [
+        entry
+        for entry in diagnostics
+        if entry["code"] == "tool_action_candidates_all_filtered"
+    ]
+    assert len(provider_errors) == 1
+    assert provider_errors[0]["severity"] == "ERROR"
+    assert provider_errors[0]["missing_keys"] == ["valid_tool_action_candidate"]
+
+
 def test_tool_action_firewall_filters_unresolvable_emitted_entity_ref() -> None:
     manager, _player, game, _stratagem = _build_generic_tool_manager(
         stratagem_name="GENERIC MALFORMED TEST",
@@ -547,8 +599,36 @@ def test_generic_tool_action_requires_support_context_for_paired_unit_targets() 
     assert list(game.decision_queue.list() or []) == []
     diagnostics = manager.get_tool_action_probe_diagnostics()
     assert diagnostics
-    assert diagnostics[0]["code"] == "missing_tool_action_context"
-    assert "support_unit" in diagnostics[0]["missing_keys"]
+    assert any(entry["code"] == "missing_tool_action_context" for entry in diagnostics)
+    provider_errors = [
+        entry
+        for entry in diagnostics
+        if entry["code"] == "tool_action_missing_context"
+    ]
+    assert len(provider_errors) == 1
+    assert provider_errors[0]["severity"] == "ERROR"
+    assert "support_unit" in provider_errors[0]["missing_keys"]
+
+
+def test_tool_action_provider_records_error_when_context_has_no_candidate_source() -> None:
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC MISSING CONTEXT TEST",
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase"},
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+    diagnostics = manager.get_tool_action_probe_diagnostics()
+    provider_errors = [
+        entry
+        for entry in diagnostics
+        if entry["code"] == "tool_action_missing_context"
+    ]
+    assert len(provider_errors) == 1
+    assert provider_errors[0]["severity"] == "ERROR"
+    assert "unit" in provider_errors[0]["missing_keys"]
 
 
 def test_manager_can_use_denizens_requires_selected_unit_context() -> None:

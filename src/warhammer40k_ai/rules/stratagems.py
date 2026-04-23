@@ -36,6 +36,7 @@ from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
 from .stratagems_imperial_knights import ImperialKnightsStratagemMixin
 from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
+from .tool_action_context import TOOL_ACTION_HELPER_CONTEXT_KEYS, ToolActionProviderContract
 from .tool_action_validation import ToolActionCandidateValidator, ToolActionValidationIssue
 
 logger = logging.getLogger(__name__)
@@ -3594,25 +3595,7 @@ class StratagemManager(
 
     @staticmethod
     def _tool_action_helper_context_keys() -> set[str]:
-        return {
-            "candidates",
-            "source_candidates",
-            "enemy_candidates",
-            "eligible_enemy_units",
-            "objective_candidates",
-            "objective_candidates_by_unit",
-            "enemy_candidates_by_unit",
-            "model_candidates",
-            "model_candidates_by_unit",
-            "eligible_models",
-            "support_candidates_by_unit",
-            "transport_candidates_by_unit",
-            "war_dog_candidates",
-            "miracle_dice_pool",
-            "candidates_outside_shadow",
-            "allowed_choice_keys",
-            "choice_options",
-        }
+        return set(TOOL_ACTION_HELPER_CONTEXT_KEYS)
 
     def _tool_action_base_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         helper_keys = self._tool_action_helper_context_keys()
@@ -3836,6 +3819,19 @@ class StratagemManager(
 
     def get_tool_action_probe_diagnostics(self) -> List[Dict[str, Any]]:
         return [dict(entry or {}) for entry in list(getattr(self, "_tool_action_probe_diagnostics", []) or [])]
+
+    def _has_tool_action_error_diagnostic(self, stratagem: Stratagem) -> bool:
+        stratagem_name = str(getattr(stratagem, "name", "") or "")
+        phase_name = str(self._resolved_phase_name() or "")
+        for diagnostic in self.get_tool_action_probe_diagnostics():
+            if str(diagnostic.get("severity", "") or "").upper() != "ERROR":
+                continue
+            if str(diagnostic.get("stratagem_name", "") or "") != stratagem_name:
+                continue
+            if phase_name and str(diagnostic.get("phase", "") or "") not in {"", phase_name}:
+                continue
+            return True
+        return False
 
     @staticmethod
     def _tool_action_sort_key(value: Any) -> str:
@@ -4249,6 +4245,25 @@ class StratagemManager(
             severity=str(issue.severity or "WARNING"),
             code=str(issue.code or "tool_action_validation"),
             resolver="tool_action_candidate_firewall",
+        )
+
+    def _record_tool_action_provider_contract_error(
+        self,
+        *,
+        stratagem: Stratagem,
+        item: Dict[str, Any],
+        raw_spec_count: int,
+        code: str,
+    ) -> None:
+        context = dict(item.get("context", {}) or {})
+        contract = ToolActionProviderContract.inspect(stratagem, context)
+        self._record_tool_action_probe_diagnostic(
+            stratagem=stratagem,
+            kwargs=context,
+            missing_keys=list(contract.error_missing_keys(raw_spec_count=int(raw_spec_count or 0))),
+            severity="ERROR",
+            code=str(code or "tool_action_provider_contract_error"),
+            resolver="tool_action_provider_contract",
         )
 
     def _filter_legal_tool_action_specs(self, specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -4868,8 +4883,25 @@ class StratagemManager(
 
         specs: List[Dict[str, Any]] = []
         for item in items:
-            specs.extend(self._build_tool_action_specs_for_item(item))
-        specs = self._filter_legal_tool_action_specs(specs)
+            stratagem = self.get_by_name(str(item.get("name", "") or ""))
+            if stratagem is None:
+                continue
+            raw_specs = self._build_tool_action_specs_for_item(item)
+            filtered_specs = self._filter_legal_tool_action_specs(raw_specs)
+            if not filtered_specs and not self._has_tool_action_error_diagnostic(stratagem):
+                self._record_tool_action_provider_contract_error(
+                    stratagem=stratagem,
+                    item=item,
+                    raw_spec_count=len(list(raw_specs or [])),
+                    code=(
+                        "tool_action_candidates_all_filtered"
+                        if raw_specs
+                        else "tool_action_missing_context"
+                    ),
+                )
+            if not filtered_specs:
+                continue
+            specs.extend(filtered_specs)
         if not specs:
             return None
 
