@@ -186,6 +186,8 @@ class HeadlessPolicyDecisionController(DecisionController):
                 result_payload["skipped"] = True
             if str(option_payload.get("action", "") or "").strip().lower() == "skip":
                 result_payload["skipped"] = True
+            if not self._result_payload_is_structurally_resolvable(request, result_payload):
+                continue
             apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
@@ -206,6 +208,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             payload["skipped"] = True
         if str(payload.get("action", "") or "").strip().lower() == "skip":
             payload["skipped"] = True
+        if not self._result_payload_is_structurally_resolvable(request, payload):
+            return False
         if self._is_reserves_arrival_request(request):
             validation_errors = validate_move_unit_payload(
                 game,
@@ -579,6 +583,17 @@ class HeadlessPolicyDecisionController(DecisionController):
         params = dict(option_payload or {})
         params.pop("action_id", None)
         return CandidateAction(action_id=str(action_id or ""), params=params, metadata={})
+
+    @staticmethod
+    def _result_payload_is_structurally_resolvable(request: DecisionRequest, payload: dict[str, Any]) -> bool:
+        if str(getattr(request, "decision_type", "") or "") != DECISION_DECLARE_SHOTS:
+            return True
+        params = dict(payload or {})
+        action = str(params.get("action", "") or "").strip().lower()
+        if action in {"pass", "skip"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+            return True
+        declarations = params.get("declarations")
+        return isinstance(declarations, list) and bool(declarations)
 
     @staticmethod
     def _candidate_is_structurally_resolvable(request: DecisionRequest, candidate: CandidateAction | None) -> bool:

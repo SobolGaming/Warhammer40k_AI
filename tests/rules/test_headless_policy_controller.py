@@ -789,7 +789,7 @@ def test_headless_policy_controller_falls_back_to_skip_when_declare_shots_confir
 
     controller.on_decision_requested(game, request)
 
-    assert len(game.commands) == 2
+    assert len(game.commands) == 1
     payload = dict(game.commands[-1].payload or {})
     result_payload = dict(payload.get("result_payload", {}) or {})
     metadata = dict(game.commands[-1].metadata or {})
