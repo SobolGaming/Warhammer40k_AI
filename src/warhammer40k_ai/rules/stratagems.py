@@ -36,7 +36,11 @@ from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
 from .stratagems_imperial_knights import ImperialKnightsStratagemMixin
 from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
-from .tool_action_context import TOOL_ACTION_HELPER_CONTEXT_KEYS, ToolActionProviderContract
+from .tool_action_context import (
+    TOOL_ACTION_HELPER_CONTEXT_KEYS,
+    ToolActionProviderContract,
+    descriptor_requires_model_binding,
+)
 from .tool_action_validation import ToolActionCandidateValidator, ToolActionValidationIssue
 
 logger = logging.getLogger(__name__)
@@ -3680,7 +3684,7 @@ class StratagemManager(
 
     @staticmethod
     def _tool_action_descriptor_requires_model(descriptor_target: str) -> bool:
-        return "model" in str(descriptor_target or "").strip().lower()
+        return descriptor_requires_model_binding(descriptor_target)
 
     def _tool_action_missing_required_bindings(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> List[str]:
         def _context_value_missing(value: Any) -> bool:
@@ -4139,7 +4143,9 @@ class StratagemManager(
         needs_terrain = explicit_terrain is None and (terrain_candidates or "terrain" in target_text)
         needs_secondary = explicit_secondary is None and bool(original_ctx.get("secondary_candidates"))
         needs_choice = explicit_choice in (None, "") and choice_candidates
-        needs_model = explicit_model is None and (model_candidates or "model" in target_text)
+        needs_model = explicit_model is None and (
+            model_candidates or StratagemManager._tool_action_descriptor_requires_model(target_text)
+        )
         needs_miracle_discard = (
             bool(original_ctx.get("requires_miracle_dice_discard"))
             and not bool(base_ctx.get("miracle_dice_to_discard"))
@@ -4386,6 +4392,7 @@ class StratagemManager(
         support_by_unit = dict(original_ctx.get("support_candidates_by_unit") or {})
         transport_by_unit = dict(original_ctx.get("transport_candidates_by_unit") or {})
         allowed_choice_keys = self._tool_action_choice_keys(original_ctx)
+        support_optional = bool(original_ctx.get("secondary_optional", effect_params.get("secondary_optional", False)))
 
         if self._tool_action_base_probe_allowed(
             base_ctx=base_ctx,
@@ -4408,7 +4415,7 @@ class StratagemManager(
                 kwargs=base_ctx,
             )
 
-        if explicit_unit is None and not allowed_choice_keys:
+        if explicit_unit is None and not allowed_choice_keys and not (support_by_unit and not support_optional):
             for unit in friendly_units:
                 label_suffix = self._tool_action_label_value(unit)
                 self._tool_action_add_probe(
@@ -7446,12 +7453,21 @@ class StratagemManager(
             result["reason"] = "Requires your Movement phase and a friendly NECRONS unit on the battlefield"
             return result
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
-            if list(context.get("candidates") or []):
-                result["available"] = True
-                result["reason"] = None
-                return result
+            undying_context = dict(context or {})
+            if not undying_context.get("candidates"):
+                unit_candidate = undying_context.get("unit") or undying_context.get("target_unit")
+                if unit_candidate is not None:
+                    undying_context["candidates"] = [unit_candidate]
+            for candidate in list(undying_context.get("candidates") or []):
+                probe_context = dict(undying_context)
+                probe_context["unit"] = candidate
+                probe_context["target_unit"] = candidate
+                if self._awakened_dynasty_can_use_undying_legions_tool_action(stratagem, probe_context):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
             result["reason"] = (
-                "Requires opponent Shooting phase or Fight phase trigger after an enemy unit destroys one or more models in one of your NECRONS units"
+                "Requires opponent Shooting phase or Fight phase trigger after an enemy unit destroys one or more models in one of your NECRONS units, and enough CP to target an eligible unit"
             )
             return result
         if name_u == "PROTOCOL OF THE VENGEFUL STARS":
@@ -10642,6 +10658,65 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase"
             return result
+        if name_u == "ERE WE GO":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "movement phase":
+                result["reason"] = "Requires your Movement phase and an ORKS INFANTRY unit on the battlefield"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Movement phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._orks_war_horde_ere_we_go_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and an ORKS INFANTRY unit on the battlefield"
+            return result
+        if name_u == "MOB RULE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "command phase":
+                result["reason"] = "Requires the end of your Command phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable at the end of your Command phase"
+                return result
+            if not self._mob_rule_is_end_of_command_phase_context(context):
+                result["reason"] = "Requires the end of your Command phase"
+                return result
+            tool_context = dict(self._orks_war_horde_mob_rule_tool_action_context() or {})
+            candidates = list(context.get("candidates") or tool_context.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the end of your Command phase, a friendly ORKS MOB unit with 10+ models, "
+                "and a Battle-shocked ORKS INFANTRY unit within 6\""
+            )
+            return result
+        if name_u == "UNBRIDLED CARNAGE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires the Fight phase and a friendly ORKS unit that has not been selected to fight this phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._orks_war_horde_unbridled_carnage_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase and a friendly ORKS unit that has not been selected to fight this phase"
+            return result
         if name_u in {"GO GET 'EM!", "GO GET Ã¢â‚¬â„¢EM!"}:
             candidates = list(context.get("candidates") or [])
             if candidates:
@@ -13671,7 +13746,8 @@ class StratagemManager(
                 can_pay = self.player.command_points >= s.cp_cost
                 already_used = (s.name or "").strip().upper() in self._used_stratagems_this_phase
                 if can_pay and not already_used:
-                    mob_candidates = self._mob_rule_mob_candidates()
+                    tool_context = dict(self._orks_war_horde_mob_rule_tool_action_context() or {})
+                    mob_candidates = list(tool_context.get("candidates") or [])
                     if mob_candidates:
                         already = False
                         for r in self._pending_reactions:
@@ -13690,6 +13766,7 @@ class StratagemManager(
                                 "stratagem": s.name,
                                 "cp_cost": s.cp_cost,
                             }
+                            payload.update(tool_context)
                             if len(mob_candidates) == 1:
                                 payload["mob_unit"] = mob_candidates[0]
                                 payload["target_unit"] = mob_candidates[0]
@@ -22525,6 +22602,8 @@ class StratagemManager(
         if not s:
             return False
         name_u = self._normalize_stratagem_name(s.name or "")
+        if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
+            kwargs = self._awakened_dynasty_undying_legions_preflight_context(kwargs)
         if name_u == "DENIZENS OF THE WARP" and not self._can_use_denizens_of_warp(kwargs):
             return False
         if name_u == "DRAUGHT OF TERROR" and not self._can_use_draught_of_terror(kwargs):
@@ -22549,6 +22628,10 @@ class StratagemManager(
             return False
         if name_u == "VIOLENT CRESCENDO" and not self._ec_can_use_carnival_violent_crescendo_tool_action(kwargs):
             return False
+        if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
+            necron_result = self._awakened_dynasty_can_use_undying_legions_tool_action(s, kwargs)
+            if necron_result is not None:
+                return bool(necron_result)
         if name_u == "SNAP TO IT" and not self._am_can_use_grizzled_snap_to_it_tool_action(kwargs):
             return False
         if name_u == "PTERRORSHADES" and not self._chaos_knights_can_use_traitoris_pterrorshades_tool_action(kwargs):
@@ -31265,6 +31348,14 @@ class StratagemManager(
 
     def _normalize_phase_item_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(context or {})
+        destroyed_unit = normalized.get("destroyed_unit")
+        if destroyed_unit is not None:
+            normalized.setdefault("unit", destroyed_unit)
+            normalized.setdefault("target_unit", destroyed_unit)
+        destroyed_model = normalized.get("destroyed_model")
+        if destroyed_model is not None:
+            normalized.setdefault("model", destroyed_model)
+            normalized.setdefault("target_model", destroyed_model)
         candidates = list(normalized.get("candidates") or [])
         if len(candidates) == 1:
             normalized.setdefault("unit", candidates[0])
@@ -31321,6 +31412,22 @@ class StratagemManager(
             return dict(self._aeldari_aspect_host_tool_action_context(name_u, phase_name=phase_label) or {})
         if not is_active_turn:
             return {}
+        if name_u == "ERE WE GO":
+            if phase_label.lower() != "movement phase":
+                return {}
+            return {
+                "candidates": list(self._orks_war_horde_ere_we_go_candidates() or []),
+            }
+        if name_u == "MOB RULE":
+            if phase_label.lower() != "command phase":
+                return {}
+            return dict(self._orks_war_horde_mob_rule_tool_action_context() or {})
+        if name_u == "UNBRIDLED CARNAGE":
+            if phase_label.lower() != "fight phase":
+                return {}
+            return {
+                "candidates": list(self._orks_war_horde_unbridled_carnage_candidates() or []),
+            }
         if name_u == "DENIZENS OF THE WARP":
             if phase_label.lower() != "movement phase":
                 return {}
@@ -31384,6 +31491,9 @@ class StratagemManager(
             if not s or not self._is_implemented_stratagem(s):
                 continue
             ctx = self._normalize_phase_item_context(r)
+            name_u = str(getattr(s, "name", "") or "").strip().upper()
+            if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
+                ctx = dict(self._awakened_dynasty_undying_legions_tool_action_context(ctx) or ctx)
             if "phase_name" not in ctx and phase_name:
                 ctx["phase_name"] = phase_name
             try:

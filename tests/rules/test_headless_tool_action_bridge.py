@@ -302,6 +302,31 @@ def test_queue_headless_tool_action_decision_builds_model_target_from_reaction_c
     assert resolved["target_model"]["__entity_ref__"]["id"] == model.id
 
 
+def test_queue_headless_tool_action_decision_does_not_require_model_for_lost_models_descriptor() -> None:
+    unit = SimpleNamespace(id="unit:warriors", name="Necron Warriors")
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="PROTOCOL OF THE UNDYING LEGIONS",
+        stratagem_id="000008371003",
+        descriptor_target="necrons_unit_that_lost_models_to_attacker_with_reanimation_protocols",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [unit],
+        },
+        can_use=lambda _name, **kwargs: kwargs.get("unit") is unit and kwargs.get("target_unit") is unit,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    assert len(payloads) == 2
+    resolved = payloads[0]["resolved_kwargs"]
+    assert resolved["unit"]["__entity_ref__"]["id"] == unit.id
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == unit.id
+    assert "model" not in resolved
+    assert "target_model" not in resolved
+
+
 def test_tool_action_firewall_filters_emitted_spec_that_fails_can_use() -> None:
     valid_unit = SimpleNamespace(id="unit:valid", name="Valid Unit")
     invalid_unit = SimpleNamespace(id="unit:invalid", name="Invalid Unit")

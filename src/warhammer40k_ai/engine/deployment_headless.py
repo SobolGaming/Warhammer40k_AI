@@ -46,6 +46,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
     - avoid reserves complexity unless forced by rules
     """
 
+    _DEFAULT_EXHAUSTIVE_ANCHOR_LIMIT = 256
+
     def __init__(
         self,
         game: object,
@@ -72,6 +74,9 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         self._selected_payload_by_unit_id: dict[str, tuple[tuple[float, float], list[dict]]] = {}
         self._placement_candidate_limit = int(max(1, placement_candidate_limit))
         self._exhaustive_anchor_limit = int(max(16, exhaustive_anchor_limit))
+        self._relaxed_anchor_limit_uses_default = (
+            int(exhaustive_anchor_limit) == self._DEFAULT_EXHAUSTIVE_ANCHOR_LIMIT
+        )
         self._deployment_search_metrics: list[dict[str, object]] = []
 
     def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
@@ -357,7 +362,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return build_placement_search_context(
             unit,
             game_map,
-            avoid_friendly_units=False,
+            avoid_friendly_units=True,
             boundary_repulsors=boundary_repulsors,
         )
 
@@ -653,6 +658,15 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 ),
             ),
             ("lattice", self._candidate_positions(unit, deployment_zone, already_deployed)),
+            (
+                "edge_sweep",
+                self._edge_sweep_anchor_candidates(
+                    unit,
+                    deployment_zone,
+                    already_deployed=already_deployed,
+                    footprint=footprint,
+                ),
+            ),
             ("lattice_exhaustive", self._candidate_positions_exhaustive(unit, deployment_zone)),
         ]
         if self._unit_has_infiltrate(unit):
@@ -681,15 +695,59 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             for model in list(getattr(unit, "models", []) or [])
             if model is not None and bool(getattr(model, "is_alive", True))
         ]
-        if len(alive_models) <= 2:
-            relaxed_limit = min(512, max(512, int(self._exhaustive_anchor_limit)))
+        if len(alive_models) <= 5:
+            if self._relaxed_anchor_limit_uses_default:
+                relaxed_limit = 3072
+            else:
+                relaxed_limit = min(4096, max(64, int(self._exhaustive_anchor_limit)))
         else:
             relaxed_limit = min(128, max(32, int(self._exhaustive_anchor_limit)))
-        return self._candidate_positions_exhaustive_for_bounds(
+        anchors: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+
+        edge_candidates = self._edge_sweep_anchor_candidates(
+            unit,
+            deployment_zone if not self._unit_has_infiltrate(unit) else {"bounds": list(bounds)},
+            already_deployed=[],
+            footprint=estimate_unit_pack_footprint(unit),
+        )
+        for anchor in list(edge_candidates or []):
+            key = (round(float(anchor[0]), 3), round(float(anchor[1]), 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            anchors.append((float(anchor[0]), float(anchor[1])))
+            if len(anchors) >= int(relaxed_limit):
+                return anchors
+
+        if len(alive_models) <= 5:
+            home_corner_candidates = self._home_corner_dense_anchor_candidates(
+                deployment_zone if not self._unit_has_infiltrate(unit) else {"bounds": list(bounds)},
+                anchor_limit=int(relaxed_limit),
+            )
+            for anchor in list(home_corner_candidates or []):
+                key = (round(float(anchor[0]), 3), round(float(anchor[1]), 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                anchors.append((float(anchor[0]), float(anchor[1])))
+                if len(anchors) >= int(relaxed_limit):
+                    return anchors
+
+        exhaustive_candidates = self._candidate_positions_exhaustive_for_bounds(
             unit,
             bounds=bounds,
             anchor_limit=int(relaxed_limit),
         )
+        for anchor in list(exhaustive_candidates or []):
+            key = (round(float(anchor[0]), 3), round(float(anchor[1]), 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            anchors.append((float(anchor[0]), float(anchor[1])))
+            if len(anchors) >= int(relaxed_limit):
+                break
+        return anchors
 
     @staticmethod
     def _model_positions_signature(model_positions: list[dict]) -> tuple[tuple[str, float, float, float, float], ...]:
@@ -712,6 +770,32 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         signature.sort(key=lambda item: item[0])
         return tuple(signature)
 
+    def _local_anchor_search_points(
+        self,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+    ) -> list[tuple[float, float]]:
+        footprint = estimate_unit_pack_footprint(unit)
+        base_step = max(0.25, min(1.0, float(footprint.get("spacing", 0.5) or 0.5) * 0.5))
+        wide_step = max(base_step, min(1.5, base_step * 2.0))
+        offsets = (
+            (-base_step, 0.0),
+            (base_step, 0.0),
+            (0.0, -base_step),
+            (0.0, base_step),
+            (-base_step, -base_step),
+            (-base_step, base_step),
+            (base_step, -base_step),
+            (base_step, base_step),
+            (-wide_step, 0.0),
+            (wide_step, 0.0),
+            (0.0, -wide_step),
+            (0.0, wide_step),
+        )
+        return [(float(x) + float(dx), float(y) + float(dy)) for dx, dy in offsets]
+
     def _quick_reject_deployment_anchor(
         self,
         unit: object,
@@ -724,22 +808,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
     ) -> bool:
         if not self._unit_has_infiltrate(unit) and not self._point_in_zone(deployment_zone, float(x), float(y)):
             return True
-        bounds = self._zone_bounds(deployment_zone)
         footprint = dict(footprint or estimate_unit_pack_footprint(unit))
-        if bounds is not None and not self._unit_has_infiltrate(unit):
-            min_x, max_x, min_y, max_y = bounds
-            span_x = float(max_x) - float(min_x)
-            span_y = float(max_y) - float(min_y)
-            margin_x = max(0.25, float(footprint.get("width", 0.0) or 0.0) * 0.5)
-            margin_y = max(0.25, float(footprint.get("depth", 0.0) or 0.0) * 0.5)
-            if span_x >= margin_x * 2.0 and (
-                float(x) < float(min_x) + margin_x or float(x) > float(max_x) - margin_x
-            ):
-                return True
-            if span_y >= margin_y * 2.0 and (
-                float(y) < float(min_y) + margin_y or float(y) > float(max_y) - margin_y
-            ):
-                return True
         clearance = max(0.25, float(footprint.get("radius", footprint.get("largest_radius", 0.0)) or 0.0) + 0.25)
         for deployed_unit in list(already_deployed or []):
             unit_bounds = deployed_unit_bounds(deployed_unit)
@@ -794,8 +863,82 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             default_bounds=(0.0, board_width, 0.0, board_height),
         )
 
+    def _edge_sweep_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+        footprint: dict[str, float],
+    ) -> list[tuple[float, float]]:
+        del already_deployed, footprint
+        bounds = self._zone_bounds(deployment_zone)
+        if bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = bounds
+        alive_models = [
+            model
+            for model in list(getattr(unit, "models", []) or [])
+            if model is not None and bool(getattr(model, "is_alive", True))
+        ]
+        edge_step = 0.5 if len(alive_models) <= 3 else 1.0
+        edge_limit = 512 if len(alive_models) <= 3 else 256
+        xs = self._edge_first_axis_points(min_x, max_x, step=edge_step, margin=0.0)
+        ys = self._edge_first_axis_points(min_y, max_y, step=edge_step, margin=0.0)
+
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for row_idx, y in enumerate(list(ys or [])):
+            x_values = list(xs or [])
+            if row_idx % 2 == 1:
+                x_values.reverse()
+            for x in x_values:
+                anchor = (float(x), float(y))
+                key = (round(anchor[0], 3), round(anchor[1], 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not self._point_in_zone(deployment_zone, anchor[0], anchor[1]):
+                    continue
+                candidates.append(anchor)
+                if len(candidates) >= int(edge_limit):
+                    return candidates
+        return candidates
+
     def _edge_first_axis_points(self, lo: float, hi: float, *, step: float, margin: float) -> list[float]:
         return _edge_first_axis_points_shared(lo, hi, step=step, margin=margin)
+
+    def _home_corner_dense_anchor_candidates(
+        self,
+        deployment_zone: dict,
+        *,
+        anchor_limit: int,
+    ) -> list[tuple[float, float]]:
+        bounds = self._zone_bounds(deployment_zone)
+        if bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = bounds
+        x_values = self._axis_points(min_x, max_x, step=0.5, offset=0.0)
+        y_values = self._axis_points(min_y, max_y, step=0.5, offset=0.0)
+
+        battlefield = getattr(self.game, "battlefield", None)
+        board_width = float(getattr(battlefield, "width", 60.0) or 60.0)
+        board_height = float(getattr(battlefield, "height", 44.0) or 44.0)
+        zone_center_x, zone_center_y = self._zone_center(deployment_zone)
+        if float(zone_center_x) >= (board_width * 0.5):
+            x_values = list(reversed(x_values))
+        if float(zone_center_y) >= (board_height * 0.5):
+            y_values = list(reversed(y_values))
+
+        candidates: list[tuple[float, float]] = []
+        for y in list(y_values or []):
+            for x in list(x_values or []):
+                if not self._point_in_zone(deployment_zone, float(x), float(y)):
+                    continue
+                candidates.append((float(x), float(y)))
+                if len(candidates) >= int(anchor_limit):
+                    return candidates
+        return candidates
 
     @staticmethod
     def _back_to_front_axis_points(
@@ -936,7 +1079,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             float(x),
             float(y),
             game_map,
-            avoid_friendly_units=False,
+            avoid_friendly_units=True,
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
         )
@@ -974,50 +1117,73 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
         )
-        if not base_positions:
+        position_sets: list[list[dict]] = []
+        if base_positions:
+            position_sets.append(list(base_positions))
+        else:
+            for alt_x, alt_y in self._local_anchor_search_points(unit, x=float(x), y=float(y)):
+                alt_positions = self._build_model_positions(
+                    unit,
+                    x=float(alt_x),
+                    y=float(alt_y),
+                    boundary_repulsors=boundary_repulsors,
+                    search_context=search_context,
+                )
+                if alt_positions:
+                    position_sets.append(list(alt_positions))
+        if not position_sets:
             return []
         models = list(getattr(unit, "models", []) or [])
-        if not models or len(models) != len(base_positions):
-            return [list(base_positions)]
-
         per_model_surfaces: list[list[float]] = []
-        for model, entry in zip(models, base_positions):
-            pos = list(entry.get("position", []) or [])
-            if len(pos) < 3:
-                return [list(base_positions)]
-            per_model_surfaces.append(
-                self._ruins_surface_z_options_for_model(model, x=float(pos[0]), y=float(pos[1]), current_z=float(pos[2]))
-            )
 
         variants: list[list[dict]] = []
-        seen: set[tuple[tuple[str, float], ...]] = set()
+        seen: set[tuple[tuple[str, float, float, float, float], ...]] = set()
 
         def _add_variant(positions: list[dict]) -> None:
-            key: list[tuple[str, float]] = []
-            for entry in list(positions or []):
-                model_id = str(entry.get("model_id", "") or "")
-                pos = list(entry.get("position", []) or [])
-                if len(pos) < 3:
-                    return
-                key.append((model_id, round(float(pos[2]), 3)))
-            key_tuple = tuple(key)
+            key_tuple = self._model_positions_signature(positions)
+            if not key_tuple:
+                return
             if key_tuple in seen:
                 return
             seen.add(key_tuple)
             variants.append(positions)
 
-        mixed_high = self._with_model_surface_selection(base_positions, per_model_surfaces, select_max=True)
-        if mixed_high:
-            _add_variant(mixed_high)
+        for base_positions in position_sets:
+            if not models or len(models) != len(base_positions):
+                _add_variant(list(base_positions))
+                continue
 
-        common_surfaces: set[float] = set(round(v, 3) for v in list(per_model_surfaces[0] or []))
-        for values in per_model_surfaces[1:]:
-            common_surfaces &= set(round(v, 3) for v in list(values or []))
-        for surface_z in sorted(common_surfaces, reverse=True):
-            uniform = self._with_uniform_surface(base_positions, z_surface=float(surface_z))
-            _add_variant(uniform)
+            per_model_surfaces = []
+            for model, entry in zip(models, base_positions):
+                pos = list(entry.get("position", []) or [])
+                if len(pos) < 3:
+                    per_model_surfaces = []
+                    break
+                per_model_surfaces.append(
+                    self._ruins_surface_z_options_for_model(
+                        model,
+                        x=float(pos[0]),
+                        y=float(pos[1]),
+                        current_z=float(pos[2]),
+                    )
+                )
 
-        _add_variant(list(base_positions))
+            if not per_model_surfaces or len(per_model_surfaces) != len(base_positions):
+                _add_variant(list(base_positions))
+                continue
+
+            mixed_high = self._with_model_surface_selection(base_positions, per_model_surfaces, select_max=True)
+            if mixed_high:
+                _add_variant(mixed_high)
+
+            common_surfaces: set[float] = set(round(v, 3) for v in list(per_model_surfaces[0] or []))
+            for values in per_model_surfaces[1:]:
+                common_surfaces &= set(round(v, 3) for v in list(values or []))
+            for surface_z in sorted(common_surfaces, reverse=True):
+                uniform = self._with_uniform_surface(base_positions, z_surface=float(surface_z))
+                _add_variant(uniform)
+
+            _add_variant(list(base_positions))
         return variants
 
     @staticmethod

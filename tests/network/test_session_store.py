@@ -133,6 +133,57 @@ def test_session_replay_recording_persists_decision_timeline(tmp_path):
     assert steps[0].decision_type == DECISION_CONFIRM_YES_NO
 
 
+def test_session_snapshot_flushes_post_decision_replay_tail_into_latest_keyframe(tmp_path):
+    game = _build_game()
+    session_id = create_session(game, base_dir=tmp_path, label="Replay Tail Session")
+    enable_session_replay_recording(
+        game,
+        base_dir=tmp_path,
+        session_id=session_id,
+        label="Replay Tail Session",
+        keyframe_interval=25,
+    )
+
+    player = game.players[0]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm replay tail capture",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    game.request_decision(request)
+    apply_result = game.resolve_decision(
+        DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+    )
+    assert bool(getattr(apply_result, "ok", False))
+
+    save_session_snapshot(game, base_dir=tmp_path, session_id=session_id, label="Replay Tail Session")
+    game.award_vp(
+        player,
+        5,
+        source="battle_ready",
+        timing="End of battle",
+        details="Replay tail regression",
+    )
+    save_session_snapshot(game, base_dir=tmp_path, session_id=session_id, label="Replay Tail Session")
+
+    reader = load_session_replay_reader(session_id, base_dir=tmp_path)
+    replayed = reader.reconstruct_game_at_decision(reader.decision_count(), strict=True)
+
+    assert reader.decision_count() == 1
+    assert reader.keyframe_count() >= 3
+    assert replayed.players[0].vp_battle_ready == 5
+    assert replayed.players[0].get_score() == game.players[0].get_score()
+
+
 def test_session_store_encodes_filesystem_unsafe_session_ids(tmp_path):
     game = _build_game()
     session_id = "selfplay:000000"

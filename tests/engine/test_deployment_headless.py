@@ -977,3 +977,413 @@ def test_headless_deployment_reuses_prospective_positions_for_validation(
 
     assert candidates
     assert unit.calculate_calls == 1
+
+
+def test_headless_deployment_search_context_avoids_friendly_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+        def __init__(self, blockers: list[object]) -> None:
+            self.units = list(blockers)
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        def get_friendly_units(self, _unit: object) -> list[object]:
+            return list(self.units)
+
+    class _FriendlyAwareUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(2)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, boundary_repulsors
+            if bool(avoid_friendly_units) and int(getattr(search_context, "friendly_blocking_count", 0) or 0) > 0:
+                return [
+                    (float(x) - 1.5, float(y), 0.0, 0.0),
+                    (float(x) - 0.25, float(y), 0.0, 0.0),
+                ]
+            return [
+                (float(x) + 0.1, float(y), 0.0, 0.0),
+                (float(x) + 1.1, float(y), 0.0, 0.0),
+            ]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    blocker = _StubUnit("unit:blocker", must_start_in_reserves=False)
+    blocker.models = [_StubModel("unit:blocker:model")]
+    blocker.models[0].set_location(5.0, 5.0, 0.0, 0.0)
+    game_map = _FlatMap([blocker])
+    unit = _FriendlyAwareUnit("unit:friendly_aware", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    def _reject_overlap(_game, _request, result):
+        model_positions = list((result.payload or {}).get("model_positions", []) or [])
+        xs = [float((entry.get("position") or [0.0])[0]) for entry in model_positions]
+        if any(x >= 5.0 for x in xs):
+            return ("Move unit: placement overlaps another unit.",)
+        return ()
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", _reject_overlap)
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("single_anchor", [(4.0, 5.0)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[blocker],
+        max_candidates=1,
+    )
+
+    assert candidates
+    payload = list(candidates[0].get("model_positions", []) or [])
+    xs = [float((entry.get("position") or [0.0])[0]) for entry in payload]
+    assert max(xs) < 5.0
+
+
+def test_headless_deployment_local_anchor_jitter_recovers_empty_exact_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _JitterUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(2)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            if abs(float(x) - 5.0) <= 1e-6 and abs(float(y) - 5.0) <= 1e-6:
+                return []
+            return [
+                (float(x), float(y), 0.0, 0.0),
+                (float(x) + 1.0, float(y), 0.0, 0.0),
+            ]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    unit = _JitterUnit("unit:jitter", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("single_anchor", [(5.0, 5.0)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    payload = list(candidates[0].get("model_positions", []) or [])
+    assert payload
+    first_pos = list(payload[0].get("position", []) or [])
+    assert first_pos[:2] != [5.0, 5.0]
+
+
+def test_headless_deployment_near_edge_anchor_is_not_quick_rejected_when_payload_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _EdgePackingUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(3)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            return [
+                (float(x) - 1.0, float(y) + 0.6, 0.0, 0.0),
+                (float(x), float(y) + 0.6, 0.0, 0.0),
+                (float(x) + 1.0, float(y) + 0.6, 0.0, 0.0),
+            ]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    unit = _EdgePackingUnit("unit:edge_fit", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("edge_anchor", [(5.0, 0.5)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    payload = list(candidates[0].get("model_positions", []) or [])
+    ys = [float((entry.get("position") or [0.0, 0.0])[1]) for entry in payload]
+    assert min(ys) > 0.5
+
+
+def test_headless_deployment_edge_sweep_source_finds_near_edge_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _EdgeSweepUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(3)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            if abs(float(x) - 0.5) > 1e-6 or abs(float(y) - 0.5) > 1e-6:
+                return []
+            return [
+                (0.5, 0.5, 0.0, 0.0),
+                (1.5, 0.5, 0.0, 0.0),
+                (2.5, 0.5, 0.0, 0.0),
+            ]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    unit = _EdgeSweepUnit("unit:edge_sweep", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(maker, "_gap_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_packing_row_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_semantic_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions_exhaustive", lambda *_args, **_kwargs: [])
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    assert candidates[0]["source"] == "edge_sweep"
+
+
+def test_headless_deployment_relaxed_home_corner_scan_reaches_deeper_band_for_five_model_units(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _DeepEdgeSweepUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(5)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            if abs(float(x) - 55.5) > 1e-6 or abs(float(y) - 3.5) > 1e-6:
+                return []
+            return [
+                (55.5, 3.5, 0.0, 0.0),
+                (56.5, 3.5, 0.0, 0.0),
+                (57.5, 3.5, 0.0, 0.0),
+                (58.5, 3.5, 0.0, 0.0),
+                (59.5, 3.5, 0.0, 0.0),
+            ]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    unit = _DeepEdgeSweepUnit("unit:deep_edge_sweep", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(maker, "_gap_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_packing_row_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_semantic_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions_exhaustive", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_edge_sweep_anchor_candidates", lambda *_args, **_kwargs: [])
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "mission_zones": [_ZoneStub(30.0, 60.0, 0.0, 22.0)]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    assert candidates[0]["anchor"] == [55.5, 3.5]

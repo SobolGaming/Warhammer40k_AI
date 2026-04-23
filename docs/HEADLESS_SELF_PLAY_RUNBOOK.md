@@ -85,6 +85,17 @@ Default shooting policy:
 - Hazardous profiles are eligible during default shooting.
 - For weapons with multiple legal targetable profiles, the controller chooses the profile/target pair with the best hit-probability x wound-probability, using expected damage only as a tie-breaker.
 
+Pending-placement policy:
+- Headless `MOVE_UNIT` confirmations that represent pending model placement (for example Reanimation Protocols or other confirm-only deploy-style follow-up placements) now synthesize explicit `model_positions` before resolution.
+- When the greedy reanimation placement heuristic leaves the unit out of coherency, the headless controller performs a bounded deterministic backtracking search over legal placement candidates and emits the first coherent placement it finds.
+- Synthesized reanimation placements now pass the same RUINS wall/floor validation used by authoritative movement handling, so headless placement candidates do not later fail on terrain legality.
+- Deployment candidate builders that produce no usable structured placements now fall back to deterministic anchor placement instead of silently dropping battlefield placement for the unit.
+- Headless deployment candidate generation now builds a friendly-aware placement search context, so multi-model pack layouts avoid already deployed friendly units instead of emitting overlap-only payloads that later fail authoritative validation.
+- When the exact deployment anchor cannot synthesize a legal multi-model pack, the headless deployer performs a bounded deterministic local anchor jitter search before giving up on that candidate.
+- Late-game small-unit deployment fallback now searches deeper half-inch home-corner and perimeter bands before giving up, which keeps edge-crowded units up to five models from missing legal deployment slots.
+- `model_destroyed_before_removal` reaction prompts now normalize `destroyed_model` / `destroyed_unit` into standard tool-action bindings, which keeps destroyed-model stratagems such as `PROTOCOL OF THE ETERNAL REVENANT` available in headless play.
+- The accepted per-model placement payload is recorded in both DecisionRecords and replay storage, so playback and reconstruction can reproduce the completed placement without relying on UI-only state.
+
 Logging controls:
 - `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.

@@ -463,6 +463,59 @@ def test_eternal_revenant_returns_destroyed_attached_character_as_separate_unit_
     assert _pending_by_name(necron_player.stratagems, "PROTOCOL OF THE ETERNAL REVENANT") is None
 
 
+def test_eternal_revenant_builds_tool_action_spec_for_destroyed_attached_character():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    bodyguard = _make_unit(
+        "Lychguard",
+        keywords=["INFANTRY"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    leader = _make_unit(
+        "Overlord",
+        keywords=["CHARACTER", "INFANTRY"],
+        faction_keywords=["NECRONS"],
+        wounds=5,
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(bodyguard)
+    necron_army.add_unit(leader)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, bodyguard, 10.0, 10.0)
+    _set_unit_location(leader, 10.0, 10.0)
+    _attach_leader(bodyguard, leader)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    leader_model = leader.models[0]
+    leader_model.wounds = 0
+    leader_model._wounds = 0
+    leader.models_lost = [leader_model]
+    game.event_system.publish("model_destroyed_before_removal", unit=bodyguard, model=leader_model)
+
+    item = next(
+        entry
+        for entry in list(necron_player.stratagems.get_phase_stratagem_items() or [])
+        if str(entry.get("name", "") or "").upper() == "PROTOCOL OF THE ETERNAL REVENANT"
+    )
+
+    assert item["available"] is True
+    specs = necron_player.stratagems._build_tool_action_specs_for_item(item)
+    assert len(specs) == 1
+    resolved = dict(specs[0]["payload"]["resolved_kwargs"] or {})
+    assert resolved["unit"]["__entity_ref__"]["id"] == leader.id
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == leader.id
+    assert resolved["model"]["__entity_ref__"]["id"] == leader_model.id
+    assert resolved["target_model"]["__entity_ref__"]["id"] == leader_model.id
+
+
 def test_undying_legions_queues_after_enemy_shooting_and_uses_snapshotted_bonus():
     game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
     bodyguard = _make_unit(
@@ -562,6 +615,210 @@ def test_undying_legions_does_not_queue_when_attached_bodyguard_models_are_all_d
     )
 
     assert _pending_by_name(necron_player.stratagems, "PROTOCOL OF THE UNDYING LEGIONS") is None
+
+
+def test_undying_legions_builds_tool_action_spec_for_attached_bodyguard_target():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    bodyguard = _make_unit(
+        "Lychguard",
+        keywords=["INFANTRY"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    leader = _make_unit(
+        "Overlord",
+        keywords=["CHARACTER", "INFANTRY"],
+        faction_keywords=["NECRONS"],
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(bodyguard)
+    necron_army.add_unit(leader)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, bodyguard, 10.0, 10.0)
+    _set_unit_location(leader, 10.0, 10.0)
+    _attach_leader(bodyguard, leader)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=enemy,
+        killing_models_by_target={bodyguard: [object()]},
+    )
+
+    item = next(
+        entry
+        for entry in list(necron_player.stratagems.get_phase_stratagem_items() or [])
+        if str(entry.get("name", "") or "").upper() == "PROTOCOL OF THE UNDYING LEGIONS"
+    )
+
+    assert item["available"] is True
+    specs = necron_player.stratagems._build_tool_action_specs_for_item(item)
+    assert len(specs) == 1
+    resolved = dict(specs[0]["payload"]["resolved_kwargs"] or {})
+    assert resolved["unit"]["__entity_ref__"]["id"] == bodyguard.id
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == bodyguard.id
+    assert "model" not in resolved
+    assert "target_model" not in resolved
+
+
+def test_undying_legions_reaction_becomes_unavailable_after_target_unit_is_destroyed():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    bodyguard = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(bodyguard)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, bodyguard, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=enemy,
+        killing_models_by_target={bodyguard: [object()]},
+    )
+
+    pending = _pending_by_name(necron_player.stratagems, "PROTOCOL OF THE UNDYING LEGIONS")
+    assert pending is not None
+
+    with patch.object(bodyguard, "is_alive", return_value=False):
+        assert not necron_player.stratagems._awakened_dynasty_unit_eligible(
+            bodyguard,
+            require_reanimation=True,
+        )
+
+        item = next(
+            entry
+            for entry in list(necron_player.stratagems.get_phase_stratagem_items() or [])
+            if str(entry.get("name", "") or "").upper() == "PROTOCOL OF THE UNDYING LEGIONS"
+        )
+
+        assert item["available"] is False
+        assert list(item["context"].get("candidates") or []) == []
+
+
+def test_undying_legions_tool_action_specs_cover_each_pending_candidate_from_same_attack():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    warriors = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    praetorians = _make_unit(
+        "Triarch Praetorians",
+        keywords=["INFANTRY"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(warriors)
+    necron_army.add_unit(praetorians)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, warriors, 10.0, 10.0)
+    _deploy_unit(game, praetorians, 14.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=enemy,
+        killing_models_by_target={
+            warriors: [object()],
+            praetorians: [object()],
+        },
+    )
+
+    item = next(
+        entry
+        for entry in list(necron_player.stratagems.get_phase_stratagem_items() or [])
+        if str(entry.get("name", "") or "").upper() == "PROTOCOL OF THE UNDYING LEGIONS"
+    )
+
+    assert item["available"] is True
+    specs = necron_player.stratagems._build_tool_action_specs_for_item(item)
+    resolved_unit_ids = sorted(
+        str(spec["payload"]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"])
+        for spec in list(specs or [])
+    )
+    assert resolved_unit_ids == sorted([warriors.id, praetorians.id])
+
+
+def test_undying_legions_becomes_unavailable_if_cp_is_spent_after_reaction_queues():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    warriors = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(warriors)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, warriors, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    necron_player.command_points = 1
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=enemy,
+        killing_models_by_target={warriors: [object()]},
+    )
+
+    pending = _pending_by_name(necron_player.stratagems, "PROTOCOL OF THE UNDYING LEGIONS")
+    assert pending is not None
+
+    necron_player.command_points = 0
+
+    item = next(
+        entry
+        for entry in list(necron_player.stratagems.get_phase_stratagem_items() or [])
+        if str(entry.get("name", "") or "").upper() == "PROTOCOL OF THE UNDYING LEGIONS"
+    )
+
+    assert item["available"] is False
+    assert "enough CP" in str(item["reason"] or "")
+    assert necron_player.stratagems.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert _first_request(game, "SELECT_TOOL_ACTION") is None
+    assert all(
+        str(entry.get("stratagem_name", "") or "").upper() != "PROTOCOL OF THE UNDYING LEGIONS"
+        for entry in list(necron_player.stratagems.get_tool_action_probe_diagnostics() or [])
+    )
 
 
 def test_vengeful_stars_queues_after_unit_destroyed_and_restricts_reactive_target():

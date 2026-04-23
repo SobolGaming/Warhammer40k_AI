@@ -269,6 +269,45 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
         charge_mods_after = game.get_charge_roll_modifiers(unit, target_unit=enemy)
         self.assertFalse(any(val == 2 and "ERE WE GO" in str(source).upper() for val, source in charge_mods_after))
 
+    def test_ere_we_go_phase_item_builds_unit_bound_tool_action(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        army1.add_unit(unit)
+        _place_unit(game, unit, 10.0, 10.0)
+
+        game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.current_player_index = 0
+        p1.stratagems._current_phase_name = "Movement phase"
+
+        item = next(
+            entry for entry in list(p1.stratagems.get_phase_stratagem_items() or [])
+            if str(entry.get("name", "") or "").upper() == "ERE WE GO"
+        )
+
+        self.assertTrue(item["available"])
+        specs = p1.stratagems._build_tool_action_specs_for_item(item)
+        self.assertTrue(specs)
+        payload = dict(specs[0].get("payload", {}) or {})
+        resolved = dict(payload.get("resolved_kwargs", {}) or {})
+        self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], unit.id)
+        self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], unit.id)
+
+    def test_ere_we_go_candidates_only_include_eligible_infantry_units(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        boyz = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        stompa = _make_unit("Stompa", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+        army1.add_unit(boyz)
+        army1.add_unit(stompa)
+        _place_unit(game, boyz, 10.0, 10.0)
+        _place_unit(game, stompa, 14.0, 10.0)
+
+        game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.current_player_index = 0
+        p1.stratagems._current_phase_name = "Movement phase"
+
+        candidates = list(p1.stratagems._orks_war_horde_ere_we_go_candidates() or [])
+        self.assertEqual([unit.id for unit in candidates], [boyz.id])
+
     def test_orks_is_never_beaten_defers_fight_on_death(self):
         game, p1, p2, army1, army2 = _build_game()
         unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
@@ -411,6 +450,87 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
             and str(r.get("stratagem", "") or "").upper() == "MOB RULE"
         ]
         self.assertTrue(queued)
+
+    def test_mob_rule_pending_reaction_builds_bound_tool_actions_for_multiple_mobs(self):
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
+
+        game, p1, _p2, army1, _army2 = _build_game()
+        first_mob = _make_unit("Boyz Mob Alpha", keywords=["INFANTRY", "MOB"], faction_keywords=["ORKS"])
+        first_mob.unit_composition = {"Test Model": (10, 10)}
+        first_mob.unit_composition_options = [first_mob.unit_composition]
+        first_mob.models = first_mob._create_models(first_mob._datasheet, quantity=10)
+        second_mob = _make_unit("Boyz Mob Beta", keywords=["INFANTRY", "MOB"], faction_keywords=["ORKS"])
+        second_mob.unit_composition = {"Test Model": (10, 10)}
+        second_mob.unit_composition_options = [second_mob.unit_composition]
+        second_mob.models = second_mob._create_models(second_mob._datasheet, quantity=10)
+        bs_unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        army1.add_unit(first_mob)
+        army1.add_unit(second_mob)
+        army1.add_unit(bs_unit)
+        for idx, model in enumerate(first_mob.models):
+            model.set_location(10.0 + (idx * 0.5), 10.0, 0.0, 0.0)
+        first_mob.deployed = True
+        first_mob.reserve_status = "deployed"
+        if first_mob not in game.map.units:
+            game.map.units.append(first_mob)
+        for idx, model in enumerate(second_mob.models):
+            model.set_location(18.0 + (idx * 0.5), 10.0, 0.0, 0.0)
+        second_mob.deployed = True
+        second_mob.reserve_status = "deployed"
+        if second_mob not in game.map.units:
+            game.map.units.append(second_mob)
+        bs_unit.deployed = True
+        bs_unit.reserve_status = "deployed"
+        bs_unit.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+        if bs_unit not in game.map.units:
+            game.map.units.append(bs_unit)
+        bs_unit.apply_status_effect(BattleShockEffect(current_turn=1))
+
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+        game.current_player_index = 0
+        p1.stratagems._current_phase_name = "Command phase"
+        p1.stratagems._on_phase_end(player=p1, phase=game.phase)
+
+        item = next(
+            entry for entry in list(p1.stratagems.get_phase_stratagem_items() or [])
+            if str(entry.get("name", "") or "").upper() == "MOB RULE" and bool(entry.get("is_reaction"))
+        )
+
+        self.assertTrue(item["available"])
+        specs = p1.stratagems._build_tool_action_specs_for_item(item)
+        self.assertEqual(len(specs), 2)
+        for spec in list(specs or []):
+            payload = dict(spec.get("payload", {}) or {})
+            resolved = dict(payload.get("resolved_kwargs", {}) or {})
+            self.assertIn(resolved["unit"]["__entity_ref__"]["id"], {first_mob.id, second_mob.id})
+            self.assertEqual(resolved["battle_shocked_unit"]["__entity_ref__"]["id"], bs_unit.id)
+
+    def test_unbridled_carnage_phase_item_builds_unit_bound_tool_action(self):
+        game, p1, _p2, army1, army2 = _build_game()
+        unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        army1.add_unit(unit)
+        army2.add_unit(enemy)
+        _place_unit(game, unit, 10.0, 10.0)
+        _place_unit(game, enemy, 14.0, 10.0)
+
+        unit.round_state.fought_this_phase = False
+        game.phase = SimpleNamespace(name="FIGHT_PHASE")
+        game.current_player_index = 0
+        p1.stratagems._current_phase_name = "Fight phase"
+
+        item = next(
+            entry for entry in list(p1.stratagems.get_phase_stratagem_items() or [])
+            if str(entry.get("name", "") or "").upper() == "UNBRIDLED CARNAGE"
+        )
+
+        self.assertTrue(item["available"])
+        specs = p1.stratagems._build_tool_action_specs_for_item(item)
+        self.assertTrue(specs)
+        payload = dict(specs[0].get("payload", {}) or {})
+        resolved = dict(payload.get("resolved_kwargs", {}) or {})
+        self.assertEqual(resolved["unit"]["__entity_ref__"]["id"], unit.id)
+        self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], unit.id)
 
     def test_careen_queues_move_and_resolves_skip(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_USE_CAREEN

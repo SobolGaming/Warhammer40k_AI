@@ -32,6 +32,13 @@ Replay-store persistence note:
   decision step. Decisions whose request/resolution events were already captured
   in the nearest keyframe are replayed from their stored request payload without
   consuming later events.
+- Session snapshot saves flush any replay event tail that occurred after the
+  latest resolved decision and emit a terminal keyframe at the current
+  `decision_idx`. Strict replay of `reconstruct_game_at_decision(decision_count)`
+  therefore round-trips end-of-battle scoring and other post-decision terminal
+  state without requiring a synthetic trailing decision.
+- When multiple keyframes share the same `decision_idx`, strict replay uses the
+  newest keyframe for that index.
 - Replay reconstruction suppresses live charge-phase followup queueing. Recorded
   charge declarations, rolls, and moves are replayed from the persisted decision
   stream instead of allowing reconstruction-time auto-followups to create extra

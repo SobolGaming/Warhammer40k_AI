@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 
@@ -23,6 +24,14 @@ TOOL_ACTION_HELPER_CONTEXT_KEYS = {
     "allowed_choice_keys",
     "choice_options",
 }
+
+
+def descriptor_requires_model_binding(descriptor_target: str) -> bool:
+    target_text = str(descriptor_target or "").strip().lower()
+    if not target_text:
+        return False
+    tokens = tuple(token for token in re.split(r"[^a-z0-9]+", target_text) if token)
+    return "model" in tokens
 
 
 @dataclass(frozen=True)
@@ -61,7 +70,10 @@ class ToolActionProviderContract:
                 missing.append("transport")
         if "terrain" in target_text and not _has_any(ctx, ("terrain_feature", "terrain", "terrain_candidates")):
             missing.append("terrain")
-        if "model" in target_text and not _has_any(ctx, ("model", "target_model", "model_candidates", "model_candidates_by_unit", "eligible_models")):
+        if descriptor_requires_model_binding(target_text) and not _has_any(
+            ctx,
+            ("model", "target_model", "model_candidates", "model_candidates_by_unit", "eligible_models"),
+        ):
             missing.append("model")
 
         for key in list(effect_params.get("required_context", []) or effect_params.get("required_context_keys", []) or []):

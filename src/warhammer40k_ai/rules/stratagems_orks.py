@@ -317,6 +317,45 @@ class OrksStratagemMixin:
         results.sort(key=self._orks_sort_key)
         return results
 
+    def _orks_war_horde_ere_we_go_candidates(self) -> list[Any]:
+        if not self._is_war_horde_detachment():
+            return []
+        return self._orks_offensive_candidates(
+            require_targetable=True,
+            keyword_any=("INFANTRY",),
+        )
+
+    def _orks_war_horde_unbridled_carnage_candidates(self) -> list[Any]:
+        if not self._is_war_horde_detachment():
+            return []
+        return self._orks_offensive_candidates(
+            require_targetable=True,
+            require_not_selected_phase="Fight phase",
+        )
+
+    def _orks_war_horde_mob_rule_tool_action_context(self) -> dict[str, Any]:
+        if not self._is_war_horde_detachment():
+            return {}
+        mob_candidates = list(getattr(self, "_mob_rule_mob_candidates", lambda: [])() or [])
+        support_candidates = getattr(self, "_mob_rule_battleshocked_candidates", None)
+        support_by_unit: dict[str, list[Any]] = {}
+        filtered: list[Any] = []
+        for mob_unit in list(mob_candidates or []):
+            mob_root = self._orks_root(mob_unit)
+            if mob_root is None or not callable(support_candidates):
+                continue
+            candidates = list(support_candidates(mob_root) or [])
+            if not candidates:
+                continue
+            support_by_unit[self._orks_sort_key(mob_root)] = candidates
+            filtered.append(mob_root)
+        filtered.sort(key=self._orks_sort_key)
+        return {
+            "candidates": filtered,
+            "secondary_optional": False,
+            "support_candidates_by_unit": support_by_unit,
+        }
+
     def _orks_active_loot_objective_point(self):
         mgr = self._orks_detachment_mgr()
         resolver = getattr(mgr, "_active_here_be_loot_objective_point", None) if mgr is not None else None

@@ -3568,6 +3568,8 @@ class ShootingMixin:
     ) -> bool:
         if game_map is None:
             return True
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
         try:
             if not game_map.is_within_boundary(model, destination=(x, y)):
                 return False
@@ -3579,6 +3581,18 @@ class ShootingMixin:
                 return False
         except Exception:
             return False
+        terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+        if terrain_features:
+            from ...battlefield.map import validate_ruins_placement
+
+            ruins_validation = validate_ruins_placement(
+                root,
+                (float(x), float(y), float(z)),
+                terrain_features,
+                moving_model=model,
+            )
+            if not bool((ruins_validation or {}).get("valid", False)):
+                return False
 
         try:
             candidate_base = self._create_potential_base(x, y, z, facing, model=model)

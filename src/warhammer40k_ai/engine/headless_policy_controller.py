@@ -289,7 +289,483 @@ class HeadlessPolicyDecisionController(DecisionController):
                     default_declarations = self._default_shooting_declarations(game, request, normalized)
                     if default_declarations:
                         normalized["declarations"] = default_declarations
+        if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
+            action = str(normalized.get("action", "") or "").strip().lower()
+            if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
+                model_positions = normalized.get("model_positions")
+                if not isinstance(model_positions, list) or not model_positions:
+                    synthesized_positions = self._synthesized_move_model_positions(game, request, normalized)
+                    if synthesized_positions:
+                        normalized["model_positions"] = synthesized_positions
         return normalized
+
+    @staticmethod
+    def _move_request_can_synthesize_positions(request: DecisionRequest, payload: dict[str, Any]) -> bool:
+        if str(getattr(request, "decision_type", "") or "") != DECISION_MOVE_UNIT:
+            return False
+        params = dict(payload or {})
+        action = str(params.get("action", "") or "").strip().lower()
+        if action in {"skip", "pass"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+            return False
+        ctx = dict(getattr(request, "context", {}) or {})
+        movement_type = str(params.get("movement_type", "") or ctx.get("movement_type", "") or "").strip().lower()
+        if movement_type != "deploy":
+            return False
+        placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
+        if not placement_kind:
+            return False
+        if placement_kind in {
+            "deployment",
+            "reserves_arrival",
+            "hyperphasic_recall",
+            "subterranean_tunnel_network",
+            "aeldari_unshrouded_truth",
+            "advance_redeploy_9h",
+            "normal_move_redeploy_9h",
+        }:
+            return False
+        allowed_model_ids = [
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        return bool(allowed_model_ids)
+
+    @staticmethod
+    def _model_location(model: object) -> tuple[float, float, float, float] | None:
+        get_location = getattr(model, "get_location", None)
+        if callable(get_location):
+            try:
+                location = get_location()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                location = None
+            if isinstance(location, (tuple, list)) and len(location) >= 2:
+                base = getattr(model, "model_base", None)
+                z = float(location[2]) if len(location) >= 3 else float(getattr(base, "z", 0.0) or 0.0)
+                facing = float(location[3]) if len(location) >= 4 else float(getattr(base, "facing", 0.0) or 0.0)
+                return (float(location[0]), float(location[1]), z, facing)
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return None
+        return (
+            float(getattr(base, "x", 0.0) or 0.0),
+            float(getattr(base, "y", 0.0) or 0.0),
+            float(getattr(base, "z", 0.0) or 0.0),
+            float(getattr(base, "facing", 0.0) or 0.0),
+        )
+
+    @staticmethod
+    def _set_model_location(
+        model: object,
+        *,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+    ) -> bool:
+        set_location = getattr(model, "set_location", None)
+        if callable(set_location):
+            try:
+                set_location(float(x), float(y), float(z), float(facing))
+                return True
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return False
+        base.x = float(x)
+        base.y = float(y)
+        base.z = float(z)
+        base.facing = float(facing)
+        return True
+
+    @staticmethod
+    def _serialize_model_position(
+        model: object,
+        *,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+    ) -> dict[str, object]:
+        return {
+            "model_id": str(maybe_entity_id(model) or ""),
+            "position": [float(x), float(y), float(z)],
+            "facing": float(facing),
+        }
+
+    @classmethod
+    def _unit_positions_for_coherency(
+        cls,
+        unit: object,
+    ) -> list[tuple[float, float, float]]:
+        positions: list[tuple[float, float, float]] = []
+        for model in list(getattr(unit, "models", []) or []):
+            location = cls._model_location(model)
+            if location is None:
+                positions.append((0.0, 0.0, 0.0))
+                continue
+            positions.append((float(location[0]), float(location[1]), float(location[2])))
+        return positions
+
+    @classmethod
+    def _placement_keeps_unit_coherent(
+        cls,
+        unit: object,
+        *,
+        pending_models: list[object],
+    ) -> bool:
+        unit_models = list(getattr(unit, "models", []) or [])
+        if not unit_models:
+            return True
+        pending_ids = {
+            str(maybe_entity_id(model) or "").strip()
+            for model in list(pending_models or [])
+            if model is not None and str(maybe_entity_id(model) or "").strip()
+        }
+        if not pending_ids:
+            return True
+        unit_model_ids = {
+            str(maybe_entity_id(model) or "").strip()
+            for model in unit_models
+            if model is not None and str(maybe_entity_id(model) or "").strip()
+        }
+        if not pending_ids.issubset(unit_model_ids):
+            return True
+        try:
+            from ..utility.calcs import validate_unit_coherency_after_movement
+        except ImportError:
+            return True
+        try:
+            coherent, _non_coherent = validate_unit_coherency_after_movement(
+                unit,
+                cls._unit_positions_for_coherency(unit),
+                ignore_pending=False,
+            )
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return True
+        return bool(coherent)
+
+    @classmethod
+    def _reanimation_candidate_positions(
+        cls,
+        root: object,
+        model: object,
+        *,
+        search_models: list[object],
+        game_map: object | None,
+        required_neighbors: int,
+        limit: int = 128,
+    ) -> list[tuple[float, float, float, float]]:
+        candidates: list[tuple[float, float, float, float]] = []
+        seen: set[tuple[float, float, float, float]] = set()
+
+        def _add_candidate(candidate: object) -> None:
+            if not isinstance(candidate, (tuple, list)) or len(candidate) < 4:
+                return
+            key = (
+                round(float(candidate[0]), 6),
+                round(float(candidate[1]), 6),
+                round(float(candidate[2]), 6),
+                round(float(candidate[3]), 6),
+            )
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append((float(candidate[0]), float(candidate[1]), float(candidate[2]), float(candidate[3])))
+
+        find_position = getattr(root, "_find_reanimation_position", None)
+        if callable(find_position):
+            primary = call_with_supported_kwargs(
+                find_position,
+                model,
+                list(search_models),
+                game_map=game_map,
+                required_neighbors=required_neighbors,
+            )
+            _add_candidate(primary)
+            if len(candidates) >= int(max(1, limit)):
+                return candidates
+
+        validate_position = getattr(root, "_reanimation_position_valid", None)
+        if not callable(validate_position):
+            return candidates
+
+        try:
+            model_radius = float(getattr(model.model_base, "get_longest_radius")())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            try:
+                model_radius = float(getattr(model.model_base, "get_radius")())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return candidates
+
+        for anchor in list(search_models or []):
+            location = cls._model_location(anchor)
+            if location is None:
+                continue
+            try:
+                anchor_radius = float(getattr(anchor.model_base, "get_longest_radius")())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                try:
+                    anchor_radius = float(getattr(anchor.model_base, "get_radius")())
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+            min_center = anchor_radius + model_radius + 0.05
+            max_center = min_center + 2.0 + 1e-6
+            ring = 0.0
+            while ring <= max(0.01, max_center - min_center) + 0.001:
+                radius = float(min_center + ring)
+                if radius > max_center + 1e-6:
+                    break
+                for deg in range(0, 360, 15):
+                    angle = math.radians(deg)
+                    candidate = (
+                        float(location[0]) + math.cos(angle) * radius,
+                        float(location[1]) + math.sin(angle) * radius,
+                        float(location[2]),
+                        float(location[3]),
+                    )
+                    try:
+                        valid = bool(
+                            validate_position(
+                                candidate[0],
+                                candidate[1],
+                                candidate[2],
+                                candidate[3],
+                                model,
+                                list(search_models),
+                                game_map,
+                                required_neighbors,
+                            )
+                        )
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
+                        valid = False
+                    if not valid:
+                        continue
+                    _add_candidate(candidate)
+                    if len(candidates) >= int(max(1, limit)):
+                        return candidates
+                ring += 0.5
+        return candidates
+
+    @classmethod
+    def _reanimation_backtracking_positions(
+        cls,
+        root: object,
+        *,
+        pending_models: list[object],
+        anchored_models: list[object],
+        game_map: object | None,
+        required_neighbors: int,
+        original_locations: dict[str, tuple[float, float, float, float]],
+        candidate_limit: int = 128,
+        max_nodes: int = 4096,
+    ) -> list[dict[str, object]] | None:
+        if not pending_models:
+            return None
+
+        nodes_visited = 0
+
+        def _restore_model_location(model: object) -> None:
+            model_id = str(maybe_entity_id(model) or "").strip()
+            location = original_locations.get(model_id)
+            if location is None:
+                return
+            cls._set_model_location(
+                model,
+                x=location[0],
+                y=location[1],
+                z=location[2],
+                facing=location[3],
+            )
+
+        def _search(index: int, search_models: list[object]) -> list[dict[str, object]] | None:
+            nonlocal nodes_visited
+            if nodes_visited >= int(max(1, max_nodes)):
+                return None
+            if index >= len(pending_models):
+                if not cls._placement_keeps_unit_coherent(root, pending_models=pending_models):
+                    return None
+                serialized: list[dict[str, object]] = []
+                for pending_model in pending_models:
+                    location = cls._model_location(pending_model)
+                    if location is None:
+                        return None
+                    serialized.append(
+                        cls._serialize_model_position(
+                            pending_model,
+                            x=location[0],
+                            y=location[1],
+                            z=location[2],
+                            facing=location[3],
+                        )
+                    )
+                return serialized
+
+            model = pending_models[index]
+            for candidate in cls._reanimation_candidate_positions(
+                root,
+                model,
+                search_models=list(search_models),
+                game_map=game_map,
+                required_neighbors=required_neighbors,
+                limit=int(max(1, candidate_limit)),
+            ):
+                nodes_visited += 1
+                if not cls._set_model_location(
+                    model,
+                    x=candidate[0],
+                    y=candidate[1],
+                    z=candidate[2],
+                    facing=candidate[3],
+                ):
+                    continue
+                resolved = _search(index + 1, list(search_models) + [model])
+                if resolved is not None:
+                    return resolved
+            _restore_model_location(model)
+            return None
+
+        try:
+            return _search(0, list(anchored_models))
+        finally:
+            for model in pending_models:
+                _restore_model_location(model)
+
+    @classmethod
+    def _synthesized_move_model_positions(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+    ) -> list[dict[str, object]] | None:
+        if game is None or not cls._move_request_can_synthesize_positions(request, payload):
+            return None
+
+        ctx = dict(getattr(request, "context", {}) or {})
+        unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
+        if not unit_id:
+            return None
+        unit = cls._resolve_unit(game, unit_id)
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+
+        find_position = getattr(root, "_find_reanimation_position", None)
+        validate_position = getattr(root, "_reanimation_position_valid", None)
+        if not callable(find_position) and not callable(validate_position):
+            return None
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        attached_models: list[object] = []
+        for member in list(members or []):
+            if member is None:
+                continue
+            attached_models.extend(list(getattr(member, "models", []) or []))
+        if not attached_models:
+            get_models = getattr(root, "get_attached_unit_models", None)
+            attached_models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        identified_models = [
+            model
+            for model in attached_models
+            if model is not None and str(maybe_entity_id(model) or "").strip()
+        ]
+        if not identified_models:
+            return None
+
+        models_by_id = {
+            str(maybe_entity_id(model) or "").strip(): model
+            for model in identified_models
+        }
+        allowed_model_ids = [
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        pending_models: list[object] = []
+        for model_id in allowed_model_ids:
+            model = models_by_id.get(model_id)
+            if model is None:
+                return None
+            pending_models.append(model)
+        if not pending_models:
+            return None
+
+        allowed_set = set(allowed_model_ids)
+        anchored_models = [
+            model
+            for model in sorted(identified_models, key=cls._entity_sort_key)
+            if str(maybe_entity_id(model) or "").strip() not in allowed_set and cls._alive(model)
+        ]
+        final_alive_count = len(anchored_models) + len(pending_models)
+        required_neighbors = 0 if final_alive_count <= 1 else (2 if final_alive_count >= 7 else 1)
+        game_map = getattr(game, "map", None)
+
+        original_locations: dict[str, tuple[float, float, float, float]] = {}
+        placed_positions: list[dict[str, object]] = []
+        search_models = list(anchored_models)
+        for model in pending_models:
+            model_id = str(maybe_entity_id(model) or "").strip()
+            if not model_id:
+                return None
+            location = cls._model_location(model)
+            if location is None:
+                return None
+            original_locations[model_id] = location
+
+        try:
+            if callable(find_position):
+                for model in pending_models:
+                    candidate = call_with_supported_kwargs(
+                        find_position,
+                        model,
+                        list(search_models),
+                        game_map=game_map,
+                        required_neighbors=required_neighbors,
+                    )
+                    if not isinstance(candidate, (tuple, list)) or len(candidate) < 4:
+                        placed_positions = []
+                        break
+                    x = float(candidate[0])
+                    y = float(candidate[1])
+                    z = float(candidate[2])
+                    facing = float(candidate[3])
+                    if not cls._set_model_location(model, x=x, y=y, z=z, facing=facing):
+                        placed_positions = []
+                        break
+                    search_models.append(model)
+                    placed_positions.append(
+                        cls._serialize_model_position(model, x=x, y=y, z=z, facing=facing)
+                    )
+            if placed_positions and cls._placement_keeps_unit_coherent(root, pending_models=pending_models):
+                return list(placed_positions)
+            coherent_positions = cls._reanimation_backtracking_positions(
+                root,
+                pending_models=pending_models,
+                anchored_models=anchored_models,
+                game_map=game_map,
+                required_neighbors=required_neighbors,
+                original_locations=original_locations,
+            )
+            if coherent_positions:
+                return coherent_positions
+        finally:
+            for model in pending_models:
+                model_id = str(maybe_entity_id(model) or "").strip()
+                location = original_locations.get(model_id)
+                if location is None:
+                    continue
+                cls._set_model_location(
+                    model,
+                    x=location[0],
+                    y=location[1],
+                    z=location[2],
+                    facing=location[3],
+                )
+
+        return placed_positions or None
 
     @staticmethod
     def _alive(value: object) -> bool:
@@ -693,8 +1169,16 @@ class HeadlessPolicyDecisionController(DecisionController):
         params.pop("action_id", None)
         return CandidateAction(action_id=str(action_id or ""), params=params, metadata={})
 
-    @staticmethod
-    def _result_payload_is_structurally_resolvable(request: DecisionRequest, payload: dict[str, Any]) -> bool:
+    def _result_payload_is_structurally_resolvable(self, request: DecisionRequest, payload: dict[str, Any]) -> bool:
+        if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
+            params = dict(payload or {})
+            action = str(params.get("action", "") or "").strip().lower()
+            if action in {"pass", "skip"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+                return True
+            model_positions = params.get("model_positions")
+            if isinstance(model_positions, list) and bool(model_positions):
+                return True
+            return self._move_request_can_synthesize_positions(request, params)
         if str(getattr(request, "decision_type", "") or "") != DECISION_DECLARE_SHOTS:
             return True
         params = dict(payload or {})
@@ -847,8 +1331,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return False
 
-    @staticmethod
-    def _candidate_is_structurally_resolvable(request: DecisionRequest, candidate: CandidateAction | None) -> bool:
+    def _candidate_is_structurally_resolvable(self, request: DecisionRequest, candidate: CandidateAction | None) -> bool:
         if candidate is None:
             return False
         params = dict(getattr(candidate, "params", {}) or {})
@@ -857,7 +1340,9 @@ class HeadlessPolicyDecisionController(DecisionController):
             return True
         if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
             model_positions = params.get("model_positions")
-            return isinstance(model_positions, list) and bool(model_positions)
+            if isinstance(model_positions, list) and bool(model_positions):
+                return True
+            return self._move_request_can_synthesize_positions(request, params)
         if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_SHOTS:
             declarations = params.get("declarations")
             if isinstance(declarations, list) and bool(declarations):

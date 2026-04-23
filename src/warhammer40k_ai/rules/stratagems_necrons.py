@@ -753,9 +753,15 @@ class NecronsStratagemMixin:
             if not target_unit_id:
                 return reaction
             reaction_unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
-            reaction_unit_id = str(get_entity_id(self._necrons_root(reaction_unit)) or "")
+            reaction_root = self._necrons_root(reaction_unit)
+            reaction_unit_id = str(get_entity_id(reaction_root) or "") if reaction_root is not None else ""
             if reaction_unit_id == target_unit_id:
                 return reaction
+            for candidate in list(reaction.get("candidates") or []):
+                candidate_root = self._necrons_root(candidate)
+                candidate_unit_id = str(get_entity_id(candidate_root) or "") if candidate_root is not None else ""
+                if candidate_unit_id == target_unit_id:
+                    return reaction
         return None
 
     def _awakened_dynasty_eternal_revenant_pending_returns(self) -> list[dict[str, Any]]:
@@ -785,6 +791,131 @@ class NecronsStratagemMixin:
             except (TypeError, ValueError):
                 return 0
         return 1 if self._awakened_dynasty_unit_has_character_leading(root) else 0
+
+    def _awakened_dynasty_undying_legions_tool_action_context(
+        self,
+        context: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        normalized = dict(context or {})
+        filtered_candidates: list[Any] = []
+        seen: set[str] = set()
+        for candidate in list(normalized.get("candidates") or []):
+            root = self._necrons_root(candidate)
+            candidate_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not candidate_id or candidate_id in seen:
+                continue
+            if not self._awakened_dynasty_unit_eligible(root, require_reanimation=True):
+                continue
+            seen.add(candidate_id)
+            filtered_candidates.append(root)
+        filtered_candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        if filtered_candidates:
+            normalized["candidates"] = filtered_candidates
+            if len(filtered_candidates) == 1:
+                normalized["unit"] = filtered_candidates[0]
+                normalized["target_unit"] = filtered_candidates[0]
+        else:
+            normalized.pop("candidates", None)
+            normalized.pop("unit", None)
+            normalized.pop("target_unit", None)
+
+        snapshot = dict(normalized.get("reanimation_bonus_by_unit_id") or {})
+        if snapshot:
+            normalized["reanimation_bonus_by_unit_id"] = {
+                unit_id: snapshot[unit_id]
+                for unit_id in sorted(snapshot)
+                if unit_id in seen
+            }
+
+        enemy_root = self._necrons_root(
+            normalized.get("enemy_unit")
+            or normalized.get("attacker_unit")
+            or normalized.get("target_enemy_unit")
+        )
+        if enemy_root is not None and not self._necrons_owned_by_player(enemy_root):
+            normalized["enemy_unit"] = enemy_root
+            normalized["attacker_unit"] = enemy_root
+            normalized["target_enemy_unit"] = enemy_root
+        return normalized
+
+    def _awakened_dynasty_undying_legions_preflight_context(
+        self,
+        kwargs: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        normalized = dict(kwargs or {})
+        unit = normalized.get("unit") or normalized.get("target_unit")
+        root = self._necrons_root(unit)
+        if root is not None:
+            normalized["unit"] = root
+            normalized["target_unit"] = root
+        pending = self._awakened_dynasty_find_pending_reaction(
+            "PROTOCOL OF THE UNDYING LEGIONS",
+            unit=root,
+        )
+        if isinstance(pending, dict):
+            if not normalized.get("candidates"):
+                normalized["candidates"] = list(pending.get("candidates") or [])
+            enemy_root = self._necrons_root(
+                normalized.get("attacker_unit")
+                or normalized.get("enemy_unit")
+                or normalized.get("target_enemy_unit")
+                or pending.get("attacker_unit")
+                or pending.get("enemy_unit")
+            )
+            if enemy_root is not None:
+                normalized["attacker_unit"] = enemy_root
+                normalized["enemy_unit"] = enemy_root
+                normalized["target_enemy_unit"] = enemy_root
+            phase_name = str(normalized.get("phase_name") or pending.get("phase_name") or "").strip()
+            if phase_name:
+                normalized["phase_name"] = phase_name
+        return normalized
+
+    def _awakened_dynasty_can_use_undying_legions_tool_action(
+        self,
+        stratagem: Any,
+        kwargs: Optional[dict[str, Any]] = None,
+    ) -> Optional[bool]:
+        if not self._is_awakened_dynasty():
+            return None
+        normalized = self._awakened_dynasty_undying_legions_preflight_context(kwargs)
+        unit = normalized.get("unit") or normalized.get("target_unit")
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        pending = self._awakened_dynasty_find_pending_reaction(
+            "PROTOCOL OF THE UNDYING LEGIONS",
+            unit=root,
+        )
+        if not isinstance(pending, dict):
+            return False
+        phase_name = str(normalized.get("phase_name") or pending.get("phase_name") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            return False
+        if not self._awakened_dynasty_unit_eligible(root, require_reanimation=True):
+            return False
+        candidates = list(normalized.get("candidates") or pending.get("candidates") or [])
+        if not self._awakened_dynasty_unit_in_candidates(root, candidates):
+            return False
+        enemy_root = self._necrons_root(
+            normalized.get("attacker_unit")
+            or normalized.get("enemy_unit")
+            or normalized.get("target_enemy_unit")
+            or pending.get("attacker_unit")
+            or pending.get("enemy_unit")
+        )
+        if enemy_root is None or self._necrons_owned_by_player(enemy_root):
+            return False
+        eff_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        preview = getattr(self.player, "preview_stratagem_cp_cost", None)
+        if callable(preview):
+            cost_preview = preview(stratagem, target_unit=root) or {}
+            eff_cost = int(cost_preview.get("cost", eff_cost))
+        if int(getattr(self.player, "command_points", 0) or 0) < eff_cost:
+            return False
+        return True
 
     def _awakened_dynasty_model_anchor_position(self, model: Any) -> tuple[float, float, float] | None:
         if model is None:

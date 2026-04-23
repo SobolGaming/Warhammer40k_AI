@@ -339,6 +339,34 @@ class ReplayStoreRecorder:
                 (int(event_end_id), int(event_end_id), str(decision_id)),
             )
 
+    def flush_runtime_tail(self, game: Game, *, write_keyframe: bool = False) -> None:
+        if game is None:
+            return
+        self._capture_new_events(game)
+        if bool(write_keyframe):
+            decision_idx = int(self.last_decision_idx or 0)
+            latest_keyframe = None
+            with self._connect() as conn:
+                latest_keyframe = conn.execute(
+                    """
+                    SELECT decision_idx, event_id
+                    FROM keyframes
+                    ORDER BY keyframe_id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+            latest_decision_idx = int(latest_keyframe["decision_idx"] or 0) if latest_keyframe is not None else None
+            latest_event_id = int(latest_keyframe["event_id"] or 0) if latest_keyframe is not None else None
+            if latest_decision_idx != decision_idx or latest_event_id != int(self.last_event_id):
+                self._write_keyframe(game, decision_idx=decision_idx, event_id=int(self.last_event_id))
+        self._set_meta(
+            {
+                "updated_at": _utc_now(),
+                "last_decision_idx": int(self.last_decision_idx),
+                "last_event_id": int(self.last_event_id),
+            }
+        )
+
     def record_resolution(
         self,
         game: Game,
@@ -687,7 +715,7 @@ class ReplayStoreReader:
                 SELECT keyframe_id, decision_idx, event_id, snapshot_blob
                 FROM keyframes
                 WHERE decision_idx <= ?
-                ORDER BY decision_idx DESC
+                ORDER BY decision_idx DESC, keyframe_id DESC
                 LIMIT 1
                 """,
                 (int(decision_idx),),
@@ -1622,6 +1650,10 @@ def enable_decision_replay_recording(
 def disable_decision_replay_recording(game: Game) -> None:
     if game is None:
         return
+    recorder = getattr(game, "_decision_replay_recorder", None)
+    flush_runtime_tail = getattr(recorder, "flush_runtime_tail", None)
+    if callable(flush_runtime_tail):
+        flush_runtime_tail(game, write_keyframe=True)
     event_system = getattr(game, "event_system", None)
     if event_system is not None:
         event_system.unsubscribe_group(REPLAY_RECORDING_GROUP)

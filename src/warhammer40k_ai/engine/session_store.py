@@ -202,6 +202,11 @@ def save_session_snapshot(
     session_path = _session_dir(session_id, base_path)
     session_path.mkdir(parents=True, exist_ok=True)
 
+    recorder = getattr(game, "_decision_replay_recorder", None)
+    flush_runtime_tail = getattr(recorder, "flush_runtime_tail", None)
+    if callable(flush_runtime_tail):
+        flush_runtime_tail(game, write_keyframe=True)
+
     snapshot = game.save_snapshot()
     snapshot_path = session_path / SNAPSHOT_FILENAME
     _write_json(snapshot_path, snapshot)

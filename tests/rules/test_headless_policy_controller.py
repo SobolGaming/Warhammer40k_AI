@@ -5,6 +5,7 @@ import time
 
 from shapely.geometry import Point
 
+import warhammer40k_ai.engine.headless_policy_controller as headless_policy_module
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ASSIGN_TRANSPORT,
@@ -2277,3 +2278,549 @@ def test_headless_policy_controller_places_strategic_zone_packers_after_primary_
     metric = controller.get_reserves_arrival_search_metrics()[-1]
     assert str(metric.get("first_valid_source", "") or "") == "zone_packer_rows:edge_own"
     assert int(metric.get("build_calls", 0) or 0) < 600
+
+
+def test_headless_policy_controller_synthesizes_reanimation_placement_payload(monkeypatch) -> None:
+    class _Base:
+        has_circular_base = True
+
+        def __init__(self, x: float, y: float, *, radius: float = 0.5) -> None:
+            self.x = float(x)
+            self.y = float(y)
+            self.z = 0.0
+            self.facing = 0.0
+            self._radius = float(radius)
+
+        def get_radius(self) -> float:
+            return float(self._radius)
+
+        def get_longest_radius(self) -> float:
+            return float(self._radius)
+
+    class _Model:
+        def __init__(self, model_id: str, *, x: float, y: float) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = _Base(x=float(x), y=float(y))
+            self.is_alive = True
+
+        def get_location(self) -> tuple[float, float, float, float]:
+            return (
+                float(self.model_base.x),
+                float(self.model_base.y),
+                float(self.model_base.z),
+                float(self.model_base.facing),
+            )
+
+        def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+            self.model_base.x = float(x)
+            self.model_base.y = float(y)
+            self.model_base.z = float(z)
+            self.model_base.facing = float(facing)
+
+    class _Unit:
+        def __init__(self) -> None:
+            self._id = "unit:reanimation"
+            self.id = "unit:reanimation"
+            self.name = "Immortals"
+            anchor = _Model("model:anchor", x=1.0, y=1.0)
+            returned = _Model("model:return", x=-1.0, y=-1.0)
+            returned.is_alive = False
+            returned._pending_placement = True
+            returned._pending_placement_source = "reanimation"
+            self.models = [anchor, returned]
+            self.calls: list[tuple[str, list[str], int, object]] = []
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def _find_reanimation_position(self, model, alive_models, *, game_map, required_neighbors):
+            self.calls.append(
+                (
+                    str(model.id),
+                    [str(other.id) for other in list(alive_models or [])],
+                    int(required_neighbors),
+                    game_map,
+                )
+            )
+            return (3.0, 4.0, 0.0, 90.0)
+
+    class _Game:
+        def __init__(self, unit: _Unit) -> None:
+            self.is_authoritative = True
+            self.map = object()
+            self._unit = unit
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            if str(unit_id) == str(self._unit.id):
+                return self._unit
+            return None
+
+    unit = _Unit()
+    game = _Game(unit)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Place models for Immortals",
+        player_id="player:necrons",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit.id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "deploy",
+            "placement_kind": "reanimation",
+            "allowed_model_ids": ["model:return"],
+            "allow_skip": False,
+        },
+    )
+
+    resolved_payloads: list[dict[str, object]] = []
+
+    def _fake_resolve_decision_command(
+        _game,
+        _request,
+        _option_id,
+        *,
+        result_payload,
+        player_id,
+        metadata,
+    ):
+        del _game, _request, _option_id, player_id, metadata
+        resolved_payloads.append(dict(result_payload or {}))
+        return _ApplyResult(ok=True)
+
+    monkeypatch.setattr(headless_policy_module, "resolve_decision_command", _fake_resolve_decision_command)
+
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    controller.on_decision_requested(game, request)
+
+    assert resolved_payloads == [
+        {
+            "unit_id": "unit:reanimation",
+            "movement_type": "deploy",
+            "action": "confirm",
+            "model_positions": [
+                {
+                    "model_id": "model:return",
+                    "position": [3.0, 4.0, 0.0],
+                    "facing": 90.0,
+                }
+            ],
+        }
+    ]
+    assert unit.calls == [("model:return", ["model:anchor"], 1, game.map)]
+    assert unit.models[1].get_location() == (-1.0, -1.0, 0.0, 0.0)
+
+
+def test_headless_policy_controller_synthesizes_reanimation_from_attached_members(monkeypatch) -> None:
+    class _Base:
+        has_circular_base = True
+
+        def __init__(self, x: float, y: float, *, radius: float = 0.5) -> None:
+            self.x = float(x)
+            self.y = float(y)
+            self.z = 0.0
+            self.facing = 0.0
+            self._radius = float(radius)
+
+        def get_radius(self) -> float:
+            return float(self._radius)
+
+        def get_longest_radius(self) -> float:
+            return float(self._radius)
+
+    class _Model:
+        def __init__(self, model_id: str, *, x: float, y: float, alive: bool = True) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = _Base(x=float(x), y=float(y))
+            self.is_alive = bool(alive)
+
+        def get_location(self) -> tuple[float, float, float, float]:
+            return (
+                float(self.model_base.x),
+                float(self.model_base.y),
+                float(self.model_base.z),
+                float(self.model_base.facing),
+            )
+
+        def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+            self.model_base.x = float(x)
+            self.model_base.y = float(y)
+            self.model_base.z = float(z)
+            self.model_base.facing = float(facing)
+
+    class _Root:
+        def __init__(self) -> None:
+            self._id = "unit:root"
+            self.id = "unit:root"
+            self.name = "Attached Root"
+            self.calls: list[tuple[str, list[str], int, object]] = []
+            self.members = []
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_members(self):
+            return list(self.members)
+
+        def get_attached_unit_models(self):
+            return []
+
+        def _find_reanimation_position(self, model, alive_models, *, game_map, required_neighbors):
+            self.calls.append(
+                (
+                    str(model.id),
+                    [str(other.id) for other in list(alive_models or [])],
+                    int(required_neighbors),
+                    game_map,
+                )
+            )
+            return (6.0, 7.0, 0.0, 45.0)
+
+    class _MemberUnit:
+        def __init__(self, unit_id: str, root: _Root, models: list[_Model]) -> None:
+            self._id = unit_id
+            self.id = unit_id
+            self.name = unit_id
+            self._root = root
+            self.models = list(models)
+
+        def get_attached_unit_root(self):
+            return self._root
+
+    class _Game:
+        def __init__(self, member: _MemberUnit) -> None:
+            self.is_authoritative = True
+            self.map = object()
+            self._member = member
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            if str(unit_id) == str(self._member.id):
+                return self._member
+            return None
+
+    root = _Root()
+    anchor_member = _MemberUnit("unit:leader", root, [_Model("model:anchor", x=2.0, y=2.0, alive=True)])
+    pending_model = _Model("model:return", x=-2.0, y=-2.0, alive=False)
+    pending_model._pending_placement = True
+    pending_model._pending_placement_source = "reanimation"
+    target_member = _MemberUnit("unit:bodyguard", root, [pending_model])
+    root.members = [anchor_member, target_member]
+    game = _Game(target_member)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Place models for Necron Warriors",
+        player_id="player:necrons",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": target_member.id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ],
+        context={
+            "unit_id": target_member.id,
+            "movement_type": "deploy",
+            "placement_kind": "reanimation",
+            "allowed_model_ids": ["model:return"],
+            "allow_skip": False,
+        },
+    )
+
+    resolved_payloads: list[dict[str, object]] = []
+
+    def _fake_resolve_decision_command(
+        _game,
+        _request,
+        _option_id,
+        *,
+        result_payload,
+        player_id,
+        metadata,
+    ):
+        del _game, _request, _option_id, player_id, metadata
+        resolved_payloads.append(dict(result_payload or {}))
+        return _ApplyResult(ok=True)
+
+    monkeypatch.setattr(headless_policy_module, "resolve_decision_command", _fake_resolve_decision_command)
+
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    controller.on_decision_requested(game, request)
+
+    assert resolved_payloads == [
+        {
+            "unit_id": "unit:bodyguard",
+            "movement_type": "deploy",
+            "action": "confirm",
+            "model_positions": [
+                {
+                    "model_id": "model:return",
+                    "position": [6.0, 7.0, 0.0],
+                    "facing": 45.0,
+                }
+            ],
+        }
+    ]
+    assert root.calls == [("model:return", ["model:anchor"], 1, game.map)]
+    assert pending_model.get_location() == (-2.0, -2.0, 0.0, 0.0)
+
+
+def test_headless_policy_controller_backtracks_reanimation_positions_to_restore_coherency(monkeypatch) -> None:
+    from warhammer40k_ai.utility.calcs import validate_unit_coherency_after_movement
+
+    class _Base:
+        has_circular_base = True
+
+        def __init__(self, base_type: str = "circular", radius: float = 0.6299) -> None:
+            self.base_type = str(base_type)
+            self.radius = float(radius)
+            self.x = 0.0
+            self.y = 0.0
+            self.z = 0.0
+            self.facing = 0.0
+
+        def set_position(self, x: float, y: float, z: float) -> None:
+            self.x = float(x)
+            self.y = float(y)
+            self.z = float(z)
+
+        def set_facing(self, facing: float) -> None:
+            self.facing = float(facing)
+
+        def get_radius(self) -> float:
+            return float(self.radius)
+
+        def get_longest_radius(self) -> float:
+            return float(self.radius)
+
+        def get_base_shape(self):
+            return Point(float(self.x), float(self.y)).buffer(float(self.radius))
+
+        def collides_with(self, other: "_Base") -> bool:
+            return bool(self.get_base_shape().distance(other.get_base_shape()) <= 1e-6)
+
+    class _Model:
+        def __init__(
+            self,
+            model_id: str,
+            *,
+            x: float,
+            y: float,
+            z: float = 0.0,
+            facing: float = 1.6671,
+            alive: bool = True,
+        ) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = _Base()
+            self.model_base.set_position(float(x), float(y), float(z))
+            self.model_base.set_facing(float(facing))
+            self.is_alive = bool(alive)
+            self._pending_placement = False
+            self._pending_placement_source = ""
+
+        def get_location(self) -> tuple[float, float, float, float]:
+            return (
+                float(self.model_base.x),
+                float(self.model_base.y),
+                float(self.model_base.z),
+                float(self.model_base.facing),
+            )
+
+        def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+            self.model_base.set_position(float(x), float(y), float(z))
+            self.model_base.set_facing(float(facing))
+
+    class _Map:
+        def is_within_boundary(self, _model: object, destination: tuple[float, float]) -> bool:
+            x, y = destination
+            return 0.0 <= float(x) <= 60.0 and 0.0 <= float(y) <= 44.0
+
+        def check_collision_with_obstacles(self, _model: object, destination: tuple[float, float]) -> bool:
+            del destination
+            return False
+
+        def check_collision_with_other_friendly_units(self, _model: object, destination: tuple[float, float]) -> bool:
+            del destination
+            return False
+
+        def check_collision_with_other_enemy_units(self, _model: object, destination: tuple[float, float]) -> bool:
+            del destination
+            return False
+
+    class _Unit:
+        def __init__(self) -> None:
+            self._id = "unit:warriors"
+            self.id = "unit:warriors"
+            self.name = "Necron Warriors"
+            facing = 1.6671
+            anchored_positions = [
+                ("model:a1", 43.026, 22.191, 0.12),
+                ("model:a2", 44.534, 22.191, 0.0),
+                ("model:a3", 46.042, 22.191, 0.0),
+                ("model:a4", 48.050, 22.191, 0.0),
+                ("model:a5", 45.034, 23.699, 0.0),
+                ("model:a6", 43.254, 20.912, 0.0),
+            ]
+            pending_positions = [
+                ("model:p1", 44.534, 20.683, 0.0),
+                ("model:p2", 46.042, 20.683, 0.0),
+                ("model:p3", 48.050, 20.683, 0.0),
+            ]
+            self.models = [
+                _Model(model_id, x=x, y=y, z=z, facing=facing, alive=True)
+                for model_id, x, y, z in anchored_positions
+            ]
+            for model_id, x, y, z in pending_positions:
+                model = _Model(model_id, x=x, y=y, z=z, facing=facing, alive=True)
+                model._pending_placement = True
+                model._pending_placement_source = "reanimation"
+                self.models.append(model)
+            self._greedy_positions = {
+                "model:p1": (43.681, 23.325493, 0.12, facing),
+                "model:p2": (42.371, 23.325493, 0.12, facing),
+                "model:p3": (41.716, 22.191000, 0.12, facing),
+            }
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def _create_potential_base(self, x: float, y: float, z: float, facing: float, *, model: _Model | None = None) -> _Base:
+            radius = float(model.model_base.get_radius()) if model is not None else 0.6299
+            base = _Base(radius=radius)
+            base.set_position(float(x), float(y), float(z))
+            base.set_facing(float(facing))
+            return base
+
+        def _reanimation_position_valid(
+            self,
+            x: float,
+            y: float,
+            z: float,
+            facing: float,
+            model: _Model,
+            alive_models: list[_Model],
+            game_map: _Map,
+            required_neighbors: int,
+        ) -> bool:
+            if not game_map.is_within_boundary(model, (x, y)):
+                return False
+            candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+            for other in list(alive_models or []):
+                if not getattr(other, "is_alive", True):
+                    continue
+                if candidate_base.collides_with(other.model_base):
+                    return False
+            if required_neighbors <= 0:
+                return True
+            neighbors = 0
+            for other in list(alive_models or []):
+                if not getattr(other, "is_alive", True):
+                    continue
+                horizontal = candidate_base.get_base_shape().distance(other.model_base.get_base_shape())
+                vertical = abs(float(candidate_base.z) - float(other.model_base.z))
+                if horizontal <= 2.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                    neighbors += 1
+                    if neighbors >= required_neighbors:
+                        return True
+            return False
+
+        def _find_reanimation_position(self, model, alive_models, *, game_map, required_neighbors):
+            del alive_models, game_map, required_neighbors
+            return self._greedy_positions[str(model.id)]
+
+    class _Game:
+        def __init__(self, unit: _Unit) -> None:
+            self.is_authoritative = True
+            self.map = _Map()
+            self._unit = unit
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            if str(unit_id) == str(self._unit.id):
+                return self._unit
+            return None
+
+    unit = _Unit()
+    game = _Game(unit)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Place models for Necron Warriors",
+        player_id="player:necrons",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit.id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "deploy",
+            "placement_kind": "reanimation",
+            "allowed_model_ids": ["model:p1", "model:p2", "model:p3"],
+            "allow_skip": False,
+        },
+    )
+
+    resolved_payloads: list[dict[str, object]] = []
+
+    def _payload_is_coherent(model_positions: list[dict[str, object]]) -> bool:
+        original_locations = {str(model.id): model.get_location() for model in unit.models}
+        try:
+            for entry in list(model_positions or []):
+                model_id = str(entry.get("model_id", "") or "")
+                target = next((model for model in unit.models if str(model.id) == model_id), None)
+                if target is None:
+                    return False
+                position = list(entry.get("position", []) or [])
+                if len(position) < 3:
+                    return False
+                target.set_location(
+                    float(position[0]),
+                    float(position[1]),
+                    float(position[2]),
+                    float(entry.get("facing", 0.0) or 0.0),
+                )
+            coherent, _bad = validate_unit_coherency_after_movement(
+                unit,
+                [tuple(model.get_location()[:3]) for model in unit.models],
+                ignore_pending=False,
+            )
+            return bool(coherent)
+        finally:
+            for model in unit.models:
+                location = original_locations[str(model.id)]
+                model.set_location(*location)
+
+    def _fake_resolve_decision_command(
+        _game,
+        _request,
+        _option_id,
+        *,
+        result_payload,
+        player_id,
+        metadata,
+    ):
+        del _game, _request, _option_id, player_id, metadata
+        resolved_payloads.append(dict(result_payload or {}))
+        coherent = _payload_is_coherent(list(result_payload.get("model_positions", []) or []))
+        return _ApplyResult(ok=coherent)
+
+    monkeypatch.setattr(headless_policy_module, "resolve_decision_command", _fake_resolve_decision_command)
+
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    controller.on_decision_requested(game, request)
+
+    assert len(resolved_payloads) == 1
+    model_positions = list(resolved_payloads[0].get("model_positions", []) or [])
+    assert len(model_positions) == 3
+    third = next(entry for entry in model_positions if str(entry.get("model_id", "")) == "model:p3")
+    assert float(third["position"][0]) > 44.0

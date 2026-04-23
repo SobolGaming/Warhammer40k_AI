@@ -2,7 +2,11 @@ import unittest
 
 from types import SimpleNamespace
 
+from shapely.geometry import Polygon
+
+from warhammer40k_ai.battlefield.map import RuinsTerrain
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.constants import RUINS_FLOOR_THICKNESS
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -344,6 +348,37 @@ def test_reanimation_return_model_without_sync_owner_raises_and_stays_pending():
         and str((getattr(req, "context", {}) or {}).get("selection_kind", "") or "") == "reanimation_return_model"
     ]
     assert len(pending) == 1
+
+
+def test_reanimation_position_valid_rejects_ruins_wall_overlap():
+    unit = _make_game_unit(name="Warriors", datasheet_id="necron_reanim_ruins", model_count=2)
+    game, _player = _build_game_with_unit(unit, local=False)
+    footprint = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    wall = Polygon([(4.8, 0.0), (5.2, 0.0), (5.2, 10.0), (4.8, 10.0)])
+    ruins = RuinsTerrain(
+        footprint=footprint,
+        walls=[{"polygon": wall, "z_bottom": 0.0, "z_top": 2.0, "thickness": 0.4}],
+        openings=[],
+        floors=[{"polygon": footprint, "elevation": 0.0, "thickness": RUINS_FLOOR_THICKNESS}],
+        height_map={},
+    )
+    game.map.terrain_features = [ruins]
+
+    anchor = unit.models[0]
+    target = unit.models[1]
+    anchor.set_location(2.0, 5.0, RUINS_FLOOR_THICKNESS, 0.0)
+    target.set_location(8.0, 5.0, RUINS_FLOOR_THICKNESS, 0.0)
+
+    assert unit._reanimation_position_valid(
+        5.0,
+        5.0,
+        RUINS_FLOOR_THICKNESS,
+        0.0,
+        target,
+        [anchor],
+        game.map,
+        0,
+    ) is False
 
 
 if __name__ == "__main__":
