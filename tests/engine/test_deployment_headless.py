@@ -312,16 +312,26 @@ def test_relaxed_deployment_fallback_anchor_count_is_bounded() -> None:
         def __init__(self) -> None:
             self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
 
-    unit = _StubUnit("unit:bounded", must_start_in_reserves=False)
     maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), exhaustive_anchor_limit=512)
 
-    anchors = maker._relaxed_deployment_anchor_candidates(
-        unit,
+    single_model_unit = _StubUnit("unit:bounded_single", must_start_in_reserves=False)
+    single_model_anchors = maker._relaxed_deployment_anchor_candidates(
+        single_model_unit,
         {"name": "zone", "x_range": [0.0, 60.0], "y_range": [0.0, 44.0]},
         already_deployed=[],
     )
 
-    assert 1 <= len(anchors) <= 128
+    assert 128 < len(single_model_anchors) <= 512
+
+    multi_model_unit = _StubUnit("unit:bounded_multi", must_start_in_reserves=False)
+    multi_model_unit.models = [_StubModel(f"unit:bounded_multi:model:{i}") for i in range(10)]
+    multi_model_anchors = maker._relaxed_deployment_anchor_candidates(
+        multi_model_unit,
+        {"name": "zone", "x_range": [0.0, 60.0], "y_range": [0.0, 44.0]},
+        already_deployed=[],
+    )
+
+    assert 1 <= len(multi_model_anchors) <= 128
 
 
 def test_zone_choice_uses_pregame_teacher_when_player_context_available(

@@ -676,7 +676,15 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         )
         if bounds is None:
             return []
-        relaxed_limit = min(128, max(32, int(self._exhaustive_anchor_limit)))
+        alive_models = [
+            model
+            for model in list(getattr(unit, "models", []) or [])
+            if model is not None and bool(getattr(model, "is_alive", True))
+        ]
+        if len(alive_models) <= 2:
+            relaxed_limit = min(512, max(512, int(self._exhaustive_anchor_limit)))
+        else:
+            relaxed_limit = min(128, max(32, int(self._exhaustive_anchor_limit)))
         return self._candidate_positions_exhaustive_for_bounds(
             unit,
             bounds=bounds,
