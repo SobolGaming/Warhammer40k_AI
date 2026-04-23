@@ -123,6 +123,17 @@ def test_catalog_enumerates_faction_datasheets_points_and_detachments(
     assert any(option.name == "Disciple of Khorne" for option in enhancement_options)
 
 
+def test_catalog_accepts_source_case_votann_faction_id(waha_helper: WahaHelper) -> None:
+    catalog = RosterSynthesisCatalog(waha_helper)
+    supported = dict(catalog.supported_factions())
+    assert supported["LoV"] == "Leagues of Votann"
+
+    constraints = catalog.resolve_faction_constraints(
+        RosterSynthesisSeed(max_points=2000, faction="Leagues of Votann")
+    )
+    assert constraints == (("LoV", "Leagues of Votann", "Leagues of Votann"),)
+
+
 @pytest.mark.integration
 def test_khorne_daemonkin_musters_blood_legions_as_allies_not_primary_faction(
     waha_helper: WahaHelper,

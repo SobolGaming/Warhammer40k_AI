@@ -137,6 +137,27 @@ class ToolActionCandidateValidator:
         if unit is None:
             return None
         root = self._unit_root(unit)
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {})
+
+        required_keyword = str(effect_params.get("required_keyword", "") or "").strip()
+        if required_keyword and not self._unit_has_keyword(root, required_keyword):
+            return self._descriptor_issue("unit_keywords")
+
+        required_keywords_all = tuple(
+            str(keyword or "").strip()
+            for keyword in list(effect_params.get("required_keywords_all") or [])
+            if str(keyword or "").strip()
+        )
+        if required_keywords_all and not self._unit_has_all_keywords(root, required_keywords_all):
+            return self._descriptor_issue("unit_keywords")
+
+        required_keywords_any = tuple(
+            str(keyword or "").strip()
+            for keyword in list(effect_params.get("required_keywords_any") or [])
+            if str(keyword or "").strip()
+        )
+        if required_keywords_any and not self._unit_has_any_keyword(root, required_keywords_any):
+            return self._descriptor_issue("unit_keywords")
 
         if "world_eaters_possessed" in target_text:
             if not self._unit_has_all_keywords(root, ("WORLD EATERS", "POSSESSED")):

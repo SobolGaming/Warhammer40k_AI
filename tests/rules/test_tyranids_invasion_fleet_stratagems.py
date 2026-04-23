@@ -549,6 +549,68 @@ def test_endless_swarm_returns_destroyed_models_for_selected_units():
     assert len(unit_b.models_lost) == 0
 
 
+def test_endless_swarm_tool_action_context_only_exposes_damaged_endless_multitude_units():
+    game, tyr_player, _enemy_player, tyr_army, _enemy_army = _build_game()
+    damaged_endless = _make_unit(
+        "Termagants Alpha",
+        keywords=["INFANTRY", "ENDLESS MULTITUDE", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+        wounds="1",
+    )
+    damaged_non_endless = _make_unit(
+        "Hive Guard",
+        keywords=["INFANTRY", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+        wounds="2",
+    )
+    full_endless = _make_unit(
+        "Hormagaunts",
+        keywords=["INFANTRY", "ENDLESS MULTITUDE", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+        wounds="1",
+    )
+    tyr_army.add_unit(damaged_endless)
+    tyr_army.add_unit(damaged_non_endless)
+    tyr_army.add_unit(full_endless)
+    _deploy_unit(game, damaged_endless, 10.0, 10.0)
+    _deploy_unit(game, damaged_non_endless, 20.0, 10.0)
+    _deploy_unit(game, full_endless, 30.0, 10.0)
+    damaged_endless.models_lost.append(damaged_endless.models[0])
+    damaged_non_endless.models_lost.append(damaged_non_endless.models[0])
+
+    _set_phase(game, tyr_player, "COMMAND_PHASE", 0)
+    assert tyr_player.stratagems.can_use(
+        "ENDLESS SWARM",
+        unit=damaged_endless,
+        phase_name="Command phase",
+    )
+    assert not tyr_player.stratagems.can_use(
+        "ENDLESS SWARM",
+        unit=damaged_non_endless,
+        phase_name="Command phase",
+    )
+    assert not tyr_player.stratagems.can_use(
+        "ENDLESS SWARM",
+        unit=full_endless,
+        phase_name="Command phase",
+    )
+
+    items = tyr_player.stratagems.get_phase_stratagem_items()
+    endless_item = next(item for item in items if str(item.get("name", "")).upper() == "ENDLESS SWARM")
+    assert [unit.name for unit in endless_item["context"]["candidates"]] == ["Termagants Alpha"]
+
+    specs = tyr_player.stratagems._build_tool_action_specs_for_item(endless_item)
+    specs = tyr_player.stratagems._filter_legal_tool_action_specs(specs)
+    assert specs
+    labels = [str(spec.get("label", "") or "") for spec in specs]
+    assert any("Termagants Alpha" in label for label in labels)
+    assert not any("Hive Guard" in label or "Hormagaunts" in label for label in labels)
+    payload_texts = [str((spec.get("payload", {}) or {}).get("resolved_kwargs", {}) or {}) for spec in specs]
+    assert all(str(damaged_endless.id) in payload_text for payload_text in payload_texts)
+    assert not any(str(damaged_non_endless.id) in payload_text for payload_text in payload_texts)
+    assert not any(str(full_endless.id) in payload_text for payload_text in payload_texts)
+
+
 def test_invasion_fleet_stratagem_descriptors_registered():
     rapid = get_stratagem_tool_descriptor(stratagem_id="000008349002")
     assert rapid is not None

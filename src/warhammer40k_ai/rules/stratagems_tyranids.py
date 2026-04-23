@@ -627,6 +627,57 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_invasion_fleet_tool_action_context(
+        self,
+        stratagem_name: str,
+        *,
+        phase_name: str = "",
+    ) -> dict[str, Any]:
+        if not self._is_tyranids_invasion_fleet_detachment():
+            return {}
+        if self._tyr_phase_name(phase_name) != "command phase":
+            return {}
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u == "PREDATORY IMPERATIVE":
+            return {
+                "candidates": self._tyr_predatory_imperative_candidates(),
+                "max_units": 2,
+            }
+        if name_u == "ENDLESS SWARM":
+            return {
+                "candidates": self._tyr_endless_swarm_candidates(),
+                "max_units": 2,
+            }
+        return {}
+
+    def _tyr_can_use_invasion_fleet_tool_action(self, stratagem_name: str, kwargs: dict[str, Any]) -> Optional[bool]:
+        if not self._is_tyranids_invasion_fleet_detachment():
+            return None
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"PREDATORY IMPERATIVE", "ENDLESS SWARM"}:
+            return None
+        phase_name = self._tyr_phase_name((kwargs or {}).get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "command phase" or not self._tyr_is_own_command_phase(phase_name=phase_name):
+            return False
+        selected = (kwargs or {}).get("units") or (kwargs or {}).get("selected_units")
+        if selected is None:
+            selected = (kwargs or {}).get("target_units")
+        if selected is None:
+            selected = (kwargs or {}).get("unit") or (kwargs or {}).get("target_unit")
+        selected_roots = self._tyr_resolve_units(selected)
+        if not selected_roots or len(selected_roots) > 2:
+            return False
+        eligible = (
+            self._tyr_predatory_imperative_candidates()
+            if name_u == "PREDATORY IMPERATIVE"
+            else self._tyr_endless_swarm_candidates()
+        )
+        if any(not self._tyr_unit_in_candidates(root, eligible) for root in selected_roots):
+            return False
+        if len(selected_roots) == 2 and not all(self._tyr_unit_in_synapse_range(root) for root in selected_roots):
+            return False
+        return True
+
     def _tyr_unending_swarm_bounding_advance_candidates(self) -> list[Any]:
         if not self._is_tyranids_unending_swarm_detachment():
             return []

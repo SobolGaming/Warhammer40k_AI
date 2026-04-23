@@ -509,7 +509,7 @@ class RosterSynthesisCatalog:
         options: list[tuple[str, str]] = []
         for faction_id, row in sorted(self._waha.factions.items(), key=lambda item: str(item[0])):
             faction_id = str(faction_id or "").strip()
-            if faction_id not in SUPPORTED_FACTION_IDS:
+            if faction_id.upper() not in SUPPORTED_FACTION_IDS:
                 continue
             faction_name = str((row or {}).get("name", "") or faction_id).strip()
             if self.unit_options(faction_id) and self.detachment_options(faction_id):
@@ -537,7 +537,7 @@ class RosterSynthesisCatalog:
 
         if explicit_faction:
             faction_id = get_faction_id_from_name(explicit_faction)
-            if faction_id not in SUPPORTED_FACTION_IDS:
+            if str(faction_id or "").strip().upper() not in SUPPORTED_FACTION_IDS:
                 supported = ", ".join(name for _fid, name in self.supported_factions())
                 raise ValueError(f"Unknown or unsupported faction {explicit_faction!r}. Supported: {supported}.")
             faction_name = self.faction_name(str(faction_id))

@@ -22513,6 +22513,9 @@ class StratagemManager(
             return False
         if name_u == "LIMB FROM LIMB" and not self._sm_can_use_rage_cursed_limb_from_limb_tool_action(kwargs):
             return False
+        tyranids_result = self._tyr_can_use_invasion_fleet_tool_action(name_u, kwargs)
+        if tyranids_result is not None and not tyranids_result:
+            return False
         if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
@@ -31309,6 +31312,9 @@ class StratagemManager(
             ]
             candidates.sort(key=self._tool_action_sort_key)
             return {"candidates": candidates}
+        tyranids_context = self._tyr_invasion_fleet_tool_action_context(name_u, phase_name=phase_label)
+        if tyranids_context:
+            return dict(tyranids_context)
         return {}
 
     # -------- UI helpers for non-disruptive prompts --------
