@@ -20158,6 +20158,219 @@ class SpaceMarinesStratagemMixin:
             return normalized
         return ""
 
+    def _sm_can_use_company_hunters_trail_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_company_of_hunters_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            return False
+        unit, candidates, objective, objective_candidates, _enemy_unit, _enemy_candidates, _hits_by_target, _attacking_unit, _from_pending = self._sm_company_of_hunters_context(
+            "HUNTERS' TRAIL",
+            kwargs,
+        )
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            return False
+        if not self._sm_is_ravenwing_mounted_unit(root):
+            return False
+        valid_candidates, objective_map = self._space_marines_company_of_hunters_hunters_trail_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            return False
+        if not objective_candidates:
+            objective_candidates = list(objective_map.get(self._sm_sort_key(root)) or [])
+        if objective is None:
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            return False
+        return getattr(objective, "location", None) is not None
+
+    def _sm_can_use_saga_hunters_trail_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        (
+            selected_roots,
+            candidates,
+            _enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            _trigger_unit,
+            _target_units,
+            _beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context("HUNTERS' TRAIL", kwargs)
+        root = selected_roots[0] if selected_roots else None
+        if root is None and len(candidates) == 1:
+            root = self._sm_root(candidates[0])
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            return False
+        if self._sm_is_vehicle_unit(root) or self._sm_has_keyword(root, "MONSTER"):
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            return False
+        eligible = candidates or self._space_marines_hunter_hunters_trail_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            return False
+        return True
+
+    def _sm_can_use_hunters_trail_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if self._is_company_of_hunters_detachment():
+            return self._sm_can_use_company_hunters_trail_tool_action(kwargs)
+        if self._is_saga_of_the_hunter_detachment():
+            return self._sm_can_use_saga_hunters_trail_tool_action(kwargs)
+        return False
+
+    def _sm_can_use_company_talon_strike_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_company_of_hunters_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            return False
+        unit, candidates, _objective, _objective_candidates, _enemy_unit, _enemy_candidates, _hits_by_target, _attacking_unit, _from_pending = self._sm_company_of_hunters_context(
+            "TALON STRIKE",
+            kwargs,
+        )
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            return False
+        if not self._sm_is_ravenwing_mounted_unit(root):
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            return False
+        eligible = candidates or self._space_marines_company_of_hunters_talon_strike_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+        )
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            return False
+        return True
+
+    def _sm_can_use_bastion_codex_discipline_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_bastion_task_force_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            return False
+        unit, candidates, _from_pending = self._sm_bastion_context("CODEX DISCIPLINE", kwargs)
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            return False
+        eligible = candidates or self._space_marines_bastion_phase_start_candidates(phase_key=phase_name)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            return False
+        return True
+
+    def _sm_can_use_bastion_light_of_vengeance_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_bastion_task_force_detachment():
+            return False
+        choice = self._sm_bastion_light_choice(
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+        )
+        if not choice:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            return False
+        unit, candidates, _from_pending = self._sm_bastion_context("LIGHT OF VENGEANCE", kwargs)
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            return False
+        eligible = candidates or self._space_marines_bastion_phase_start_candidates(phase_key=phase_name)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            return False
+        return True
+
+    @staticmethod
+    def _sm_limb_from_limb_choice(choice: Any) -> str:
+        if isinstance(choice, dict):
+            choice = choice.get("choice") or choice.get("mode")
+        normalized = str(choice or "").strip().lower()
+        if normalized in {"strength", "str", "s"}:
+            return "strength"
+        if normalized in {"ap", "armour_penetration", "armor_penetration"}:
+            return "ap"
+        if normalized in {"red_thirst", "red thirst", "both", "strength_and_ap"}:
+            return "red_thirst"
+        return ""
+
+    def _sm_can_use_rage_cursed_limb_from_limb_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_rage_cursed_onslaught", None) if mgr is not None else None
+        if not (callable(checker) and bool(checker())):
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        root = self._sm_root(kwargs.get("unit") or kwargs.get("target_unit"))
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._sm_has_keyword(root, "BLOOD ANGELS"):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+            return False
+        return bool(self._sm_limb_from_limb_choice(kwargs.get("choice") or kwargs.get("limb_from_limb_choice")))
+
     def _sm_anvil_context(self, stratagem_name: str, kwargs: dict[str, Any]) -> tuple[Any, list[Any], Any, bool]:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])

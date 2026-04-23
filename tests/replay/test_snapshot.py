@@ -750,6 +750,23 @@ def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_help
     assert hooks == [{"unit": loaded_unit_one}]
 
 
+def test_snapshot_roundtrip_restores_manager_set_fields(waha_helper):
+    game, _, _, player_one, _ = _build_game(waha_helper)
+    player_one.stratagems._used_stratagems_this_phase.add("STORM OF DARKNESS")
+    player_one.stratagems._skipped_tool_action_signatures.add("reaction:storm")
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_player_one = next(player for player in list(loaded.players or []) if player.id == player_one.id)
+    manager = loaded_player_one.stratagems
+
+    assert manager._used_stratagems_this_phase == {"STORM OF DARKNESS"}
+    assert isinstance(manager._used_stratagems_this_phase, set)
+    assert manager._skipped_tool_action_signatures == {"reaction:storm"}
+    assert isinstance(manager._skipped_tool_action_signatures, set)
+    manager._used_stratagems_this_phase.add("DARK FLAME")
+    manager._skipped_tool_action_signatures.discard("reaction:storm")
+
+
 def test_snapshot_roundtrip_preserves_player_color_state_and_pending_color_decisions(waha_helper):
     game, _, _, player_one, player_two = _build_game(waha_helper)
     player_one.set_ui_color([11, 22, 33], hue_degrees=45, selected=True, source="selected")

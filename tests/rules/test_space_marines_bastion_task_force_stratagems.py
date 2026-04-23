@@ -298,7 +298,11 @@ def test_codex_discipline_grants_hit_rerolls_and_conditional_wound_rerolls_then_
     _deploy_unit(game, enemy, 16.0, 10.0)
     game.rebuild_entity_registry()
 
+    _set_phase(game, _enemy_player, "SHOOTING_PHASE", 1)
+    assert sm_player.stratagems.can_use("CODEX DISCIPLINE", unit=intercessors, phase_name="Shooting phase") is False
+
     _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
+    assert sm_player.stratagems.can_use("CODEX DISCIPLINE", unit=intercessors, phase_name="Shooting phase") is True
     ok = sm_player.stratagems.use("CODEX DISCIPLINE", unit=intercessors, dequeue=True, phase_name="Shooting phase")
     assert ok is True
     assert int(sm_player.command_points or 0) == 9
@@ -347,7 +351,28 @@ def test_light_of_vengeance_grants_lethal_hits_to_battleline_without_scan_then_c
     _deploy_unit(game, enemy, 16.0, 10.0)
     game.rebuild_entity_registry()
 
+    _set_phase(game, _enemy_player, "SHOOTING_PHASE", 1)
+    assert (
+        sm_player.stratagems.can_use(
+            "LIGHT OF VENGEANCE",
+            unit=intercessors,
+            choice="LETHAL_HITS",
+            phase_name="Shooting phase",
+        )
+        is False
+    )
+
     _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
+    assert sm_player.stratagems.can_use("LIGHT OF VENGEANCE", unit=intercessors, phase_name="Shooting phase") is False
+    assert (
+        sm_player.stratagems.can_use(
+            "LIGHT OF VENGEANCE",
+            unit=intercessors,
+            choice="LETHAL_HITS",
+            phase_name="Shooting phase",
+        )
+        is True
+    )
     ok = sm_player.stratagems.use(
         "LIGHT OF VENGEANCE",
         unit=intercessors,

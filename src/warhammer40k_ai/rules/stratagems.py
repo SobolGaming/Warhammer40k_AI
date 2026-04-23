@@ -22499,6 +22499,20 @@ class StratagemManager(
             return False
         if name_u == "VIOLENT CRESCENDO" and not self._ec_can_use_carnival_violent_crescendo_tool_action(kwargs):
             return False
+        if name_u == "SNAP TO IT" and not self._am_can_use_grizzled_snap_to_it_tool_action(kwargs):
+            return False
+        if name_u == "PTERRORSHADES" and not self._chaos_knights_can_use_traitoris_pterrorshades_tool_action(kwargs):
+            return False
+        if name_u == "HUNTERS' TRAIL" and not self._sm_can_use_hunters_trail_tool_action(kwargs):
+            return False
+        if name_u == "TALON STRIKE" and not self._sm_can_use_company_talon_strike_tool_action(kwargs):
+            return False
+        if name_u == "CODEX DISCIPLINE" and not self._sm_can_use_bastion_codex_discipline_tool_action(kwargs):
+            return False
+        if name_u == "LIGHT OF VENGEANCE" and not self._sm_can_use_bastion_light_of_vengeance_tool_action(kwargs):
+            return False
+        if name_u == "LIMB FROM LIMB" and not self._sm_can_use_rage_cursed_limb_from_limb_tool_action(kwargs):
+            return False
         if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):

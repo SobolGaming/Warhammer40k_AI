@@ -727,6 +727,7 @@ class ReplayStoreReader:
     def _prepare_reconstruction_game(snapshot: dict[str, Any]) -> Game:
         game = Game.load_snapshot(snapshot)
         game.auto_resolve_dice_rolls = False
+        game._replay_reconstruction_suppress_charge_followups = True
         controller_hub = getattr(game, "decision_controller_hub", None)
         if controller_hub is not None and hasattr(controller_hub, "detach"):
             controller_hub.detach()
@@ -762,28 +763,172 @@ class ReplayStoreReader:
     def _runtime_unit_id_map(game: Game, record: dict[str, Any]) -> dict[str, str]:
         state = dict(record.get("omniscient_state", {}) or {})
         recorded_units = list(state.get("units", []) or [])
-        runtime_units_by_key: dict[tuple[str, str], list[str]] = {}
+        runtime_units_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for player in list(getattr(game, "players", []) or []):
             army = getattr(player, "army", None)
             if army is None:
                 continue
             for unit in list(getattr(army, "units", []) or []):
                 key = (str(getattr(player, "id", "") or ""), str(getattr(unit, "name", "") or ""))
-                runtime_units_by_key.setdefault(key, []).append(str(getattr(unit, "id", "") or ""))
-        recorded_units_by_key: dict[tuple[str, str], list[str]] = {}
+                runtime_units_by_key.setdefault(key, []).append(ReplayStoreReader._runtime_unit_match_entry(unit))
+        recorded_units_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for entry in recorded_units:
             payload = dict(entry or {})
             key = (str(payload.get("owner_player_id", "") or ""), str(payload.get("name", "") or ""))
-            recorded_units_by_key.setdefault(key, []).append(str(payload.get("unit_id", "") or ""))
+            recorded_units_by_key.setdefault(key, []).append(ReplayStoreReader._recorded_unit_match_entry(payload))
         unit_id_map: dict[str, str] = {}
-        for key, recorded_ids in recorded_units_by_key.items():
-            runtime_ids = list(runtime_units_by_key.get(key, []) or [])
-            if len(recorded_ids) != len(runtime_ids):
+        for key, recorded_entries in recorded_units_by_key.items():
+            runtime_entries = list(runtime_units_by_key.get(key, []) or [])
+            if len(recorded_entries) != len(runtime_entries):
                 continue
-            for recorded_id, runtime_id in zip(recorded_ids, runtime_ids):
+            if len(recorded_entries) == 1:
+                recorded_id = str(recorded_entries[0].get("unit_id", "") or "")
+                runtime_id = str(runtime_entries[0].get("unit_id", "") or "")
                 if recorded_id and runtime_id:
                     unit_id_map[recorded_id] = runtime_id
+                continue
+            if not any(ReplayStoreReader._unit_entry_has_disambiguators(entry) for entry in recorded_entries):
+                for recorded_entry, runtime_entry in zip(recorded_entries, runtime_entries):
+                    recorded_id = str(recorded_entry.get("unit_id", "") or "")
+                    runtime_id = str(runtime_entry.get("unit_id", "") or "")
+                    if recorded_id and runtime_id:
+                        unit_id_map[recorded_id] = runtime_id
+                continue
+            unmatched = list(runtime_entries)
+            for recorded_entry in list(recorded_entries):
+                recorded_id = str(recorded_entry.get("unit_id", "") or "")
+                if not recorded_id or not unmatched:
+                    continue
+                best_index = min(
+                    range(len(unmatched)),
+                    key=lambda idx: ReplayStoreReader._unit_match_score(recorded_entry, unmatched[idx]),
+                )
+                runtime_entry = unmatched.pop(int(best_index))
+                runtime_id = str(runtime_entry.get("unit_id", "") or "")
+                if runtime_id:
+                    unit_id_map[recorded_id] = runtime_id
         return unit_id_map
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = -1) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return int(default)
+
+    @staticmethod
+    def _position_tuple(value: Any) -> tuple[float, float, float] | None:
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            return None
+        try:
+            x = float(value[0])
+            y = float(value[1])
+            z = float(value[2]) if len(value) > 2 else 0.0
+        except (TypeError, ValueError):
+            return None
+        return (x, y, z)
+
+    @staticmethod
+    def _model_alive(model: Any) -> bool:
+        alive = getattr(model, "is_alive", True)
+        if callable(alive):
+            try:
+                return bool(alive())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return False
+        return bool(alive)
+
+    @staticmethod
+    def _runtime_model_position(model: Any) -> tuple[float, float, float] | None:
+        getter = getattr(model, "get_location", None)
+        if callable(getter):
+            location = getter()
+            parsed = ReplayStoreReader._position_tuple(location)
+            if parsed is not None:
+                return parsed
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return None
+        try:
+            return (
+                float(getattr(base, "x", 0.0) or 0.0),
+                float(getattr(base, "y", 0.0) or 0.0),
+                float(getattr(base, "z", 0.0) or 0.0),
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _runtime_unit_position(unit: Any, alive_models: list[Any]) -> tuple[float, float, float] | None:
+        explicit = ReplayStoreReader._position_tuple(getattr(unit, "position", None))
+        if explicit is not None:
+            return explicit
+        positions = [
+            position
+            for position in (ReplayStoreReader._runtime_model_position(model) for model in list(alive_models or []))
+            if position is not None
+        ]
+        if not positions:
+            return None
+        count = float(len(positions))
+        return (
+            sum(float(position[0]) for position in positions) / count,
+            sum(float(position[1]) for position in positions) / count,
+            sum(float(position[2]) for position in positions) / count,
+        )
+
+    @staticmethod
+    def _runtime_unit_match_entry(unit: Any) -> dict[str, Any]:
+        models = list(getattr(unit, "models", []) or [])
+        alive_models = [model for model in models if ReplayStoreReader._model_alive(model)]
+        return {
+            "unit_id": str(getattr(unit, "id", "") or ""),
+            "model_count": int(len(models)),
+            "alive_model_count": int(len(alive_models)),
+            "position": ReplayStoreReader._runtime_unit_position(unit, alive_models),
+        }
+
+    @staticmethod
+    def _recorded_unit_match_entry(payload: dict[str, Any]) -> dict[str, Any]:
+        position = ReplayStoreReader._position_tuple(payload.get("position"))
+        model_count = ReplayStoreReader._safe_int(payload.get("model_count"), -1)
+        alive_model_count = ReplayStoreReader._safe_int(payload.get("alive_model_count"), model_count)
+        return {
+            "unit_id": str(payload.get("unit_id", "") or ""),
+            "model_count": model_count,
+            "alive_model_count": alive_model_count,
+            "position": position,
+        }
+
+    @staticmethod
+    def _unit_entry_has_disambiguators(entry: dict[str, Any]) -> bool:
+        return (
+            ReplayStoreReader._safe_int(entry.get("model_count"), -1) >= 0
+            or ReplayStoreReader._safe_int(entry.get("alive_model_count"), -1) >= 0
+            or entry.get("position") is not None
+        )
+
+    @staticmethod
+    def _unit_match_score(recorded: dict[str, Any], runtime: dict[str, Any]) -> tuple[float, str]:
+        score = 0.0
+        recorded_count = ReplayStoreReader._safe_int(recorded.get("model_count"), -1)
+        runtime_count = ReplayStoreReader._safe_int(runtime.get("model_count"), -1)
+        if recorded_count >= 0 and runtime_count >= 0:
+            score += float(abs(recorded_count - runtime_count)) * 100000.0
+        recorded_alive = ReplayStoreReader._safe_int(recorded.get("alive_model_count"), -1)
+        runtime_alive = ReplayStoreReader._safe_int(runtime.get("alive_model_count"), -1)
+        if recorded_alive >= 0 and runtime_alive >= 0:
+            score += float(abs(recorded_alive - runtime_alive)) * 10000.0
+        recorded_pos = recorded.get("position")
+        runtime_pos = runtime.get("position")
+        if recorded_pos is not None and runtime_pos is not None:
+            dx = float(recorded_pos[0]) - float(runtime_pos[0])
+            dy = float(recorded_pos[1]) - float(runtime_pos[1])
+            dz = float(recorded_pos[2]) - float(runtime_pos[2])
+            score += (dx * dx) + (dy * dy) + (dz * dz)
+        elif recorded_pos is not None or runtime_pos is not None:
+            score += 1000.0
+        return (score, str(runtime.get("unit_id", "") or ""))
 
     @classmethod
     def _collect_ordered_model_ids(cls, value: Any) -> list[str]:
@@ -845,6 +990,11 @@ class ReplayStoreReader:
             return {}
         recorded_model_ids = cls._collect_ordered_model_ids(payload)
         runtime_models = list(getattr(runtime_unit, "models", []) or [])
+        if len(recorded_model_ids) != len(runtime_models):
+            attached_getter = getattr(runtime_unit, "get_attached_unit_models", None)
+            attached_models = list(attached_getter() or []) if callable(attached_getter) else []
+            if len(recorded_model_ids) == len(attached_models):
+                runtime_models = attached_models
         runtime_model_ids = [str(getattr(model, "id", "") or "") for model in runtime_models]
         if not recorded_model_ids or len(recorded_model_ids) != len(runtime_model_ids):
             return {}
@@ -973,6 +1123,74 @@ class ReplayStoreReader:
         return result_payload
 
     @staticmethod
+    def _recorded_result_payload(record: dict[str, Any], chosen_action_id: str) -> dict[str, Any]:
+        for candidate in list(record.get("candidates", []) or []):
+            payload = dict(candidate or {})
+            if str(payload.get("action_id", "") or "") != str(chosen_action_id or ""):
+                continue
+            metadata = dict(payload.get("metadata", {}) or {})
+            resolved = metadata.get("resolved_result_payload")
+            if isinstance(resolved, dict):
+                return dict(resolved)
+            return {}
+        return {}
+
+    @staticmethod
+    def _result_payload_for_option_replay(
+        request: DecisionRequest,
+        record: dict[str, Any],
+        chosen_action_id: str,
+        option: object | None,
+        *,
+        request_payload: dict[str, Any] | None = None,
+        game: Game | None = None,
+    ) -> dict[str, Any]:
+        payload = ReplayStoreReader._skip_payload_for_option(option)
+        recorded_payload = ReplayStoreReader._recorded_result_payload(record, chosen_action_id)
+        if recorded_payload:
+            if game is not None:
+                recorded_payload = ReplayStoreReader._action_params_for_runtime(
+                    game,
+                    recorded_payload,
+                    request_payload,
+                    record,
+                )
+            payload.update(recorded_payload)
+        return ReplayStoreReader._ensure_replay_result_payload(
+            game,
+            request,
+            payload,
+            option_payload=dict(getattr(option, "payload", {}) or {}) if option is not None else {},
+        )
+
+    @staticmethod
+    def _ensure_replay_result_payload(
+        game: Game | None,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+        *,
+        option_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type != "DECLARE_SHOTS":
+            return payload
+        action = str(payload.get("action", "") or dict(option_payload or {}).get("action", "") or "").strip().lower()
+        if action in {"skip", "pass"} or bool(payload.get("skipped", False)) or bool(payload.get("skip", False)):
+            return payload
+        declarations = payload.get("declarations")
+        if isinstance(declarations, list) and declarations:
+            return payload
+        from .headless_policy_controller import HeadlessPolicyDecisionController
+
+        seed_payload = dict(option_payload or {})
+        seed_payload.update(payload)
+        declarations = HeadlessPolicyDecisionController._default_shooting_declarations(game, request, seed_payload)
+        if declarations:
+            seed_payload["declarations"] = declarations
+            return seed_payload
+        return payload
+
+    @staticmethod
     def _result_for_record(
         request: DecisionRequest,
         record: dict[str, Any],
@@ -991,7 +1209,14 @@ class ReplayStoreReader:
                     decision_id=str(getattr(request, "decision_id", "") or ""),
                     player_id=getattr(request, "player_id", None),
                     option_id=option_id,
-                    payload=ReplayStoreReader._skip_payload_for_option(option),
+                    payload=ReplayStoreReader._result_payload_for_option_replay(
+                        request,
+                        record,
+                        chosen_action_id,
+                        option,
+                        request_payload=request_payload,
+                        game=game,
+                    ),
                 )
         if request_payload:
             chosen_label, chosen_index = ReplayStoreReader._request_option_label_by_action_id(
@@ -1006,7 +1231,14 @@ class ReplayStoreReader:
                         decision_id=str(getattr(request, "decision_id", "") or ""),
                         player_id=getattr(request, "player_id", None),
                         option_id=getattr(option, "option_id", None),
-                        payload=ReplayStoreReader._skip_payload_for_option(option),
+                        payload=ReplayStoreReader._result_payload_for_option_replay(
+                            request,
+                            record,
+                            chosen_action_id,
+                            option,
+                            request_payload=request_payload,
+                            game=game,
+                        ),
                     )
             if chosen_index is not None:
                 options = list(getattr(request, "options", []) or [])
@@ -1016,7 +1248,14 @@ class ReplayStoreReader:
                         decision_id=str(getattr(request, "decision_id", "") or ""),
                         player_id=getattr(request, "player_id", None),
                         option_id=getattr(option, "option_id", None),
-                        payload=ReplayStoreReader._skip_payload_for_option(option),
+                        payload=ReplayStoreReader._result_payload_for_option_replay(
+                            request,
+                            record,
+                            chosen_action_id,
+                            option,
+                            request_payload=request_payload,
+                            game=game,
+                        ),
                     )
         if not bool(record.get("human_action_injected", False)):
             raise ValueError("Replay chosen_action_id does not map to an option_id.")
@@ -1198,6 +1437,8 @@ class ReplayStoreReader:
         replay_cursor: int,
         decision_id: str,
         request_payload: dict[str, Any] | None,
+        *,
+        stop_event_id: int | None = None,
     ) -> tuple[DecisionRequest | None, int]:
         queue = getattr(game, "decision_queue", None)
         if queue is None:
@@ -1212,6 +1453,10 @@ class ReplayStoreReader:
             if replay_cursor >= len(replay_events):
                 return None, replay_cursor
             event = dict(replay_events[replay_cursor] or {})
+            if stop_event_id is not None:
+                event_id = int(event.get("event_id", 0) or 0)
+                if event_id > int(stop_event_id):
+                    return None, replay_cursor
             replay_cursor += 1
             event_type = str(event.get("type", "") or "")
             payload = dict(event.get("payload", {}) or {})
@@ -1304,6 +1549,7 @@ class ReplayStoreReader:
                 replay_cursor,
                 decision_id,
                 payload,
+                stop_event_id=int(row["event_end_id"]) if row["event_end_id"] is not None else None,
             )
             if request is None:
                 if payload is None:

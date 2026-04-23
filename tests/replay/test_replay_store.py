@@ -15,12 +15,14 @@ from warhammer40k_ai.engine.decision_dispatcher import register_decision_handler
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CONFIRM_YES_NO,
+    DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_DICE_REROLL,
 )
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType
+from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.engine.replay_store import (
     REPLAY_RECORDING_GROUP,
     ReplayStoreReader,
@@ -845,6 +847,89 @@ def test_request_payload_for_runtime_remaps_unit_and_model_ids() -> None:
     ]
 
 
+def test_request_payload_for_runtime_uses_unit_disambiguators_for_duplicate_names() -> None:
+    runtime_models_a = [
+        SimpleNamespace(id="runtime-a-model-1", is_alive=True),
+        SimpleNamespace(id="runtime-a-model-2", is_alive=True),
+    ]
+    runtime_models_b = [
+        SimpleNamespace(id="runtime-b-model-1", is_alive=True),
+        SimpleNamespace(id="runtime-b-model-2", is_alive=True),
+        SimpleNamespace(id="runtime-b-model-3", is_alive=True),
+    ]
+    runtime_unit_a = SimpleNamespace(
+        id="runtime-unit-a",
+        name="Accursed Cultists",
+        models=runtime_models_a,
+        position=[30.0, 20.0, 0.0],
+    )
+    runtime_unit_b = SimpleNamespace(
+        id="runtime-unit-b",
+        name="Accursed Cultists",
+        models=runtime_models_b,
+        position=[5.0, 40.0, 0.0],
+    )
+    runtime_army = SimpleNamespace(units=[runtime_unit_b, runtime_unit_a])
+    runtime_player = SimpleNamespace(id="player-1", army=runtime_army)
+    registry_units = {
+        runtime_unit_a.id: runtime_unit_a,
+        runtime_unit_b.id: runtime_unit_b,
+    }
+    runtime_game = SimpleNamespace(
+        players=[runtime_player],
+        entity_registry=SimpleNamespace(
+            get=lambda entity_id, kind=None: registry_units.get(entity_id) if kind == "unit" else None
+        ),
+    )
+
+    payload = {
+        "context": {"unit_id": "recorded-unit-a"},
+        "options": [
+            {
+                "label": "Move",
+                "payload": {
+                    "unit_id": "recorded-unit-a",
+                    "model_positions": [
+                        {"model_id": "recorded-a-model-1", "position": [30.0, 20.0, 0.0]},
+                        {"model_id": "recorded-a-model-2", "position": [31.0, 20.0, 0.0]},
+                    ],
+                },
+            }
+        ],
+    }
+    record = {
+        "omniscient_state": {
+            "units": [
+                {
+                    "name": "Accursed Cultists",
+                    "owner_player_id": "player-1",
+                    "unit_id": "recorded-unit-b",
+                    "model_count": 3,
+                    "alive_model_count": 3,
+                    "position": [5.0, 40.0, 0.0],
+                },
+                {
+                    "name": "Accursed Cultists",
+                    "owner_player_id": "player-1",
+                    "unit_id": "recorded-unit-a",
+                    "model_count": 2,
+                    "alive_model_count": 2,
+                    "position": [30.0, 20.0, 0.0],
+                },
+            ]
+        }
+    }
+
+    translated = ReplayStoreReader._request_payload_for_runtime(runtime_game, payload, record)
+
+    assert translated["context"]["unit_id"] == "runtime-unit-a"
+    assert translated["options"][0]["payload"]["unit_id"] == "runtime-unit-a"
+    assert translated["options"][0]["payload"]["model_positions"] == [
+        {"model_id": "runtime-a-model-1", "position": [30.0, 20.0, 0.0]},
+        {"model_id": "runtime-a-model-2", "position": [31.0, 20.0, 0.0]},
+    ]
+
+
 def test_replay_store_matches_runtime_request_when_recorded_ids_drift(tmp_path, caplog) -> None:
     _register_test_dynamic_request_handlers()
     game, player = _build_game()
@@ -909,6 +994,112 @@ def test_result_for_record_marks_skip_payload_for_skip_option() -> None:
 
     assert result.option_id == skip_option_id
     assert result.payload == {"skipped": True}
+
+
+def test_result_for_record_reuses_resolved_payload_from_candidate_metadata() -> None:
+    request = DecisionRequest.create(
+        "DECLARE_SHOTS",
+        "Declare shots",
+        player_id="player-1",
+        options=[
+            DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": "unit-1"}),
+        ],
+    )
+    option_id = request.options[0].option_id
+    action_id = request.action_id_for_option_id(option_id)
+    resolved_payload = {
+        "declarations": [
+            {
+                "attacker_unit_id": "unit-1",
+                "target_unit_id": "target-1",
+                "weapon_key": "bolt rifle",
+                "attacks": 3,
+            }
+        ]
+    }
+    record = {
+        "chosen_action_id": action_id,
+        "human_action_injected": False,
+        "candidates": [
+            {
+                "action_id": action_id,
+                "params": {"action": "confirm", "unit_id": "unit-1"},
+                "metadata": {"resolved_result_payload": resolved_payload},
+            }
+        ],
+    }
+
+    result = ReplayStoreReader._result_for_record(request, record)
+
+    assert result.option_id == option_id
+    assert result.payload["declarations"] == resolved_payload["declarations"]
+
+
+def test_advance_until_request_pending_does_not_consume_future_events() -> None:
+    reader = ReplayStoreReader.__new__(ReplayStoreReader)
+    game, player = _build_game()
+    future_request = DecisionRequest.create(
+        "FUTURE_DECISION",
+        "Future choice",
+        player_id=player.id,
+        options=[DecisionOption.create("Confirm", payload={"choice": True})],
+    )
+    future_event = {
+        "event_id": 12,
+        "type": "decision_requested",
+        "actor_id": player.id,
+        "payload": future_request.to_dict(),
+    }
+
+    request, cursor = reader._advance_until_request_pending(
+        game,
+        [future_event],
+        0,
+        "earlier-decision",
+        {},
+        stop_event_id=11,
+    )
+
+    assert request is None
+    assert cursor == 0
+    assert game.decision_queue.list() == []
+
+
+def test_replay_reconstruction_suppresses_charge_phase_followup_queueing() -> None:
+    game, player = _build_game()
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game._replay_reconstruction_suppress_charge_followups = True
+    queued = []
+
+    def _queue_charge_phase_move_request(**kwargs):
+        queued.append(dict(kwargs))
+        return None
+
+    game._queue_charge_phase_move_request = _queue_charge_phase_move_request
+    request = DecisionRequest.create(
+        DECISION_REQUEST_DICE_ROLL,
+        "Charge roll",
+        player_id=player.id,
+        options=[DecisionOption.create("Make Roll", payload={"action_id": "roll"})],
+        context={
+            "roll_type": "charge",
+            "roll_spec": {
+                "roll_type": "charge",
+                "unit_id": "unit-1",
+                "target_unit_ids": ["target-1"],
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert queued == []
 
 
 def test_prime_request_state_materializes_rerolled_roll_without_queueing_duplicate_request() -> None:

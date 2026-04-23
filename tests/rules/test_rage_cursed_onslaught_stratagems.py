@@ -197,6 +197,11 @@ class TestRageCursedOnslaughtStratagems(unittest.TestCase):
         unit.round_state.charged_this_round = True
         game.phase = SimpleNamespace(name="FIGHT_PHASE")
 
+        self.assertFalse(p1.stratagems.can_use("LIMB FROM LIMB", phase_name="Fight phase"))
+        self.assertFalse(p1.stratagems.can_use("LIMB FROM LIMB", unit=unit, phase_name="Fight phase"))
+        self.assertTrue(
+            p1.stratagems.can_use("LIMB FROM LIMB", unit=unit, choice="red_thirst", phase_name="Fight phase")
+        )
         ok = p1.stratagems.use("LIMB FROM LIMB", unit=unit, choice="red_thirst", phase_name="Fight phase")
         self.assertTrue(ok)
         self.assertEqual(int(unit.special_rules.get("limb_from_limb_melee_strength_bonus", 0) or 0), 1)

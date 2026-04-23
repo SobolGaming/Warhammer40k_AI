@@ -253,6 +253,12 @@ def test_hunters_trail_applies_sticky_objective_control():
     _set_phase(game, sm_player, "COMMAND_PHASE", 0)
     assert _pending_by_name(sm_player.stratagems, "HUNTERS' TRAIL") is not None
 
+    assert sm_player.stratagems.can_use(
+        "HUNTERS' TRAIL",
+        unit=ravenwing,
+        objective=objective,
+        phase_name="Command phase",
+    ) is True
     ok = sm_player.stratagems.use("HUNTERS' TRAIL", unit=ravenwing, objective=objective, dequeue=True)
     assert ok is True
     assert int(sm_player.command_points or 0) == 9
@@ -285,6 +291,12 @@ def test_hunters_trail_rejects_non_ravenwing_mounted_unit():
     _set_phase(game, sm_player, "COMMAND_PHASE", 0)
     assert _pending_by_name(sm_player.stratagems, "HUNTERS' TRAIL") is not None
 
+    assert sm_player.stratagems.can_use(
+        "HUNTERS' TRAIL",
+        unit=intercessors,
+        objective=objective,
+        phase_name="Command phase",
+    ) is False
     ok = sm_player.stratagems.use("HUNTERS' TRAIL", unit=intercessors, objective=objective, dequeue=True)
     assert ok is False
     assert int(sm_player.command_points or 0) == 10
@@ -397,6 +409,11 @@ def test_talon_strike_applies_wound_bonus_and_cleans_up_at_phase_end():
         keywords=["MOUNTED", "RAVENWING"],
         faction_keywords=["ADEPTUS ASTARTES"],
     )
+    intercessors = _make_unit(
+        "Intercessor Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
     enemy_character = _make_unit(
         "Enemy Commander",
         faction_name="Enemy",
@@ -405,14 +422,18 @@ def test_talon_strike_applies_wound_bonus_and_cleans_up_at_phase_end():
     )
 
     sm_army.add_unit(ravenwing)
+    sm_army.add_unit(intercessors)
     enemy_army.add_unit(enemy_character)
     _deploy_unit(game, ravenwing, 10.0, 10.0)
+    _deploy_unit(game, intercessors, 10.0, 14.0)
     _deploy_unit(game, enemy_character, 18.0, 10.0)
     game.rebuild_entity_registry()
 
     _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
     assert _pending_by_name(sm_player.stratagems, "TALON STRIKE") is not None
 
+    assert sm_player.stratagems.can_use("TALON STRIKE", unit=intercessors, phase_name="Shooting phase") is False
+    assert sm_player.stratagems.can_use("TALON STRIKE", unit=ravenwing, phase_name="Shooting phase") is True
     ok = sm_player.stratagems.use("TALON STRIKE", unit=ravenwing, dequeue=True)
     assert ok is True
     assert int(sm_player.command_points or 0) == 9
@@ -455,6 +476,7 @@ def test_talon_strike_rejects_unit_already_selected_to_shoot():
     _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
     ravenwing.round_state.shot_this_round = True
 
+    assert sm_player.stratagems.can_use("TALON STRIKE", unit=ravenwing, phase_name="Shooting phase") is False
     ok = sm_player.stratagems.use("TALON STRIKE", unit=ravenwing, phase_name="Shooting phase")
     assert ok is False
     assert int(sm_player.command_points or 0) == 10

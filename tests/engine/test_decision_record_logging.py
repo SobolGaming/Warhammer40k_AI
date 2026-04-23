@@ -4,6 +4,7 @@ from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import build_player_color_selection_requests
@@ -119,6 +120,49 @@ def test_decision_record_store_merges_duplicate_decision_id_records() -> None:
     immediate = record["outcome"]["immediate_deltas"]
     assert immediate["errors"] == ["richer-context"]
     assert immediate["value"] == {"applied": True}
+
+
+def test_decision_record_store_persists_resolved_option_payload_in_candidate_metadata() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": "unit-1"}),
+        ],
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={
+            "declarations": [
+                {
+                    "attacker_unit_id": "unit-1",
+                    "target_unit_id": "target-1",
+                    "weapon_key": "bolt rifle",
+                    "attacks": 3,
+                }
+            ]
+        },
+    )
+
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+
+    chosen = next(
+        candidate
+        for candidate in list(record["candidates"] or [])
+        if candidate["action_id"] == record["chosen_action_id"]
+    )
+    assert chosen["metadata"]["resolved_result_payload"] == result.payload
 
 
 def test_decision_record_human_action_candidate_injection_for_move_payload() -> None:

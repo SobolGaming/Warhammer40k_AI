@@ -20,6 +20,25 @@ Replay-store persistence note:
 - Rejected `RESOLVE_DECISION` commands that still reference a pending request are
   persisted as invalid DecisionRecords so replay/event diagnostics and exported
   training records agree on malformed candidate attempts.
+- Resolved option decisions may persist a JSON-safe
+  `candidate.metadata.resolved_result_payload` for the chosen candidate. Replay
+  uses that payload when the request option alone is not sufficient to reproduce
+  the applied engine action, such as shooting declarations resolved from a
+  generic confirm option.
+- Replay remaps recorded unit/model ids onto snapshot-loaded runtime ids before
+  resolving decisions. Duplicate unit names are disambiguated with model counts,
+  alive model counts, and recorded positions from the omniscient state.
+- Event-tail advancement is bounded to the event range recorded for the current
+  decision step. Decisions whose request/resolution events were already captured
+  in the nearest keyframe are replayed from their stored request payload without
+  consuming later events.
+- Replay reconstruction suppresses live charge-phase followup queueing. Recorded
+  charge declarations, rolls, and moves are replayed from the persisted decision
+  stream instead of allowing reconstruction-time auto-followups to create extra
+  charge move requests.
+- Snapshot-loaded rule manager state restores existing set-typed runtime fields
+  as sets so replayed stratagem bookkeeping keeps the same mutation semantics as
+  live play.
 
 ## Rules-Bundle Reproducibility Matrix (PR-AI-012)
 

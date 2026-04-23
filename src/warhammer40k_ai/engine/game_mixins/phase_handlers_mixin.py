@@ -708,6 +708,8 @@ class GamePhaseHandlersMixin:
     def _maybe_queue_charge_phase_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
         if request is None or result is None:
             return
+        if bool(getattr(self, "_replay_reconstruction_suppress_charge_followups", False)):
+            return
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
             return
         from ..decision_handlers._helpers import find_option

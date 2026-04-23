@@ -399,6 +399,61 @@ class AstraMilitarumStratagemMixin:
             out.append(root)
         return sorted(out, key=self._am_sort_key)
 
+    def _am_can_use_grizzled_snap_to_it_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_grizzled_company():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if not phase_name:
+            return False
+        officer_candidates = self._grizzled_snap_to_it_officer_candidates(phase_name=phase_name)
+        if not officer_candidates:
+            return False
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        voice = getattr(army, "voice_of_command", None) if army is not None else None
+        if voice is None:
+            return False
+
+        officer = (
+            kwargs.get("officer_unit")
+            or kwargs.get("officer")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        target_unit = (
+            kwargs.get("order_target_unit")
+            or kwargs.get("order_target")
+            or kwargs.get("target_unit")
+        )
+        order_key = str(kwargs.get("order_key") or kwargs.get("order") or "").strip().upper()
+        if officer is not None and target_unit is not None and order_key:
+            officer_root = self._am_root(officer)
+            target_root = self._am_root(target_unit)
+            if officer_root is None or target_root is None:
+                return False
+            if officer_root not in officer_candidates:
+                return False
+            available_getter = getattr(voice, "get_available_orders", None)
+            if callable(available_getter):
+                order_keys = {
+                    str(getattr(order, "key", order) or "").strip().upper()
+                    for order in list(available_getter(officer_root) or [])
+                }
+                if order_keys and order_key not in order_keys:
+                    return False
+            target_getter = getattr(voice, "get_eligible_targets", None)
+            if callable(target_getter):
+                eligible_targets = list(target_getter(officer_root, game=self.game, order_key=order_key) or [])
+                if target_root not in eligible_targets:
+                    return False
+            return True
+
+        has_control = getattr(self.player, "has_control", None)
+        if not (callable(has_control) and bool(has_control())):
+            return False
+        return self._am_has_voice_prompt_subscriber()
+
     def _grizzled_no_retreat_objective_candidates(self, unit: Any) -> list[Any]:
         if unit is None:
             return []

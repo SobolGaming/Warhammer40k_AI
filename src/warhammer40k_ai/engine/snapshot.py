@@ -1188,6 +1188,15 @@ def _serialize_manager_state(manager: object) -> dict | None:
     return state
 
 
+def _coerce_manager_state_value(manager: object, key: str, value: Any) -> Any:
+    current = getattr(manager, key, _SNAPSHOT_OMIT)
+    if isinstance(current, set):
+        if isinstance(value, (list, tuple, set)):
+            return set(value)
+        return set()
+    return value
+
+
 def _apply_manager_state(manager: object, data: dict | None, registry: EntityRegistry) -> None:
     if manager is None or data is None:
         return
@@ -1195,6 +1204,7 @@ def _apply_manager_state(manager: object, data: dict | None, registry: EntityReg
     for key, value in decoded.items():
         if key in _MANAGER_STATE_EXCLUDE:
             continue
+        value = _coerce_manager_state_value(manager, key, value)
         setattr(manager, key, value)
 
 

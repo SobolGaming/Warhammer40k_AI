@@ -317,6 +317,46 @@ def _candidate_ids(request: DecisionRequest) -> set[str]:
     return {str(c.action_id) for c in list(getattr(request, "candidates", []) or [])}
 
 
+def _json_roundtrip(value: Any) -> Any:
+    return json.loads(_canonical_json(value))
+
+
+def _recordable_result_payload(result: DecisionResult) -> dict[str, Any]:
+    payload = dict(getattr(result, "payload", {}) or {})
+    payload.pop("human_action_params", None)
+    if not payload:
+        return {}
+    try:
+        normalized = _json_roundtrip(payload)
+    except (TypeError, ValueError):
+        return {}
+    return dict(normalized or {}) if isinstance(normalized, dict) else {}
+
+
+def _attach_resolved_payload_to_candidate(
+    request: DecisionRequest,
+    *,
+    chosen_action_id: str,
+    result: DecisionResult,
+) -> None:
+    payload = _recordable_result_payload(result)
+    if not payload:
+        return
+    candidates = list(getattr(request, "candidates", []) or [])
+    for index, candidate in enumerate(candidates):
+        if str(getattr(candidate, "action_id", "") or "") != str(chosen_action_id or ""):
+            continue
+        metadata = dict(getattr(candidate, "metadata", {}) or {})
+        metadata["resolved_result_payload"] = payload
+        candidates[index] = CandidateAction(
+            action_id=str(getattr(candidate, "action_id", "") or ""),
+            params=dict(getattr(candidate, "params", {}) or {}),
+            metadata=metadata,
+        )
+        request.candidates = candidates
+        return
+
+
 def _build_human_candidate(game: object, request: DecisionRequest, result: DecisionResult) -> CandidateAction | None:
     payload = dict(getattr(result, "payload", {}) or {})
     if not payload:
@@ -614,6 +654,11 @@ class DecisionRecordStore:
                     request.mask_reasons.append(None)
                 chosen_action_id = str(human_candidate.action_id)
                 human_action_injected = True
+            _attach_resolved_payload_to_candidate(
+                request,
+                chosen_action_id=str(chosen_action_id or ""),
+                result=result,
+            )
             record = self._base_record(
                 request,
                 wall_clock_ms=wall_clock_ms,

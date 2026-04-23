@@ -3203,6 +3203,35 @@ class ChaosKnightsStratagemMixin:
         candidates.sort(key=self._chaos_knights_sort_key)
         return candidates
 
+    def _chaos_knights_can_use_traitoris_pterrorshades_tool_action(self, kwargs: Dict[str, Any]) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context("PTERRORSHADES", kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit") or merged.get("target_enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None or enemy_root is None:
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_chaos_knights_unit(root):
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            return False
+        if not self._chaos_knights_on_battlefield(enemy_root, require_targetable=False):
+            return False
+        distance = self._chaos_knights_distance_between_units(root, enemy_root)
+        if distance is None or distance > 12.0 + 1e-6:
+            return False
+        eligible = list(merged.get("candidates", []) or []) or self._traitoris_pterrorshades_candidates(enemy_root)
+        if eligible and root not in list(eligible or []):
+            return False
+        return True
+
     def _clear_traitoris_a_long_leash_effects(self) -> None:
         army = self._chaos_knights_army()
         if army is None:

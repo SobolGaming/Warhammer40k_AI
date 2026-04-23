@@ -264,6 +264,7 @@ class TestAstraMilitarumGrizzledCompanyStratagems(unittest.TestCase):
         army.add_unit(target)
 
         start_cp = int(player.command_points)
+        self.assertFalse(player.stratagems.can_use("SNAP TO IT", phase_name="Movement phase"))
         ok = player.stratagems.use("SNAP TO IT", phase_name="Movement phase")
         self.assertFalse(ok)
         self.assertEqual(int(player.command_points), start_cp)
@@ -284,6 +285,15 @@ class TestAstraMilitarumGrizzledCompanyStratagems(unittest.TestCase):
         army.add_unit(target)
 
         start_cp = int(player.command_points)
+        self.assertTrue(
+            player.stratagems.can_use(
+                "SNAP TO IT",
+                officer_unit=officer,
+                order_target_unit=target,
+                order_key="MOVE_MOVE_MOVE",
+                phase_name="Movement phase",
+            )
+        )
         ok = player.stratagems.use(
             "SNAP TO IT",
             officer_unit=officer,

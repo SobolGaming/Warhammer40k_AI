@@ -97,11 +97,14 @@ def _build_result_from_decision_record(request, record: dict) -> DecisionResult:
             chosen_candidate = payload
             break
     if chosen_option_id is not None:
+        metadata = dict((chosen_candidate or {}).get("metadata", {}) or {})
+        resolved_payload = metadata.get("resolved_result_payload")
+        payload = dict(resolved_payload or {}) if isinstance(resolved_payload, dict) else {}
         return DecisionResult(
             decision_id=str(getattr(request, "decision_id", "") or ""),
             player_id=getattr(request, "player_id", None),
             option_id=chosen_option_id,
-            payload={},
+            payload=payload,
         )
     if not bool(record.get("human_action_injected", False)):
         raise ValueError("chosen_action_id does not map to an option_id for this request.")

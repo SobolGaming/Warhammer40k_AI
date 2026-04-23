@@ -1021,6 +1021,14 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         self._refresh_game(game)
         self._set_phase(game, enemy_player, "FIGHT_PHASE")
 
+        self.assertFalse(
+            ck_player.stratagems.can_use(
+                "PTERRORSHADES",
+                unit=source,
+                target_unit=source,
+                phase_name="Fight phase",
+            )
+        )
         game.event_system.publish("battle_shock_test_resolved", unit=enemy, passed=False)
         pending = [
             reaction
@@ -1031,6 +1039,15 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
 
         mortal_wounds = []
         source._apply_mortal_wounds_to_unit = lambda target, amount, game_map=None: mortal_wounds.append(int(amount))
+        self.assertTrue(
+            ck_player.stratagems.can_use(
+                "PTERRORSHADES",
+                unit=source,
+                target_unit=source,
+                enemy_unit=enemy,
+                phase_name="Fight phase",
+            )
+        )
         with patch("warhammer40k_ai.rules.stratagems_chaos_knights.get_roll", side_effect=[4, 1, 6, 2, 5, 3]):
             ok = ck_player.stratagems.use(
                 "PTERRORSHADES",

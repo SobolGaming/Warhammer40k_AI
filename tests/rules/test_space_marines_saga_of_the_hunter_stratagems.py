@@ -339,6 +339,7 @@ def test_hunters_trail_sets_fight_move_override_and_cleans_up():
     game.rebuild_entity_registry()
 
     _set_phase(game, sm_player, "FIGHT_PHASE", 0)
+    assert sm_player.stratagems.can_use("HUNTERS' TRAIL", unit=hunters, phase_name="Fight phase") is True
     ok = sm_player.stratagems.use("HUNTERS' TRAIL", unit=hunters, phase_name="Fight phase")
     assert ok is True
     assert hunters.get_fight_phase_move_distance_override("pile_in") == 6.0
