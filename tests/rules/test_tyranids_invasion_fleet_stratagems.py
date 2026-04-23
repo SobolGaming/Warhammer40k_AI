@@ -183,6 +183,42 @@ def test_adrenal_surge_allows_two_synapse_targets():
     assert bool(unit_b.special_rules.get("tyranids_adrenal_surge_active")) is True
 
 
+def test_adrenal_surge_tool_action_context_only_exposes_eligible_fight_units():
+    game, tyr_player, _enemy_player, tyr_army, _enemy_army = _build_game()
+    eligible = _make_unit(
+        "Warriors Alpha",
+        keywords=["INFANTRY", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+        wounds="3",
+    )
+    not_eligible = _make_unit(
+        "Hive Guard",
+        keywords=["INFANTRY", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+        wounds="3",
+    )
+    tyr_army.add_unit(eligible)
+    tyr_army.add_unit(not_eligible)
+    _deploy_unit(game, eligible, 10.0, 10.0)
+    _deploy_unit(game, not_eligible, 20.0, 10.0)
+    eligible.round_state.charged_this_round = True
+
+    _set_phase(game, tyr_player, "FIGHT_PHASE", 0)
+    assert tyr_player.stratagems.can_use("ADRENAL SURGE", unit=eligible, phase_name="Fight phase")
+    assert not tyr_player.stratagems.can_use("ADRENAL SURGE", unit=not_eligible, phase_name="Fight phase")
+
+    items = tyr_player.stratagems.get_phase_stratagem_items()
+    adrenal_item = next(item for item in items if str(item.get("name", "")).upper() == "ADRENAL SURGE")
+    assert [unit.name for unit in adrenal_item["context"]["candidates"]] == ["Warriors Alpha"]
+
+    specs = tyr_player.stratagems._build_tool_action_specs_for_item(adrenal_item)
+    specs = tyr_player.stratagems._filter_legal_tool_action_specs(specs)
+    assert specs
+    payload_texts = [str((spec.get("payload", {}) or {}).get("resolved_kwargs", {}) or {}) for spec in specs]
+    assert all(str(eligible.id) in payload_text for payload_text in payload_texts)
+    assert not any(str(not_eligible.id) in payload_text for payload_text in payload_texts)
+
+
 def test_adrenal_surge_rejects_two_targets_when_one_is_outside_synapse():
     game, tyr_player, _enemy_player, tyr_army, _enemy_army = _build_game()
     synapse_unit = _make_unit(

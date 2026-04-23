@@ -121,7 +121,7 @@ def test_mobile_sensor_relays_requires_wholly_within_six_of_transport():
         faction_keywords=["LEAGUES OF VOTANN"],
     )
     _set_unit_position(transport, 10.0, 10.0)
-    _set_unit_position(infantry, 16.5, 10.0)
+    _set_unit_position(infantry, 18.0, 10.0)
     army.add_unit(transport)
     army.add_unit(infantry)
 

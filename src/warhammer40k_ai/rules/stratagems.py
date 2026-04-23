@@ -3753,6 +3753,24 @@ class StratagemManager(
             "source_and" in target_text
             or ("within_6" in target_text and "_and_" in target_text)
             or bool(effect_params.get("requires_support_unit", False))
+            or bool(effect_params.get("support_unit_keyword") and not effect_params.get("secondary_optional", False))
+            or bool(effect_params.get("support_required_keywords_any") and not effect_params.get("secondary_optional", False))
+            or bool(effect_params.get("support_required_keywords_all") and not effect_params.get("secondary_optional", False))
+            or bool(effect_params.get("support_unit_keywords_all") and not effect_params.get("secondary_optional", False))
+            or bool(effect_params.get("paired_support_keywords_any"))
+            or (
+                "_and_" in target_text
+                and any(
+                    token in target_text
+                    for token in (
+                        "another_",
+                        "secondary",
+                        "squadron_unit",
+                        "support_unit",
+                        "war_dog",
+                    )
+                )
+            )
         )
         if needs_support and support_unit is None:
             missing.append("support_unit")

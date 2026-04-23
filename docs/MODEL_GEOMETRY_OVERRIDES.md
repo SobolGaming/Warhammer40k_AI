@@ -67,6 +67,8 @@ placement/movement legality.
 - `Hydra` / `Wyvern` / Chimera chassis (manual hull rectangle with conservative Hydra turret height)
 - `Rhino` / `Chaos Rhino` (manual hull rectangle)
 - `Land Raider` / `Chaos Land Raider` (manual hull rectangle)
+- `Hekaton Land Fortress` (manual hull rectangle)
+- `Sagitaur` (manual hull rectangle)
 - `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
 
 Vehicle hull overrides use source notes embedded in `data/model_geometry_overrides.json`. Where only

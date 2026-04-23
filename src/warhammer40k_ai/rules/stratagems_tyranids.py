@@ -635,9 +635,17 @@ class TyranidsStratagemMixin:
     ) -> dict[str, Any]:
         if not self._is_tyranids_invasion_fleet_detachment():
             return {}
-        if self._tyr_phase_name(phase_name) != "command phase":
-            return {}
+        phase_key = self._tyr_phase_name(phase_name)
         name_u = str(stratagem_name or "").strip().upper()
+        if name_u == "ADRENAL SURGE":
+            if phase_key != "fight phase":
+                return {}
+            return {
+                "candidates": self._tyr_adrenal_surge_candidates(),
+                "max_units": 2,
+            }
+        if phase_key != "command phase":
+            return {}
         if name_u == "PREDATORY IMPERATIVE":
             return {
                 "candidates": self._tyr_predatory_imperative_candidates(),
@@ -654,10 +662,22 @@ class TyranidsStratagemMixin:
         if not self._is_tyranids_invasion_fleet_detachment():
             return None
         name_u = str(stratagem_name or "").strip().upper()
-        if name_u not in {"PREDATORY IMPERATIVE", "ENDLESS SWARM"}:
+        if name_u not in {"ADRENAL SURGE", "PREDATORY IMPERATIVE", "ENDLESS SWARM"}:
             return None
         phase_name = self._tyr_phase_name((kwargs or {}).get("phase_name") or getattr(self, "_current_phase_name", ""))
-        if phase_name != "command phase" or not self._tyr_is_own_command_phase(phase_name=phase_name):
+        if name_u == "ADRENAL SURGE":
+            if phase_name != "fight phase":
+                return False
+            eligible = self._tyr_adrenal_surge_candidates()
+        else:
+            if phase_name != "command phase" or not self._tyr_is_own_command_phase(phase_name=phase_name):
+                return False
+            eligible = (
+                self._tyr_predatory_imperative_candidates()
+                if name_u == "PREDATORY IMPERATIVE"
+                else self._tyr_endless_swarm_candidates()
+            )
+        if not eligible:
             return False
         selected = (kwargs or {}).get("units") or (kwargs or {}).get("selected_units")
         if selected is None:
@@ -667,11 +687,6 @@ class TyranidsStratagemMixin:
         selected_roots = self._tyr_resolve_units(selected)
         if not selected_roots or len(selected_roots) > 2:
             return False
-        eligible = (
-            self._tyr_predatory_imperative_candidates()
-            if name_u == "PREDATORY IMPERATIVE"
-            else self._tyr_endless_swarm_candidates()
-        )
         if any(not self._tyr_unit_in_candidates(root, eligible) for root in selected_roots):
             return False
         if len(selected_roots) == 2 and not all(self._tyr_unit_in_synapse_range(root) for root in selected_roots):

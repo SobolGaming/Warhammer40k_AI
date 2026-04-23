@@ -68,6 +68,7 @@ def _build_generic_tool_manager(
     context: dict,
     can_use,
     stratagem_id: str | None = None,
+    effect_params: dict | None = None,
 ) -> tuple:
     decision_queue = DecisionQueue()
     game = SimpleNamespace(
@@ -89,7 +90,7 @@ def _build_generic_tool_manager(
         tool_descriptor=SimpleNamespace(
             target=descriptor_target,
             effect="test",
-            effect_params={},
+            effect_params=dict(effect_params or {}),
         ),
     )
     manager = StratagemManager.__new__(StratagemManager)
@@ -418,6 +419,136 @@ def test_generic_tool_action_descriptor_filters_invalid_unit_keywords_before_emi
     assert len(tool_payloads) == 1
     assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == aspect.id
     assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_descriptor_enforces_structured_effect_param_filters() -> None:
+    valid = SimpleNamespace(
+        id="unit:valid",
+        name="Infantry Squad",
+        keywords=["PLATOON", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    wrong_keyword = SimpleNamespace(
+        id="unit:wrong",
+        name="Leman Russ",
+        keywords=["VEHICLE"],
+        faction_keywords=["ASTRA MILITARUM"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    excluded = SimpleNamespace(
+        id="unit:character",
+        name="Command Squad",
+        keywords=["PLATOON", "CHARACTER"],
+        faction_keywords=["ASTRA MILITARUM"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    already_shot = SimpleNamespace(
+        id="unit:shot",
+        name="Kasrkin",
+        keywords=["PLATOON", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+        round_state=SimpleNamespace(shot_this_round=True, shot_this_phase=True),
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC STRUCTURED FILTER TEST",
+        descriptor_target="target_unit",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [wrong_keyword, excluded, already_shot, valid],
+        },
+        effect_params={
+            "required_keywords_any": ["PLATOON"],
+            "excluded_keywords_any": ["CHARACTER"],
+            "requires_not_selected_to_shoot": True,
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == valid.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_descriptor_enforces_target_aliases_on_enemy_units() -> None:
+    shooter = SimpleNamespace(
+        id="unit:shooter",
+        name="Devastator Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    infantry_enemy = SimpleNamespace(
+        id="enemy:infantry",
+        name="Enemy Infantry",
+        keywords=["INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    aircraft_enemy = SimpleNamespace(
+        id="enemy:aircraft",
+        name="Harpy",
+        keywords=["MONSTER", "AIRCRAFT"],
+        faction_keywords=["TYRANIDS"],
+    )
+    monster_enemy = SimpleNamespace(
+        id="enemy:monster",
+        name="Carnifex",
+        keywords=["MONSTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC TARGET ALIAS FILTER TEST",
+        descriptor_target="friendly_unit_and_target_enemy_unit",
+        context={
+            "phase_name": "Shooting phase",
+            "unit": shooter,
+            "target_unit": shooter,
+            "enemy_candidates": [infantry_enemy, aircraft_enemy, monster_enemy],
+        },
+        effect_params={
+            "target_keywords_any": ["MONSTER"],
+            "exclude_target_keywords_any": ["AIRCRAFT"],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["enemy_unit"]["__entity_ref__"]["id"] == monster_enemy.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_requires_support_context_for_paired_unit_targets() -> None:
+    regiment = SimpleNamespace(
+        id="unit:regiment",
+        name="Infantry Squad",
+        keywords=["REGIMENT", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC PAIRED UNIT TEST",
+        descriptor_target="regiment_unit_and_squadron_unit_within_6",
+        context={
+            "phase_name": "Command phase",
+            "candidates": [regiment],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
+    assert list(game.decision_queue.list() or []) == []
+    diagnostics = manager.get_tool_action_probe_diagnostics()
+    assert diagnostics
+    assert diagnostics[0]["code"] == "missing_tool_action_context"
+    assert "support_unit" in diagnostics[0]["missing_keys"]
 
 
 def test_manager_can_use_denizens_requires_selected_unit_context() -> None:

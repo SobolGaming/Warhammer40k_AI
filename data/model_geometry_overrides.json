@@ -224,6 +224,16 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "baneblade_hull"
+      },
+      "000002604": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hekaton_land_fortress_hull"
+      },
+      "000002602": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "sagitaur_hull"
       }
     }
   },
@@ -326,7 +336,17 @@
 
     "000000087": "drop_pod",
     "drop_pod": "drop_pod",
-    "drop pod": "drop_pod"
+    "drop pod": "drop_pod",
+
+    "000002604": "hekaton_land_fortress_hull",
+    "hekaton_land_fortress_hull": "hekaton_land_fortress_hull",
+    "hekaton land fortress hull": "hekaton_land_fortress_hull",
+    "hekaton land fortress": "hekaton_land_fortress_hull",
+
+    "000002602": "sagitaur_hull",
+    "sagitaur_hull": "sagitaur_hull",
+    "sagitaur hull": "sagitaur_hull",
+    "sagitaur": "sagitaur_hull"
   },
   "units": {
     "aegis_defence_line": {
@@ -494,6 +514,24 @@
       "width_mm": 100.0,
       "height_mm": 70.0,
       "notes": "Bounding rectangle proxy from community tabletop model dimensions: 17cm x 10cm x 7cm."
+    },
+    "hekaton_land_fortress_hull": {
+      "display_name": "Hekaton Land Fortress",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 170.0,
+      "width_mm": 105.0,
+      "height_mm": 110.0,
+      "notes": "Bounding rectangle proxy for Hekaton Land Fortress. Official Base Size Guide classifies this datasheet as Hull; dimensions use community tabletop model measurement: 170mm long, 105mm wide, 110mm high. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/LeaguesofVotann/comments/1nqwahb/"
+    },
+    "sagitaur_hull": {
+      "display_name": "Sagitaur",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 105.0,
+      "width_mm": 68.0,
+      "height_mm": 70.0,
+      "notes": "Bounding rectangle proxy for Sagitaur. Official Base Size Guide classifies this datasheet as Hull; dimensions use community tabletop model measurement: 10.5cm long, 6.8cm wide, 7cm high. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/LeaguesofVotann/comments/1ae778q/"
     },
     "goliath_rockgrinder_hull": {
       "display_name": "Goliath Rockgrinder",

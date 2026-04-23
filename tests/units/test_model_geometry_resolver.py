@@ -103,6 +103,8 @@ def test_resolve_chaos_transport_hull_overrides(
         ("000003975", "Hydra", "hydra_chimera_hull", 117.0, 92.0, 110.0),
         ("000000697", "Wyvern", "hydra_chimera_hull", 117.0, 92.0, 110.0),
         ("000003992", "Wyvern", "hydra_chimera_hull", 117.0, 92.0, 110.0),
+        ("000002604", "Hekaton Land Fortress", "hekaton_land_fortress_hull", 170.0, 105.0, 110.0),
+        ("000002602", "Sagitaur", "sagitaur_hull", 105.0, 68.0, 70.0),
     ],
 )
 def test_resolve_manual_vehicle_hull_overrides_from_recent_headless_warnings(

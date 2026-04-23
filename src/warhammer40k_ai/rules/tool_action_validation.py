@@ -159,6 +159,18 @@ class ToolActionCandidateValidator:
         if required_keywords_any and not self._unit_has_any_keyword(root, required_keywords_any):
             return self._descriptor_issue("unit_keywords")
 
+        inferred_issue = self._effect_param_unit_filter_issue(root, effect_params)
+        if inferred_issue is not None:
+            return inferred_issue
+
+        support_issue = self._effect_param_support_filter_issue(kwargs, effect_params)
+        if support_issue is not None:
+            return support_issue
+
+        enemy_issue = self._effect_param_enemy_filter_issue(kwargs, effect_params)
+        if enemy_issue is not None:
+            return enemy_issue
+
         if "world_eaters_possessed" in target_text:
             if not self._unit_has_all_keywords(root, ("WORLD EATERS", "POSSESSED")):
                 return self._descriptor_issue("unit_keywords")
@@ -203,6 +215,262 @@ class ToolActionCandidateValidator:
             if phase_name == "charge phase" and bool(getattr(round_state, "attempted_charge_this_round", False)):
                 return self._descriptor_issue("not_yet_selected")
         return None
+
+    def _effect_param_unit_filter_issue(
+        self,
+        unit: Any,
+        effect_params: dict[str, Any],
+    ) -> ToolActionValidationIssue | None:
+        required_all = self._effect_param_keywords(
+            effect_params,
+            (
+                "required_faction_keywords_all",
+                "required_keywords_all",
+            ),
+        )
+        if required_all and not self._unit_has_all_keywords(unit, required_all):
+            return self._descriptor_issue("unit_keywords")
+
+        required_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "eligible_unit_keywords_any",
+                "required_keywords_any",
+                "required_keywords_one_of",
+                "single_unit_alternative_keywords",
+            ),
+        )
+        if required_any and not self._unit_has_any_keyword(unit, required_any):
+            return self._descriptor_issue("unit_keywords")
+
+        required_friendly = str(effect_params.get("required_friendly_keyword", "") or "").strip()
+        if required_friendly and not self._unit_has_keyword(unit, required_friendly):
+            return self._descriptor_issue("unit_keywords")
+
+        excluded_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "excluded_keywords",
+                "excluded_keywords_any",
+                "exclude_keywords",
+                "exclude_keywords_any",
+                "excludes_keywords",
+                "forbid_keywords",
+            ),
+        )
+        if excluded_any and self._unit_has_any_keyword(unit, excluded_any):
+            return self._descriptor_issue("excluded_keywords")
+
+        if bool(effect_params.get("exclude_character", False)) and self._unit_has_keyword(unit, "CHARACTER"):
+            return self._descriptor_issue("excluded_keywords")
+
+        required_names = self._effect_param_keywords(
+            effect_params,
+            (
+                "required_names_any",
+                "required_unit_names_any",
+            ),
+        )
+        if required_names and not self._unit_name_matches_any(unit, required_names):
+            return self._descriptor_issue("unit_name")
+
+        excluded_names = self._effect_param_keywords(effect_params, ("exclude_unit_names",))
+        if excluded_names and self._unit_name_matches_any(unit, excluded_names):
+            return self._descriptor_issue("unit_name")
+
+        if self._effect_param_bool(
+            effect_params,
+            (
+                "not_within_engagement_range",
+                "require_not_engagement",
+                "requires_not_engaged",
+                "requires_not_in_engagement_range",
+            ),
+        ) and self._unit_is_in_engagement_range(unit):
+            return self._descriptor_issue("not_in_engagement_range")
+
+        if self._effect_param_bool(
+            effect_params,
+            (
+                "requires_end_engagement",
+                "requires_target_unit_in_engagement_range",
+                "requires_unit_engagement_range",
+            ),
+        ) and not self._unit_is_in_engagement_range(unit):
+            return self._descriptor_issue("engagement_range")
+
+        round_state = getattr(unit, "round_state", None)
+        if bool(effect_params.get("requires_not_selected_to_shoot", False)) and bool(
+            getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
+        ):
+            return self._descriptor_issue("not_yet_shot")
+        if bool(effect_params.get("requires_not_selected_to_fight", False)) and self._unit_has_fought(unit):
+            return self._descriptor_issue("not_yet_fought")
+        if bool(effect_params.get("requires_not_selected_to_move", False)) and bool(
+            getattr(round_state, "moved_this_phase", False) or getattr(round_state, "moved_this_round", False)
+        ):
+            return self._descriptor_issue("not_yet_moved")
+
+        if self._effect_param_bool(effect_params, ("requires_destroyed_models", "requires_lost_models")):
+            if not list(getattr(unit, "models_lost", []) or []):
+                return self._descriptor_issue("destroyed_models")
+
+        if bool(effect_params.get("requires_below_starting_strength", False)) and not self._unit_is_below_starting_strength(unit):
+            return self._descriptor_issue("below_starting_strength")
+
+        if bool(effect_params.get("requires_reserves", False)) and not self._unit_is_in_reserves(unit):
+            return self._descriptor_issue("reserves")
+
+        reserve_status = str(effect_params.get("required_reserve_status") or effect_params.get("reserve_status") or "").strip()
+        if reserve_status:
+            actual_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+            if actual_status != reserve_status.lower() and not (reserve_status.lower() == "reserves" and self._unit_is_in_reserves(unit)):
+                return self._descriptor_issue("reserves")
+
+        if bool(effect_params.get("requires_deep_strike", False)) and not self._unit_has_deep_strike(unit):
+            return self._descriptor_issue("deep_strike_arrival")
+
+        if bool(effect_params.get("requires_reanimation_protocols", False)):
+            has_reanimation = (
+                self._unit_has_keyword(unit, "REANIMATION PROTOCOLS")
+                or bool(getattr(unit, "has_reanimation_protocols", False))
+                or bool(dict(getattr(unit, "special_rules", {}) or {}).get("reanimation_protocols", False))
+            )
+            if not has_reanimation:
+                return self._descriptor_issue("reanimation_protocols")
+
+        return None
+
+    def _effect_param_support_filter_issue(
+        self,
+        kwargs: dict[str, Any],
+        effect_params: dict[str, Any],
+    ) -> ToolActionValidationIssue | None:
+        support = (
+            kwargs.get("support_unit")
+            or kwargs.get("secondary_unit")
+            or kwargs.get("battle_shocked_unit")
+            or kwargs.get("friendly_support_unit")
+        )
+        if support is None:
+            return None
+        support_root = self._unit_root(support)
+        required_all = self._effect_param_keywords(
+            effect_params,
+            (
+                "support_required_keywords_all",
+                "support_unit_keywords_all",
+            ),
+        )
+        if required_all and not self._unit_has_all_keywords(support_root, required_all):
+            return self._descriptor_issue("support_unit_keywords")
+        required_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "paired_support_keywords_any",
+                "support_required_keywords_any",
+            ),
+        )
+        support_keyword = str(effect_params.get("support_unit_keyword", "") or "").strip()
+        if support_keyword:
+            required_any = tuple(list(required_any) + [support_keyword])
+        if required_any and not self._unit_has_any_keyword(support_root, required_any):
+            return self._descriptor_issue("support_unit_keywords")
+        excluded_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "support_excluded_keywords_any",
+                "support_unit_keywords_none",
+            ),
+        )
+        if excluded_any and self._unit_has_any_keyword(support_root, excluded_any):
+            return self._descriptor_issue("support_unit_keywords")
+        return None
+
+    def _effect_param_enemy_filter_issue(
+        self,
+        kwargs: dict[str, Any],
+        effect_params: dict[str, Any],
+    ) -> ToolActionValidationIssue | None:
+        enemy = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit") or kwargs.get("attacker_unit")
+        if enemy is None:
+            return None
+        enemy_root = self._unit_root(enemy)
+        required_all = self._effect_param_keywords(effect_params, ("target_required_keywords_all",))
+        if required_all and not self._unit_has_all_keywords(enemy_root, required_all):
+            return self._descriptor_issue("enemy_unit_keywords")
+        required_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "enemy_keywords_any",
+                "enemy_required_keywords_any",
+                "target_enemy_keywords_any",
+                "target_required_keywords_any",
+                "target_keywords",
+                "target_keyword",
+                "target_keywords_any",
+            ),
+        )
+        if required_any and not self._unit_has_any_keyword(enemy_root, required_any):
+            return self._descriptor_issue("enemy_unit_keywords")
+        excluded_any = self._effect_param_keywords(
+            effect_params,
+            (
+                "enemy_exclude_keywords_any",
+                "enemy_keywords_excluded",
+                "exclude_enemy_keywords",
+                "target_excluded_keywords_any",
+                "exclude_target_keywords_any",
+            ),
+        )
+        if bool(effect_params.get("enemy_excludes_lone_operative", False)):
+            excluded_any = tuple(list(excluded_any) + ["LONE OPERATIVE"])
+        if excluded_any and self._unit_has_any_keyword(enemy_root, excluded_any):
+            return self._descriptor_issue("enemy_unit_keywords")
+        return None
+
+    @staticmethod
+    def _effect_param_bool(effect_params: dict[str, Any], keys: tuple[str, ...]) -> bool:
+        return any(bool(effect_params.get(key, False)) for key in keys)
+
+    @staticmethod
+    def _effect_param_keywords(effect_params: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, ...]:
+        values: list[str] = []
+        for key in keys:
+            raw = effect_params.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, str):
+                values.append(raw)
+                continue
+            try:
+                values.extend(str(value or "") for value in list(raw or []))
+            except TypeError:
+                values.append(str(raw or ""))
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            key = text.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(text)
+        return tuple(ordered)
+
+    @staticmethod
+    def _unit_name_matches_any(unit: Any, names: tuple[str, ...]) -> bool:
+        unit_name = str(getattr(unit, "name", "") or "").strip().upper()
+        if not unit_name:
+            return False
+        normalized_unit = " ".join(unit_name.replace("_", " ").split())
+        for name in names:
+            normalized_name = " ".join(str(name or "").strip().upper().replace("_", " ").split())
+            if normalized_name and normalized_name in normalized_unit:
+                return True
+        return False
 
     @staticmethod
     def _descriptor_issue(reason_key: str) -> ToolActionValidationIssue:
@@ -268,6 +536,16 @@ class ToolActionCandidateValidator:
             return True
         reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
         return reserve_status in {"reserves", "strategic_reserves", "deep_strike"}
+
+    @staticmethod
+    def _unit_is_below_starting_strength(unit: Any) -> bool:
+        checker = getattr(unit, "is_below_starting_strength", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return bool(list(getattr(unit, "models_lost", []) or []))
 
     def _unit_is_in_engagement_range(self, unit: Any) -> bool:
         game = getattr(self.manager, "game", None)
