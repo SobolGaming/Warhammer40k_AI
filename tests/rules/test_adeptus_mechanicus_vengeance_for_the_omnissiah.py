@@ -209,8 +209,8 @@ def test_vengeance_for_the_omnissiah_does_not_trigger_outside_twelve_inches():
     game.rebuild_entity_registry()
 
     enginseer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
-    friendly_vehicle.models[0].set_location(14.0, 0.0, 0.0, 0.0)
-    enemy.models[0].set_location(18.0, 0.0, 0.0, 0.0)
+    friendly_vehicle.models[0].set_location(16.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(22.0, 0.0, 0.0, 0.0)
 
     _publish_model_destroyed_event(game, attacker_unit=enemy, target_unit=friendly_vehicle)
 

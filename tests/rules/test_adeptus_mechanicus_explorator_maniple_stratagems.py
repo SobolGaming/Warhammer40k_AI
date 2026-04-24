@@ -487,7 +487,7 @@ def test_reactive_safeguard_embarks_target_and_queues_charge_retarget():
     admech_army.add_unit(replacement)
     _deploy_unit(game, charger, 6.0, 10.0)
     _deploy_unit(game, transport, 15.8, 10.0)
-    _deploy_unit(game, target, 13.4, 10.0)
+    _deploy_unit(game, target, 12.8, 10.0)
     _deploy_unit(game, replacement, 20.0, 12.5)
     _finalize_game(game, admech_army, enemy_army, players=[admech_player, enemy_player])
 

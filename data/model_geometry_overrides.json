@@ -70,6 +70,101 @@
         "requires_manual_geometry": true,
         "geometry_key": "rhino_chassis"
       },
+      "000000129": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000395": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000910": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000002524": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000003830": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000912": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "exorcist_hull"
+      },
+      "000002484": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "castigator_hull"
+      },
+      "000000911": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "immolator_hull"
+      },
+      "000003819": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "immolator_hull"
+      },
+      "000002714": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000002572": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000001050": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000002501": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000002637": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000000168": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000000963": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000001026": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000002461": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
+      "000002636": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "predator_hull"
+      },
       "000000391": {
         "classification": "hull",
         "requires_manual_geometry": true,
@@ -101,6 +196,21 @@
         "geometry_key": "land_raider_hull"
       },
       "000002634": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000884": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000393": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000002173": {
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "land_raider_hull"
@@ -155,6 +265,51 @@
         "requires_manual_geometry": true,
         "geometry_key": "hydra_chimera_hull"
       },
+      "000000692": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003820": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003951": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000000694": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003974": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000000695": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003966": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000000699": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003970": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
       "000000680": {
         "classification": "hull",
         "requires_manual_geometry": true,
@@ -171,6 +326,56 @@
         "geometry_key": "leman_russ_hull"
       },
       "000003979": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000000701": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003980": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000002741": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000002742": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000002743": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000002744": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003981": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003982": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003983": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "leman_russ_hull"
+      },
+      "000003984": {
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "leman_russ_hull"
@@ -225,6 +430,46 @@
         "requires_manual_geometry": true,
         "geometry_key": "baneblade_hull"
       },
+      "000000703": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000000705": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000000706": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000000707": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003964": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003971": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003973": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
+      "000003989": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "baneblade_hull"
+      },
       "000002604": {
         "classification": "hull",
         "requires_manual_geometry": true,
@@ -238,7 +483,7 @@
       "000001188": {
         "classification": "hull",
         "requires_manual_geometry": true,
-        "geometry_key": "rhino_chassis"
+        "geometry_key": "vindicator_hull"
       },
       "000001178": {
         "classification": "hull",
@@ -248,12 +493,37 @@
       "000002715": {
         "classification": "hull",
         "requires_manual_geometry": true,
-        "geometry_key": "rhino_chassis"
+        "geometry_key": "predator_hull"
       },
       "000002727": {
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "rhino_chassis"
+      },
+      "000000964": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "vindicator_hull"
+      },
+      "000001027": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "vindicator_hull"
+      },
+      "000001650": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "skorpius_hull"
+      },
+      "000001651": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "skorpius_hull"
+      },
+      "000001376": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "plagueburst_crawler_hull"
       },
       "000000392": {
         "classification": "hull",
@@ -338,10 +608,51 @@
     "000004093": "rhino_chassis",
     "000001022": "rhino_chassis",
     "000002640": "rhino_chassis",
+    "000000129": "rhino_chassis",
+    "000000395": "rhino_chassis",
+    "000000910": "rhino_chassis",
+    "000002524": "rhino_chassis",
+    "000003830": "rhino_chassis",
     "rhino_chassis": "rhino_chassis",
     "rhino chassis": "rhino_chassis",
     "rhino": "rhino_chassis",
     "chaos rhino": "rhino_chassis",
+    "razorback": "rhino_chassis",
+    "sororitas rhino": "rhino_chassis",
+    "imperial rhino": "rhino_chassis",
+
+    "000000912": "exorcist_hull",
+    "exorcist_hull": "exorcist_hull",
+    "exorcist hull": "exorcist_hull",
+    "exorcist": "exorcist_hull",
+
+    "000002484": "castigator_hull",
+    "castigator_hull": "castigator_hull",
+    "castigator hull": "castigator_hull",
+    "castigator": "castigator_hull",
+
+    "000000911": "immolator_hull",
+    "000003819": "immolator_hull",
+    "immolator_hull": "immolator_hull",
+    "immolator hull": "immolator_hull",
+    "immolator": "immolator_hull",
+    "sisters of battle immolator": "immolator_hull",
+
+    "000002714": "predator_hull",
+    "000002572": "predator_hull",
+    "000001050": "predator_hull",
+    "000002501": "predator_hull",
+    "000002637": "predator_hull",
+    "000000168": "predator_hull",
+    "000000963": "predator_hull",
+    "000001026": "predator_hull",
+    "000002461": "predator_hull",
+    "000002636": "predator_hull",
+    "predator_hull": "predator_hull",
+    "predator hull": "predator_hull",
+    "predator annihilator": "predator_hull",
+    "chaos predator annihilator": "predator_hull",
+    "chaos predator destructor": "predator_hull",
 
     "000000391": "land_raider_hull",
     "000000065": "land_raider_hull",
@@ -350,10 +661,15 @@
     "000004082": "land_raider_hull",
     "000001025": "land_raider_hull",
     "000002634": "land_raider_hull",
+    "000000884": "land_raider_hull",
+    "000000393": "land_raider_hull",
+    "000002173": "land_raider_hull",
     "land_raider_hull": "land_raider_hull",
     "land raider hull": "land_raider_hull",
     "land raider": "land_raider_hull",
     "chaos land raider": "land_raider_hull",
+    "venerable land raider": "land_raider_hull",
+    "land raider redeemer": "land_raider_hull",
 
     "000000521": "goliath_rockgrinder_hull",
     "goliath_rockgrinder_hull": "goliath_rockgrinder_hull",
@@ -379,6 +695,10 @@
     "banesword": "baneblade_hull",
     "stormlord": "baneblade_hull",
     "stormsword": "baneblade_hull",
+    "banehammer": "baneblade_hull",
+    "doomhammer": "baneblade_hull",
+    "hellhammer": "baneblade_hull",
+    "shadowsword": "baneblade_hull",
 
     "000002745": "leman_russ_hull",
     "000003985": "leman_russ_hull",
@@ -386,11 +706,26 @@
     "000000700": "leman_russ_hull",
     "000003942": "leman_russ_hull",
     "000003979": "leman_russ_hull",
+    "000000701": "leman_russ_hull",
+    "000003980": "leman_russ_hull",
+    "000002741": "leman_russ_hull",
+    "000002742": "leman_russ_hull",
+    "000002743": "leman_russ_hull",
+    "000002744": "leman_russ_hull",
+    "000003981": "leman_russ_hull",
+    "000003982": "leman_russ_hull",
+    "000003983": "leman_russ_hull",
+    "000003984": "leman_russ_hull",
     "leman_russ_hull": "leman_russ_hull",
     "leman russ hull": "leman_russ_hull",
     "leman russ vanquisher": "leman_russ_hull",
     "leman russ commander": "leman_russ_hull",
     "leman russ battle tank": "leman_russ_hull",
+    "leman russ demolisher": "leman_russ_hull",
+    "leman russ eradicator": "leman_russ_hull",
+    "leman russ executioner": "leman_russ_hull",
+    "leman russ exterminator": "leman_russ_hull",
+    "leman russ punisher": "leman_russ_hull",
 
     "000002617": "rogal_dorn_hull",
     "000003892": "rogal_dorn_hull",
@@ -405,10 +740,24 @@
     "000003975": "hydra_chimera_hull",
     "000000697": "hydra_chimera_hull",
     "000003992": "hydra_chimera_hull",
+    "000000692": "hydra_chimera_hull",
+    "000003820": "hydra_chimera_hull",
+    "000003951": "hydra_chimera_hull",
+    "000000694": "hydra_chimera_hull",
+    "000003974": "hydra_chimera_hull",
+    "000000695": "hydra_chimera_hull",
+    "000003966": "hydra_chimera_hull",
+    "000000699": "hydra_chimera_hull",
+    "000003970": "hydra_chimera_hull",
     "hydra_chimera_hull": "hydra_chimera_hull",
     "hydra chimera hull": "hydra_chimera_hull",
     "hydra": "hydra_chimera_hull",
     "wyvern": "hydra_chimera_hull",
+    "chimera": "hydra_chimera_hull",
+    "inquisitorial chimera": "hydra_chimera_hull",
+    "hellhound": "hydra_chimera_hull",
+    "basilisk": "hydra_chimera_hull",
+    "deathstrike": "hydra_chimera_hull",
 
     "000000599": "wave_serpent",
     "wave_serpent": "wave_serpent",
@@ -428,14 +777,31 @@
     "sagitaur hull": "sagitaur_hull",
     "sagitaur": "sagitaur_hull",
 
-    "000001188": "rhino_chassis",
+    "000001188": "vindicator_hull",
     "000001178": "rhino_chassis",
-    "000002715": "rhino_chassis",
+    "000002715": "predator_hull",
     "000002727": "rhino_chassis",
-    "vindicator": "rhino_chassis",
+    "000000964": "vindicator_hull",
+    "000001027": "vindicator_hull",
+    "vindicator_hull": "vindicator_hull",
+    "vindicator hull": "vindicator_hull",
+    "vindicator": "vindicator_hull",
+    "chaos vindicator": "vindicator_hull",
     "vindicator laser destroyer": "rhino_chassis",
-    "predator destructor": "rhino_chassis",
+    "predator destructor": "predator_hull",
     "whirlwind": "rhino_chassis",
+
+    "000001650": "skorpius_hull",
+    "000001651": "skorpius_hull",
+    "skorpius_hull": "skorpius_hull",
+    "skorpius hull": "skorpius_hull",
+    "skorpius dunerider": "skorpius_hull",
+    "skorpius disintegrator": "skorpius_hull",
+
+    "000001376": "plagueburst_crawler_hull",
+    "plagueburst_crawler_hull": "plagueburst_crawler_hull",
+    "plagueburst crawler hull": "plagueburst_crawler_hull",
+    "plagueburst crawler": "plagueburst_crawler_hull",
 
     "000000392": "land_raider_hull",
     "000000066": "land_raider_hull",
@@ -636,6 +1002,69 @@
       "height_mm": 50.0,
       "notes": "Bounding rectangle proxy from community tabletop model dimensions: 11.5cm x 7.5cm x 5cm."
     },
+    "vindicator_hull": {
+      "display_name": "Vindicator / Chaos Vindicator",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 140.0,
+      "width_mm": 90.0,
+      "height_mm": 60.0,
+      "notes": "Bounding rectangle proxy for Vindicator `Use model` datasheets. Uses the Rhino-chassis hull with the front siege shield included: online references identify the Vindicator as a Rhino-chassis vehicle, report the assembled Vindicator at 2.3in high, and describe the shielded model as roughly 1in longer than a Rhino with a shield about 90mm wide. Sources: https://www.adeptusars.com/miniatures/vindicator, https://wh40k.lexicanum.com/wiki/Vindicator, https://www.heresy-online.net/threads/drop-pod-vindicator-dimensions.47092/, and https://www.reddit.com/r/PrintedWarhammer/comments/1itztsb/"
+    },
+    "exorcist_hull": {
+      "display_name": "Exorcist",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 140.0,
+      "width_mm": 92.0,
+      "height_mm": 130.0,
+      "notes": "Bounding rectangle proxy for Adepta Sororitas Exorcist `Use model` datasheet. Uses online tabletop measurements for the shared Exorcist/Immolator chassis: about 5.5in long and just over 3.625in wide, with the Exorcist organ assembly just over 5in tall. Lexicanum technical specs also identify the Sanctorum Exorcist as a 6.6m x 4.5m x 5.3m Rhino-derived missile tank. Sources: https://www.reddit.com/r/sistersofbattle/comments/gh6a5y/odd_request_can_someone_measure_up_the_dimensions/ and https://wh40k.lexicanum.com/wiki/Exorcist"
+    },
+    "castigator_hull": {
+      "display_name": "Castigator",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 140.0,
+      "width_mm": 100.0,
+      "height_mm": 84.0,
+      "notes": "Bounding rectangle proxy for the Adepta Sororitas Castigator `Use model` datasheet. Uses the same Sororitas Rhino-derived chassis length as the Exorcist/Immolator measurement, widens the proxy for the Castigator's side sponsons, and uses the published 3.3in assembled height. Sources: https://www.reddit.com/r/sistersofbattle/comments/gh6a5y/odd_request_can_someone_measure_up_the_dimensions/, https://wh40k.lexicanum.com/wiki/Castigator_(Tank), https://www.adeptusars.com/miniatures/castigator, and https://www.reddit.com/r/sistersofbattle/comments/18bfafi/"
+    },
+    "immolator_hull": {
+      "display_name": "Immolator",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 140.0,
+      "width_mm": 92.0,
+      "height_mm": 115.0,
+      "notes": "Bounding rectangle proxy for Adepta Sororitas and Agents of the Imperium Immolator `Use model` datasheets. Uses online tabletop measurements for the shared Exorcist/Immolator chassis: about 5.5in long and just over 3.625in wide, with the published 4.5in assembled Immolator height. Sources: https://www.reddit.com/r/sistersofbattle/comments/gh6a5y/odd_request_can_someone_measure_up_the_dimensions/, https://www.adeptusars.com/miniatures/immolator, and https://wh40k.lexicanum.com/wiki/Immolator"
+    },
+    "skorpius_hull": {
+      "display_name": "Skorpius Dunerider / Disintegrator",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 120.0,
+      "width_mm": 80.0,
+      "height_mm": 70.0,
+      "notes": "Bounding rectangle proxy for Adeptus Mechanicus Skorpius `Use model` datasheets. Public references describe the Skorpius as roughly Rhino-sized; this uses a 120mm x 80mm hover-tank footprint and the published 2.75in Disintegrator height. Sources: https://www.adeptusars.com/miniatures/skorpius-disintegrator and https://www.reddit.com/r/AdeptusMechanicus/comments/di0kxx/"
+    },
+    "plagueburst_crawler_hull": {
+      "display_name": "Plagueburst Crawler",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 152.0,
+      "width_mm": 102.0,
+      "height_mm": 64.0,
+      "notes": "Bounding rectangle proxy for the Death Guard Plagueburst Crawler `Use model` datasheet. Uses online tabletop dimensions of about 6in length, 4in width, and 2.5in height to the mortar. Sources: https://www.reddit.com/r/PoorHammer/comments/15k47l0/ and https://wh40k.lexicanum.com/wiki/Plagueburst_Crawler"
+    },
+    "predator_hull": {
+      "display_name": "Predator Annihilator / Predator Destructor",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 120.0,
+      "width_mm": 80.0,
+      "height_mm": 80.0,
+      "notes": "Bounding rectangle proxy for Predator `Use model` datasheets. Length and width use online tabletop caliper measurements: 119.1mm long and about 80mm wide at the widest points. Height is scaled from Lexicanum Predator Annihilator technical specs (6.6m length, 4.4m height) against the measured tabletop length. Sources: https://lemmy.world/post/1328440 and https://wh40k.lexicanum.com/wiki/Predator"
+    },
     "land_raider_hull": {
       "display_name": "Land Raider / Chaos Land Raider",
       "type": "hull",
@@ -643,7 +1072,7 @@
       "length_mm": 170.0,
       "width_mm": 100.0,
       "height_mm": 70.0,
-      "notes": "Bounding rectangle proxy from community tabletop model dimensions: 17cm x 10cm x 7cm."
+      "notes": "Bounding rectangle proxy from community tabletop model dimensions: 17cm x 10cm x 7cm. Lexicanum technical specs identify the Land Raider Phobos as a 10.3m x 6.1m x 4.11m hull, consistent with the same broad aspect ratio for tabletop dimensions. Sources: https://www.dakkadakka.com/dakkaforum/posts/list/766982.page and https://wh40k.lexicanum.com/wiki/Land_Raider"
     },
     "hekaton_land_fortress_hull": {
       "display_name": "Hekaton Land Fortress",

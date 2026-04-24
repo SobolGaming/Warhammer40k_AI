@@ -301,7 +301,7 @@ def test_condemnatory_info_screed_upgrades_to_full_wound_reroll_for_land_raider_
     sm_army.add_unit(land_raider)
     sm_army.add_unit(bladeguard)
     _deploy_unit(game, land_raider, 8.0, 8.0)
-    _deploy_unit(game, bladeguard, 11.0, 8.0)
+    _deploy_unit(game, bladeguard, 12.0, 8.0)
     bladeguard.round_state.disembarked_this_round = True
     bladeguard.round_state.disembarked_from_transport_id = str(get_entity_id(land_raider) or "")
     game.rebuild_entity_registry()

@@ -378,7 +378,7 @@ def test_hasty_extraction_embarks_target_and_charge_continues_against_remaining_
     am_army.add_unit(replacement)
     _deploy_unit(game, charger, 6.0, 10.0)
     _deploy_unit(game, transport, 17.0, 10.0)
-    _deploy_unit(game, target, 14.8, 10.0)
+    _deploy_unit(game, target, 13.9, 10.0)
     _deploy_unit(game, replacement, 14.5, 12.5)
     _finalize_game(game, am_army, enemy_army, players=[am_player, enemy_player])
     game.map.is_path_blocked = lambda *_args, **_kwargs: False
@@ -446,7 +446,7 @@ def test_move_out_queues_end_of_turn_embark_and_allows_existing_passengers():
     am_army.add_unit(infantry)
     am_army.add_unit(existing)
     _deploy_unit(game, transport, 10.0, 10.0)
-    _deploy_unit(game, infantry, 12.0, 10.0)
+    _deploy_unit(game, infantry, 13.1, 10.0)
     _finalize_game(game, am_army, enemy_army, players=[am_player, enemy_player])
 
     _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
