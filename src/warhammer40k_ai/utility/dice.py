@@ -2,7 +2,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 
 # Utility Library for Dice Roll random values
 from . import RNG
@@ -274,51 +274,47 @@ def get_roll(
     reason: Optional[str] = None,
     roll_type: Optional[str] = None,
     command_reroll_allowed: bool = False,
-) -> Union[int, None]:
-    try:
-        normalized_expr = str(data or "").strip()
-        active_game = game if game is not None else get_active_game()
-        if bool(_SUPPRESS_GET_ROLL_REQUESTS.get()):
-            return _roll_untracked_expr(normalized_expr, active_game)
-        request_roll = getattr(active_game, "request_dice_roll", None) if active_game is not None else None
-        roll_manager = getattr(active_game, "roll_manager", None) if active_game is not None else None
-        if callable(request_roll) and roll_manager is not None:
-            spec = _build_get_roll_request_spec(
-                normalized_expr,
-                reason=reason,
-                roll_type=roll_type,
-                command_reroll_allowed=command_reroll_allowed,
-            )
-            request = request_roll(
-                player_id=_resolve_roll_player_id(active_game, player=player, player_id=player_id),
-                spec=spec,
-                prompt=str(spec.get("reason") or "Roll dice"),
-            )
-            context = dict(getattr(request, "context", {}) or {})
-            roll_id_raw = context.get("roll_id")
-            if roll_id_raw is None:
-                return None
-            roll_id = int(roll_id_raw)
+) -> int:
+    normalized_expr = str(data or "").strip()
+    active_game = game if game is not None else get_active_game()
+    if bool(_SUPPRESS_GET_ROLL_REQUESTS.get()):
+        return int(_roll_untracked_expr(normalized_expr, active_game))
+    request_roll = getattr(active_game, "request_dice_roll", None) if active_game is not None else None
+    roll_manager = getattr(active_game, "roll_manager", None) if active_game is not None else None
+    if callable(request_roll) and roll_manager is not None:
+        spec = _build_get_roll_request_spec(
+            normalized_expr,
+            reason=reason,
+            roll_type=roll_type,
+            command_reroll_allowed=command_reroll_allowed,
+        )
+        request = request_roll(
+            player_id=_resolve_roll_player_id(active_game, player=player, player_id=player_id),
+            spec=spec,
+            prompt=str(spec.get("reason") or "Roll dice"),
+        )
+        context = dict(getattr(request, "context", {}) or {})
+        roll_id_raw = context.get("roll_id")
+        if roll_id_raw is None:
+            raise RuntimeError(f"Dice roll request for {normalized_expr!r} did not provide a roll_id.")
+        roll_id = int(roll_id_raw)
+        state = roll_manager.get_roll(roll_id)
+        if state is None:
+            raise RuntimeError(f"Dice roll request {roll_id} for {normalized_expr!r} was not found.")
+        if str(getattr(state, "status", "")) != "rolled":
+            _resolve_roll_request(active_game, request)
             state = roll_manager.get_roll(roll_id)
-            if state is None:
-                return None
-            if str(getattr(state, "status", "")) != "rolled":
-                _resolve_roll_request(active_game, request)
-                state = roll_manager.get_roll(roll_id)
-            if state is None or str(getattr(state, "status", "")) != "rolled":
-                return None
-            base_total = int(getattr(state, "total", 0) or 0)
-            modifier = int(spec.get("sum_modifier", 0) or 0)
-            return int(base_total + modifier)
-        if normalized_expr.upper() == "D33":
-            tens = get_dice_roll(3)
-            ones = get_dice_roll(3)
-            return int(int(tens) * 10 + int(ones))
-        dice = DiceCollection.from_string(normalized_expr)
-        return dice.roll()
-    except ValueError as e:
-        logger.exception(f"ERROR: {e}")
-        return None
+        if state is None or str(getattr(state, "status", "")) != "rolled":
+            raise RuntimeError(f"Dice roll request {roll_id} for {normalized_expr!r} was not resolved.")
+        base_total = int(getattr(state, "total", 0) or 0)
+        modifier = int(spec.get("sum_modifier", 0) or 0)
+        return int(base_total + modifier)
+    if normalized_expr.upper() == "D33":
+        tens = get_dice_roll(3)
+        ones = get_dice_roll(3)
+        return int(int(tens) * 10 + int(ones))
+    dice = DiceCollection.from_string(normalized_expr)
+    return int(dice.roll())
 
 if __name__ == "__main__":
     test_rolls = ["D6", "2D6", "D6+5", "2D6+5"]

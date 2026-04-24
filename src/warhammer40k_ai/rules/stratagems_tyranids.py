@@ -5901,7 +5901,7 @@ class TyranidsStratagemMixin:
         if not self._tyr_spend_cp(stratagem, target_unit=root):
             return False
 
-        roll = max(0, int(dice_module.get_roll("D3") or 0)) + 1
+        roll = max(0, dice_module.get_roll("D3")) + 1
         if action_key == "heal":
             base_wounds = self._tyr_model_wounds_characteristic(target_model)
             before = int(getattr(target_model, "wounds", 0) or 0)
@@ -6578,7 +6578,7 @@ class TyranidsStratagemMixin:
 
         total_returned = 0
         for root in list(selected_roots):
-            roll = max(0, int(dice_module.get_roll("D3") or 0)) + 3
+            roll = max(0, dice_module.get_roll("D3")) + 3
             returned = self._tyr_return_destroyed_models(root, amount=int(roll))
             total_returned += int(returned)
 
@@ -8155,7 +8155,7 @@ class TyranidsStratagemMixin:
         if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
             return False
 
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        rolls = [dice_module.get_roll("D6") for _ in range(6)]
         mortal_wounds = sum(1 for roll in rolls if int(roll or 0) >= 3)
         if mortal_wounds > 0:
             apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
@@ -8446,7 +8446,7 @@ class TyranidsStratagemMixin:
         if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
             return False
 
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        rolls = [dice_module.get_roll("D6") for _ in range(6)]
         mortal_wounds = sum(1 for roll in rolls if int(roll or 0) >= 4)
         if mortal_wounds > 0:
             apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)

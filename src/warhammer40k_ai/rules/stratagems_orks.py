@@ -513,7 +513,7 @@ class OrksStratagemMixin:
         count = max(0, int(roll_count or 0))
         threshold = max(2, min(6, int(success_on or 0)))
         cap = max(0, int(max_mortal_wounds or 0))
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(count)]
+        rolls = [dice_module.get_roll("D6") for _ in range(count)]
         successes = sum(1 for roll in rolls if int(roll or 0) >= threshold)
         return rolls, min(int(successes), cap)
 
@@ -1443,7 +1443,7 @@ class OrksStratagemMixin:
             return 0
         match = re.fullmatch(r"(D[36])(?:\+(\d+))?", token)
         if match is not None:
-            roll_value = max(0, int(dice_module.get_roll(match.group(1)) or 0))
+            roll_value = max(0, dice_module.get_roll(match.group(1)))
             return int(roll_value) + int(match.group(2) or 0)
         if token.isdigit():
             return int(token)
@@ -4523,7 +4523,7 @@ class OrksStratagemMixin:
         if not self._orks_spend_cp(stratagem, target_unit=root):
             return False
 
-        max_distance = 6 if self._orks_unit_has_active_waaagh(root) else 3 + int(dice_module.get_roll("D3"))
+        max_distance = 6 if self._orks_unit_has_active_waaagh(root) else 3 + dice_module.get_roll("D3")
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -6296,7 +6296,7 @@ class OrksStratagemMixin:
         if not self._orks_spend_cp(stratagem, target_unit=root):
             return False
 
-        roll = max(0, int(dice_module.get_roll("D3") or 0)) + 2
+        roll = max(0, dice_module.get_roll("D3")) + 2
         max_return = min(int(roll), len(returnable_models))
 
         explicit_selection = any(

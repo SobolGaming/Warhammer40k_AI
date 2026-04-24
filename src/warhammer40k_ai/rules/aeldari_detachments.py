@@ -966,7 +966,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         dice_count = self._seer_council_fate_dice_count(game=game)
         pool: list[int] = []
         for _ in range(max(0, int(dice_count or 0))):
-            roll = int(get_roll("D6") or 1)
+            roll = get_roll("D6")
             pool.append(min(6, max(1, roll)))
         self.seer_council_fate_dice = pool
         self.seer_council_fate_dice_generated_round = 1
@@ -1273,10 +1273,10 @@ class AeldariDetachmentManager(DetachmentManagerBase):
 
         outcomes: list[dict] = []
         for loc in objective_locations:
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             mortal_wounds = 0
             if roll >= 2:
-                mortal_wounds = int(get_roll("D3") or 0)
+                mortal_wounds = get_roll("D3")
                 if mortal_wounds > 0 and hasattr(enemy_unit, "_apply_mortal_wounds_to_unit"):
                     enemy_unit._apply_mortal_wounds_to_unit(enemy_unit, int(mortal_wounds), game_map=resolved_map)
             outcomes.append(

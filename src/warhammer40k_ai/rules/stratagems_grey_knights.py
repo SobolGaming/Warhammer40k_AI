@@ -3200,12 +3200,12 @@ class GreyKnightsStratagemMixin:
         for source in sources:
             if not unit_within_range_of_unit(source, enemy_root, 6.0, use_attached_aggregate=True):
                 continue
-            roll = int(dice_module.get_roll("D6") or 0)
+            roll = dice_module.get_roll("D6")
             if bool(mgr.unit_wholly_within_hallowed_ground(source, game=game)):
                 roll += 2
             if roll < 4:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             apply_mortals = getattr(source, "_apply_mortal_wounds_to_unit", None)
@@ -4332,7 +4332,7 @@ class GreyKnightsStratagemMixin:
             return False
         successes = 0
         for _ in range(int(mortal_wounds_suffered)):
-            roll = int(dice_module.get_roll("D6") or 0)
+            roll = dice_module.get_roll("D6")
             if roll >= 2:
                 successes += 1
         mortal_wounds = min(6, int(successes))
@@ -4562,7 +4562,7 @@ class GreyKnightsStratagemMixin:
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
-        max_distance = int(dice_module.get_roll("D6") or 0)
+        max_distance = dice_module.get_roll("D6")
         if max_distance <= 0:
             logger.error("ERROR: PRECOGNITIVE STRATEGIES: failed to determine reactive move distance")
             return False
@@ -5989,10 +5989,10 @@ class GreyKnightsStratagemMixin:
                 continue
             if not unit_within_range_of_unit(root, enemy_root, 6.0, use_attached_aggregate=True):
                 continue
-            roll = int(dice_module.get_roll("D6") or 0) + int(bonus or 0)
+            roll = dice_module.get_roll("D6") + int(bonus or 0)
             if roll < 4:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)

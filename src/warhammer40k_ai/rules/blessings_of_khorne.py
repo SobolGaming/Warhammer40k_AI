@@ -263,7 +263,7 @@ class BlessingsOfKhorneManager:
     ) -> BlessingsRollContext:
         if roll_d6 is None:
             from ..utility.dice import get_roll
-            roll_d6 = lambda: int(get_roll("D6"))
+            roll_d6 = lambda: get_roll("D6")
 
         if already_active_keys is None:
             already_active_keys = set(self.active_blessing_keys)
@@ -290,7 +290,7 @@ class BlessingsOfKhorneManager:
     def reroll_indices(self, ctx: BlessingsRollContext, indices: list[int], *, roll_d6: Optional[Callable[[], int]] = None) -> None:
         if roll_d6 is None:
             from ..utility.dice import get_roll
-            roll_d6 = lambda: int(get_roll("D6"))
+            roll_d6 = lambda: get_roll("D6")
 
         unique = []
         for i in indices:
@@ -602,7 +602,7 @@ class BlessingsOfKhorneManager:
         from ..utility.dice import get_roll
         for model in pending:
             try:
-                roll = int(get_roll("D6"))
+                roll = get_roll("D6")
             except Exception:
                 roll = 1
             if roll < 4:

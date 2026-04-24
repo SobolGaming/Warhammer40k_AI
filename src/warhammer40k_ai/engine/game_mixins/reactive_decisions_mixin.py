@@ -5373,7 +5373,7 @@ class GameReactiveDecisionsMixin:
                         if normal_expr:
                             try:
                                 if normal_expr.startswith("D"):
-                                    max_distance = int(get_roll(normal_expr) or 0)
+                                    max_distance = get_roll(normal_expr)
                                 else:
                                     max_distance = int(normal_expr)
                             except Exception:
@@ -5446,7 +5446,7 @@ class GameReactiveDecisionsMixin:
                     try:
                         from ...utility.dice import get_roll
 
-                        max_distance = int(get_roll(roll_spec) or 0)
+                        max_distance = get_roll(roll_spec)
                     except Exception:
                         max_distance = 0
                     try:
@@ -6617,7 +6617,7 @@ class GameReactiveDecisionsMixin:
                 cp_gain = 1
             from ...utility.event_bus import append_action, append_dice
 
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             append_dice(player, f"{ability_name} roll: {int(roll)}")
             gained_cp = 0
             if roll >= max(2, int(roll_threshold)) and cp_gain > 0:
@@ -6837,7 +6837,7 @@ class GameReactiveDecisionsMixin:
                 if threshold > 0 and refund_amount > 0:
                     from ...utility.event_bus import append_action, append_dice
 
-                    roll = int(get_roll("D6") or 0)
+                    roll = get_roll("D6")
                     append_dice(player, f"{refund_reason} roll: {int(roll)}")
                     if roll >= max(2, int(threshold)):
                         refund_delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(refund_amount, game=self) or 0)
@@ -7203,7 +7203,7 @@ class GameReactiveDecisionsMixin:
             except Exception:
                 turn = 0
 
-            mortal_roll = int(get_roll("D3") or 0)
+            mortal_roll = get_roll("D3")
             mortal_wounds = max(1, int(mortal_roll) + 1)
             applied_wounds = 0
             for _ in range(int(mortal_wounds)):
@@ -7780,11 +7780,11 @@ class GameReactiveDecisionsMixin:
                 if not _destroy_one_bodyguard_model():
                     return
                 try:
-                    attacks_bonus = int(get_roll("D3") or 0)
+                    attacks_bonus = get_roll("D3")
                 except Exception:
                     attacks_bonus = 0
                 try:
-                    strength_bonus = int(get_roll("D3") or 0)
+                    strength_bonus = get_roll("D3")
                 except Exception:
                     strength_bonus = 0
             else:
@@ -7933,11 +7933,11 @@ class GameReactiveDecisionsMixin:
                 _get_roll = None
                 _append_dice = None
             player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
-            roll = int(_get_roll("D6") or 0) if callable(_get_roll) else 0
+            roll = _get_roll("D6")
             if callable(_append_dice) and player is not None:
                 _append_dice(player, f"{ability_name} roll: {roll}")
             if roll <= 1:
-                mortal = int(_get_roll("D3") or 0) if callable(_get_roll) else 0
+                mortal = _get_roll("D3")
                 if callable(_append_dice) and player is not None:
                     _append_dice(player, f"{ability_name} mortal wounds: {mortal}")
                 if mortal > 0:
@@ -8145,7 +8145,7 @@ class GameReactiveDecisionsMixin:
                 return
             heal_roll = str(payload.get("heal_roll") or ctx.get("heal_roll") or "D6").strip().upper() or "D6"
             try:
-                rolled = int(get_roll(heal_roll) or 0)
+                rolled = get_roll(heal_roll)
             except Exception:
                 rolled = 0
             try:
@@ -8787,12 +8787,12 @@ class GameReactiveDecisionsMixin:
                     if not in_range:
                         continue
 
-                    trigger_roll = int(get_roll("D6") or 0)
+                    trigger_roll = get_roll("D6")
                     mortal_wounds = 0
                     if trigger_roll == 6:
-                        mortal_wounds = int(get_roll("D3") or 0) + 3
+                        mortal_wounds = get_roll("D3") + 3
                     elif trigger_roll >= 2:
-                        mortal_wounds = int(get_roll("D3") or 0)
+                        mortal_wounds = get_roll("D3")
                     if mortal_wounds > 0 and hasattr(source_root, "_apply_mortal_wounds_to_unit"):
                         source_root._apply_mortal_wounds_to_unit(target_root, int(mortal_wounds), game_map=getattr(self, "map", None))
 

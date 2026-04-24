@@ -339,7 +339,7 @@ class BattleFocusManager:
                 refund_tokens = 1
             refund_tokens = max(1, int(refund_tokens))
             try:
-                roll = int(get_roll("D6")) if callable(get_roll) else 1
+                roll = get_roll("D6")
             except Exception:
                 roll = 1
             if roll < threshold:
@@ -941,7 +941,7 @@ class BattleFocusManager:
         else:
             try:
                 from ..utility.dice import get_roll
-                roll = int(get_roll("D6"))
+                roll = get_roll("D6")
             except Exception:
                 roll = 1
             if warhost_bonus:

@@ -3057,7 +3057,7 @@ class AdeptaSororitasStratagemMixin:
             if discarded < 1:
                 discarded = 1
             try:
-                rolled = int(dice_module.get_roll("D3") or 0)
+                rolled = dice_module.get_roll("D3")
             except Exception:
                 rolled = 0
             wounds_remaining = int(rolled + discarded)
@@ -4011,7 +4011,7 @@ class AdeptaSororitasStratagemMixin:
             return False
         if not self._as_spend_cp(stratagem, target_unit=root):
             return False
-        max_distance = max(0, int(dice_module.get_roll("D6") or 0))
+        max_distance = max(0, dice_module.get_roll("D6"))
         if max_distance <= 0:
             logger.error("ERROR: DEVOUT FANATICISM: invalid reactive move distance")
             return False

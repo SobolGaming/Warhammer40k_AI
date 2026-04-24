@@ -2950,7 +2950,7 @@ class WorldEatersStratagemMixin:
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_dice
 
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         can_reroll = bool(self._is_khorne_berzerkers_unit(unit) or self._is_vessel_of_wrath_unit(unit))
         reroll_used = False
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
@@ -2969,11 +2969,11 @@ class WorldEatersStratagemMixin:
                     )
                 )
                 if want:
-                    base_roll = int(get_roll("D6") or 0)
+                    base_roll = get_roll("D6")
                     reroll_used = True
             else:
                 if int(base_roll or 0) <= 3:
-                    base_roll = int(get_roll("D6") or 0)
+                    base_roll = get_roll("D6")
                     reroll_used = True
         if player is not None:
             label = "Meet Force with Force reroll" if reroll_used else "Meet Force with Force roll"

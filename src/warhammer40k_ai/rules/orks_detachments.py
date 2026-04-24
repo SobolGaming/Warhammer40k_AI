@@ -2055,7 +2055,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
                     roll_count = 1
             roll_count = max(1, int(roll_count))
             for _roll_index in range(roll_count):
-                rolled_value = int(get_roll("D6") or 1)
+                rolled_value = get_roll("D6")
                 if rolled_value < 1:
                     rolled_value = 1
                 if rolled_value > 6:

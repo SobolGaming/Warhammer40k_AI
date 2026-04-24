@@ -9844,7 +9844,7 @@ class SpaceMarinesStratagemMixin:
             if self._sm_alive_model_count(root) >= models_before:
                 continue
 
-            max_distance = int(dice_module.get_roll("D6") or 0)
+            max_distance = dice_module.get_roll("D6")
             if max_distance <= 0:
                 continue
             request = queue_move(
@@ -10592,10 +10592,10 @@ class SpaceMarinesStratagemMixin:
             is_within = getattr(enemy_root, "is_within_objective_range", None)
             if not callable(is_within) or not bool(is_within(location)):
                 continue
-            trigger_roll = int(dice_module.get_roll("D6") or 0)
+            trigger_roll = dice_module.get_roll("D6")
             if trigger_roll < 2:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             apply_mortal_wounds(enemy_root, int(mortal_wounds), game_map=game_map)
@@ -18048,7 +18048,7 @@ class SpaceMarinesStratagemMixin:
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        max_distance = max(1, int(dice_module.get_roll("D6") or 0) + 1)
+        max_distance = max(1, dice_module.get_roll("D6") + 1)
         request = queue_move(
             player=self.player,
             unit=root,
@@ -21525,7 +21525,7 @@ class SpaceMarinesStratagemMixin:
 
         chaplain_support = self._sm_lost_brethren_has_friendly_chaplain_support(root)
         below_starting = bool(getattr(root, "is_below_starting_strength", lambda: False)())
-        max_distance = 6.0 if chaplain_support or below_starting else float(max(1, int(dice_module.get_roll("D3") or 0) + 3))
+        max_distance = 6.0 if chaplain_support or below_starting else float(max(1, dice_module.get_roll("D3") + 3))
 
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
@@ -22796,7 +22796,7 @@ class SpaceMarinesStratagemMixin:
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        max_distance = max(0, int(dice_module.get_roll("D6") or 0))
+        max_distance = max(0, dice_module.get_roll("D6"))
         if max_distance <= 0:
             logger.error("ERROR: HERESY BEGETS RETRIBUTION: invalid reactive move distance")
             return False
@@ -23123,7 +23123,7 @@ class SpaceMarinesStratagemMixin:
         if tactical_doctrine_active:
             max_distance = 6
         else:
-            max_distance = max(0, int(dice_module.get_roll("D6") or 0))
+            max_distance = max(0, dice_module.get_roll("D6"))
         if max_distance <= 0:
             logger.error("ERROR: %s: invalid reactive move distance", ability_name)
             return False
@@ -26063,7 +26063,7 @@ class SpaceMarinesStratagemMixin:
             return False
 
         roll_bonus = 1 if self._sm_librarius_discipline_active("TELEKINESIS") else 0
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        rolls = [dice_module.get_roll("D6") for _ in range(6)]
         modified_rolls = [int(roll) + int(roll_bonus) for roll in rolls]
         mortal_wounds = sum(1 for roll in modified_rolls if int(roll) >= 4)
         if mortal_wounds > 0:
@@ -26650,7 +26650,7 @@ class SpaceMarinesStratagemMixin:
 
         roll_count = self._sm_alive_model_count(root)
         roll_bonus = 1 if self._sm_inner_circle_unit_within_vowed_objective(enemy_root) else 0
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(max(0, int(roll_count or 0)))]
+        rolls = [dice_module.get_roll("D6") for _ in range(max(0, int(roll_count or 0)))]
         modified_rolls = [int(roll) + int(roll_bonus) for roll in rolls]
         mortal_wounds = min(3, sum(1 for roll in modified_rolls if int(roll) >= 4))
         if mortal_wounds > 0:
@@ -27203,7 +27203,7 @@ class SpaceMarinesStratagemMixin:
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        max_distance = 6 if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else int(dice_module.get_roll("D6") or 0)
+        max_distance = 6 if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else dice_module.get_roll("D6")
         request = queue_move(
             player=self.player,
             unit=root,
@@ -27781,7 +27781,7 @@ class SpaceMarinesStratagemMixin:
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        max_distance = 6 if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else int(dice_module.get_roll("D6") or 0)
+        max_distance = 6 if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else dice_module.get_roll("D6")
         request = queue_move(
             player=self.player,
             unit=root,
@@ -31007,7 +31007,7 @@ class SpaceMarinesStratagemMixin:
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        max_distance = int(dice_module.get_roll("D6") or 0)
+        max_distance = dice_module.get_roll("D6")
         if max_distance <= 0:
             logger.error("ERROR: BATTLE INSTINCTS: failed to determine reactive move distance")
             return False
@@ -31306,7 +31306,7 @@ class SpaceMarinesStratagemMixin:
         max_distance = 6 if (
             (self._sm_is_space_wolves_unit(root) and self._sm_is_infantry_unit(root))
             or self._sm_is_thunderwolf_cavalry(root)
-        ) else int(dice_module.get_roll("D6") or 0)
+        ) else dice_module.get_roll("D6")
         request = queue_move(
             player=self.player,
             unit=root,

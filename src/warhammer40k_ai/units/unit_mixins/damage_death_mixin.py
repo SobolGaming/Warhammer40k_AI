@@ -477,7 +477,7 @@ class DamageDeathMixin:
             return 0
         if expr.isdigit():
             return int(expr)
-        return int(get_roll(expr) or 0)
+        return get_roll(expr)
 
     def _prompt_use_death_vision_of_sanguinius(
         self,
@@ -683,7 +683,7 @@ class DamageDeathMixin:
             ).strip() or "Model"
             attacker_label = str(getattr(attacker_root, "name", "") or "Attacking Unit").strip() or "Attacking Unit"
             warlord_bonus = int(rule.get("warlord_bonus", 0) or 0) if attacker_contains_warlord else 0
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             total = int(roll) + int(warlord_bonus)
 
             result_expr = ""
@@ -1386,7 +1386,7 @@ class DamageDeathMixin:
                     exp = str(sr.get("hysterical_frenzy_expires_phase", "") or "").strip().upper()
                     if not exp or exp == phase_name:
                         threshold = int(sr.get("hysterical_frenzy_threshold", 4) or 4)
-                        roll = int(get_roll("D6"))
+                        roll = get_roll("D6")
                         from ...utility.event_bus import append_dice
                         if army is not None and getattr(army, "player", None) is not None:
                             label = str(sr.get("hysterical_frenzy_source", "") or "Hysterical Frenzy").strip()
@@ -1447,7 +1447,7 @@ class DamageDeathMixin:
                         if not exp or exp == phase_name:
                             try:
                                 if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
-                                    roll = int(get_roll("D6") or 0)
+                                    roll = get_roll("D6")
                                     bonus = 0
                                     mgr = getattr(army, "emperors_children", None) if army is not None else None
                                     is_favoured = getattr(mgr, "is_favoured_champions", None) if mgr is not None else None
@@ -1618,7 +1618,7 @@ class DamageDeathMixin:
                                 is_melee = bool(is_melee_fn())
                             if is_melee:
                                 threshold = int(sr.get("blood_legion_wrath_undeniable_threshold", 4) or 4)
-                                roll = int(get_roll("D6"))
+                                roll = get_roll("D6")
                                 if army is not None and getattr(army, "player", None) is not None:
                                     from ...utility.event_bus import append_dice
 
@@ -1682,7 +1682,7 @@ class DamageDeathMixin:
                                 if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
                                     from ...utility.damage_allocation import _is_character_model
                                     from ...utility import dice as dice_module
-                                    roll = int(dice_module.get_roll("D6"))
+                                    roll = dice_module.get_roll("D6")
                                     is_char = bool(_is_character_model(model))
                                     total = roll + (2 if is_char else 0)
                                     try:
@@ -1762,7 +1762,7 @@ class DamageDeathMixin:
                                 except Exception:
                                     pass
                         return
-                    roll = int(get_roll("D6"))
+                    roll = get_roll("D6")
                     total = int(roll)
                     roll_modifier = int(rule.get("roll_modifier", 0) or 0)
                     fortify_bonus = int(rule.get("fortify_takeover_bonus", 0) or 0)
@@ -1856,7 +1856,7 @@ class DamageDeathMixin:
                 elif trigger_attack_type == "ranged":
                     should_trigger = bool(is_ranged)
                 if should_trigger:
-                    roll = int(get_roll("D6"))
+                    roll = get_roll("D6")
                     total = int(roll)
                     from ...utility.event_bus import append_dice
                     army = self.get_parent_army()
@@ -1901,7 +1901,7 @@ class DamageDeathMixin:
                         except Exception:
                             is_melee = False
                         if is_melee:
-                            roll = int(get_roll("D6"))
+                            roll = get_roll("D6")
                             try:
                                 from ...utility.event_bus import append_dice
                                 pn = self.get_parent_army().player

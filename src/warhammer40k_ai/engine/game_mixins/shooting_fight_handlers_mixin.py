@@ -753,7 +753,7 @@ class GameShootingFightHandlersMixin:
             elif range_roll == "D6":
                 try:
                     from ...utility.dice import get_roll
-                    max_distance = int(get_roll("D6") or 0)
+                    max_distance = get_roll("D6")
                 except Exception:
                     max_distance = 0
                 try:
@@ -3949,7 +3949,7 @@ class GameShootingFightHandlersMixin:
             if target_unit is None or not target_unit.is_alive():
                 continue
             try:
-                mortal = int(get_roll("D3") or 0)
+                mortal = get_roll("D3")
             except Exception:
                 mortal = 0
             if mortal <= 0:
@@ -4005,12 +4005,12 @@ class GameShootingFightHandlersMixin:
             raw = str(raw_value or "").strip().lower()
             if raw == "d3":
                 try:
-                    return int(get_roll("D3") or 0)
+                    return get_roll("D3")
                 except Exception:
                     return 0
             if raw == "d6":
                 try:
-                    return int(get_roll("D6") or 0)
+                    return get_roll("D6")
                 except Exception:
                     return 0
             try:
@@ -4082,12 +4082,12 @@ class GameShootingFightHandlersMixin:
             raw = str(raw_value or "").strip().lower()
             if raw == "d3":
                 try:
-                    return int(get_roll("D3") or 0)
+                    return get_roll("D3")
                 except Exception:
                     return 0
             if raw == "d6":
                 try:
-                    return int(get_roll("D6") or 0)
+                    return get_roll("D6")
                 except Exception:
                     return 0
             try:
@@ -4159,12 +4159,12 @@ class GameShootingFightHandlersMixin:
             raw = str(raw_value or "").strip().lower()
             if raw == "d3":
                 try:
-                    return int(get_roll("D3") or 0)
+                    return get_roll("D3")
                 except Exception:
                     return 0
             if raw == "d6":
                 try:
-                    return int(get_roll("D6") or 0)
+                    return get_roll("D6")
                 except Exception:
                     return 0
             try:
@@ -7976,7 +7976,7 @@ class GameShootingFightHandlersMixin:
                     struck_ids: list[str] = []
                     for cand in list(candidates):
                         try:
-                            roll = int(get_roll("D6") or 0)
+                            roll = get_roll("D6")
                         except Exception:
                             roll = 0
                         total = int(roll)
@@ -8179,7 +8179,7 @@ class GameShootingFightHandlersMixin:
                     struck_ids: list[str] = []
                     for cand in list(candidates):
                         try:
-                            roll = int(get_roll("D6") or 0)
+                            roll = get_roll("D6")
                         except Exception:
                             roll = 0
                         try:
@@ -8356,7 +8356,7 @@ class GameShootingFightHandlersMixin:
                     struck_ids: list[str] = []
                     for cand in list(candidates):
                         try:
-                            roll = int(get_roll("D6") or 0)
+                            roll = get_roll("D6")
                         except Exception:
                             roll = 0
                         try:
@@ -8490,7 +8490,7 @@ class GameShootingFightHandlersMixin:
         marked_ids: list[str] = []
         for cand in list(candidates):
             try:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             if roll >= 5:
@@ -15557,7 +15557,7 @@ class GameShootingFightHandlersMixin:
             spawn_count = 0
         if spawn_count <= 0:
             try:
-                spawn_count = int(get_roll(spawn_roll) or 0)
+                spawn_count = get_roll(spawn_roll)
             except Exception:
                 spawn_count = 0
             spawn_count = max(1, min(3, int(spawn_count or 0)))
@@ -16771,7 +16771,7 @@ class GameShootingFightHandlersMixin:
             rolls: list[int] = []
             for _ in range(int(num_allocations)):
                 try:
-                    roll = int(get_roll("D6") or 0)
+                    roll = get_roll("D6")
                 except Exception:
                     roll = 0
                 rolls.append(int(roll))
@@ -16866,7 +16866,7 @@ class GameShootingFightHandlersMixin:
                 total_mortal_wounds = 0
                 for _ in range(int(num_allocations)):
                     try:
-                        roll = int(get_roll("D6") or 0)
+                        roll = get_roll("D6")
                     except Exception:
                         roll = 0
                     rolls.append(int(roll))
@@ -17025,7 +17025,7 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 afflicted_bonus = 0
         try:
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
         except Exception:
             roll = 0
         total = int(roll) + int(afflicted_bonus)
@@ -17264,7 +17264,7 @@ class GameShootingFightHandlersMixin:
                 continue
             source_name = str(request_data.get("source_name", "Cursed Circlet") or "Cursed Circlet").strip() or "Cursed Circlet"
             range_roll = str(request_data.get("range_roll", "D6") or "D6").strip().upper() or "D6"
-            max_distance = int(get_roll(range_roll) or 0)
+            max_distance = get_roll(range_roll)
             if callable(append_dice):
                 append_dice(player, f"{source_name}: {max_distance}")
             if max_distance <= 0:
@@ -18060,7 +18060,7 @@ class GameShootingFightHandlersMixin:
                 if str(ctx.get("reactive_move_unit_id", "") or "") == source_id:
                     return
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         try:
             from ...utility.event_bus import append_dice
 

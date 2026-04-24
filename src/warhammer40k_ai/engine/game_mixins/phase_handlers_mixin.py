@@ -1073,7 +1073,7 @@ class GamePhaseHandlersMixin:
                 source = str(spec.get("source", "") or "Command phase CP roll").strip() or "Command phase CP roll"
                 roll_spec = f"{int(dice_count)}D6"
                 try:
-                    rolled = int(get_roll(roll_spec) or 0)
+                    rolled = get_roll(roll_spec)
                 except Exception:
                     rolled = 0
                 append_dice(
@@ -3884,7 +3884,7 @@ class GamePhaseHandlersMixin:
             if table_roll == "D6":
                 try:
                     from ...utility.dice import get_roll
-                    rolled = int(get_roll("D6") or 0)
+                    rolled = get_roll("D6")
                 except Exception:
                     rolled = 0
                 if rolled <= 0:
@@ -3894,7 +3894,7 @@ class GamePhaseHandlersMixin:
                 if rolled == 1:
                     try:
                         mw_expr = str(ability.get("mortal_wounds_roll_on_1", "") or "D3").strip().upper() or "D3"
-                        mortal_wounds = int(get_roll(mw_expr) or 0)
+                        mortal_wounds = get_roll(mw_expr)
                     except Exception:
                         mortal_wounds = 0
                     if mortal_wounds > 0:
@@ -3998,7 +3998,7 @@ class GamePhaseHandlersMixin:
             if amount_roll:
                 try:
                     from ...utility.dice import get_roll
-                    rolled = int(get_roll(amount_roll) or 0)
+                    rolled = get_roll(amount_roll)
                 except Exception:
                     rolled = 0
                 if rolled <= 0:
@@ -4254,7 +4254,7 @@ class GamePhaseHandlersMixin:
             if amount_roll:
                 try:
                     from ...utility.dice import get_roll
-                    rolled = int(get_roll(amount_roll) or 0)
+                    rolled = get_roll(amount_roll)
                 except Exception:
                     rolled = 0
                 if rolled <= 0:
@@ -16998,7 +16998,7 @@ class GamePhaseHandlersMixin:
                     mod += max(0, enemy_bonus)
 
                 ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Echoes of Ulthanesh").strip()
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 total = int(roll) + int(mod)
                 if int(mod) > 0:
                     roll_text = f"D6={int(roll)}+{int(mod)}={int(total)}"
@@ -17033,7 +17033,7 @@ class GamePhaseHandlersMixin:
                 if not _within_controlled_objective(bearer, unit):
                     continue
                 ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Harmonisation Matrix").strip()
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 append_dice(player, f"{ability_name} roll: {roll}")
                 if roll >= 3:
                     gained = int(player.gain_command_points(1, reason=ability_name) or 0)
@@ -17188,7 +17188,7 @@ class GamePhaseHandlersMixin:
                     continue
             if not in_range:
                 continue
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             label = str(getattr(location, "id", "") or getattr(objective, "name", "") or "Objective").strip() or "Objective"
             append_dice(player, f"Thievin' Scavengers ({label}) roll: {int(roll)}")
             if int(roll) >= 4:
@@ -17311,7 +17311,7 @@ class GamePhaseHandlersMixin:
                 if root is not None
             ):
                 continue
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             label = str(getattr(location, "id", "") or getattr(objective, "name", "") or "Objective").strip() or "Objective"
             append_dice(player, f"Claimed for the Cult ({label}) roll: {int(roll)}")
             if int(roll) >= 4:
@@ -18527,12 +18527,12 @@ class GamePhaseHandlersMixin:
                 except Exception:
                     pass
                 ability_name = str(spec.get("source", "") or "Word of the Phoenix").strip() or "Word of the Phoenix"
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 if append_dice and player is not None:
                     append_dice(player, f"{ability_name} roll: {roll}")
                 if roll < 2:
                     continue
-                amount = int(get_roll("D3") or 0) + 1
+                amount = get_roll("D3") + 1
                 if amount <= 0:
                     continue
                 destroyed = list(getattr(root, "models_lost", []) or [])
@@ -23175,10 +23175,10 @@ class GamePhaseHandlersMixin:
                     mw = spec.get("mortal_wounds")
                     mw_norm = str(mw).strip().lower()
                     if mw_norm == "d3":
-                        d3_roll = int(get_roll("D3") or 0)
+                        d3_roll = get_roll("D3")
                         total_mw = int(d3_roll or 0)
                     elif mw_norm == "d6":
-                        d6_roll = int(get_roll("D6") or 0)
+                        d6_roll = get_roll("D6")
                         total_mw = int(d6_roll or 0)
                     else:
                         try:
@@ -23189,10 +23189,10 @@ class GamePhaseHandlersMixin:
                 if 2 <= roll <= 3:
                     total_mw = 1
                 elif 4 <= roll <= 5:
-                    d3_roll = int(get_roll("D3") or 0)
+                    d3_roll = get_roll("D3")
                     total_mw = int(d3_roll or 0)
                 elif roll >= 6:
-                    d6_roll = int(get_roll("D6") or 0)
+                    d6_roll = get_roll("D6")
                     total_mw = int(d6_roll or 0)
             roll_note = f"roll={int(roll)}"
             if applied_bonus:
@@ -23207,7 +23207,7 @@ class GamePhaseHandlersMixin:
             if not targets:
                 return
             for target_unit in targets:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 total_mw, roll_note = _resolve_mortal_roll(spec, roll, target_unit=target_unit)
                 if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
                     source_unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
@@ -23933,22 +23933,22 @@ class GamePhaseHandlersMixin:
                             break
                 return int(max(0, move_val))
             if token == "D3+3":
-                return int(get_roll("D3") or 0) + 3
+                return get_roll("D3") + 3
             if token == "D6":
-                return int(get_roll("D6") or 0)
+                return get_roll("D6")
             if token == "D3":
-                return int(get_roll("D3") or 0)
+                return get_roll("D3")
             m = re.fullmatch(r"D(?P<sides>\d+)\+(?P<add>\d+)", token)
             if m:
                 sides = int(m.group("sides") or 0)
                 add = int(m.group("add") or 0)
                 if sides > 0:
-                    return int(get_roll(f"D{sides}") or 0) + int(add)
+                    return get_roll(f"D{sides}") + int(add)
             m = re.fullmatch(r"D(?P<sides>\d+)", token)
             if m:
                 sides = int(m.group("sides") or 0)
                 if sides > 0:
-                    return int(get_roll(f"D{sides}") or 0)
+                    return get_roll(f"D{sides}")
             if token.isdigit():
                 return int(token)
             return 0
@@ -24445,7 +24445,7 @@ class GamePhaseHandlersMixin:
                 rolls = []
                 ones = 0
                 for _m in models:
-                    r = int(get_roll("D6") or 0)
+                    r = get_roll("D6")
                     rolls.append(r)
                     if r == 1:
                         ones += 1
@@ -24510,10 +24510,10 @@ class GamePhaseHandlersMixin:
                 return max(0, mortal), f"flat={int(max(0, mortal))}"
             token = str(mortal_spec or "").strip().lower()
             if token == "d3":
-                roll = int(get_roll("D3") or 0)
+                roll = get_roll("D3")
                 return int(max(0, roll)), f"d3={int(roll)}"
             if token == "d6":
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 return int(max(0, roll)), f"d6={int(roll)}"
             if token.isdigit():
                 mortal = int(token)
@@ -24609,7 +24609,7 @@ class GamePhaseHandlersMixin:
                             continue
 
                         for target_unit in targets:
-                            trigger_roll = int(get_roll("D6") or 0)
+                            trigger_roll = get_roll("D6")
                             mortal_wounds = 0
                             mortal_note = ""
                             if trigger_roll >= threshold:
@@ -25201,7 +25201,7 @@ class GamePhaseHandlersMixin:
                     source = str(spec.get("source", "") or "Command phase end CP roll").strip() or "Command phase end CP roll"
                     roll_spec = f"{int(dice_count)}D6"
                     try:
-                        rolled = int(get_roll(roll_spec) or 0)
+                        rolled = get_roll(roll_spec)
                     except Exception:
                         rolled = 0
                     append_dice(

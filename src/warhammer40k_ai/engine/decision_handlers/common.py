@@ -310,8 +310,7 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
         mgr = getattr(game, "fates_in_flux", None)
         if choice and mgr is not None and player is not None:
             if mgr.spend_tokens(player, 1, reason="Flickering Reality re-roll"):
-                if callable(get_roll):
-                    roll = int(get_roll("D6"))
+                roll = get_roll("D6")
                 if append_dice is not None and player is not None:
                     append_dice(player, f"Flickering Reality re-roll: {roll}")
             else:

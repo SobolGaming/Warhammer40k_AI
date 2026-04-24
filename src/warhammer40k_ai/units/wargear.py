@@ -1447,7 +1447,7 @@ class WargearProfile:
             if not mw_die:
                 continue
             try:
-                mortal_wounds = int(get_roll(mw_die) or 0)
+                mortal_wounds = get_roll(mw_die)
             except Exception:
                 mortal_wounds = 0
             if mortal_wounds <= 0:
@@ -18431,7 +18431,7 @@ class WargearProfile:
             if die not in ("D3", "D6"):
                 return 1, "Sustained Hits (+1)"
             try:
-                rolled = int(get_roll(die) or 0)
+                rolled = get_roll(die)
             except Exception:
                 rolled = 0
             if rolled <= 0:
@@ -29152,7 +29152,7 @@ class WargearProfile:
             if s.isdigit():
                 return int(s)
             try:
-                return int(get_roll(s))
+                return get_roll(s)
             except Exception:
                 return 0
         try:
@@ -29984,7 +29984,7 @@ class Wargear:
         if not self.is_bubblechukka():
             return None
 
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         first_profile = next(iter(self.profiles.values()))
         selected_profile = first_profile.get_bubblechukka_profile_for_roll(roll)
 

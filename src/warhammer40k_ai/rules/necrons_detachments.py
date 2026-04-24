@@ -2924,11 +2924,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 if str(sr.get("enhancement_metalodermal_tesla_weave_last_phase_key", "") or "") == phase_key_token:
                     continue
 
-                trigger_roll = int(get_roll("D6") or 0)
+                trigger_roll = get_roll("D6")
                 mortal_wounds = 0
                 mortal_note = ""
                 if 2 <= trigger_roll <= 5:
-                    rolled_mortal = int(get_roll("D3") or 0)
+                    rolled_mortal = get_roll("D3")
                     mortal_wounds = max(0, int(rolled_mortal))
                     mortal_note = f"D3={int(rolled_mortal)}"
                 elif trigger_roll >= 6:

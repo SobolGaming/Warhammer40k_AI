@@ -1963,7 +1963,7 @@ class ChaosKnightsStratagemMixin:
             return False
         mortal_wounds = 0
         for _ in range(6):
-            if int(get_roll("D6") or 0) >= 4:
+            if get_roll("D6") >= 4:
                 mortal_wounds += 1
         apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
         if not callable(apply_mortal_wounds):
@@ -2670,7 +2670,7 @@ class ChaosKnightsStratagemMixin:
             return
         destroy_count = 0
         for _ in range(int(total_rolls)):
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if roll >= 4:
                 destroy_count += 1
         alive_models = list(self._chaos_knights_alive_models(attacker_root) or [])
@@ -2838,7 +2838,7 @@ class ChaosKnightsStratagemMixin:
             return False
         if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
             return False
-        heal_amount = int(get_roll("D3") or 0)
+        heal_amount = get_roll("D3")
         if bool(merged.get("battle_shocked_kills", False)):
             heal_amount += 2
         healed = self._chaos_knights_heal_lost_wounds(root, heal_amount)
@@ -4524,7 +4524,7 @@ class ChaosKnightsStratagemMixin:
             return False
         max_distance = kwargs.get("max_distance")
         if max_distance is None:
-            max_distance = int(get_roll("D6") or 0)
+            max_distance = get_roll("D6")
         try:
             max_distance = int(max_distance or 0)
         except Exception:
@@ -4900,7 +4900,7 @@ class ChaosKnightsStratagemMixin:
         if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
             return False
 
-        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        rolls = [get_roll("D6") for _ in range(6)]
         mortal_wounds = sum(1 for roll in list(rolls or []) if int(roll or 0) >= 4)
         if mortal_wounds > 0:
             apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)

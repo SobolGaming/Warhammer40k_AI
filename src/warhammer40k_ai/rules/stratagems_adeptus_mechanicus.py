@@ -3553,7 +3553,7 @@ class AdeptusMechanicusStratagemMixin:
         source_name = str(getattr(stratagem, "name", "") or "NEURAL OVERLOAD")
         has_halo_fn = getattr(mgr, "_unit_has_halo_override_keyword", None) if mgr is not None else None
         if callable(has_halo_fn) and bool(has_halo_fn(primary)):
-            mortal_wounds = max(1, int(dice_module.get_roll("D3") or 0))
+            mortal_wounds = max(1, dice_module.get_roll("D3"))
             apply_mortal_wounds = getattr(primary, "_apply_mortal_wounds_to_unit", None)
             if callable(apply_mortal_wounds):
                 apply_mortal_wounds(primary, int(mortal_wounds), game_map=getattr(self.game, "map", None))
@@ -3700,7 +3700,7 @@ class AdeptusMechanicusStratagemMixin:
             return False
         mgr = self._get_adeptus_mechanicus_mgr()
         has_halo_fn = getattr(mgr, "_unit_has_halo_override_keyword", None) if mgr is not None else None
-        max_distance = 6 if callable(has_halo_fn) and bool(has_halo_fn(primary)) else max(0, int(dice_module.get_roll("D6") or 0))
+        max_distance = 6 if callable(has_halo_fn) and bool(has_halo_fn(primary)) else max(0, dice_module.get_roll("D6"))
         request = queue_move(
             player=self.player,
             unit=primary,
@@ -4970,10 +4970,10 @@ class AdeptusMechanicusStratagemMixin:
         affected_units = 0
         total_mortal_wounds = 0
         for enemy in self._data_psalm_electromancer_enemy_candidates(primary):
-            roll = int(dice_module.get_roll("D6") or 0) + int(electro_bonus)
+            roll = dice_module.get_roll("D6") + int(electro_bonus)
             if roll < 5:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             if callable(apply_mortals):
@@ -5553,7 +5553,7 @@ class AdeptusMechanicusStratagemMixin:
         current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         affected_units = 0
         for enemy in self._rad_zone_extinction_order_enemy_units_for_objective(objective):
-            roll = int(dice_module.get_roll("D6") or 0)
+            roll = dice_module.get_roll("D6")
             if roll < 4:
                 continue
             apply_mortals = getattr(source_unit, "_apply_mortal_wounds_to_unit", None)

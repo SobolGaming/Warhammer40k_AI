@@ -505,7 +505,7 @@ class SelectedToShootMixin:
             if not expr:
                 mortal_wounds = 0
             elif expr == "D3":
-                mortal_wounds = max(0, int(get_roll("D3") or 0))
+                mortal_wounds = max(0, get_roll("D3"))
             else:
                 mortal_wounds = max(0, int(expr))
         if mortal_wounds <= 0:
@@ -524,7 +524,7 @@ class SelectedToShootMixin:
             return None
         source = str(spec.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
         ability_key = str(spec.get("ability_key", "") or self._normalize_keyword_phrase(source) or "selected_to_shoot").strip().lower()
-        roll = int(get_roll("D6") or 1)
+        roll = get_roll("D6")
         roll = max(1, min(6, int(roll)))
         roll_branches = dict(spec.get("roll_branches", {}) or {})
         branch = roll_branches.get(str(roll)) or roll_branches.get(int(roll))

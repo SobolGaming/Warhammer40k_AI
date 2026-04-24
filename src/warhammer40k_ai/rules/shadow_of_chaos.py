@@ -724,7 +724,7 @@ class ShadowOfChaosManager:
     def _apply_daemonic_manifestation(cls, unit, *, game=None) -> None:
         if unit is None:
             return
-        amount = int(get_roll("D3") or 0)
+        amount = get_roll("D3")
         if amount <= 0:
             return
 
@@ -890,7 +890,7 @@ class ShadowOfChaosManager:
                 return
             except Exception:
                 pass
-        amount = int(get_roll("D3") or 0)
+        amount = get_roll("D3")
         if amount <= 0:
             return
         cls.apply_daemonic_terror_mortal_wounds(unit, amount=amount, game=game)

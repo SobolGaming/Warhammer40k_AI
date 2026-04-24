@@ -2954,10 +2954,10 @@ class ThousandSonsStratagemMixin:
                 continue
             if not bool(is_within(location)):
                 continue
-            trigger_roll = int(dice_module.get_roll("D6") or 0)
+            trigger_roll = dice_module.get_roll("D6")
             if trigger_roll < 4:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             apply_mortal_wounds(enemy_root, int(mortal_wounds), game_map=game_map)
@@ -3804,7 +3804,7 @@ class ThousandSonsStratagemMixin:
         if not self._ts_spend_cp(stratagem, target_unit=root):
             return False
 
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        rolls = [dice_module.get_roll("D6") for _ in range(6)]
         mortal_wounds = sum(1 for roll in rolls if int(roll) >= 5)
         apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
         if callable(apply_mortal_wounds) and mortal_wounds > 0:
@@ -4053,7 +4053,7 @@ class ThousandSonsStratagemMixin:
         if not callable(return_full):
             logger.error("ERROR: BLESSED TRANSMUTATIONS: destroyed-model return helper is unavailable")
             return False
-        amount = int(dice_module.get_roll("D3") or 0) + 1
+        amount = dice_module.get_roll("D3") + 1
         returned = int(
             return_full(
                 root,
@@ -4696,7 +4696,7 @@ class ThousandSonsStratagemMixin:
             if idx < len(reroll_values):
                 rerolled.append(int(reroll_values[idx]))
             else:
-                rerolled.append(int(get_roll("D6") or 0))
+                rerolled.append(get_roll("D6"))
         if isinstance(rolls_state, dict):
             rolls_state["rolls"] = list(rerolled)
 
@@ -5771,7 +5771,7 @@ class ThousandSonsStratagemMixin:
         if not fixed_six:
             from ..utility.dice import get_roll
 
-            max_distance = int(get_roll("D6") or 0)
+            max_distance = get_roll("D6")
         request = queue_move(
             player=self.player,
             unit=root,

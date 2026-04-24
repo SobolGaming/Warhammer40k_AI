@@ -16330,10 +16330,10 @@ class ActionsMovementMixin:
 
                     with suppress_get_roll_requests():
                         if fixed_roll is None:
-                            fixed_val = int(get_roll("D6") or 0)
+                            fixed_val = get_roll("D6")
                             spec["fixed_dice"] = [fixed_val]
                         if (reroll_rules or command_reroll_ok) and fixed_source is None:
-                            spec["roll_sequence"] = [int(get_roll("D6") or 0)]
+                            spec["roll_sequence"] = [get_roll("D6")]
             except Exception:
                 pass
             req = None
@@ -16456,7 +16456,7 @@ class ActionsMovementMixin:
         if not any_crossed:
             return
 
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         try:
             from ...utility.event_bus import append_dice
             pn = self.get_parent_army().player
@@ -18660,12 +18660,12 @@ class ActionsMovementMixin:
                     )
                     if not used_this_turn:
                         try:
-                            trigger_roll = int(get_roll("D6") or 0)
+                            trigger_roll = get_roll("D6")
                         except Exception:
                             trigger_roll = 0
                         if trigger_roll >= 2:
                             try:
-                                mortal_wounds = int(get_roll("D6") or 0)
+                                mortal_wounds = get_roll("D6")
                             except Exception:
                                 mortal_wounds = 0
                             if mortal_wounds > 0:
@@ -18880,7 +18880,7 @@ class ActionsMovementMixin:
                 continue
             source = str(lock_spec.get("source", "") or "Fallback lock").strip() or "Fallback lock"
             try:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             if int(roll) < int(threshold):

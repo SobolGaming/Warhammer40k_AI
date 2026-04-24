@@ -209,7 +209,7 @@ def handle_move_over_mortal_wounds(game: object, state: DiceRollState):
         from ..utility.dice import get_roll
         total_mw = 0
         for _ in range(int(successes)):
-            total_mw += int(get_roll(mortal_die) or 0)
+            total_mw += get_roll(mortal_die)
     else:
         total_mw = int(successes * int(mortal_per))
 
@@ -300,11 +300,11 @@ def handle_stasis_bomb_mortal_wounds(game: object, state: DiceRollState):
 
             with suppress_get_roll_requests():
                 if restriction_roll_die == "D3":
-                    raw_roll = int(get_roll("D6", game=game) or 0)
+                    raw_roll = get_roll("D6", game=game)
                     roll_spec["fixed_dice"] = [int((raw_roll + 1) // 2)]
                     roll_spec["fixed_raw_dice"] = [raw_roll]
                 else:
-                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=game) or 0)]
+                    roll_spec["fixed_dice"] = [get_roll("D6", game=game)]
         except Exception:
             pass
     try:
@@ -457,11 +457,11 @@ def handle_malign_sacrifice_roll(game: object, state: DiceRollState):
         if not tok:
             return 0
         if tok == "d3":
-            return int(get_roll("D3") or 0) if callable(get_roll) else 0
+            return get_roll("D3")
         if tok == "d6":
-            return int(get_roll("D6") or 0) if callable(get_roll) else 0
+            return get_roll("D6")
         if tok in ("d3+3", "d3 3"):
-            d3_val = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            d3_val = get_roll("D3")
             return int(d3_val + 3)
         try:
             return int(tok)

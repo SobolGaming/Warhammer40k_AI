@@ -2893,7 +2893,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             except (TypeError, ValueError):
                 cp_gain = 1
             cp_gain = int(max(1, cp_gain))
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             gained = 0
             if roll >= success_on:
                 gained = int(gain_cp(cp_gain, reason=source) or 0)
@@ -3214,7 +3214,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 bonus_per_enemy = 1
             bonus_per_enemy = int(max(0, bonus_per_enemy))
 
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             modifier = int(bonus_per_enemy * battle_shocked_enemy_count)
             total = int(roll + modifier)
             gained = 0
@@ -3775,7 +3775,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 source_sr.get("enhancement_soul_harvester_source", "")
                 or self._SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE
             ).strip() or self._SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             gained = 0
             if roll >= success_on:
                 gained = int(gain_cp(cp_gain, reason=source) or 0)
@@ -4391,7 +4391,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def roll_experimental_augmentations_initial(self, *, battle_round: Optional[int] = None, game=None) -> dict:
         if not self.can_select_experimental_augmentations(game=game, battle_round=battle_round):
             return {"ok": False, "reason": "Experimental Augmentations cannot be selected right now."}
-        rolls = [int(get_roll("D6") or 0), int(get_roll("D6") or 0)]
+        rolls = [get_roll("D6"), get_roll("D6")]
         selected_keys = self._augmentation_keys_from_rolls(rolls)
         fabius_warlord = bool(self.has_fabius_bile_warlord())
         if not fabius_warlord:
@@ -4437,9 +4437,9 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         original_rolls = list(self.experimental_augmentations_pending_rolls)
         updated_rolls = list(original_rolls)
         if reroll_mode in {"reroll_first", "reroll_both"}:
-            updated_rolls[0] = int(get_roll("D6") or 0)
+            updated_rolls[0] = get_roll("D6")
         if reroll_mode in {"reroll_second", "reroll_both"}:
-            updated_rolls[1] = int(get_roll("D6") or 0)
+            updated_rolls[1] = get_roll("D6")
         selected_keys = self._augmentation_keys_from_rolls(updated_rolls)
 
         selected_round = battle_round
@@ -5360,7 +5360,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         rolls: list[int] = []
         for _index in range(int(destroyed_count)):
             try:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except (TypeError, ValueError):
                 roll = 0
             rolls.append(int(roll))
@@ -5457,7 +5457,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         mortal_wounds = 0
         if not leadership_passed:
             try:
-                mortal_wounds = int(get_roll("D3") or 0)
+                mortal_wounds = get_roll("D3")
             except (TypeError, ValueError):
                 mortal_wounds = 0
             if mortal_wounds <= 0:
@@ -5617,7 +5617,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if root is None:
             return 0
         try:
-            mortal_wounds = int(get_roll(str(roll_spec or "D3")) or 0)
+            mortal_wounds = get_roll(str(roll_spec or "D3"))
         except (TypeError, ValueError):
             mortal_wounds = 0
         if mortal_wounds <= 0:
@@ -9225,7 +9225,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not roll_spec:
             roll_spec = "D3"
         try:
-            rolled_bonus = int(get_roll(roll_spec) or 0)
+            rolled_bonus = get_roll(roll_spec)
         except (TypeError, ValueError):
             rolled_bonus = 0
         if rolled_bonus <= 0:
@@ -10313,7 +10313,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 source_sr.get("enhancement_despots_claim_source", "") or self._RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE
             ).strip() or self._RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE
 
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             modifier = 0
             if zone_bonus > 0 and zone_distance > 0.0:
                 if self._model_wholly_within_enemy_deployment_zone_distance(

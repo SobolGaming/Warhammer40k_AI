@@ -2008,9 +2008,9 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         original_rolls = list(self._traitoris_malevolent_pending_rolls)
         updated_rolls = list(original_rolls)
         if len(updated_rolls) >= 1 and reroll_mode in {"reroll_first", "reroll_both"}:
-            updated_rolls[0] = int(get_roll("D6") or 0)
+            updated_rolls[0] = get_roll("D6")
         if len(updated_rolls) >= 2 and reroll_mode in {"reroll_second", "reroll_both"}:
-            updated_rolls[1] = int(get_roll("D6") or 0)
+            updated_rolls[1] = get_roll("D6")
 
         selected_round = int(battle_round or 0)
         if selected_round <= 0:
@@ -3212,7 +3212,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         )
         if not passed:
             try:
-                mortal = int(get_roll("D3") or 0)
+                mortal = get_roll("D3")
             except Exception:
                 mortal = 0
             if mortal <= 0:

@@ -432,7 +432,7 @@ class ActsOfFaithManager:
             pass
 
         try:
-            extra = int(get_roll("D3") or 0)
+            extra = get_roll("D3")
         except Exception:
             extra = 0
         if extra <= 0:
@@ -922,7 +922,7 @@ class ActsOfFaithManager:
                 want = False
             if not want:
                 return int(value or 0)
-        return int(get_roll("D6") or 0)
+        return get_roll("D6")
 
     def gain_miracle_die(
         self,
@@ -938,7 +938,7 @@ class ActsOfFaithManager:
         elif bool(battle_round_start) and self._solemn_procession_forces_battle_round_six():
             value = 6
         else:
-            value = int(get_roll("D6") or 0)
+            value = get_roll("D6")
             value = self._maybe_reroll_miracle_die(value, allow_reroll=allow_reroll, game=game)
         self.miracle_dice.append(int(value))
         try:
@@ -1056,7 +1056,7 @@ class ActsOfFaithManager:
             pass
 
         try:
-            extra = int(get_roll("D3") or 0)
+            extra = get_roll("D3")
         except Exception:
             extra = 0
         if extra <= 0:
@@ -2312,7 +2312,7 @@ class ActsOfFaithManager:
                 if idx < 0 or idx >= len(self.miracle_dice):
                     continue
                 before = int(self.miracle_dice[idx] or 0)
-                after = int(get_roll("D6") or 0)
+                after = get_roll("D6")
                 self.miracle_dice[idx] = int(after)
                 try:
                     if owner is not None:

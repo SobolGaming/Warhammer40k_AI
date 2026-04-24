@@ -2249,7 +2249,7 @@ class EmperorsChildrenStratagemMixin:
         )
 
     def _roll_slaanesh_vengeful_surge_distance(self, unit: Any, *, can_reroll: bool) -> int:
-        base_roll = int(dice_module.get_roll("D6") or 0)
+        base_roll = dice_module.get_roll("D6")
         reroll_used = False
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if can_reroll:
@@ -2267,11 +2267,11 @@ class EmperorsChildrenStratagemMixin:
                     )
                 )
                 if want:
-                    base_roll = int(dice_module.get_roll("D6") or 0)
+                    base_roll = dice_module.get_roll("D6")
                     reroll_used = True
             else:
                 if int(base_roll or 0) <= 3:
-                    base_roll = int(dice_module.get_roll("D6") or 0)
+                    base_roll = dice_module.get_roll("D6")
                     reroll_used = True
 
         if player is not None:
@@ -3006,7 +3006,7 @@ class EmperorsChildrenStratagemMixin:
         healed = 0
         returned = 0
         if is_daemonettes:
-            amount = max(0, int(dice_module.get_roll("D3") or 0)) + 3
+            amount = max(0, dice_module.get_roll("D3")) + 3
             chosen = kwargs.get("return_models") or kwargs.get("chosen_models")
             selected_models = list(destroyed_models)
             if chosen is not None:
@@ -3963,7 +3963,7 @@ class EmperorsChildrenStratagemMixin:
 
         max_distance = kwargs.get("max_distance")
         if max_distance is None:
-            max_distance = int(dice_module.get_roll("D6") or 0)
+            max_distance = dice_module.get_roll("D6")
         try:
             max_distance = int(max_distance or 0)
         except (TypeError, ValueError):

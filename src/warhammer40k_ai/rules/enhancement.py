@@ -644,7 +644,7 @@ def resolve_enhancement_command_phase_cp_gain_roll_specs(
                 if count >= threshold:
                     modifier += int(roll_bonus)
 
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             total = int(roll + modifier)
             gained = 0
             if total >= success_on:
@@ -777,7 +777,7 @@ def resolve_enhancement_start_of_battle_roll_specs(
                     continue
                 effect_params = dict(spec.get("effect_params", {}) or {})
                 roll_expr = str(spec.get("roll_expr", "") or "D3").strip().upper() or "D3"
-                roll = int(get_roll(roll_expr) or 0)
+                roll = get_roll(roll_expr)
                 branch_map = dict(effect_params.get("roll_branches", {}) or {})
                 branch_data = branch_map.get(str(int(roll))) or {}
                 if not isinstance(branch_data, dict):

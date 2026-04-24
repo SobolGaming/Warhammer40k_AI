@@ -935,7 +935,7 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             heal_amount = 1
             source_label = "Sacristan Pledge"
             if self._forgepact_has_tech_priest_support(unit, game=resolved_game, game_map=resolved_map):
-                heal_amount = max(1, int(get_roll("D3") or 0))
+                heal_amount = max(1, get_roll("D3"))
                 source_label = f"Sacristan Pledge (Tech-Priest support D3={int(heal_amount)})"
             healed = self._heal_most_damaged_model_in_unit(unit, int(heal_amount))
             if healed > 0:

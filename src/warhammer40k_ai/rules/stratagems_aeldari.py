@@ -10180,7 +10180,7 @@ class AeldariStratagemMixin:
         from ..utility.event_bus import append_dice
 
         count = max(0, int(roll_count or 0))
-        rolls = [int(get_roll("D6") or 0) for _ in range(count)]
+        rolls = [get_roll("D6") for _ in range(count)]
         mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         player = getattr(source_unit.get_parent_army(), "player", None) if source_unit is not None else None
         if player is not None:
@@ -10197,7 +10197,7 @@ class AeldariStratagemMixin:
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_dice
 
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         max_distance = int(base_roll + 1)
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if player is not None:
@@ -10211,7 +10211,7 @@ class AeldariStratagemMixin:
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_dice
 
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         max_distance = int(base_roll + 1)
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if player is not None:
@@ -10225,7 +10225,7 @@ class AeldariStratagemMixin:
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_dice
 
-        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        rolls = [get_roll("D6") for _ in range(6)]
         mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if player is not None:
@@ -10242,7 +10242,7 @@ class AeldariStratagemMixin:
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_dice
 
-        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        rolls = [get_roll("D6") for _ in range(6)]
         mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         player = getattr(psyker_unit.get_parent_army(), "player", None) if psyker_unit is not None else None
         if player is not None:

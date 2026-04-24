@@ -1,6 +1,6 @@
 import pytest
 
-from warhammer40k_ai.utility.dice import DiceCollection
+from warhammer40k_ai.utility.dice import DiceCollection, get_roll
 
 
 @pytest.mark.parametrize(
@@ -29,3 +29,8 @@ def test_dice_collection_str_includes_negative_modifier():
 def test_dice_collection_from_string_rejects_invalid_expression(expression):
     with pytest.raises(ValueError):
         DiceCollection.from_string(expression)
+
+
+def test_get_roll_rejects_invalid_expression():
+    with pytest.raises(ValueError, match="Invalid dice string"):
+        get_roll("2+")

@@ -4088,7 +4088,7 @@ class ImperialKnightsStratagemMixin:
         if not self._ik_spend_cp(stratagem, target_unit=root):
             return False
 
-        move_max = max(0, int(dice_module.get_roll("D6") or 0))
+        move_max = max(0, dice_module.get_roll("D6"))
         req = queue_move(
             player=self.player,
             unit=root,

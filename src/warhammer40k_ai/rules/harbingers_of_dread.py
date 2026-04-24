@@ -202,7 +202,7 @@ class HarbingersOfDreadManager:
         if not self._army_has_harbingers():
             return {"rolls": [], "selected": []}
 
-        rolls = [int(get_roll("D6")), int(get_roll("D6"))]
+        rolls = [get_roll("D6"), get_roll("D6")]
         selected = []
         for roll in rolls:
             dread = DREAD_BY_ROLL.get(int(roll))
@@ -303,7 +303,7 @@ class HarbingersOfDreadManager:
             req_options = []
             try:
                 from ..utility.dice import get_roll
-                rolls = [int(get_roll("D6")), int(get_roll("D6"))]
+                rolls = [get_roll("D6"), get_roll("D6")]
             except Exception:
                 rolls = []
             selected_keys = []

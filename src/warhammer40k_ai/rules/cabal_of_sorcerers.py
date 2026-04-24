@@ -799,7 +799,7 @@ class CabalOfSorcerersManager:
         provided_rolls = list(rolls or [])
         base_rolls = list(provided_rolls)
         while len(base_rolls) < 2:
-            base_rolls.append(int(get_roll("D6") or 0))
+            base_rolls.append(get_roll("D6"))
         base_rolls = base_rolls[:2]
         total_rolls = list(base_rolls)
 
@@ -813,7 +813,7 @@ class CabalOfSorcerersManager:
             if len(provided_rolls) >= 3:
                 extra = int(provided_rolls[2])
             else:
-                extra = int(get_roll("D6") or 0)
+                extra = get_roll("D6")
             if self.army is not None and warp_syphon_target_unit is not None:
                 ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
                 can_target_fn = getattr(ts_mgr, "warpforged_warp_syphon_can_target", None) if ts_mgr is not None else None
@@ -825,7 +825,7 @@ class CabalOfSorcerersManager:
                         if len(provided_rolls) >= 4:
                             extra = int(provided_rolls[3])
                         else:
-                            extra = int(get_roll("D6") or 0)
+                            extra = get_roll("D6")
                         mortal_amount = int(spec.get("self_mortal_wounds", 1) or 1)
                         if mortal_amount > 0:
                             try:
@@ -977,7 +977,7 @@ class CabalOfSorcerersManager:
                 dagger_roll = warpmeld_dagger_mortal_roll
                 if dagger_roll is None:
                     try:
-                        dagger_roll = int(get_roll(dagger_roll_expr) or 0)
+                        dagger_roll = get_roll(dagger_roll_expr)
                     except Exception:
                         dagger_roll = 0
                 try:
@@ -1062,13 +1062,13 @@ class CabalOfSorcerersManager:
             dmg = 0
             if total >= 11:
                 try:
-                    d3 = int(get_roll("D3") or 0)
+                    d3 = get_roll("D3")
                 except Exception:
                     d3 = 0
                 dmg = int(d3) + 3
             else:
                 try:
-                    dmg = int(get_roll("D3") or 0)
+                    dmg = get_roll("D3")
                 except Exception:
                     dmg = 0
             try:
@@ -1105,7 +1105,7 @@ class CabalOfSorcerersManager:
 
         elif ritual.key == RITUAL_TEMPORAL_SURGE.key:
             try:
-                move_max = 6 if total >= 10 else int(get_roll("D6") or 0)
+                move_max = 6 if total >= 10 else get_roll("D6")
             except Exception:
                 move_max = 0
             sr = getattr(target_unit, "special_rules", None)

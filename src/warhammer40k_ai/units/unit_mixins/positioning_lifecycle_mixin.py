@@ -289,7 +289,7 @@ class PositioningLifecycleMixin:
                         if original_wounds is not None:
                             model._wounds = max(0, int(original_wounds))
                         heal_expr = str(metadata.get("heal_expr", "") or "").strip().upper()
-                        heal_amount = int(get_roll(heal_expr or "D3"))
+                        heal_amount = get_roll(heal_expr or "D3")
                         model.heal(heal_amount)
                         try:
                             army = source_unit.get_parent_army()

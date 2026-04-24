@@ -1125,7 +1125,7 @@ class Game(
             for source in sources:
                 aura_range = float(mgr.get_aura_range(unit=source))
                 if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
-                    mortal = int(get_roll("D3") or 0)
+                    mortal = get_roll("D3")
                     if mortal > 0:
                         unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
                     return
@@ -1145,11 +1145,11 @@ class Game(
         from ..utility.dice import get_roll
         from ..utility.event_bus import append_action, append_dice
 
-        roll_d6 = int(get_roll("D6") or 0)
+        roll_d6 = get_roll("D6")
         mortal = 0
         roll_d3 = None
         if roll_d6 >= 3:
-            roll_d3 = int(get_roll("D3") or 0)
+            roll_d3 = get_roll("D3")
             mortal = int(roll_d3 or 0)
         if mortal > 0:
             unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
@@ -1254,13 +1254,13 @@ class Game(
                     if not mortal_expr or not heal_expr:
                         continue
 
-                    mortal = int(get_roll(mortal_expr) or 0)
+                    mortal = get_roll(mortal_expr)
                     if mortal > 0:
                         apply_mortal_fn = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
                         if callable(apply_mortal_fn):
                             apply_mortal_fn(target_root, mortal, game_map=getattr(self, "map", None))
 
-                    heal_roll = int(get_roll(heal_expr) or 0)
+                    heal_roll = get_roll(heal_expr)
                     healed = 0
                     healed_model_name = ""
                     if heal_roll > 0:
@@ -1444,7 +1444,7 @@ class Game(
             if not callable(has_reanimate) or not has_reanimate():
                 continue
 
-            d3 = int(get_roll("D3") or 0)
+            d3 = get_roll("D3")
             if d3 <= 0:
                 continue
             root.apply_reanimation_protocols(
@@ -1532,7 +1532,7 @@ class Game(
                 single_model_regain_texts.add(low)
                 token = str(m_single.group(1) or "").strip().lower()
                 if token == "d3":
-                    amount = int(get_roll("D3") or 0)
+                    amount = get_roll("D3")
                 else:
                     amount = int(token or 0)
                 if amount <= 0:
@@ -1580,7 +1580,7 @@ class Game(
                         continue
                     token = str(m.group(1) or "").strip().lower()
                     if token == "d3":
-                        amount = int(get_roll("D3") or 0)
+                        amount = get_roll("D3")
                     else:
                         amount = int(token or 0)
                     if amount <= 0:
@@ -2940,9 +2940,9 @@ class Game(
             if key == "full":
                 wounds = base_wounds
             elif key == "d3":
-                wounds = self._coerce_int(get_roll("D3"), 0)
+                wounds = get_roll("D3")
             elif key == "d6":
-                wounds = self._coerce_int(get_roll("D6"), 0)
+                wounds = get_roll("D6")
             else:
                 wounds = self._coerce_int(key, base_wounds)
         else:
@@ -3054,7 +3054,7 @@ class Game(
             if not passed:
                 return
         roll_min = self._coerce_int(spec.get("roll_min", 2), 2)
-        roll = self._coerce_int(get_roll("D6"), 0)
+        roll = get_roll("D6")
         if roll < roll_min:
             return
 
@@ -5700,14 +5700,14 @@ class Game(
                             continue
                     except Exception:
                         continue
-                r = int(get_roll("D6") or 0)
+                r = get_roll("D6")
                 r_mod = int(r)
                 if started_within_required and start_charge_bonus:
                     r_mod = int(r_mod + int(start_charge_bonus))
                 rolls.append(r)
                 modified_rolls.append(r_mod)
                 if r_mod >= 4:
-                    d3 = int(get_roll("D3") or 0)
+                    d3 = get_roll("D3")
                     d3_rolls.append(d3)
                     total_mw += d3
             if rolls:
@@ -5730,7 +5730,7 @@ class Game(
                             continue
                     except Exception:
                         continue
-                r = int(get_roll("D6") or 0)
+                r = get_roll("D6")
                 r_mod = int(r)
                 if started_within_required and start_charge_bonus:
                     r_mod = int(r_mod + int(start_charge_bonus))
@@ -5769,7 +5769,7 @@ class Game(
                 if not bool(model_within_engagement_range_of_unit(model, target_unit)):
                     continue
                 engaged_models += 1
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 rolls.append(roll)
                 if roll >= threshold:
                     total_mw += mortal_per_success
@@ -5793,7 +5793,7 @@ class Game(
             remaining = int(getattr(model, "wounds", 0) or 0) if model is not None else 0
             rolls = []
             for _ in range(max(0, remaining)):
-                r = int(get_roll("D6") or 0)
+                r = get_roll("D6")
                 rolls.append(r)
                 if r >= 4:
                     total_mw += 1
@@ -5802,36 +5802,36 @@ class Game(
             if rolls:
                 roll_summary = f"rolls={rolls}, remaining_wounds={remaining}"
         elif kind == "table_d6_2_3_4_5_6":
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if 2 <= roll <= 3:
                 total_mw = 1
             elif 4 <= roll <= 5:
-                total_mw = int(get_roll("D3") or 0)
+                total_mw = get_roll("D3")
             elif roll >= 6:
-                total_mw = int(get_roll("D3") or 0) + 3
+                total_mw = get_roll("D3") + 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_5_6":
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if 2 <= roll <= 5:
-                total_mw = int(get_roll("D3") or 0)
+                total_mw = get_roll("D3")
             elif roll >= 6:
-                total_mw = int(get_roll("D3") or 0) + 3
+                total_mw = get_roll("D3") + 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_5_6_flat3":
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if 2 <= roll <= 5:
-                total_mw = int(get_roll("D3") or 0)
+                total_mw = get_roll("D3")
             elif roll >= 6:
                 total_mw = 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_3_d3_4_5_3_6_d3_3":
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if 2 <= roll <= 3:
-                total_mw = int(get_roll("D3") or 0)
+                total_mw = get_roll("D3")
             elif 4 <= roll <= 5:
                 total_mw = 3
             elif roll >= 6:
-                total_mw = int(get_roll("D3") or 0) + 3
+                total_mw = get_roll("D3") + 3
             roll_summary = f"roll={roll}"
         elif kind == "single_4plus_die":
             try:
@@ -5840,12 +5840,12 @@ class Game(
                 threshold = 4
             threshold = max(2, min(6, threshold))
             success_die = str(spec.get("success_die", "") or "D3").strip().upper() or "D3"
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             modified_roll = int(roll)
             if started_within_required and start_charge_bonus:
                 modified_roll = int(modified_roll + int(start_charge_bonus))
             if modified_roll >= threshold:
-                total_mw = int(get_roll(success_die) or 0)
+                total_mw = get_roll(success_die)
             if started_within_required and start_charge_bonus:
                 roll_summary = f"roll={roll} (+{int(start_charge_bonus)} -> {int(modified_roll)})"
             else:
@@ -5897,12 +5897,12 @@ class Game(
         model.die(game_map=getattr(self, "map", None))
 
         from ..utility.dice import get_roll
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         mortal_wounds = 0
         if 2 <= roll <= 5:
             mid_die = str(spec.get("on_mid_die", "") or "").strip().upper()
             if mid_die:
-                mortal_wounds = int(get_roll(mid_die) or 0)
+                mortal_wounds = get_roll(mid_die)
             else:
                 try:
                     mortal_wounds = int(spec.get("on_mid_flat", 0) or 0)
@@ -5911,7 +5911,7 @@ class Game(
         elif roll >= 6:
             high_die = str(spec.get("on_high_die", "") or "").strip().upper()
             if high_die:
-                mortal_wounds = int(get_roll(high_die) or 0)
+                mortal_wounds = get_roll(high_die)
 
         target_is_alive = getattr(target_unit, "is_alive", False)
         target_alive = bool(target_is_alive()) if callable(target_is_alive) else bool(target_is_alive)
@@ -6549,11 +6549,11 @@ class Game(
 
                 with suppress_get_roll_requests():
                     if mortal_die == "D3":
-                        raw_roll = int(get_roll("D6", game=self) or 0)
+                        raw_roll = get_roll("D6", game=self)
                         roll_spec["fixed_dice"] = [int((raw_roll + 1) // 2)]
                         roll_spec["fixed_raw_dice"] = [raw_roll]
                     else:
-                        roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0)]
+                        roll_spec["fixed_dice"] = [get_roll("D6", game=self)]
             except Exception:
                 pass
         try:
@@ -6687,9 +6687,9 @@ class Game(
                 from ..utility.dice import get_roll, suppress_get_roll_requests
 
                 with suppress_get_roll_requests():
-                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(dice_count))]
+                    roll_spec["fixed_dice"] = [get_roll("D6", game=self) for _ in range(int(dice_count))]
                     if reroll_rules:
-                        roll_spec["roll_sequence"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(reroll_count))]
+                        roll_spec["roll_sequence"] = [get_roll("D6", game=self) for _ in range(int(reroll_count))]
             except Exception:
                 pass
         try:
@@ -6942,7 +6942,7 @@ class Game(
                 from ..utility.dice import get_roll, suppress_get_roll_requests
 
                 with suppress_get_roll_requests():
-                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(dice_count))]
+                    roll_spec["fixed_dice"] = [get_roll("D6", game=self) for _ in range(int(dice_count))]
             except Exception:
                 pass
         try:
@@ -7843,7 +7843,7 @@ class Game(
         rolls = []
         ones = 0
         for _m in models:
-            r = int(get_roll("D6") or 0)
+            r = get_roll("D6")
             rolls.append(r)
             if r == 1:
                 ones += 1
@@ -7914,13 +7914,13 @@ class Game(
             threshold = 4
         threshold = max(2, min(6, int(threshold)))
         mortal_spec = str(sr.get("necrons_gravitic_pulse_fly_mortal_wounds", "") or "D3").strip().upper()
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         total_mw = 0
         if int(roll) >= int(threshold):
             if mortal_spec == "D3":
-                total_mw = int(get_roll("D3") or 0)
+                total_mw = get_roll("D3")
             elif mortal_spec == "D6":
-                total_mw = int(get_roll("D6") or 0)
+                total_mw = get_roll("D6")
             else:
                 try:
                     total_mw = int(mortal_spec or 0)
@@ -7976,7 +7976,7 @@ class Game(
         rolls = []
         successes = 0
         for _ in range(dice_count):
-            r = int(get_roll("D6") or 0)
+            r = get_roll("D6")
             rolls.append(r)
             if r >= threshold:
                 successes += 1
@@ -8197,9 +8197,9 @@ class Game(
         def _resolve_mortal(raw_value):
             token = str(raw_value or "").strip().lower()
             if token == "d3":
-                return int(get_roll("D3") or 0), "D3"
+                return get_roll("D3"), "D3"
             if token == "d6":
-                return int(get_roll("D6") or 0), "D6"
+                return get_roll("D6"), "D6"
             try:
                 val = int(raw_value or 0)
             except (TypeError, ValueError):
@@ -8284,7 +8284,7 @@ class Game(
                     if not in_range:
                         continue
 
-                    trigger_roll = int(get_roll("D6") or 0)
+                    trigger_roll = get_roll("D6")
                     mortal_wounds = 0
                     mortal_note = ""
                     forced_battleshock = False
@@ -8927,7 +8927,7 @@ class Game(
         except Exception:
             threshold = 0
         if threshold > 0:
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             try:
                 from ..utility.event_bus import append_dice
 
@@ -9375,7 +9375,7 @@ class Game(
                     pw = getattr(wp, "parent_wargear", None)
                     if wp is not None and pw is not None and pw.is_melee():
                         from warhammer40k_ai.utility.dice import get_roll
-                        roll = int(get_roll("D6") or 0)
+                        roll = get_roll("D6")
                         bonus = 0
                         try:
                             army = attacker_unit.get_parent_army()
@@ -10330,7 +10330,7 @@ class Game(
                                 is_vessel = bool(getattr(bearer, "has_keyword", lambda _k: False)("VESSEL OF WRATH"))
                             except Exception:
                                 is_vessel = False
-                        roll = int(get_roll("D6"))
+                        roll = get_roll("D6")
                         total = int(roll + (1 if is_vessel else 0))
                         if total < 4:
                             continue
@@ -10359,7 +10359,7 @@ class Game(
                     if not isinstance(source_sr, dict):
                         continue
                     threshold = int(source_sr.get("enhancement_killing_clarity_success_on", 4) or 4)
-                    roll = int(get_roll("D6"))
+                    roll = get_roll("D6")
                     if roll < threshold:
                         continue
                     gained = int(player.gain_command_points(1, reason="Killing Clarity") or 0)
@@ -10654,7 +10654,7 @@ class Game(
                     amount = int(hunter_rule.get("heal_if_target_psyker", 0) or 0)
                 else:
                     heal_expr = str(hunter_rule.get("heal_expr", "") or "").strip().upper()
-                    amount = int(get_roll(heal_expr) or 0) if heal_expr else 0
+                    amount = get_roll(heal_expr) if heal_expr else 0
                 if amount > 0:
                     destroyed_by_model.heal(int(amount))
                     self.event_system.publish(
@@ -10899,7 +10899,7 @@ class Game(
             return
 
         from warhammer40k_ai.utility.dice import get_roll
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         if roll < 3:
             return
         total = we_mgr.add_blood_tithe_points(1)
@@ -11490,7 +11490,7 @@ class Game(
                     if threshold <= 0 or cp_gain <= 0:
                         continue
                     source = str(spec.get("source", "") or "Bodyguard destroyed CP gain").strip() or "Bodyguard destroyed CP gain"
-                    roll = int(get_roll("D6") or 0)
+                    roll = get_roll("D6")
                     append_dice(player, f"{source}: rolled D6={int(roll)} (need {int(threshold)}+).")
                     if int(roll) >= int(threshold):
                         gained = int(player.gain_command_points(cp_gain, reason=source, source="ability") or 0)
@@ -14395,7 +14395,7 @@ class Game(
                     from ..utility.dice import get_roll, suppress_get_roll_requests
 
                     with suppress_get_roll_requests():
-                        fixed_dice = [int(get_roll("D6", game=self) or 0) for _ in range(dice_count)]
+                        fixed_dice = [get_roll("D6", game=self) for _ in range(dice_count)]
                 except Exception:
                     fixed_dice = []
         else:
@@ -14498,7 +14498,7 @@ class Game(
                     from ..utility.dice import get_roll, suppress_get_roll_requests
 
                     with suppress_get_roll_requests():
-                        roll_spec["roll_sequence"] = [int(get_roll("D6", game=self) or 0) for _ in range(dice_count)]
+                        roll_spec["roll_sequence"] = [get_roll("D6", game=self) for _ in range(dice_count)]
             except Exception:
                 pass
         req = self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
@@ -14871,7 +14871,7 @@ class Game(
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
@@ -14884,7 +14884,7 @@ class Game(
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
@@ -14897,7 +14897,7 @@ class Game(
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
@@ -14910,7 +14910,7 @@ class Game(
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = get_roll("D6")
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
@@ -14942,7 +14942,7 @@ class Game(
             fixed_distance = int(sr.get("enhancement_malicious_vigour_brazen_fury_distance", 6) or 6)
             break
         from ..utility.dice import get_roll
-        base_roll = int(fixed_distance if fixed_distance is not None else (get_roll("D6") or 0))
+        base_roll = int(fixed_distance if fixed_distance is not None else (get_roll("D6")))
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
@@ -14965,7 +14965,7 @@ class Game(
         except Exception:
             fixed_distance = 0
         from ..utility.dice import get_roll
-        base_roll = int(fixed_distance if fixed_distance > 0 else (get_roll("D6") or 0))
+        base_roll = int(fixed_distance if fixed_distance > 0 else (get_roll("D6")))
         distance_bonus = int(rule.get("distance_bonus", 0) or 0)
         can_reroll = bool(rule.get("distance_reroll"))
         source = str(rule.get("source", "") or "Horde Move").strip() or "Horde Move"
@@ -14986,7 +14986,7 @@ class Game(
                 )
             )
             if want:
-                base_roll = int(get_roll("D6") or 0)
+                base_roll = get_roll("D6")
                 reroll_used = True
         max_distance = int(base_roll + distance_bonus)
         if player is not None:
@@ -15024,7 +15024,7 @@ class Game(
 
         roll_spec = str((rule or {}).get("distance_roll", "") or "D6").strip().upper() or "D6"
         from ..utility.dice import get_roll
-        base_roll = int(get_roll(roll_spec) or 0)
+        base_roll = get_roll(roll_spec)
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:

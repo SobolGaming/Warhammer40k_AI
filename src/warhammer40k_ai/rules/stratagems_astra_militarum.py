@@ -2214,7 +2214,7 @@ class AstraMilitarumStratagemMixin:
             return
         destroy_count = 0
         for _ in range(int(total_rolls)):
-            if int(get_roll("D6") or 0) >= 4:
+            if get_roll("D6") >= 4:
                 destroy_count += 1
         get_models = getattr(attacker_root, "get_attached_unit_models", None)
         models = list(get_models() or []) if callable(get_models) else list(getattr(attacker_root, "models", []) or [])
@@ -3315,13 +3315,13 @@ class AstraMilitarumStratagemMixin:
                 seen.add(uid)
             enemy_targets.append(enemy_root)
         for enemy_root in enemy_targets:
-            if int(get_roll("D6") or 0) < 2:
+            if get_roll("D6") < 2:
                 continue
-            mortal_wounds = int(get_roll("D6") or 0)
+            mortal_wounds = get_roll("D6")
             if mortal_wounds <= 0:
                 continue
             root._apply_mortal_wounds_to_unit(enemy_root, mortal_wounds, game_map=game_map)
-        self_mortals = int(get_roll("D3") or 0) + int(get_roll("D3") or 0) + int(get_roll("D3") or 0)
+        self_mortals = get_roll("D3") + get_roll("D3") + get_roll("D3")
         if self_mortals > 0:
             root._apply_mortal_wounds_to_unit(root, self_mortals, game_map=game_map)
         self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
@@ -4089,7 +4089,7 @@ class AstraMilitarumStratagemMixin:
         if not self._am_spend_cp(stratagem, target_unit=root):
             return False
         try:
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
         except (TypeError, ValueError):
             roll = 0
         if roll <= 0:

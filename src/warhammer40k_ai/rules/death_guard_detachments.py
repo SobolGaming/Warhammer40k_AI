@@ -1485,7 +1485,7 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             return 0, "", None, None
         loss_die = str(source_sr.get("enhancement_sorrowsyphon_bodyguard_loss_die", "") or "D3").strip().upper() or "D3"
         try:
-            loss_count = int(get_roll(loss_die) or 0)
+            loss_count = get_roll(loss_die)
         except (TypeError, ValueError):
             loss_count = 0
         loss_count = int(max(0, min(int(loss_count), len(alive_bodyguard))))
@@ -1724,7 +1724,7 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                 source_sr.get("enhancement_tome_of_bounteous_blessings_restore_die", "") or "D3"
             ).strip().upper() or "D3"
             try:
-                amount = int(get_roll(roll_expr) or 0)
+                amount = get_roll(roll_expr)
             except (TypeError, ValueError):
                 amount = 0
             amount = int(max(0, amount))
@@ -2774,12 +2774,12 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             afflicted = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
             if afflicted is None:
                 continue
-            roll_2d6 = int(get_roll("2D6") or 0)
+            roll_2d6 = get_roll("2D6")
             modifier = -1 if bool(unit.is_below_half_strength()) else 0
             total = int(roll_2d6 + modifier)
             mortal_wounds = 0
             if total <= 6:
-                mortal_wounds = int(get_roll("D3") or 0)
+                mortal_wounds = get_roll("D3")
                 if mortal_wounds > 0:
                     unit._apply_mortal_wounds_to_unit(unit, int(mortal_wounds), game_map=game_map)
             outcomes.append(

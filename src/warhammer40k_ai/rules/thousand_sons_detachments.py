@@ -1522,7 +1522,7 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             total_mortal = 0
             for _ in range(int(uses)):
                 try:
-                    total_mortal += int(get_roll("D3") or 0)
+                    total_mortal += get_roll("D3")
                 except Exception:
                     continue
             if total_mortal <= 0:

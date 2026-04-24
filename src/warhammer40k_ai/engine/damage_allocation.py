@@ -131,7 +131,7 @@ def resolve_save_target_model(manager, game: object, seq: AttackSequence, wound_
                     redirect_models, redirect_source = redirect_fn(target, target_model, game=game)
                     if redirect_models:
                         wound_instance["_imperial_agents_selfless_bodyguard_resolved"] = True
-                        roll = int(get_roll("D6") or 0)
+                        roll = get_roll("D6")
                         wound_instance["_imperial_agents_selfless_bodyguard_roll"] = int(roll)
                         if roll >= 2:
                             if len(redirect_models) == 1:

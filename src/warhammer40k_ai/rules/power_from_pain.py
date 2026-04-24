@@ -527,7 +527,7 @@ class PowerFromPainManager:
         player = getattr(self.army, "player", None)
         for source in sources:
             bonus = self._pain_engine_roll_bonus(source)
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             total = int(roll + bonus)
             try:
                 from ..utility.event_bus import append_dice
@@ -880,7 +880,7 @@ class PowerFromPainManager:
             break
         if not pain_adept_present:
             return
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         try:
             from ..utility.event_bus import append_dice
             append_dice(player, f"Pain Adept roll: {roll}")
@@ -1477,7 +1477,7 @@ class PowerFromPainManager:
 
     def _apply_fleshcraft(self, unit, *, game=None, master_regenesist_choice: Optional[str] = None) -> int:
         try:
-            roll = int(get_roll("D3"))
+            roll = get_roll("D3")
         except Exception:
             roll = 0
         choice = str(master_regenesist_choice or "").strip().upper()

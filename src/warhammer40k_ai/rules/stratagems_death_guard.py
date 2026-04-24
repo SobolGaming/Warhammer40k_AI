@@ -1825,7 +1825,7 @@ class DeathGuardStratagemMixin:
             return
         mortal_wounds = 0
         for _ in range(int(total_rolls)):
-            if int(dice_module.get_roll("D6") or 0) >= 5:
+            if dice_module.get_roll("D6") >= 5:
                 mortal_wounds += 1
         if mortal_wounds <= 0:
             return
@@ -1980,7 +1980,7 @@ class DeathGuardStratagemMixin:
                     continue
                 mortal_wounds = 0
                 for _ in range(int(destroyed_models)):
-                    if int(dice_module.get_roll("D6") or 0) >= 6:
+                    if dice_module.get_roll("D6") >= 6:
                         mortal_wounds += 1
                 if mortal_wounds <= 0:
                     continue
@@ -4340,7 +4340,7 @@ class DeathGuardStratagemMixin:
             rolls: list[int] = []
             success_count = 0
             for model in list(engaged_models or []):
-                roll = int(dice_module.get_roll("D6") or 0)
+                roll = dice_module.get_roll("D6")
                 rolls.append(int(roll))
                 model_unit = getattr(model, "parent_unit", None)
                 is_cultist = bool(model_unit is not None and self._dg_has_keyword(model_unit, "CULTIST"))
@@ -4706,7 +4706,7 @@ class DeathGuardStratagemMixin:
             eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
-            rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(len(engaged_models))]
+            rolls = [dice_module.get_roll("D6") for _ in range(len(engaged_models))]
             mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) >= 2))
             if mortal_wounds > 0:
                 apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)

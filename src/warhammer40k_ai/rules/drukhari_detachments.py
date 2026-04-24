@@ -1160,7 +1160,7 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             if not in_range:
                 continue
             try:
-                roll = int(get_roll("D6"))
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             threshold = int(source.get("success_on", 4) or 4)
@@ -1457,7 +1457,7 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not self._army_has_combat_drugs():
             return {"rolls": [], "selected": []}
         self.combat_drug_active_keys = set()
-        rolls = [int(get_roll("D6")), int(get_roll("D6"))]
+        rolls = [get_roll("D6"), get_roll("D6")]
         selected = []
         for roll in rolls:
             drug = COMBAT_DRUG_BY_ROLL.get(int(roll))
@@ -1496,7 +1496,7 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             sr.pop("enhancement_pharmacophex_drug_key", None)
             sr.pop("enhancement_pharmacophex_round", None)
             sr.pop("enhancement_pharmacophex_roll", None)
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             drug = COMBAT_DRUG_BY_ROLL.get(int(roll))
             selected_key = str(getattr(drug, "key", "") or "").strip().upper() if drug is not None else ""
             selected_name = str(getattr(drug, "name", "") or "").strip() if drug is not None else ""

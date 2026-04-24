@@ -545,7 +545,7 @@ class GameSetupDeploymentReservesMixin:
         success_on = int(min(6, max(2, success_on)))
         from ...utility.dice import get_roll
 
-        roll = int(get_roll("D6", game=self) or 0)
+        roll = get_roll("D6", game=self)
         prevented = int(roll) >= int(success_on)
         if prevented:
             self._mark_reinforcements_step_unit_skipped(arriving_unit_id)

@@ -2055,7 +2055,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             cp_gain = int(max(0, cp_gain))
             if cp_gain <= 0:
                 continue
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if roll < roll_min:
                 continue
             source_name = str(
@@ -4621,7 +4621,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return
         targets = self._enemy_units_for_fallout(game, enemy_player=opponent)
         for target in targets:
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             if roll < 3:
                 continue
             apply_mortal_wounds = getattr(target, "_apply_mortal_wounds_to_unit", None)

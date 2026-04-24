@@ -4181,7 +4181,7 @@ class TauEmpireStratagemMixin:
 
         mortal_wounds = 0
         for _index in range(self._tau_alive_model_count(attacker_root)):
-            if int(dice_module.get_roll("D6") or 0) == 6:
+            if dice_module.get_roll("D6") == 6:
                 mortal_wounds += 1
         if mortal_wounds > 0:
             apply_mortal_wounds = getattr(attacker_root, "_apply_mortal_wounds_to_unit", None)
@@ -4285,9 +4285,9 @@ class TauEmpireStratagemMixin:
             range_inches=6.0,
             game_map=game_map,
         ):
-            if int(dice_module.get_roll("D6") or 0) < 4:
+            if dice_module.get_roll("D6") < 4:
                 continue
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
@@ -6793,7 +6793,7 @@ class TauEmpireStratagemMixin:
         if not self._tau_spend_cp(stratagem, target_unit=root):
             return False
 
-        heal_roll = max(0, int(dice_module.get_roll("D3") or 0))
+        heal_roll = max(0, dice_module.get_roll("D3"))
         heal_amount = int(heal_roll + 1)
         healed = min(int(heal_amount), int(missing))
 

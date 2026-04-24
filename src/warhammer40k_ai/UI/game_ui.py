@@ -14818,8 +14818,8 @@ class GameView:
                     if apply_result is None or not getattr(apply_result, "ok", False) or target_unit is None:
                         _cancel_flow()
                         return
-                    r1 = int(get_roll("D6") or 0)
-                    r2 = int(get_roll("D6") or 0)
+                    r1 = get_roll("D6")
+                    r2 = get_roll("D6")
                     roll_sum = r1 + r2
                     msg = (
                         f"{getattr(caster_unit, 'name', 'Unit')} attempts {ritual.name}.\n"
@@ -14934,7 +14934,7 @@ class GameView:
                                         warp_syphon_target=warp_syphon_target,
                                     )
                                     return
-                                dagger_roll = int(get_roll("D3") or 0)
+                                dagger_roll = get_roll("D3")
                                 _resolve_ritual(
                                     rolls_payload=list(rolls_payload),
                                     channel_choice=channel_choice,
@@ -14961,7 +14961,7 @@ class GameView:
                             _maybe_resolve_warpmeld_dagger(rolls_payload=[r1, r2], channel_choice=False)
                             return
 
-                        extra_roll = int(get_roll("D6") or 0)
+                        extra_roll = get_roll("D6")
                         warp_syphon_candidates_fn = getattr(ts_mgr, "warpforged_warp_syphon_candidates", None) if ts_mgr is not None else None
                         warp_syphon_candidates = list(warp_syphon_candidates_fn(caster_model) or []) if callable(warp_syphon_candidates_fn) else []
                         if not warp_syphon_candidates:
@@ -15002,7 +15002,7 @@ class GameView:
                             if apply_result is None or not getattr(apply_result, "ok", False) or selected_target is None:
                                 _cancel_flow()
                                 return
-                            rerolled_extra_roll = int(get_roll("D6") or 0)
+                            rerolled_extra_roll = get_roll("D6")
                             _maybe_resolve_warpmeld_dagger(
                                 rolls_payload=[r1, r2, extra_roll, rerolled_extra_roll],
                                 channel_choice=True,
@@ -17307,7 +17307,7 @@ class GameView:
                 try:
                     from ..rules.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
                     from ..utility.dice import get_roll
-                    roll = int(get_roll("D6") or 0)
+                    roll = get_roll("D6")
                     choice = PROTECTOR_IMPERATIVE if roll <= 3 else CONQUEROR_IMPERATIVE
                     mgr.select_imperative(choice, battle_round=battle_round)
                 except Exception:

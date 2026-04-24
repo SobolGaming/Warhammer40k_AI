@@ -1943,7 +1943,7 @@ class GenestealerCultsStratagemMixin:
     def _roll_genestealer_cults_path_of_anguish_distance(self, unit: Any) -> int:
         from ..utility.event_bus import append_dice
 
-        max_distance = int(dice_module.get_roll("D6") or 0)
+        max_distance = dice_module.get_roll("D6")
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if player is not None:
             append_dice(
@@ -2783,14 +2783,14 @@ class GenestealerCultsStratagemMixin:
         if not self._gsc_spend_cp(stratagem, target_unit=source_unit):
             return False
 
-        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        roll = max(0, dice_module.get_roll("D6"))
         mortal_wounds = 0
         if roll >= 2:
             source_name = self._gsc_norm_name(str(getattr(source_unit, "name", "") or ""))
             if source_name in {"ABOMINANT", "PATRIARCH"}:
-                mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0)) + max(0, int(dice_module.get_roll("D3") or 0))
+                mortal_wounds = max(0, dice_module.get_roll("D3")) + max(0, dice_module.get_roll("D3"))
             else:
-                mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0))
+                mortal_wounds = max(0, dice_module.get_roll("D3"))
         source_root = self._gsc_root(source_unit) or source_unit
         if mortal_wounds > 0 and hasattr(source_root, "_apply_mortal_wounds_to_unit"):
             source_root._apply_mortal_wounds_to_unit(
@@ -3124,10 +3124,10 @@ class GenestealerCultsStratagemMixin:
             engaged_root = self._gsc_root(resolve_unit(str(unit_id or "")))
             if engaged_root is None or not self._gsc_on_battlefield(engaged_root, require_targetable=False):
                 continue
-            roll = max(0, int(dice_module.get_roll("D6") or 0))
+            roll = max(0, dice_module.get_roll("D6"))
             if roll < 5:
                 continue
-            mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0)) + 1
+            mortal_wounds = max(0, dice_module.get_roll("D3")) + 1
             if mortal_wounds <= 0:
                 continue
             applier = getattr(attacker_root, "_apply_mortal_wounds_to_unit", None)
@@ -3637,7 +3637,7 @@ class GenestealerCultsStratagemMixin:
         if not self._gsc_spend_cp(stratagem, target_unit=destroyed_root):
             return False
 
-        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        roll = max(0, dice_module.get_roll("D6"))
         if roll < 3:
             self._used_once_per_battle["REGIMENTAL REINFORCEMENTS"] = True
             self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
@@ -5042,10 +5042,10 @@ class GenestealerCultsStratagemMixin:
         if not self._gsc_spend_cp(stratagem, target_unit=target_root):
             return False
 
-        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        roll = max(0, dice_module.get_roll("D6"))
         mortal_wounds = 0
         if 2 <= roll <= 4:
-            mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0))
+            mortal_wounds = max(0, dice_module.get_roll("D3"))
         elif roll >= 5:
             mortal_wounds = 3
         if mortal_wounds > 0 and hasattr(target_root, "_apply_mortal_wounds_to_unit"):

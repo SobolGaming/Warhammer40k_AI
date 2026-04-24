@@ -96,7 +96,7 @@ def _apply_selected_move_characteristic_bonuses(unit, *, action_type: str) -> No
             movement_bonus = int(spec.get("move_bonus_flat", 0) or 0)
             move_bonus_dice = str(spec.get("move_bonus_dice", "") or "").strip().upper()
             if move_bonus_dice:
-                movement_bonus += int(get_roll(move_bonus_dice) or 0)
+                movement_bonus += get_roll(move_bonus_dice)
             if movement_bonus <= 0:
                 continue
             source = str(spec.get("source", "") or "Selected move characteristic bonus").strip()
@@ -1035,11 +1035,11 @@ def _transponder_lock_module_turn_one_spotter_requirement_satisfied(
 def _fleet_commander_effect_roll(token: object) -> int:
     text = str(token or "D3").strip().upper() or "D3"
     if text == "D3":
-        return int(get_roll("D3") or 0)
+        return get_roll("D3")
     if text == "D6":
-        return int(get_roll("D6") or 0)
+        return get_roll("D6")
     if text == "D3+3":
-        return int(get_roll("D3") or 0) + 3
+        return get_roll("D3") + 3
     try:
         return max(0, int(text))
     except (TypeError, ValueError):
@@ -3874,7 +3874,7 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
                 end_xy=(x, y),
             ):
                 continue
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             mortals = 0
             if roll >= int(roll_min):
                 mortals = int(max(0, _fleet_commander_effect_roll(mortal_roll)))

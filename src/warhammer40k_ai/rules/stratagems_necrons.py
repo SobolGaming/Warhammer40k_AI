@@ -2555,7 +2555,7 @@ class NecronsStratagemMixin:
             return False
         if not self._necrons_spend_cp(stratagem, target_unit=root):
             return False
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         if roll > 0:
             game_map = getattr(self.game, "map", None)
             provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
@@ -3017,7 +3017,7 @@ class NecronsStratagemMixin:
             return False
         if not self._necrons_spend_cp(stratagem, target_unit=root):
             return False
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         total_wounds = int(roll) + (1 if self._cryptek_conclave_unit_has_cryptek_keyword(root) else 0)
         if total_wounds > 0:
             game_map = getattr(self.game, "map", None)
@@ -3482,7 +3482,7 @@ class NecronsStratagemMixin:
             return False
         if not self._necrons_spend_cp(stratagem, target_unit=root):
             return False
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         if roll > 0:
             game_map = getattr(self.game, "map", None)
             provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
@@ -3940,7 +3940,7 @@ class NecronsStratagemMixin:
             return False
         snapshot = pending.get("reanimation_bonus_by_unit_id") if isinstance(pending, dict) else None
         bonus = self._awakened_dynasty_undying_legions_reanimation_bonus(root=root, snapshot=snapshot)
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         total_wounds = int(roll) + int(bonus)
         if total_wounds > 0:
             game_map = getattr(self.game, "map", None)
@@ -4140,12 +4140,12 @@ class NecronsStratagemMixin:
         if not self._necrons_spend_cp(stratagem, target_unit=root):
             return False
 
-        roll = int(dice_module.get_roll("D6") or 0)
+        roll = dice_module.get_roll("D6")
         mortal_wounds = 0
         if roll == 6:
             mortal_wounds = 3
         elif roll >= 2:
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
         if mortal_wounds > 0:
             root._apply_mortal_wounds_to_unit(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
         if not self._queue_annihilation_legion_reactive_move(
@@ -4276,7 +4276,7 @@ class NecronsStratagemMixin:
         if game_map is None:
             logger.error("ERROR: MURDEROUS REANIMATION: no map context")
             return False
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         if roll > 0:
             provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
@@ -6059,7 +6059,7 @@ class NecronsStratagemMixin:
             return False
         if not self._necrons_spend_cp(stratagem, target_unit=root):
             return False
-        roll = int(dice_module.get_roll("D3") or 0)
+        roll = dice_module.get_roll("D3")
         if roll > 0:
             game_map = getattr(self.game, "map", None)
             provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
@@ -6187,7 +6187,7 @@ class NecronsStratagemMixin:
             failed_test = (not was_battle_shocked) and bool(is_battle_shocked())
         mortal_wounds = 0
         if failed_test:
-            mortal_wounds = int(dice_module.get_roll("D3") or 0) + 1
+            mortal_wounds = dice_module.get_roll("D3") + 1
             if mortal_wounds > 0:
                 root._apply_mortal_wounds_to_unit(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
         self._mark_pantheon_molecular_erosion_used()
@@ -7432,7 +7432,7 @@ class NecronsStratagemMixin:
         is_human = bool(getattr(self.player, "has_control", lambda: False)())
         triggered = 0
         for reserve_unit in list(reserve_units or []):
-            roll = int(dice_module.get_roll("D3") or 0)
+            roll = dice_module.get_roll("D3")
             if roll <= 0:
                 continue
             reserve_unit.apply_reanimation_protocols(

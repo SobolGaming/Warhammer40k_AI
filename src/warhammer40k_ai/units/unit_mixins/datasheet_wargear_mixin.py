@@ -958,7 +958,7 @@ class DatasheetWargearMixin:
         spawned: list[Model] = []
         for entry in list(queue or []):
             kind = str(entry.get("kind", "") or "")
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             if roll < 4:
                 continue
             if kind == "pink":
@@ -1003,7 +1003,7 @@ class DatasheetWargearMixin:
 
         successes = 0
         for model in list(chosen or []):
-            roll = int(get_roll("D6"))
+            roll = get_roll("D6")
             if roll < 4:
                 continue
             successes += 1

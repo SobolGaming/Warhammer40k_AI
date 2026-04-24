@@ -209,7 +209,7 @@ def target_unit_has_wreathed_in_shadows(target_unit, *, game_map=None) -> bool:
 def apply_pall_of_despair_heal(unit) -> int:
     if unit is None:
         return 0
-    amount = int(get_roll("D3") or 0)
+    amount = get_roll("D3")
     if amount <= 0:
         return 0
 

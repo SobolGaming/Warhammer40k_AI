@@ -1505,7 +1505,7 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         rolls: list[int] = []
         successes = 0
         for _ in range(dice_count):
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             rolls.append(int(roll))
             if int(roll) >= int(threshold):
                 successes += 1

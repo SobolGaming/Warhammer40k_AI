@@ -776,7 +776,7 @@ class Model:
         move_bonus_dice = str(move_bonus_dice or "").strip().upper()
         if move_bonus_dice:
             try:
-                bonus += int(get_roll(move_bonus_dice) or 0)
+                bonus += get_roll(move_bonus_dice)
             except Exception:
                 pass
         try:

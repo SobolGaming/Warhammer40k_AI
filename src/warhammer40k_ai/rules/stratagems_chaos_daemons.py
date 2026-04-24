@@ -2314,7 +2314,7 @@ class ChaosDaemonsStratagemMixin:
                 if wounded_models:
                     heal_model = wounded_models[0]
             if heal_model is not None and heal_model in list(models or []):
-                heal_amount = int(dice_module.get_roll("D3") or 0) + 1
+                heal_amount = dice_module.get_roll("D3") + 1
                 heal_fn = getattr(heal_model, "heal", None)
                 if callable(heal_fn):
                     heal_fn(int(heal_amount))
@@ -2324,7 +2324,7 @@ class ChaosDaemonsStratagemMixin:
                     heal_model.wounds = min(base_wounds, current_wounds + int(heal_amount))
         else:
             is_battleline = bool(getattr(root, "has_any_keyword", lambda *_: False)("BATTLELINE"))
-            model_count = int(dice_module.get_roll("D3") or 0) if is_battleline else 1
+            model_count = dice_module.get_roll("D3") if is_battleline else 1
             model_count = max(0, int(model_count))
             return_full = getattr(self, "_return_destroyed_models_full", None)
             if callable(return_full):
@@ -3016,12 +3016,12 @@ class ChaosDaemonsStratagemMixin:
                 continue
             if not bool(getattr(enemy_root, "deployed", True)):
                 continue
-            roll = int(dice_module.get_roll("D6") or 0) + int(bonus)
+            roll = dice_module.get_roll("D6") + int(bonus)
             mortal_wounds = 0
             if roll >= 6:
                 mortal_wounds = 3
             elif roll >= 4:
-                mortal_wounds = int(dice_module.get_roll("D3") or 0)
+                mortal_wounds = dice_module.get_roll("D3")
             if mortal_wounds <= 0:
                 continue
             root._apply_mortal_wounds_to_unit(
@@ -3637,7 +3637,7 @@ class ChaosDaemonsStratagemMixin:
         cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=source_root)
         if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
             return False
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(int(roll_count))]
+        rolls = [dice_module.get_roll("D6") for _ in range(int(roll_count))]
         mortal_wounds = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
         if mortal_wounds > 0:
             apply_mortal_wounds = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
@@ -3810,7 +3810,7 @@ class ChaosDaemonsStratagemMixin:
         cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
         if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
             return False
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        rolls = [dice_module.get_roll("D6") for _ in range(6)]
         mortal_wounds = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
         if mortal_wounds > 0:
             apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)

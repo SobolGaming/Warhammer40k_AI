@@ -459,7 +459,7 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
                     continue
             enemy_name = str(getattr(enemy_root, "name", "Unit") or "Unit")
             try:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             append_dice(player, f"{source_name}: {enemy_name} roll {int(roll)}")
@@ -468,7 +468,7 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
                 mortal_wounds = int(max(0, low_mortal_wounds))
             elif int(roll) >= int(high_roll_threshold):
                 try:
-                    mortal_wounds = int(get_roll(high_mortal_wounds_roll) or 0)
+                    mortal_wounds = get_roll(high_mortal_wounds_roll)
                 except Exception:
                     mortal_wounds = 0
                 append_dice(

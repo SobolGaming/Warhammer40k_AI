@@ -2766,7 +2766,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 return None
             before, _base = self._wounds_snapshot(model)
             if heal_amount_override is None:
-                heal_roll = max(0, int(get_roll("D3") or 0)) + 1
+                heal_roll = max(0, get_roll("D3")) + 1
             else:
                 heal_roll = max(0, int(heal_amount_override))
             heal_fn = getattr(model, "heal", None)
@@ -3457,7 +3457,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if not callable(take_test):
             return
         try:
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
         except Exception:
             roll = 0
         if int(roll) < 2:

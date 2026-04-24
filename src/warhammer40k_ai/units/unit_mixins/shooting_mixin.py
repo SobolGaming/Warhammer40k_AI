@@ -2427,7 +2427,7 @@ class ShootingMixin:
 
             active_profile = weapon_profile
             if getattr(active_profile, "is_bubblechukka", lambda: False)():
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 selected = active_profile.get_bubblechukka_profile_for_roll(roll)
                 if selected is not None:
                     active_profile = selected
@@ -3898,7 +3898,7 @@ class ShootingMixin:
                 max_roll = 3 if roll_expr_norm == "D3" else 6
                 if int(resolved_wounds or 0) < int(max_roll):
                     try:
-                        rerolled = int(get_roll(roll_expr_norm) or 0)
+                        rerolled = get_roll(roll_expr_norm)
                     except Exception:
                         rerolled = int(resolved_wounds or 0)
                     if int(rerolled or 0) > int(resolved_wounds or 0):
@@ -4000,7 +4000,7 @@ class ShootingMixin:
                             if beam_applied:
                                 continue
                             try:
-                                bonus_roll = int(get_roll("D3") or 0)
+                                bonus_roll = get_roll("D3")
                             except Exception:
                                 bonus_roll = 0
                             if bonus_roll > 0:

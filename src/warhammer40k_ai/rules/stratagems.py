@@ -21698,7 +21698,7 @@ class StratagemManager(
         except Exception:
             return
         try:
-            roll = int(dice_module.get_roll("D6"))
+            roll = dice_module.get_roll("D6")
         except Exception:
             roll = 0
         try:
@@ -26112,7 +26112,7 @@ class StratagemManager(
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
-                roll = int(dice_module.get_roll("D6") or 0)
+                roll = dice_module.get_roll("D6")
             except Exception:
                 raise
             move_max = int(roll) + 1
@@ -26959,9 +26959,9 @@ class StratagemManager(
                 if bl_root.has_keyword("MOUNTED"):
                     amount = 1
                 elif bl_root.has_keyword("BEAST"):
-                    amount = int(dice_module.get_roll("D3") or 0)
+                    amount = dice_module.get_roll("D3")
                 elif bl_root.has_keyword("INFANTRY"):
-                    amount = int(dice_module.get_roll("D6") or 0)
+                    amount = dice_module.get_roll("D6")
                 else:
                     logger.error("ERROR: Daemontide: unsupported BLOOD LEGIONS unit type")
                     return False
@@ -27067,7 +27067,7 @@ class StratagemManager(
                 return False
 
             try:
-                roll = int(dice_module.get_roll("D3") or 0)
+                roll = dice_module.get_roll("D3")
             except Exception:
                 raise
             if roll < 0:
@@ -27873,7 +27873,7 @@ class StratagemManager(
             successes = 0
             for _ in range(int(lost_wounds)):
                 try:
-                    roll = int(dice_module.get_roll("D6") or 0)
+                    roll = dice_module.get_roll("D6")
                 except Exception:
                     roll = 0
                 rolls.append(int(roll))
@@ -29954,7 +29954,7 @@ class StratagemManager(
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
-                roll = int(dice_module.get_roll("D3") or 0)
+                roll = dice_module.get_roll("D3")
             except Exception:
                 raise
             if roll > 0:
@@ -30098,7 +30098,7 @@ class StratagemManager(
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
-                roll = int(dice_module.get_roll("D6") or 0)
+                roll = dice_module.get_roll("D6")
             except Exception:
                 raise
             move_max = max(0, int(roll or 0))
@@ -31114,7 +31114,7 @@ class StratagemManager(
                 from ..utility.stratagem_effects import apply_flickering_reality_effect
             except Exception:
                 apply_flickering_reality_effect = None
-            roll = int(dice_module.get_roll("D6") or 0)
+            roll = dice_module.get_roll("D6")
             try:
                 from ..utility.event_bus import append_dice
                 append_dice(self.player, f"Flickering Reality roll: {roll}")

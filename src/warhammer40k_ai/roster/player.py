@@ -69,7 +69,7 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             if roll_min <= 0 or cp_gain <= 0:
                 continue
             source_name = str(spec.get("name", "") or "Opponent CP Gain Reaction").strip() or "Opponent CP Gain Reaction"
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             gained = 0
             if int(roll) >= int(roll_min):
                 gained = int(self.gain_command_points(cp_gain, reason=source_name, source="ability") or 0)
@@ -368,7 +368,7 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             try:
                 from ..utility.dice import get_roll
 
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             label = str(spec.get("name", "") or "Stratagem CP Refund").strip() or "Stratagem CP Refund"

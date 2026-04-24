@@ -658,7 +658,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             rolls = []
             shaken_ids = []
             for enemy in list(candidates or []):
-                roll_value = int(get_roll("D6") or 0)
+                roll_value = get_roll("D6")
                 enemy_id = self._entity_id(enemy)
                 rolls.append({"unit_id": enemy_id, "roll": int(roll_value)})
                 if roll_value < 5:
@@ -733,7 +733,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
 
         target = selected[0]
         target_id = self._entity_id(target)
-        roll_value = int(get_roll("D6") or 0)
+        roll_value = get_roll("D6")
         rolls = list(roll_results or [])
         rolls.append({"unit_id": target_id, "roll": int(roll_value)})
 
@@ -3203,7 +3203,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                     alive_models.append(model)
             if not alive_models:
                 continue
-            rolls = [int(get_roll("D6") or 0) for _ in list(alive_models or [])]
+            rolls = [get_roll("D6") for _ in list(alive_models or [])]
             mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll) >= 5))
             if mortal_wounds > 0:
                 effect_root._apply_mortal_wounds_to_unit(
@@ -3341,7 +3341,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                 success_on = 4
             success_on = max(2, min(6, int(success_on)))
             try:
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
             except Exception:
                 roll = 0
             source_name = str(sr.get("enhancement_tripwires_source", "") or "Tripwires").strip() or "Tripwires"

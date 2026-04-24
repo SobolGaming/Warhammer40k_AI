@@ -2037,7 +2037,7 @@ class VotannStratagemMixin:
         roll_count = self._votann_unit_alive_model_count(root)
         if roll_count <= 0:
             return
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(int(roll_count))]
+        rolls = [dice_module.get_roll("D6") for _ in range(int(roll_count))]
         mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) == 1))
         if mortal_wounds <= 0:
             return
@@ -3791,7 +3791,7 @@ class VotannStratagemMixin:
                 self._votann_refund_yield_points(2)
             logger.error("ERROR: WALL OF STEEL: target unit has no dice to roll")
             return False
-        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(int(roll_count))]
+        rolls = [dice_module.get_roll("D6") for _ in range(int(roll_count))]
         mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) >= 4))
         if mortal_wounds > 0:
             apply_mortals = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
@@ -4015,7 +4015,7 @@ class VotannStratagemMixin:
         if not callable(queue_move):
             logger.error("ERROR: OPPORTUNISTIC ESCALATION: reactive move queue unavailable")
             return False
-        move_distance = max(0, int(dice_module.get_roll("D6") or 0))
+        move_distance = max(0, dice_module.get_roll("D6"))
         request = queue_move(
             player=self.player,
             unit=target_root,
@@ -5329,7 +5329,7 @@ class VotannStratagemMixin:
         if not callable(queue_move):
             logger.error("ERROR: CLAIMSTAKER REFLEX: reactive move queue unavailable")
             return False
-        move_distance = 6 if yp_spent else max(0, int(dice_module.get_roll("D6") or 0))
+        move_distance = 6 if yp_spent else max(0, dice_module.get_roll("D6"))
         request = queue_move(
             player=self.player,
             unit=target_root,

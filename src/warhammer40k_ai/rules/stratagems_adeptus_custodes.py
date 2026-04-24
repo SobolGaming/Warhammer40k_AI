@@ -3325,7 +3325,7 @@ class AdeptusCustodesStratagemMixin:
                 return False
             if not self._ac_spend_cp(stratagem, target_unit=source_unit):
                 return False
-            max_distance = float(max(1, int(dice_module.get_roll("D3") or 0)) + 3)
+            max_distance = float(max(1, dice_module.get_roll("D3")) + 3)
             special_rules = dict(getattr(source_unit, "special_rules", {}) or {})
             special_rules["stratagem_pile_in_distance_override"] = max(
                 float(special_rules.get("stratagem_pile_in_distance_override", 0.0) or 0.0),
@@ -3929,7 +3929,7 @@ class AdeptusCustodesStratagemMixin:
                 return False
             if not self._ac_spend_cp(stratagem, target_unit=target_unit):
                 return False
-            move_max = int(dice_module.get_roll("D6") or 0)
+            move_max = dice_module.get_roll("D6")
             request = (
                 game._queue_reactive_move_movement_decision(
                     player=self.player,

@@ -1873,7 +1873,7 @@ class DrukhariStratagemMixin:
             rolls: list[int] = []
             if roll_modifiers:
                 for modifier in roll_modifiers:
-                    roll = int(dice_module.get_roll("D6") or 0)
+                    roll = dice_module.get_roll("D6")
                     final_value = int(roll + int(modifier))
                     rolls.append(final_value)
                     if final_value >= 5:
@@ -4332,7 +4332,7 @@ class DrukhariStratagemMixin:
             return False
         if not self._drukhari_spend_cp(stratagem, target_unit=root):
             return False
-        max_distance = int(dice_module.get_roll("D6") or 0)
+        max_distance = dice_module.get_roll("D6")
         if max_distance <= 0:
             logger.error("ERROR: ENFOLDING NIGHTMARE: invalid move distance roll")
             return False
@@ -5022,7 +5022,7 @@ class DrukhariStratagemMixin:
         if not callable(queue_move):
             logger.error("ERROR: DANCE MACABRE: reactive move decision queue unavailable")
             return False
-        max_distance = 6 if self._drukhari_reapers_wager_unit_is_losing(root) else int(dice_module.get_roll("D6") or 0)
+        max_distance = 6 if self._drukhari_reapers_wager_unit_is_losing(root) else dice_module.get_roll("D6")
         if max_distance <= 0:
             logger.error("ERROR: DANCE MACABRE: invalid move distance")
             return False

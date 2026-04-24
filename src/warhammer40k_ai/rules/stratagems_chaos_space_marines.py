@@ -7914,7 +7914,7 @@ class ChaosSpaceMarinesStratagemMixin:
 
         max_distance = kwargs.get("max_distance")
         if max_distance is None:
-            max_distance = int(dice_module.get_roll("D6") or 0)
+            max_distance = dice_module.get_roll("D6")
         try:
             max_distance = int(max_distance or 0)
         except (TypeError, ValueError):
@@ -8411,7 +8411,7 @@ class ChaosSpaceMarinesStratagemMixin:
             if not is_battleline:
                 logger.error("ERROR: NO REST IN DEATH: return-models mode requires a BATTLELINE unit")
                 return False
-            return_roll = int(dice_module.get_roll("D3") or 0)
+            return_roll = dice_module.get_roll("D3")
             max_return = max(0, int(return_roll))
             chosen = kwargs.get("return_models") or kwargs.get("chosen_models")
             if chosen is not None:
@@ -8438,7 +8438,7 @@ class ChaosSpaceMarinesStratagemMixin:
                 or 0
             )
         else:
-            heal_roll = int(dice_module.get_roll("D3") or 0)
+            heal_roll = dice_module.get_roll("D3")
             heal_amount = max(0, int(heal_roll)) + 1
             heal_model = kwargs.get("model") or kwargs.get("target_model")
             if heal_model is None and wounded_models:
@@ -8522,14 +8522,14 @@ class ChaosSpaceMarinesStratagemMixin:
         if not self._cabal_spend_cp(stratagem, target_unit=root):
             return False
 
-        roll = int(dice_module.get_roll("D6") or 0)
+        roll = dice_module.get_roll("D6")
         mortal_wounds = 0
         if roll <= 1:
             mortal_wounds = 1
         elif roll <= 4:
-            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3")
         else:
-            mortal_wounds = int(dice_module.get_roll("D3") or 0) + int(dice_module.get_roll("D3") or 0)
+            mortal_wounds = dice_module.get_roll("D3") + dice_module.get_roll("D3")
 
         if mortal_wounds > 0:
             apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
@@ -9188,7 +9188,7 @@ class ChaosSpaceMarinesStratagemMixin:
 
         return_amount = 1
         if self._csm_has_keyword(root, "BATTLELINE"):
-            return_amount = max(0, int(dice_module.get_roll("D3") or 0))
+            return_amount = max(0, dice_module.get_roll("D3"))
         queue_return = getattr(self.game, "_queue_bodyguard_return_decision", None) if self.game is not None else None
         if not callable(queue_return):
             logger.error("ERROR: DIABOLIC REGENERATION: bodyguard return queue is unavailable")
@@ -10578,7 +10578,7 @@ class ChaosSpaceMarinesStratagemMixin:
             return False
 
         try:
-            move_max = int(dice_module.get_roll("D6") or 0)
+            move_max = dice_module.get_roll("D6")
         except Exception:
             move_max = 0
         if move_max <= 0:
@@ -11114,7 +11114,7 @@ class ChaosSpaceMarinesStratagemMixin:
         if not self._cabal_spend_cp(stratagem, target_unit=root):
             return False
 
-        heal_amount = 3 if self._is_soul_forge_unit(root) else int(dice_module.get_roll("D3") or 0)
+        heal_amount = 3 if self._is_soul_forge_unit(root) else dice_module.get_roll("D3")
         try:
             base_wounds = int(getattr(heal_model, "_base_wounds", getattr(heal_model, "base_wounds", 0)) or 0)
             current_wounds = int(getattr(heal_model, "wounds", 0) or 0)

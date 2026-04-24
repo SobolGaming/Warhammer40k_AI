@@ -13325,7 +13325,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 try:
                     from ...utility.dice import get_roll
 
-                    return_count = int(get_roll(discard_amount_roll) or 0)
+                    return_count = get_roll(discard_amount_roll)
                 except Exception:
                     return_count = 0
             else:
@@ -13345,7 +13345,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 try:
                     from ...utility.dice import get_roll
 
-                    return_count = int(get_roll(base_amount_roll) or 0)
+                    return_count = get_roll(base_amount_roll)
                 except Exception:
                     return_count = 0
             else:
@@ -13769,7 +13769,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         success_on = min(6, max(2, int(success_on)))
         from ...utility.dice import get_roll
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         try:
             from ...utility.event_bus import append_dice
         except ImportError:
@@ -16466,7 +16466,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             from ...utility.dice import get_roll
             from ...utility.event_bus import append_dice
 
-            mortal_wounds = max(0, int(get_roll("D3") or 0) + 1)
+            mortal_wounds = max(0, get_roll("D3") + 1)
             if player is not None:
                 append_dice(player, f"{ability_name}: D3+1 = {int(mortal_wounds)}")
 
@@ -18261,7 +18261,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             or "D6"
         ).strip().upper() or "D6"
         try:
-            move_distance = int(get_roll(move_roll) or 0)
+            move_distance = get_roll(move_roll)
         except Exception:
             move_distance = 0
         if move_distance <= 0:
@@ -18393,7 +18393,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             or "D6"
         ).strip().upper() or "D6"
         try:
-            move_distance = int(get_roll(move_roll) or 0)
+            move_distance = get_roll(move_roll)
         except Exception:
             move_distance = 0
         if move_distance <= 0:
@@ -19143,7 +19143,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         from ...utility.dice import get_roll
 
-        reanimated_wounds = max(0, int(get_roll("D6") or 0))
+        reanimated_wounds = max(0, get_roll("D6"))
         game_map = getattr(game, "map", None)
         provider = get_decision_provider(game, "reanimation_allocation_provider")
         is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
@@ -19285,7 +19285,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         from ...utility.dice import get_roll
 
-        reanimated_wounds = max(0, int(get_roll("D3") or 0))
+        reanimated_wounds = max(0, get_roll("D3"))
         game_map = getattr(game, "map", None)
         provider = get_decision_provider(game, "reanimation_allocation_provider")
         is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
@@ -19943,11 +19943,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         from ...utility.dice import get_roll
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         threshold = 3 if choice == "stand_firm" else 5
         mortal_wounds = 0
         if roll >= int(threshold):
-            mortal_wounds = int(get_roll("D3") or 0)
+            mortal_wounds = get_roll("D3")
 
         added_battleshock = False
         if choice == "take_cover":
@@ -21193,7 +21193,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.aura_utils import model_within_range_of_unit
         from ...utility.dice import get_roll
 
-        radius = int(get_roll("D6") or 0)
+        radius = get_roll("D6")
         if radius <= 0:
             return None
         game_map = getattr(game, "map", None)
@@ -21231,10 +21231,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         summary_parts: list[str] = []
         for enemy_root in sorted(list(nearby_enemy_units or []), key=lambda u: str(get_entity_id(u) or "")):
-            trigger = int(get_roll("D6") or 0)
+            trigger = get_roll("D6")
             enemy_name = str(getattr(enemy_root, "name", "Enemy unit") or "Enemy unit")
             if trigger >= 4:
-                mortals = int(get_roll("D6") or 0)
+                mortals = get_roll("D6")
                 if mortals > 0:
                     apply_mortal_wounds = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
                     if callable(apply_mortal_wounds):
@@ -22609,7 +22609,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             return None
         try:
-            move_distance = int(get_roll("D6") or 0) + 1
+            move_distance = get_roll("D6") + 1
         except Exception:
             move_distance = 1
         if move_distance <= 0:
@@ -23869,7 +23869,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 try:
                     from ...utility.dice import get_roll
 
-                    rolled_count = int(get_roll(once_roll) or 0)
+                    rolled_count = get_roll(once_roll)
                 except Exception:
                     rolled_count = 0
                 destroy_count = int(max(1, rolled_count))
@@ -24147,7 +24147,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
-        heal_roll = int(get_roll("D3") or 0) if callable(get_roll) else 0
+        heal_roll = get_roll("D3")
         before = 0
         after = 0
         try:
@@ -24574,7 +24574,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         if player is not None:
             append_dice(player, f"{ability_name} roll: {int(roll)}")
         target_name = str(getattr(target_root, "name", "Unit") or "Unit")
@@ -24689,7 +24689,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         if player is not None:
             append_dice(player, f"{ability_name} roll: {int(roll)}")
         target_name = str(getattr(target_root, "name", "Unit") or "Unit")
@@ -24824,7 +24824,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.event_bus import append_dice
         from ..decisions import DecisionOption as _DecisionOption, DecisionRequest as _DecisionRequest
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         if player is not None:
             append_dice(player, f"{ability_name} roll: {int(roll)}")
         try:
@@ -25051,11 +25051,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
         if roll <= 1:
-            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            mortal = get_roll("D3")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} mortal wounds: {mortal}")
             if mortal > 0 and source_unit is not None:
@@ -25783,11 +25783,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
         if roll <= 1:
-            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            mortal = get_roll("D3")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} mortal wounds: {mortal}")
             if mortal > 0 and source_unit is not None:
@@ -25904,7 +25904,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             get_roll = None
             append_dice = None
         roll_mode = str(ctx.get("roll_mode", "") or "table_2_3_d3_4_5_3_6_d3plus3").strip().lower()
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
 
@@ -25919,11 +25919,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     modifier = int(m.group("modifier") or 0)
                 except Exception:
                     modifier = 0
-                return int((get_roll(roll_expr) or 0) if callable(get_roll) else 0) + int(modifier)
+                return get_roll(roll_expr) + int(modifier)
             if tok == "d3":
-                return int(get_roll("D3") or 0) if callable(get_roll) else 0
+                return get_roll("D3")
             if tok == "d6":
-                return int(get_roll("D6") or 0) if callable(get_roll) else 0
+                return get_roll("D6")
             try:
                 return int(tok)
             except Exception:
@@ -25940,11 +25940,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 mortal = int(_resolve_mortal_token(mw_token))
         else:
             if 2 <= roll <= 3:
-                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                mortal = get_roll("D3")
             elif 4 <= roll <= 5:
                 mortal = 3
             elif roll >= 6:
-                d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                d3 = get_roll("D3")
                 mortal = int(d3 + 3)
         if mortal > 0:
             try:
@@ -26206,7 +26206,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 return None
             spawn_roll = str(spec.get("spawn_model_count_roll", "") or "D3").strip().upper() or "D3"
             try:
-                spawn_count = int(get_roll(spawn_roll) or 0)
+                spawn_count = get_roll(spawn_roll)
             except Exception:
                 spawn_count = 0
             spawn_count = max(1, int(spawn_count or 0))
@@ -26367,7 +26367,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             heal_flat = 0
         if heal_roll:
-            heal = int(get_roll(heal_roll) or 0)
+            heal = get_roll(heal_roll)
         else:
             heal = int(heal_flat or 0)
         if player is not None:
@@ -26632,7 +26632,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         else:
             try:
                 from ...utility.dice import get_roll
-                heal = int(get_roll(heal_roll) or 0)
+                heal = get_roll(heal_roll)
             except Exception:
                 heal = 0
             try:
@@ -27317,7 +27317,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         if player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
 
@@ -27341,7 +27341,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     mortal = 0
                 mortal_roll = str(entry.get("mortal_roll", "") or "").strip().upper()
                 if mortal_roll:
-                    rolled_mortal = int(get_roll(mortal_roll) or 0)
+                    rolled_mortal = get_roll(mortal_roll)
                     if player is not None:
                         append_dice(player, f"{ability_name} mortal wounds: {rolled_mortal}")
                     mortal += int(rolled_mortal)
@@ -27353,9 +27353,9 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         elif 2 <= roll <= 3:
             mortal = 1
         elif 4 <= roll <= 5:
-            mortal = int(get_roll("D3") or 0)
+            mortal = get_roll("D3")
         elif roll >= 6:
-            mortal = int(get_roll("D3") or 0) + 3
+            mortal = get_roll("D3") + 3
         if mortal > 0:
             try:
                 source_unit._apply_mortal_wounds_to_unit(
@@ -27440,7 +27440,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         else:
             roll_bonus = 0
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         modified_roll = int(roll + roll_bonus)
         if player is not None:
             if roll_bonus:
@@ -27470,7 +27470,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 mortal = 0
             mortal_roll = str(entry.get("mortal_roll", "") or "").strip().upper()
             if mortal_roll:
-                rolled_mortal = int(get_roll(mortal_roll) or 0)
+                rolled_mortal = get_roll(mortal_roll)
                 if player is not None:
                     append_dice(player, f"{ability_name} mortal wounds: {rolled_mortal}")
                 mortal += int(rolled_mortal)
@@ -27543,7 +27543,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         rolls: list[int] = []
         successes = 0
         for _ in range(int(dice_count)):
-            roll = int(get_roll("D6") or 0)
+            roll = get_roll("D6")
             rolls.append(int(roll))
             if int(roll) >= int(success_on):
                 successes += 1
@@ -27681,13 +27681,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
 
-        roll = int(get_roll("D6") or 0)
+        roll = get_roll("D6")
         if player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
 
         mortal = 0
         if 2 <= roll <= 5:
-            mortal = int(get_roll("D3") or 0)
+            mortal = get_roll("D3")
         elif roll >= 6:
             mortal = 3
         if mortal > 0:
@@ -27937,7 +27937,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     from ...utility.dice import get_roll as _get_roll
                 except Exception:
                     _get_roll = None
-                roll = int(_get_roll("2D6") or 0) if callable(_get_roll) else 0
+                roll = _get_roll("2D6")
                 try:
                     leadership = int(getattr(target_root, "leadership", getattr(target_unit, "leadership", 0)) or 0)
                 except Exception:
@@ -27986,12 +27986,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
         if roll <= 1:
             if bool(ctx.get("mortal_on_one")) and source_unit is not None:
-                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                mortal = get_roll("D3")
                 if callable(append_dice) and player is not None:
                     append_dice(player, f"{ability_name} mortal wounds: {mortal}")
                 if mortal > 0:
@@ -28443,7 +28443,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 get_roll = None
                 append_dice = None
             ability_name = str(ctx.get("ability_name", "") or "Spirit Stone of Raelyth").strip()
-            heal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            heal = get_roll("D3")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} roll: {heal}")
             if heal <= 0:
@@ -28592,7 +28592,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             low_mortal_roll = str(ctx.get("low_mortal_wounds_roll", "D3") or "D3").strip().upper() or "D3"
             high_mortal_roll = str(ctx.get("high_mortal_wounds_roll", "D3+3") or "D3+3").strip().upper() or "D3+3"
             try:
-                trigger_roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                trigger_roll = get_roll("D6")
             except Exception:
                 trigger_roll = 0
             if callable(append_dice) and player is not None:
@@ -28603,7 +28603,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             mortal_wounds = 0
             if int(low_roll_min) <= int(trigger_roll) <= int(low_roll_max):
                 try:
-                    mortal_wounds = int(get_roll(low_mortal_roll) or 0) if callable(get_roll) else 0
+                    mortal_wounds = get_roll(low_mortal_roll)
                 except Exception:
                     mortal_wounds = 0
                 if callable(append_dice) and player is not None:
@@ -28613,7 +28613,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     )
             elif int(trigger_roll) >= int(high_roll_threshold):
                 try:
-                    mortal_wounds = int(get_roll(high_mortal_roll) or 0) if callable(get_roll) else 0
+                    mortal_wounds = get_roll(high_mortal_roll)
                 except Exception:
                     mortal_wounds = 0
                 if callable(append_dice) and player is not None:
@@ -28703,7 +28703,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         rolls: list[int] = []
         mortal_wounds = 0
         for _ in range(int(roll_count)):
-            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            roll = get_roll("D6")
             rolls.append(int(roll))
             if int(roll) >= int(threshold):
                 mortal_wounds += 1
@@ -28820,7 +28820,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 if honoured:
                     heal = 3
                 else:
-                    heal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                    heal = get_roll("D3")
                     if callable(append_dice) and player is not None:
                         append_dice(player, f"{ability_name} roll: {int(heal)}")
                 if heal > 0:
@@ -29033,7 +29033,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 get_roll = None
                 append_dice = None
-            heal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            heal = get_roll("D3")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} roll: {heal}")
             if heal <= 0:
@@ -29123,7 +29123,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 try:
                     from ...utility.dice import get_roll
 
-                    return_count = int(get_roll(amount_roll) or 0)
+                    return_count = get_roll(amount_roll)
                 except Exception:
                     return_count = 0
             return_count = max(0, int(return_count))
@@ -29634,11 +29634,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if not tok:
                 return 0
             if tok == "d3":
-                return int(get_roll("D3") or 0) if callable(get_roll) else 0
+                return get_roll("D3")
             if tok == "d6":
-                return int(get_roll("D6") or 0) if callable(get_roll) else 0
+                return get_roll("D6")
             if tok in ("d3+3", "d3 3"):
-                d3v = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                d3v = get_roll("D3")
                 return int(d3v + 3)
             try:
                 return int(tok)
@@ -29661,7 +29661,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 threshold = 0
             mw_token = str(ctx.get("mortal_per_success", "") or "1")
             if dice_count > 0 and threshold > 0:
-                rolls = [int(get_roll("D6") or 0) if callable(get_roll) else 0 for _ in range(int(dice_count))]
+                rolls = [get_roll("D6") for _ in range(int(dice_count))]
                 successes = sum(1 for r in rolls if int(r) >= int(threshold))
                 if mw_token.strip().lower() in ("d3", "d6", "d3+3", "d3 3"):
                     mortal = sum(_resolve_mortal_token(mw_token) for _ in range(int(successes)))
@@ -29674,7 +29674,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                         f"{ability_name}: rolls {rolls} ({int(threshold)}+) => {int(successes)} success(es), {int(mortal)} mortal wounds.",
                     )
         else:
-            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            roll = get_roll("D6")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} roll: {roll}")
             self_token = str(ctx.get("self_mortal_on_one", "") or "d3")
@@ -30028,14 +30028,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 is_afflicted = False
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         total_roll = int(roll + (afflicted_bonus if is_afflicted else 0))
         mortal = 0
         if total_roll >= int(threshold):
             if mw_raw == "d3":
-                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                mortal = get_roll("D3")
             elif mw_raw == "d6":
-                mortal = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                mortal = get_roll("D6")
             else:
                 try:
                     mortal = int(mw_raw)
@@ -30645,7 +30645,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 get_roll = None
                 append_action = None
                 append_dice = None
-            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            roll = get_roll("D6")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} roll: {int(roll)}")
             if int(roll) < int(threshold):
@@ -30658,9 +30658,9 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
             total_mw = 0
             if mw_spec == "D3":
-                total_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                total_mw = get_roll("D3")
             elif mw_spec == "D6":
-                total_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                total_mw = get_roll("D6")
             else:
                 try:
                     total_mw = int(mw_spec or 0)
@@ -30732,16 +30732,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 get_roll = None
                 append_action = None
                 append_dice = None
-            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            roll = get_roll("D6")
             if callable(append_dice) and player is not None:
                 append_dice(player, f"{ability_name} roll: {int(roll)}")
 
             if int(roll) == 1:
                 self_mw = 0
                 if self_mw_spec == "D3":
-                    self_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                    self_mw = get_roll("D3")
                 elif self_mw_spec == "D6":
-                    self_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                    self_mw = get_roll("D6")
                 else:
                     try:
                         self_mw = int(self_mw_spec or 0)
@@ -30826,16 +30826,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             append_action = None
             append_dice = None
 
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        roll = get_roll("D6")
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {int(roll)}")
 
         if int(roll) == 1:
             self_mw = 0
             if self_mw_spec == "D3":
-                self_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                self_mw = get_roll("D3")
             elif self_mw_spec == "D6":
-                self_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                self_mw = get_roll("D6")
             else:
                 try:
                     self_mw = int(self_mw_spec or 0)
@@ -31497,7 +31497,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     spawn_roll = "D3"
                 try:
                     from ...utility.dice import get_roll
-                    spawn_count = int(get_roll(spawn_roll) or 0)
+                    spawn_count = get_roll(spawn_roll)
                 except Exception:
                     spawn_count = 0
             else:
@@ -31702,7 +31702,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 from ...utility.dice import get_roll
                 from ...utility.event_bus import append_dice
 
-                roll = int(get_roll("D6") or 0)
+                roll = get_roll("D6")
                 if player is not None:
                     append_dice(player, f"{source} roll: {int(roll)}")
                 if int(roll) < int(roll_threshold):
@@ -32103,7 +32103,7 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
             else:
                 from ...utility.dice import get_roll
 
-                roll = int(get_roll("2D6") or 0)
+                roll = get_roll("2D6")
                 leadership = int(getattr(target_unit, "leadership", 0) or 0)
                 modified_roll = int(roll + int(effective_test_modifier))
                 leadership_test_passed = bool(modified_roll <= leadership)
@@ -32248,7 +32248,7 @@ def _apply_mortal_wounds_roll_to_unit(
     from ...utility.dice import get_roll
     from ...utility.event_bus import append_dice
 
-    mortal_wounds = int(get_roll(roll_key) or 0)
+    mortal_wounds = get_roll(roll_key)
     if player is not None:
         append_dice(player, f"{ability_name} mortal wounds: {int(mortal_wounds)}")
     if mortal_wounds <= 0:
@@ -32315,7 +32315,7 @@ def _apply_supa_glowy_fing_roll_table(
     if player is None and source_root is not None and hasattr(source_root, "get_parent_army"):
         source_army = source_root.get_parent_army()
         player = getattr(source_army, "player", None) if source_army is not None else None
-    roll = int(get_roll("D6") or 0)
+    roll = get_roll("D6")
     if player is not None:
         append_dice(player, f"{ability_name} roll table: {int(roll)}")
     target_name = getattr(target_root, "name", "Unit")
@@ -32654,7 +32654,7 @@ def _apply_post_shoot_mortal_wounds_target(game: object, request: DecisionReques
     rolls = []
     successes = 0
     for _ in range(dice_count):
-        r = int(get_roll("D6") or 0)
+        r = get_roll("D6")
         rolls.append(r)
         if r >= threshold:
             successes += 1
@@ -32892,7 +32892,7 @@ def _apply_post_shoot_aflame_target(game: object, request: DecisionRequest, resu
         return target_unit
 
     from ...utility.dice import get_roll
-    roll = int(get_roll("D6") or 0)
+    roll = get_roll("D6")
     success = bool(roll >= int(threshold))
 
     try:

@@ -299,7 +299,7 @@ class CodeChivalricManager:
         return True
 
     def roll_deed(self, *, game=None, player=None) -> dict:
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         deed = next((d for d in CODE_CHIVALRIC_DEEDS if d.roll_min <= roll <= d.roll_max), None)
         if deed is None:
             deed = DEED_LAY_LOW
@@ -318,7 +318,7 @@ class CodeChivalricManager:
         return {"roll": roll, "deed": deed}
 
     def roll_quality(self) -> dict:
-        roll = int(get_roll("D6"))
+        roll = get_roll("D6")
         quality = next((q for q in CODE_CHIVALRIC_QUALITIES if q.roll_min <= roll <= q.roll_max), None)
         if quality is None:
             quality = QUALITY_VALOUR
