@@ -13,8 +13,7 @@ Install the base project dependencies:
 
 ```bash
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
-python -m pip install -e .
+python -m pip install -e ".[test]"
 ```
 
 Optional ML dependencies are only needed for later model training code paths:

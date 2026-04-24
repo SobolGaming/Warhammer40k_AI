@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=82.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "warhammer40k-ai"
+dynamic = ["version"]
+description = "Warhammer 40,000 rules engine and interactive UI"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Andrzej Gorski", email = "nostrademous@hotmail.com" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "beautifulsoup4==4.12.2",
+  "numpy",
+  "openpyxl",
+  "pandas",
+  "requests==2.31.0",
+  "shapely",
+  "simple-namespace",
+  "websockets==11.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit",
+  "pyright",
+  "ruff",
+]
+ml = [
+  "ray[rllib]>=2.0,<3.0",
+  "torch>=2.2,<3.0",
+  "torch-geometric>=2.6,<3.0",
+  "torchrl>=0.6,<1.0",
+  "wandb>=0.16,<1.0",
+]
+test = [
+  "pytest",
+  "pytest-xdist",
+]
+ui = [
+  "matplotlib",
+  "pygame",
+  "PyQt6",
+  "streamlit==1.22.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SobolGaming/Warhammer40k_AI"
+
+[project.scripts]
+warhammer40k-ai = "warhammer40k_ai.cli:main"
+warhammer40k-ai-network = "warhammer40k_ai.network.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "warhammer40k_ai.version.APP_VERSION" }
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]

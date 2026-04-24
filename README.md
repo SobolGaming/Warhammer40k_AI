@@ -2,7 +2,7 @@
 
 Interactive Warhammer 40k rules engine with a graphical UI, official setup phases, and full deployment sequencing.
 
-Version `0.2.0` is the current 10th Edition milestone release: all in-scope 10th Edition factions now have engine and support-matrix coverage. Active development is now focused on 11th-edition-first port prep while preserving the existing 10th Edition engine baseline.
+Version `0.2.105` is the current 10th Edition milestone release: all in-scope 10th Edition factions now have engine and support-matrix coverage. Active development is now focused on 11th-edition-first port prep while preserving the existing 10th Edition engine baseline.
 
 The repository is now in an 11th-edition-first port-prep phase. Structural work is
 landing behind stable façades so release-day 11th rules ingestion can happen
@@ -24,8 +24,8 @@ status.
 
 1. **Install dependencies and the package**:
 ```bash
-pip3 install -r requirements.txt
-pip3 install -e .
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[ui,test]"
 ```
 
 ### Optional ML Setup
@@ -42,8 +42,7 @@ python -m venv .venv
 # Linux/macOS
 # source .venv/bin/activate
 
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
+python -m pip install --upgrade pip
 python -m pip install -e ".[ml]"
 ```
 

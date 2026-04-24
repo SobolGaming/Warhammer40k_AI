@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-import runpy
 import subprocess
-import setuptools
 import sys
+import tomllib
 
 import warhammer40k_ai.ml.dependency_boundary as dependency_boundary
 from warhammer40k_ai.ml.dependency_boundary import (
@@ -58,25 +57,20 @@ def test_require_ml_dependencies_raises_actionable_error_when_missing(monkeypatc
         raise AssertionError("Expected MLDependencyBoundaryError when ML imports are unavailable")
 
 
-def test_setup_exposes_ml_extra_and_keeps_core_install_requires_ml_free(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def _capture_setup(*args, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(setuptools, "setup", _capture_setup)
+def test_pyproject_exposes_ml_extra_and_keeps_core_dependencies_ml_free() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    runpy.run_path(str(repo_root / "setup.py"), run_name="__main__")
+    metadata = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    project = metadata["project"]
 
-    extras = dict(captured.get("extras_require", {}) or {})
+    extras = dict(project.get("optional-dependencies", {}) or {})
     assert "ml" in extras
     ml_extra = [str(item) for item in list(extras["ml"] or [])]
     assert any(dep.startswith("torch") for dep in ml_extra)
     assert any(dep.startswith("ray") for dep in ml_extra)
     assert any(dep.startswith("wandb") for dep in ml_extra)
 
-    install_requires = [str(item) for item in list(captured.get("install_requires", []) or [])]
-    assert find_forbidden_core_dependencies(install_requires) == []
+    dependencies = [str(item) for item in list(project.get("dependencies", []) or [])]
+    assert find_forbidden_core_dependencies(dependencies) == []
 
 
 def test_engine_and_replay_import_without_ml_stack() -> None:

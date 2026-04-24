@@ -1,16 +1,1 @@
-beautifulsoup4==4.12.2
-requests==2.31.0
-streamlit==1.22.0
-pandas
-numpy
-PyQt6
-openpyxl
-shapely
-simple-namespace
-pytest
-pytest-xdist
-setuptools==82.0.0
-pygame
-shapely
-matplotlib
-websockets==11.0.3
+.[ui,test]

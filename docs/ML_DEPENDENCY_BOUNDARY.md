@@ -8,14 +8,14 @@ Primary artifacts:
 - `src/warhammer40k_ai/ml/interfaces.py`
 - `src/warhammer40k_ai/ml/registry.py`
 - `src/warhammer40k_ai/ml/policy_bundle.py`
-- `setup.py` (`extras_require["ml"]`)
+- `pyproject.toml` (`project.optional-dependencies.ml`)
 - `tests/rules/test_ml_dependency_boundary.py`
 - `tests/ai/test_ml_policy_bundle.py`
 
 ## Core Policy
 
 - Core engine/runtime dependencies must remain ML-framework free.
-- ML libraries are allowed only as optional extras, never in core `install_requires`.
+- ML libraries are allowed only as optional extras, never in core dependencies.
 - ML-facing code is isolated under `src/warhammer40k_ai/ml/`.
 - Engine and replay imports must work when ML extras are not installed.
 
@@ -34,7 +34,7 @@ Install ML stack only when needed:
 pip install "warhammer40k_ai[ml]"
 ```
 
-`setup.py` exposes this extra as `extras_require["ml"]`.
+`pyproject.toml` exposes this extra as `project.optional-dependencies.ml`.
 
 Recommended full setup flow from repository root:
 
@@ -48,7 +48,6 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
 python -m pip install -e ".[ml]"
 ```
 
@@ -88,7 +87,7 @@ boundary:
 - dependency name normalization and forbidden-core scanning
 - deterministic dependency status shape
 - actionable runtime error text when ML extras are missing
-- `setup.py` exposes `ml` extras while core `install_requires` remains ML-free
+- `pyproject.toml` exposes `ml` extras while core dependencies remain ML-free
 - engine/replay imports stay functional without ML stack
 - engine/replay import paths do not load forbidden ML modules as a side effect
 

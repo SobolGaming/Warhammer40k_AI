@@ -3,8 +3,8 @@
 ## Source of truth
 
 - App version lives in `src/warhammer40k_ai/version.py` as `APP_VERSION`.
-- `setup.py` reads `APP_VERSION` so packaging and runtime share the same value.
-- `0.2.0` is the milestone release that marks completed in-scope 10th Edition faction support before the active 11th-edition-first port-prep work.
+- `pyproject.toml` reads `APP_VERSION` through setuptools dynamic metadata so packaging and runtime share the same value.
+- `0.2.105` is the current 10th Edition milestone release line after completed in-scope faction support and active 11th-edition-first port-prep work.
 
 ## When to bump
 
@@ -25,8 +25,8 @@ python scripts/bump_version.py --set 1.2.3
 
 Commit the updated `src/warhammer40k_ai/version.py` alongside your changes.
 
-Note: Python 3 is required for version tooling and git hook checks. On Windows,
-`py -3` is preferred if `python` is not on PATH.
+Note: Python 3.12 or newer is required for version tooling and git hook checks.
+On Windows, `py -3.12` is preferred if `python` is not on PATH.
 
 ## Git hook enforcement
 

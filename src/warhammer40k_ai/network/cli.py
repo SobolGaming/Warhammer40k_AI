@@ -9,6 +9,9 @@ from .client import NetworkClient
 from .game_session import GameUpdate, NetworkGameSession
 from .server import NetworkServer
 import logging
+
+from ..console import configure_console_encoding
+
 logger = logging.getLogger(__name__)
 
 def setup_logging(log_level) -> logging.Logger:
@@ -279,6 +282,7 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    configure_console_encoding()
     parser = _build_parser()
     args = parser.parse_args()
     setup_logging(args.log_level)
