@@ -55,6 +55,7 @@ from .decision_kinds import (
 from .random_source import RandomSource
 from .decision_controller import DecisionController, DecisionControllerHub
 from .decision_record import DecisionRecordStore
+from .decision_port import DecisionPort
 from .descriptor_compiler import compile_descriptor_bundle
 from .reserve_metadata import ensure_reserve_start_metadata, set_reserve_start_metadata
 from .ruleset import RulesetBundle
@@ -209,9 +210,16 @@ class Game(
             value.game = self
         except (AttributeError, TypeError):
             return
+        bind_decision_port = getattr(value, "bind_decision_port", None)
+        decision_port = getattr(self, "decision_port", None)
+        if callable(bind_decision_port) and decision_port is not None:
+            bind_decision_port(decision_port)
 
     def set_map(self, game_map: Map) -> None:
         self.map = game_map
+
+    def install_decision_providers(self, **providers) -> None:
+        self.decision_port.install(providers)
 
     def __init__(
         self,
@@ -233,6 +241,7 @@ class Game(
         self.players = list(players) if players else []
         self.turn = 1
         self.current_player_index = 0
+        self.decision_port = DecisionPort()
         self.map = Map(battlefield.width, battlefield.height)
         self.event_system = EventSystem()
         self.event_log = DeterministicEventLog()

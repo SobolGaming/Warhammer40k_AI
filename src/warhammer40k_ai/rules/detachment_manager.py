@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import re
+
+from .faction_registry import faction_ids_match
+
+
 class DetachmentManagerBase:
     faction_id: str = ""
 
@@ -80,7 +84,7 @@ class DetachmentManagerBase:
             fid = ""
         if not fid:
             return True
-        return fid == str(faction_id or "").strip().upper()
+        return faction_ids_match(fid, faction_id)
 
     def get_matching_detachment_instances(self, detachment_name: str) -> list:
         if self.faction_id and not self._army_faction_matches(self.faction_id):

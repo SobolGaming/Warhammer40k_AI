@@ -38,6 +38,10 @@ The engine is the single source of truth. The UI does not mutate core state dire
 - The engine validates and applies it, then emits deterministic **Events**.
 - `Game.map` is assigned through the `Game.map` property or `Game.set_map(...)`; both restore the
   `map.game` back-reference used by terrain, network snapshots, and local script initialization.
+- Human/AI choice callbacks are installed on `Game.decision_port`; `Map` exposes compatibility accessors
+  but does not own UI/interaction hooks.
+- Faction-level rule routing uses `rules/faction_registry.py` for canonical faction ids, aliases, names,
+  and primary keywords before detachment/rule-provider lookup.
 
 This pattern enables:
 - deterministic replay and debugging

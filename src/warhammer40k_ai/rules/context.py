@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+from .faction_registry import faction_ids_match
+
 
 @dataclass
 class RulesContext:
@@ -60,9 +62,8 @@ class RulesContext:
     def has_faction_id(self, *ids: str) -> bool:
         if not self.faction_id:
             return False
-        fid = self.faction_id.strip().upper()
         for entry in ids:
-            if fid == str(entry or "").strip().upper():
+            if faction_ids_match(self.faction_id, entry):
                 return True
         return False
 

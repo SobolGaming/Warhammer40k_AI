@@ -4,7 +4,7 @@
 
 - App version lives in `src/warhammer40k_ai/version.py` as `APP_VERSION`.
 - `pyproject.toml` reads `APP_VERSION` through setuptools dynamic metadata so packaging and runtime share the same value.
-- `0.2.106` is the current 10th Edition milestone release line after completed in-scope faction support and active 11th-edition-first port-prep work.
+- `0.2.107` is the current 10th Edition milestone release line after completed in-scope faction support and active 11th-edition-first port-prep work.
 
 ## When to bump
 

@@ -23,6 +23,7 @@ from .tau_empire_detachments import TauEmpireDetachmentManager
 from .thousand_sons_detachments import ThousandSonsDetachmentManager
 from .tyranids_detachments import TyranidsDetachmentManager
 from .world_eaters_detachments import WorldEatersDetachmentManager
+from .faction_registry import normalize_faction_id
 
 
 DETACHMENT_MANAGER_CLASSES = {
@@ -51,16 +52,17 @@ DETACHMENT_MANAGER_CLASSES = {
     "world_eaters_detachments": WorldEatersDetachmentManager,
 }
 
-DETACHMENT_MANAGER_BY_FACTION_ID = {
-    getattr(cls, "faction_id", ""): attr
-    for attr, cls in DETACHMENT_MANAGER_CLASSES.items()
-    if getattr(cls, "faction_id", "")
-}
-DETACHMENT_MANAGER_BY_FACTION_ID["EC"] = "emperors_children_detachments"
+DETACHMENT_MANAGER_BY_FACTION_ID = {}
+for _attr, _cls in DETACHMENT_MANAGER_CLASSES.items():
+    _raw_faction_id = str(getattr(_cls, "faction_id", "") or "").strip().upper()
+    if not _raw_faction_id:
+        continue
+    DETACHMENT_MANAGER_BY_FACTION_ID[_raw_faction_id] = _attr
+    DETACHMENT_MANAGER_BY_FACTION_ID[normalize_faction_id(_raw_faction_id)] = _attr
 
 
 def get_detachment_manager_attr_for_faction(faction_id: str | None) -> str | None:
-    fid = str(faction_id or "").strip().upper()
+    fid = normalize_faction_id(faction_id)
     if not fid:
         return None
     return DETACHMENT_MANAGER_BY_FACTION_ID.get(fid)

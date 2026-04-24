@@ -8,6 +8,7 @@ from ..engine.combat_timing import (
     engagement_state_for_models,
     geometry_profile_for_context,
 )
+from ..engine.decision_port import DECISION_PROVIDER_NAMES, DecisionPort
 from shapely.geometry import Polygon, Point, LineString, box
 from shapely.errors import GEOSException
 from shapely.ops import unary_union
@@ -67,7 +68,23 @@ logger = logging.getLogger(__name__)
 
 
 class Map:
+    def __setattr__(self, name, value):
+        descriptor = getattr(type(self), name, None)
+        if isinstance(descriptor, property) and descriptor.fset is not None:
+            object.__setattr__(self, name, value)
+            return
+        if name in DECISION_PROVIDER_NAMES:
+            self._set_decision_provider(name, value)
+            return
+        object.__setattr__(self, name, value)
+
+    def __getattr__(self, name):
+        if name in DECISION_PROVIDER_NAMES:
+            return self._get_decision_provider(name)
+        raise AttributeError(name)
+
     def __init__(self, width: int, height: int):
+        object.__setattr__(self, "_decision_provider_overrides", {})
         self.game = None
         self.width = width
         self.height = height
@@ -80,40 +97,32 @@ class Map:
         self.deployment_zones = {}
         self.units = []
         self.occupied_positions = set()
-        # UI hook (optional): set by GameView to allow combat code to request modals (e.g., PRECISION allocation)
-        self.precision_allocation_provider = None
-        # UI hooks (optional): set by GameView to allow core damage code to request allocation choices
-        # Signature: provider(target_unit, eligible_models, ctx_dict) -> chosen_model | None
-        self.damage_allocation_provider = None
-        # Signature: provider(attacker_unit_root, eligible_models, ctx_dict) -> chosen_model | None
-        self.hazardous_allocation_provider = None
-        # Signature: provider(target_unit_root, eligible_models, ctx_dict) -> chosen_model | None
-        self.reanimation_allocation_provider = None
-        # Signature: provider(player, leader_unit, bodyguard_unit, candidates, ability_name) -> chosen_model | None
-        self.bodyguard_loss_provider = None
-        # Assigned fallback/UI hook for reroll choices. Access through the property below so
-        # engine and UI/headless flows settle the same DECISION_REROLL_ROLL request.
-        self._roll_reroll_provider = None
-        # Signature: provider(player, unit, roll_type, dice_count, die_faces, pool, needed) -> chosen_value | None
-        self.miracle_dice_provider = None
-        # Signature: provider(player, unit, roll_type, value, needed, tokens_remaining, ...) -> "use" | "skip" | "suppress"
-        self.aspect_shrine_provider = None
-        # Signature: provider(player, unit, roll_type, value, needed, options, ...) -> ability_key | "skip"
-        self.leading_unmodified_six_provider = None
-        # Signature: provider(player, model, ability_name, ability_key, ...) -> "use" | "skip"
-        self.model_allocated_damage_zero_provider = None
-        # Signature: provider(player, unit, target_model, ability_name, ability_key, fnp_value, condition, ...) -> "use" | "skip"
-        self.unit_mortal_wound_fnp_provider = None
-        # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
-        self.hit_modifier_choice_provider = None
-        # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
-        self.skill_modifier_choice_provider = None
-        # Signature: provider(player, unit, action_type, ability_name, choices) -> choice_key | None
-        self.move_modifier_choice_provider = None
-        # Signature: provider(player, unit, ability_name, choices) -> choice_key | None
-        self.advance_modifier_choice_provider = None
-        # Signature: provider(player, unit, target_unit_ids, ability_name, choices) -> choice_key | None
-        self.charge_modifier_choice_provider = None
+
+    def bind_decision_port(self, decision_port: DecisionPort) -> None:
+        overrides = dict(getattr(self, "_decision_provider_overrides", {}) or {})
+        for name, provider in overrides.items():
+            if provider is not None:
+                decision_port.set_provider(name, provider)
+        self._decision_provider_overrides.clear()
+
+    def _get_decision_provider(self, name: str):
+        port = getattr(getattr(self, "game", None), "decision_port", None)
+        if port is not None:
+            provider = port.get_provider(name)
+            if provider is not None:
+                return provider
+        return getattr(self, "_decision_provider_overrides", {}).get(name)
+
+    def _set_decision_provider(self, name: str, provider) -> None:
+        port = getattr(getattr(self, "game", None), "decision_port", None)
+        if port is not None:
+            port.set_provider(name, provider)
+            return
+        overrides = getattr(self, "_decision_provider_overrides", None)
+        if overrides is None:
+            object.__setattr__(self, "_decision_provider_overrides", {})
+            overrides = self._decision_provider_overrides
+        overrides[name] = provider
 
     @staticmethod
     def _reroll_prompt_title(roll_type: str) -> str:
@@ -143,7 +152,7 @@ class Map:
     ) -> bool:
         if not bool(allow_reroll):
             return False
-        provider = getattr(self, "_roll_reroll_provider", None)
+        provider = self._get_decision_provider("roll_reroll_provider")
         if callable(provider):
             return bool(
                 provider(
@@ -258,7 +267,7 @@ class Map:
 
     @roll_reroll_provider.setter
     def roll_reroll_provider(self, provider) -> None:
-        self._roll_reroll_provider = provider if callable(provider) else None
+        self._set_decision_provider("roll_reroll_provider", provider if callable(provider) else None)
 
     def create_boundary_polygon(self) -> Polygon:
         """

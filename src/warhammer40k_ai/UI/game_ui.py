@@ -3379,54 +3379,40 @@ class GameView:
         self._transport_reactive_disembark_flow_active = False
         self._subscribe_event_hooks()
 
+    def _decision_provider_bindings(self) -> dict:
+        return {
+            "precision_allocation_provider": self._precision_allocation_provider,
+            "damage_allocation_provider": self._damage_allocation_provider,
+            "hazardous_allocation_provider": self._hazardous_allocation_provider,
+            "roll_reroll_provider": self._roll_reroll_provider,
+            "reanimation_allocation_provider": self._reanimation_allocation_provider,
+            "bodyguard_loss_provider": self._bodyguard_loss_provider,
+            "miracle_dice_provider": self._miracle_dice_provider,
+            "miracle_dice_pool_reroll_provider": self._miracle_dice_pool_reroll_provider,
+            "aspect_shrine_provider": self._aspect_shrine_provider,
+            "leading_unmodified_six_provider": self._leading_unmodified_six_provider,
+            "model_unmodified_six_provider": self._model_unmodified_six_provider,
+            "model_allocated_damage_zero_provider": self._model_allocated_damage_zero_provider,
+            "unit_mortal_wound_fnp_provider": self._unit_mortal_wound_fnp_provider,
+            "death_vision_of_sanguinius_provider": self._death_vision_of_sanguinius_provider,
+            "hit_modifier_choice_provider": self._hit_modifier_choice_provider,
+            "skill_modifier_choice_provider": self._skill_modifier_choice_provider,
+            "move_modifier_choice_provider": self._move_modifier_choice_provider,
+            "advance_modifier_choice_provider": self._advance_modifier_choice_provider,
+            "charge_modifier_choice_provider": self._charge_modifier_choice_provider,
+        }
+
     def _wire_map_providers(self) -> None:
-        """Wire UI allocation providers onto the game map instances."""
-        try:
-            if self.game and getattr(self.game, "map", None) is not None:
-                self.game.map.precision_allocation_provider = self._precision_allocation_provider
-                self.game.map.damage_allocation_provider = self._damage_allocation_provider
-                self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
-                self.game.map.roll_reroll_provider = self._roll_reroll_provider
-                self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
-                self.game.map.bodyguard_loss_provider = self._bodyguard_loss_provider
-                self.game.map.miracle_dice_provider = self._miracle_dice_provider
-                self.game.map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
-                self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
-                self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
-                self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
-                self.game.map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
-                self.game.map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
-                self.game.map.death_vision_of_sanguinius_provider = self._death_vision_of_sanguinius_provider
-                self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
-                self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
-                self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
-                self.game.map.advance_modifier_choice_provider = self._advance_modifier_choice_provider
-                self.game.map.charge_modifier_choice_provider = self._charge_modifier_choice_provider
-        except Exception:
-            pass
-        try:
-            if self.game_map is not None:
-                self.game_map.precision_allocation_provider = self._precision_allocation_provider
-                self.game_map.damage_allocation_provider = self._damage_allocation_provider
-                self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
-                self.game_map.roll_reroll_provider = self._roll_reroll_provider
-                self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
-                self.game_map.bodyguard_loss_provider = self._bodyguard_loss_provider
-                self.game_map.miracle_dice_provider = self._miracle_dice_provider
-                self.game_map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
-                self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
-                self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
-                self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
-                self.game_map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
-                self.game_map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
-                self.game_map.death_vision_of_sanguinius_provider = self._death_vision_of_sanguinius_provider
-                self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
-                self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
-                self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
-                self.game_map.advance_modifier_choice_provider = self._advance_modifier_choice_provider
-                self.game_map.charge_modifier_choice_provider = self._charge_modifier_choice_provider
-        except Exception:
-            pass
+        """Wire UI choice providers onto the runtime decision port."""
+        providers = self._decision_provider_bindings()
+        game = getattr(self, "game", None)
+        game_map = getattr(self, "game_map", None)
+        install = getattr(game, "install_decision_providers", None) if game is not None else None
+        if callable(install):
+            install(**providers)
+        if game_map is not None and game_map is not getattr(game, "map", None):
+            for name, provider in providers.items():
+                setattr(game_map, name, provider)
 
     def _unsubscribe_event_hooks(self) -> None:
         event_group = str(getattr(self, "_ui_event_hook_group", "") or "")
