@@ -605,22 +605,7 @@ class DeploymentManager:
                     break
             if normalized:
                 return normalized
-            if type(decision_maker).build_deployment_move_candidates is not DeploymentDecisionMaker.build_deployment_move_candidates:
-                return []
-
-        anchor = decision_maker.choose_unit_deployment_position(unit, deployment_zone, list(already_deployed or []))
-        model_positions = self._build_deployment_model_positions(
-            unit,
-            (float(anchor[0]), float(anchor[1])),
-            decision_maker=decision_maker,
-        )
-        return [
-            {
-                "anchor": [float(anchor[0]), float(anchor[1])],
-                "model_positions": [dict(entry or {}) for entry in list(model_positions or [])],
-                "source": "decision_maker_fallback",
-            }
-        ]
+        return []
 
     def _normalize_deployment_move_candidate(
         self,
