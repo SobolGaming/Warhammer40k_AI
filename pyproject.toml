@@ -49,6 +49,9 @@ test = [
   "pytest",
   "pytest-xdist",
 ]
+ui-test = [
+  "pygame",
+]
 ui = [
   "matplotlib",
   "pygame",

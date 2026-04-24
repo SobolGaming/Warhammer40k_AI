@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
@@ -161,7 +164,7 @@ def _action_heavy_blueprint() -> ArmyBlueprint:
     )
 
 
-def _archive_sensitive_blueprint() -> ArmyBlueprint:
+def _snapshot_sensitive_blueprint() -> ArmyBlueprint:
     return ArmyBlueprint(
         faction="Chaos Space Marines",
         detachments=[
@@ -178,6 +181,68 @@ def _archive_sensitive_blueprint() -> ArmyBlueprint:
             )
         ],
     )
+
+
+def _write_snapshot_data_dir(
+    root: Path,
+    *,
+    ranged_weapon: dict[str, object],
+) -> Path:
+    root.mkdir()
+    datasheet_id = "test-defiler"
+    files: dict[str, object] = {
+        "Abilities.json": [],
+        "Stratagems.json": [],
+        "Enhancements.json": [],
+        "Source.json": [],
+        "Factions.json": [],
+        "Detachment_abilities.json": [],
+        "Datasheets_leader.json": [],
+        "Datasheets_enhancements.json": [],
+        "Datasheets.json": [
+            {
+                "id": datasheet_id,
+                "name": "Defiler",
+                "faction_id": "CSM",
+                "role": "Vehicle",
+                "source_id": "",
+            }
+        ],
+        "Datasheets_keywords.json": [
+            {
+                "datasheet_id": datasheet_id,
+                "keyword": "Vehicle",
+                "is_faction_keyword": "false",
+            },
+            {
+                "datasheet_id": datasheet_id,
+                "keyword": "Chaos Space Marines",
+                "is_faction_keyword": "true",
+            },
+        ],
+        "Datasheets_wargear.json": [
+            {
+                "datasheet_id": datasheet_id,
+                "name": "Defiler claws",
+                "range": "Melee",
+                "type": "Melee",
+                "A": "5",
+                "WS": "3+",
+                "BS": "",
+                "S": "12",
+                "AP": "-2",
+                "D": "3",
+                "description": "",
+            },
+            {"datasheet_id": datasheet_id, **ranged_weapon},
+        ],
+    }
+    for filename, payload in files.items():
+        (root / filename).write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+            encoding="utf-8",
+        )
+    return root
 
 
 def _preview_combat_scope() -> dict[str, object]:
@@ -303,44 +368,93 @@ def test_build_capability_profile_requires_explicit_snapshot_scope_without_helpe
         )
 
 
-def test_build_capability_profile_uses_rules_bundle_snapshot_path_when_provided() -> None:
-    blueprint = _archive_sensitive_blueprint()
-
-    live = compile_build_capability_profile(
-        blueprint,
-        rules_bundle_id={
-            "rules_bundle_id": "rules_bundle:live_snapshot",
-            "wahapedia_data_dir": "wahapedia_data",
+def test_build_capability_profile_uses_rules_bundle_snapshot_path_when_provided(
+    tmp_path: Path,
+) -> None:
+    blueprint = _snapshot_sensitive_blueprint()
+    firepower_snapshot = _write_snapshot_data_dir(
+        tmp_path / "firepower_snapshot",
+        ranged_weapon={
+            "name": "Defiler cannon",
+            "range": "72",
+            "type": "Heavy",
+            "A": "D6+3",
+            "WS": "",
+            "BS": "3+",
+            "S": "12",
+            "AP": "-3",
+            "D": "D6+1",
+            "description": "",
         },
     )
-    archive = compile_build_capability_profile(
-        blueprint,
-        rules_bundle_id={
-            "rules_bundle_id": "rules_bundle:archive_snapshot",
-            "wahapedia_data_dir": "wahapedia_data/Archive",
+    melee_snapshot = _write_snapshot_data_dir(
+        tmp_path / "melee_snapshot",
+        ranged_weapon={
+            "name": "Degraded combi-bolter",
+            "range": "24",
+            "type": "Rapid Fire 1",
+            "A": "1",
+            "WS": "",
+            "BS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
         },
     )
 
-    assert live.aggregate_counts == archive.aggregate_counts
-    assert live.build_capability_profile_id != archive.build_capability_profile_id
-    assert live.pressure_profile["ranged_pressure"] > archive.pressure_profile["ranged_pressure"]
-    assert live.pressure_profile["anti_tank_pressure"] > archive.pressure_profile[
+    firepower_profile = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id={
+            "rules_bundle_id": "rules_bundle:firepower_snapshot",
+            "wahapedia_data_dir": str(firepower_snapshot),
+        },
+    )
+    melee_profile = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id={
+            "rules_bundle_id": "rules_bundle:melee_snapshot",
+            "wahapedia_data_dir": str(melee_snapshot),
+        },
+    )
+
+    assert firepower_profile.aggregate_counts == melee_profile.aggregate_counts
+    assert firepower_profile.build_capability_profile_id != melee_profile.build_capability_profile_id
+    assert firepower_profile.pressure_profile["ranged_pressure"] > melee_profile.pressure_profile["ranged_pressure"]
+    assert firepower_profile.pressure_profile["anti_tank_pressure"] > melee_profile.pressure_profile[
         "anti_tank_pressure"
     ]
-    assert live.capability_scores["charge_delivery_reliance"] < archive.capability_scores[
+    assert firepower_profile.capability_scores["charge_delivery_reliance"] < melee_profile.capability_scores[
         "charge_delivery_reliance"
     ]
 
 
 def test_build_capability_profile_rejects_conflicting_helper_and_snapshot_scope(
     waha_helper: WahaHelper,
+    tmp_path: Path,
 ) -> None:
+    snapshot = _write_snapshot_data_dir(
+        tmp_path / "snapshot",
+        ranged_weapon={
+            "name": "Defiler cannon",
+            "range": "72",
+            "type": "Heavy",
+            "A": "D6+3",
+            "WS": "",
+            "BS": "3+",
+            "S": "12",
+            "AP": "-3",
+            "D": "D6+1",
+            "description": "",
+        },
+    )
+
     with pytest.raises(ValueError, match="does not match the rules bundle snapshot path"):
         compile_build_capability_profile(
-            _archive_sensitive_blueprint(),
+            _snapshot_sensitive_blueprint(),
             rules_bundle_id={
-                "rules_bundle_id": "rules_bundle:archive_snapshot",
-                "wahapedia_data_dir": "wahapedia_data/Archive",
+                "rules_bundle_id": "rules_bundle:snapshot",
+                "wahapedia_data_dir": str(snapshot),
             },
             waha_helper=waha_helper,
         )

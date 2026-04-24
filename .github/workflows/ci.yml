@@ -8,8 +8,51 @@ on:
       - dev
 
 jobs:
-  test:
-    name: Tests (Python ${{ matrix.python-version }})
+  changes:
+    name: Detect Test Scope
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.scope.outputs.ui }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect UI-impacting changes
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ui_changed=false
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              .github/workflows/ci.yml|pyproject.toml|setup.cfg|tests/conftest.py|scripts/main.py)
+                ui_changed=true
+                ;;
+              src/warhammer40k_ai/UI/*|src/warhammer40k_ai/network/pygame_client.py)
+                ui_changed=true
+                ;;
+              src/warhammer40k_ai/engine/command*.py|src/warhammer40k_ai/engine/decision*.py|src/warhammer40k_ai/engine/decisions.py|src/warhammer40k_ai/engine/presentation_envelope.py|src/warhammer40k_ai/engine/ui_decision_bridge.py)
+                ui_changed=true
+                ;;
+              tests/ui/*|tests/ai/test_main_profile_cli.py|tests/engine/test_battle_phase_handler_init.py|tests/engine/test_deployment_phase_handler_proxy.py|tests/engine/test_deployment_zone_player_colors.py|tests/engine/test_phase_flow_contracts.py|tests/network/test_session_presentation_orchestrator.py|tests/replay/test_replay_viewer.py|tests/rules/test_human_interface_reserves.py|tests/rules/test_individual_model_movement_floor_selection.py|tests/rules/test_pile_in_visualization.py|tests/rules/test_range_renderer_weapon_cache.py|tests/rules/test_roll_explanation.py|tests/rules/test_target_model_selection_attached_precision.py)
+                ui_changed=true
+                ;;
+            esac
+          done < <(git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+
+          echo "ui=$ui_changed" >> "$GITHUB_OUTPUT"
+
+  game-tests:
+    name: Game Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -37,8 +80,37 @@ jobs:
           warhammer40k-ai-network --help
 
       - name: Run fast tests
+        env:
+          WARHAMMER40K_AI_SKIP_UI_TESTS: "1"
         run: |
-          python -m pytest tests/ -m "not slow and not integration"
+          python -m pytest tests/ -m "not slow and not integration and not ui"
+
+  ui-tests:
+    name: UI Tests (Python ${{ matrix.python-version }})
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,ui-test]"
+
+      - name: Run UI fast tests
+        run: |
+          python -m pytest tests/ -m "ui and not slow and not integration"
 
   training-data-gate:
     name: Training Data Gate

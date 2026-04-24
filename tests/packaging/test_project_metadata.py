@@ -40,5 +40,6 @@ def test_runtime_dependency_groups_are_split() -> None:
     assert "torch>=2.2,<3.0" not in dependencies
 
     assert "pytest" in set(optional["test"])
+    assert "pygame" in set(optional["ui-test"])
     assert "pygame" in set(optional["ui"])
     assert "torch>=2.2,<3.0" in set(optional["ml"])
