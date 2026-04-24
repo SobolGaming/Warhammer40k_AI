@@ -346,7 +346,7 @@ def test_artisan_sets_hit_roll_to_unmodified_six_once_per_phase_and_requires_obj
             return "skip"
         return str(options[0].get("ability_key", "") or "")
 
-    game.map.leading_unmodified_six_provider = _provider
+    game.install_decision_providers(leading_unmodified_six_provider=_provider)
     profile = _ranged_profile()
     with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
         first = profile._hit_target_with_tracking(enemy, bodyguard.models[0], {"_aura_attack_mods": _aura_stub()})
@@ -402,7 +402,7 @@ def test_artisan_sets_save_roll_to_unmodified_six_once_per_phase():
             return "skip"
         return str(options[0].get("ability_key", "") or "")
 
-    game.map.leading_unmodified_six_provider = _provider
+    game.install_decision_providers(leading_unmodified_six_provider=_provider)
     profile = _ranged_profile()
     attack_context = {"attacker_model": enemy.models[0], "attacker_unit": enemy, "target_unit": bodyguard}
     with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):

@@ -429,7 +429,7 @@ def test_synaptic_goading_queues_for_pending_surge_move_and_allows_reroll_and_ob
     assert bool(valid.get("valid", False))
 
     provider_calls: list[dict] = []
-    game.map.roll_reroll_provider = lambda **kw: provider_calls.append(dict(kw)) or True
+    game.install_decision_providers(roll_reroll_provider=lambda **kw: provider_calls.append(dict(kw)) or True)
     with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[2, 5]):
         distance = game.roll_horde_move_distance(target)
     assert distance == 5

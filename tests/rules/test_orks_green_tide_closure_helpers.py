@@ -160,7 +160,7 @@ def test_roll_horde_move_distance_uses_go_get_em_reroll_provider() -> None:
     _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
 
     provider_calls: list[dict] = []
-    game.map.roll_reroll_provider = lambda **kwargs: provider_calls.append(dict(kwargs)) or True
+    game.install_decision_providers(roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or True)
     boyz.activate_go_get_em_horde_move(game=game, attacker_unit=attacker, can_reroll_distance=True)
 
     with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[2, 5]):

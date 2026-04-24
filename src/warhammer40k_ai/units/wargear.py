@@ -14495,8 +14495,8 @@ class WargearProfile:
                 options = options_for_signed_pairs(mods)
                 if choice is None:
                     if options:
-                        provider = getattr(game_map, provider_attr, None) if game_map is not None else None
                         game_local = getattr(player, "game", None) if player is not None else None
+                        provider = get_decision_provider(game_local, provider_attr, game_map=game_map)
                         fallback_choice = None
                         if game_local is not None and hasattr(game_local, "request_decision"):
                             try:
@@ -14638,8 +14638,6 @@ class WargearProfile:
                     game_map = None
                 if allow_skill and skill_mods:
                     provider_attr = "skill_modifier_choice_provider"
-                    if game_map is not None and not callable(getattr(game_map, provider_attr, None)):
-                        provider_attr = "hit_modifier_choice_provider"
                     default_choice = CHOICE_KEEP_ALL
                     choice_key = str(ignore_rule.get("forced_choice", "") or ignore_rule.get("default_choice", "") or "").strip().lower()
                     if choice_key == "ignore_all":
@@ -14705,9 +14703,7 @@ class WargearProfile:
                 choice, skill_mods, ignored_skill = _resolve_modifier_choice(
                     skill_mods,
                     choice_key="skill_modifier_choice",
-                    provider_attr="skill_modifier_choice_provider"
-                    if (game_map is None or callable(get_decision_provider(None, "skill_modifier_choice_provider", game_map=game_map)))
-                    else "hit_modifier_choice_provider",
+                    provider_attr="skill_modifier_choice_provider",
                     ability_label=f"{driven_rule_name} (Weapon Skill)",
                     player=player,
                     game_map=game_map,

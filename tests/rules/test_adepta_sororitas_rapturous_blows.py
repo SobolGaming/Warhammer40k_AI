@@ -138,7 +138,7 @@ def test_rapturous_blows_fight_selection_discards_miracle_and_marks_source():
     game.phase = BattleRoundPhases.FIGHT_PHASE
     game.turn = 2
     sororitas_army.acts_of_faith.miracle_dice = [2, 6]
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0]})
 
     sororitas_army.acts_of_faith.on_fight_unit_selected(palatine, game=game, selecting_player=sororitas_player)
 
@@ -162,7 +162,7 @@ def test_rapturous_blows_applies_to_melee_wounds_and_respects_scope():
     game.phase = BattleRoundPhases.FIGHT_PHASE
     game.turn = 3
     sororitas_army.acts_of_faith.miracle_dice = [1]
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0]})
     sororitas_army.acts_of_faith.on_fight_unit_selected(palatine, game=game, selecting_player=sororitas_player)
 
     attacker = palatine.models[0]

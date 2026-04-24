@@ -55,7 +55,7 @@ from .decision_kinds import (
 from .random_source import RandomSource
 from .decision_controller import DecisionController, DecisionControllerHub
 from .decision_record import DecisionRecordStore
-from .decision_port import DecisionPort
+from .decision_port import DecisionPort, get_decision_provider
 from .descriptor_compiler import compile_descriptor_bundle
 from .reserve_metadata import ensure_reserve_start_metadata, set_reserve_start_metadata
 from .ruleset import RulesetBundle
@@ -210,10 +210,6 @@ class Game(
             value.game = self
         except (AttributeError, TypeError):
             return
-        bind_decision_port = getattr(value, "bind_decision_port", None)
-        decision_port = getattr(self, "decision_port", None)
-        if callable(bind_decision_port) and decision_port is not None:
-            bind_decision_port(decision_port)
 
     def set_map(self, game_map: Map) -> None:
         self.map = game_map
@@ -1410,7 +1406,7 @@ class Game(
         if army is None:
             raise RuntimeError("Reanimation protocols require an army.")
         game_map = getattr(self, "map", None)
-        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        provider = get_decision_provider(self, "reanimation_allocation_provider")
         is_human = bool(getattr(current_player, "has_control", lambda: False)())
 
         seen: set[str] = set()
@@ -14688,7 +14684,7 @@ class Game(
         - Validates eligibility (`Unit.can_declare_charge_against`)
         - Marks `attempted_charge_this_round` immediately (a declared charge is an attempt)
         - Rolls charge dice (default 2D6; supports non-additive mechanics like 3D6 drop lowest)
-        - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
+        - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via Game.decision_port
         - Publishes `roll_made` for stratagem/telemetry consumers
 
         out_of_turn: allow declaring a charge outside the active player's turn (no attempted_charge_this_round mark).
@@ -14848,7 +14844,7 @@ class Game(
         player = parent_army.player if parent_army is not None else None
 
         can_reroll = bool(unit.can_reroll_blood_surge_roll())
-        provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+        provider = get_decision_provider(self, "roll_reroll_provider")
         if callable(provider):
             want = bool(provider(
                 player=player,
@@ -14976,7 +14972,7 @@ class Game(
         reroll_used = False
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
-        provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+        provider = get_decision_provider(self, "roll_reroll_provider")
         if fixed_distance <= 0 and can_reroll and callable(provider):
             want = bool(
                 provider(

@@ -3406,13 +3406,9 @@ class GameView:
         """Wire UI choice providers onto the runtime decision port."""
         providers = self._decision_provider_bindings()
         game = getattr(self, "game", None)
-        game_map = getattr(self, "game_map", None)
         install = getattr(game, "install_decision_providers", None) if game is not None else None
         if callable(install):
             install(**providers)
-        if game_map is not None and game_map is not getattr(game, "map", None):
-            for name, provider in providers.items():
-                setattr(game_map, name, provider)
 
     def _unsubscribe_event_hooks(self) -> None:
         event_group = str(getattr(self, "_ui_event_hook_group", "") or "")

@@ -714,7 +714,7 @@ def test_null_nodules_local_provider_consumes_queued_confirmation():
         assert apply_result is not None and getattr(apply_result, "ok", False)
         return "use"
 
-    game.map.unit_psychic_attack_fnp_provider = _provider
+    game.install_decision_providers(unit_psychic_attack_fnp_provider=_provider)
     profile = _make_profile(is_melee=False, description="[PSYCHIC]")
 
     with patch("warhammer40k_ai.utility.dice.get_roll", return_value=5):

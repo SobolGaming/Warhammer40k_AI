@@ -118,7 +118,7 @@ class TestAssuredDestruction(unittest.TestCase):
             calls.append(kwargs)
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         rolls = iter([2, 5, 2, 6, 2, 1, 3])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -169,7 +169,7 @@ class TestAssuredDestruction(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         rolls = iter([4, 4, 2, 1, 2])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -211,7 +211,7 @@ class TestAssuredDestruction(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         rolls = iter([4, 4, 2, 1, 2])
         original_get_dice_roll = dice_mod.get_dice_roll

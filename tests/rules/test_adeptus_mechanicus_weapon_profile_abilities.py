@@ -151,7 +151,7 @@ def test_achillan_eye_applies_weapon_specific_full_wound_reroll():
         called["reason"] = kwargs.get("reason")
         return True
 
-    game.map.roll_reroll_provider = _provider
+    game.install_decision_providers(roll_reroll_provider=_provider)
 
     profile = _make_profile("radium jezzail")
     with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 6]):
@@ -188,7 +188,7 @@ def test_searing_conflagration_reroll_ones_within_objective_range():
         called["reason"] = kwargs.get("reason")
         return True
 
-    game.map.roll_reroll_provider = _provider
+    game.install_decision_providers(roll_reroll_provider=_provider)
 
     profile = _make_profile("phosphor torch")
     with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 6]):
@@ -225,7 +225,7 @@ def test_searing_conflagration_applies_full_reroll_with_battleline():
         called["reason"] = kwargs.get("reason")
         return True
 
-    game.map.roll_reroll_provider = _provider
+    game.install_decision_providers(roll_reroll_provider=_provider)
 
     profile = _make_profile("phosphor torch")
     with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 6]):

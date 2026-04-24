@@ -230,7 +230,7 @@ def test_righteous_rage_applies_bearer_melee_attacks_and_strength_until_end_of_p
 
     game.phase = BattleRoundPhases.FIGHT_PHASE
     game.turn = 2
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0, 1]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0, 1]})
     sororitas_army.acts_of_faith.miracle_dice = [1, 2, 6, 5]
 
     sororitas_army.acts_of_faith.on_fight_unit_selected(source, game=game, selecting_player=sororitas_player)
@@ -291,7 +291,7 @@ def test_manual_of_saint_griselda_discards_miracle_dice_and_adds_capped_sum_die(
 
     game.phase = BattleRoundPhases.COMMAND_PHASE
     sororitas_army.acts_of_faith.miracle_dice = [2, 5, 6]
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0, 1]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0, 1]})
 
     sororitas_army.acts_of_faith.on_command_phase_start(game=game, player=sororitas_player)
     assert list(sororitas_army.acts_of_faith.miracle_dice) == [6, 6]

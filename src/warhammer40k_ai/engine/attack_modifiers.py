@@ -7,6 +7,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
 )
 from .decisions import DecisionOption, DecisionRequest
+from .decision_port import get_decision_provider
 from ..utility.decision_utils import resolve_or_reuse_payload_choice
 
 if TYPE_CHECKING:
@@ -102,8 +103,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
             "player",
             None,
         )
-        game_map = getattr(game, "map", None)
-        provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+        provider = get_decision_provider(game, "hit_modifier_choice_provider")
 
         if ignore_rule:
             rule_name = str(ignore_rule.get("name") or "Ignore modifiers").strip()
@@ -129,13 +129,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                 if not skill_opts:
                     attack_instance["skill_modifier_choice"] = CHOICE_KEEP_ALL
                 else:
-                    skill_provider = (
-                        getattr(game_map, "skill_modifier_choice_provider", None)
-                        if game_map is not None
-                        else None
-                    )
-                    if not callable(skill_provider):
-                        skill_provider = provider
+                    skill_provider = get_decision_provider(game, "skill_modifier_choice_provider")
                     fallback_choice = None
                     if callable(skill_provider) and player is not None and bool(
                         getattr(player, "has_control", lambda: False)()
@@ -253,13 +247,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                 if not skill_opts:
                     attack_instance["skill_modifier_choice"] = CHOICE_KEEP_ALL
                 else:
-                    skill_provider = (
-                        getattr(game_map, "skill_modifier_choice_provider", None)
-                        if game_map is not None
-                        else None
-                    )
-                    if not callable(skill_provider):
-                        skill_provider = provider
+                    skill_provider = get_decision_provider(game, "skill_modifier_choice_provider")
                     fallback_choice = None
                     if callable(skill_provider) and player is not None and bool(
                         getattr(player, "has_control", lambda: False)()
@@ -444,8 +432,7 @@ def _ensure_wound_modifier_choices(manager, game: object, seq: AttackSequence) -
             "player",
             None,
         )
-        game_map = getattr(game, "map", None)
-        provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+        provider = get_decision_provider(game, "hit_modifier_choice_provider")
         rule_name = str(ignore_rule.get("name") or "Ignore modifiers").strip() or "Ignore modifiers"
         fallback_choice = None
         if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):

@@ -60,26 +60,12 @@ def get_decision_provider(
     *,
     game_map: object | None = None,
 ) -> DecisionProvider | None:
-    """Resolve a runtime decision provider from Game first, then Map compatibility accessors."""
+    """Resolve a runtime decision provider from Game.decision_port only."""
     provider_name = _normalize_provider_name(name)
-    provider = _provider_from_game(game, provider_name)
-    if provider is not None:
-        return provider
-
-    resolved_map = game_map
-    if resolved_map is None and game is not None:
-        resolved_map = getattr(game, "map", None)
-    if resolved_map is None:
-        return None
-
-    map_game = getattr(resolved_map, "game", None)
-    if map_game is not None and map_game is not game:
-        provider = _provider_from_game(map_game, provider_name)
-        if provider is not None:
-            return provider
-
-    provider = getattr(resolved_map, provider_name, None)
-    return provider if callable(provider) else None
+    resolved_game = game
+    if resolved_game is None and game_map is not None:
+        resolved_game = getattr(game_map, "game", None)
+    return _provider_from_game(resolved_game, provider_name)
 
 
 def _provider_from_game(game: object | None, provider_name: str) -> DecisionProvider | None:

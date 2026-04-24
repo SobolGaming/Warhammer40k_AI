@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -168,8 +169,10 @@ class TestExemplarOfTheCode(unittest.TestCase):
     def test_wound_reroll_vs_quarry(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
-            map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **k: not k.get("success")}),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 

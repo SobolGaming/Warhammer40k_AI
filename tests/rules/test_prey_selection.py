@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -220,8 +221,10 @@ class TestPreySelection(unittest.TestCase):
     def test_prey_keyword_bonus_applies_lethal_and_precision_vs_selected_target(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
-            map=SimpleNamespace(roll_reroll_provider=lambda **_k: False),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **_k: False}),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player, faction_id="AOI")
@@ -278,8 +281,10 @@ class TestPreySelection(unittest.TestCase):
     def test_prey_wound_reroll_melee_only(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
-            map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **k: not k.get("success")}),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 
@@ -378,8 +383,10 @@ class TestPreySelection(unittest.TestCase):
     def test_prey_no_reroll_on_ranged_when_melee_only(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
-            map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **k: not k.get("success")}),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 
@@ -561,8 +568,10 @@ class TestPreySelection(unittest.TestCase):
     def test_prey_hit_reroll_psychic_spoor(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
-            map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **k: not k.get("success")}),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 

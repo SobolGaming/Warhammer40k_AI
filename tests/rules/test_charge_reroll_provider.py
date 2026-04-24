@@ -74,7 +74,7 @@ class TestChargeRerollProvider(unittest.TestCase):
         g.map.units = [u, t]
 
         # Provider always says "reroll"
-        g.map.roll_reroll_provider = lambda **_k: True
+        g.install_decision_providers(roll_reroll_provider=lambda **_k: True)
 
         # Prevent movement complexity after a successful charge roll
         u.charge_move = lambda *_a, **_k: False

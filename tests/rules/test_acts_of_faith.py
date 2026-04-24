@@ -1,6 +1,7 @@
 ﻿import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from tests.rules.detachment_stub_helpers import attach_detachment_helpers
 
 
@@ -124,9 +125,11 @@ class TestActsOfFaith(unittest.TestCase):
 
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
         game = SimpleNamespace(
-            map=SimpleNamespace(roll_reroll_provider=lambda **_k: True),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **_k: True}),
             phase=SimpleNamespace(name="COMMAND_PHASE"),
         )
+        game.map.game = game
         player.game = game
         army = self._make_army("AS", player)
         mgr = aof.ActsOfFaithManager(army)
@@ -202,9 +205,11 @@ class TestActsOfFaith(unittest.TestCase):
             return max(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Sisters", army, acts=True)
@@ -240,9 +245,11 @@ class TestActsOfFaith(unittest.TestCase):
             return max(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player, detachment_type="Army of Faith")
         army.adepta_sororitas_detachments = AdeptaSororitasDetachmentManager(army)
@@ -278,9 +285,11 @@ class TestActsOfFaith(unittest.TestCase):
             return min(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         bodyguard = self._make_unit("Battle Sisters Squad", army, acts=True)
@@ -313,9 +322,11 @@ class TestActsOfFaith(unittest.TestCase):
             return min(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         dialogus = self._make_unit("Dialogus", army, acts=True)
@@ -372,9 +383,11 @@ class TestActsOfFaith(unittest.TestCase):
             return max(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Sanctifiers", army, acts=True)
@@ -420,9 +433,11 @@ class TestActsOfFaith(unittest.TestCase):
             return max(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Retributors", army, acts=True)
@@ -492,9 +507,11 @@ class TestActsOfFaith(unittest.TestCase):
 
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
         game = SimpleNamespace(
-            map=SimpleNamespace(roll_reroll_provider=lambda **_kwargs: True),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"roll_reroll_provider": lambda **_kwargs: True}),
             phase=SimpleNamespace(name="FIGHT_PHASE"),
         )
+        game.map.game = game
         player.game = game
         army = self._make_army("AS", player)
 
@@ -531,9 +548,11 @@ class TestActsOfFaith(unittest.TestCase):
             return max(pool) if pool else None
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": _provider}),
             phase=SimpleNamespace(name="CHARGE_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Battle Sisters", army, acts=True)
@@ -562,9 +581,11 @@ class TestActsOfFaith(unittest.TestCase):
         from warhammer40k_ai.rules import acts_of_faith as aof
 
         game = SimpleNamespace(
-            map=SimpleNamespace(miracle_dice_provider=lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None)),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"miracle_dice_provider": lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None)}),
             phase=SimpleNamespace(name="CHARGE_PHASE"),
         )
+        game.map.game = game
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Battle Sisters", army, acts=True)
@@ -756,7 +777,7 @@ class TestActsOfFaith(unittest.TestCase):
         from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MIRACLE_DIE
 
         game, _player, army, sisters = self._build_authoritative_aof_game(control_name="LOCAL")
-        game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0, 1]}
+        game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0, 1]})
 
         seen_decisions = []
         original_request_decision = game.request_decision
@@ -800,7 +821,7 @@ class TestActsOfFaith(unittest.TestCase):
                 return {"indices": [0]}
             return None
 
-        game.map.miracle_dice_pool_reroll_provider = _miracle_dice_pool_reroll_provider
+        game.install_decision_providers(miracle_dice_pool_reroll_provider=_miracle_dice_pool_reroll_provider)
 
         chosen_indices = army.acts_of_faith._choose_miracle_pool_indices(
             unit=sisters,
@@ -954,7 +975,7 @@ class TestActsOfFaith(unittest.TestCase):
         if target.models:
             target.models[0].set_location(15, 10, 0, 0)
 
-        game.map.miracle_dice_provider = lambda **_k: 6
+        game.install_decision_providers(miracle_dice_provider=lambda **_k: 6)
 
         old_get_dice_roll = aof.get_dice_roll
         aof.get_dice_roll = lambda _faces=6: 1

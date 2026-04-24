@@ -435,7 +435,7 @@ def test_pyromaniaks_rerolls_wound_rolls_of_one_within_six_inches():
         called["reason"] = kwargs.get("reason")
         return True
 
-    game.map.roll_reroll_provider = _provider
+    game.install_decision_providers(roll_reroll_provider=_provider)
 
     profile = _make_profile(weapon_name="burna", range_val="12", is_ranged=True)
     with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 6]):
@@ -473,7 +473,7 @@ def test_pyromaniaks_applies_full_wound_reroll_on_objective_targets_within_six_i
         called["reason"] = kwargs.get("reason")
         return True
 
-    game.map.roll_reroll_provider = _provider
+    game.install_decision_providers(roll_reroll_provider=_provider)
 
     profile = _make_profile(weapon_name="burna", range_val="12", is_ranged=True)
     with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 6]):

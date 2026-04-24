@@ -15,7 +15,7 @@ from ..engine.combat_timing import (
     engagement_state_for_models,
     geometry_profile_for_context,
 )
-from ..engine.decision_port import DECISION_PROVIDER_NAMES, DecisionPort
+from ..engine.decision_port import DECISION_PROVIDER_NAMES
 from shapely.geometry import Polygon, Point, LineString, box
 from shapely.errors import GEOSException
 from shapely.ops import unary_union
@@ -69,29 +69,26 @@ from .terrain_visibility import (
     sample_model_points_3d as terrain_sample_model_points_3d,
     segment_blocked_by_terrain_feature as terrain_segment_blocked_by_terrain_feature,
 )
-from ..utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
 
 
 class Map:
     def __setattr__(self, name, value):
-        descriptor = getattr(type(self), name, None)
-        if isinstance(descriptor, property) and descriptor.fset is not None:
-            object.__setattr__(self, name, value)
-            return
         if name in DECISION_PROVIDER_NAMES:
-            self._set_decision_provider(name, value)
-            return
+            raise AttributeError(
+                f"Decision provider {name!r} must be installed on Game.decision_port."
+            )
         object.__setattr__(self, name, value)
 
     def __getattr__(self, name):
         if name in DECISION_PROVIDER_NAMES:
-            return self._get_decision_provider(name)
+            raise AttributeError(
+                f"Decision provider {name!r} is not available on Map; use Game.decision_port."
+            )
         raise AttributeError(name)
 
     def __init__(self, width: int, height: int):
-        object.__setattr__(self, "_decision_provider_overrides", {})
         self.game = None
         self.width = width
         self.height = height
@@ -106,32 +103,6 @@ class Map:
         self.units = []
         self.occupied_positions = set()
 
-    def bind_decision_port(self, decision_port: DecisionPort) -> None:
-        overrides = dict(getattr(self, "_decision_provider_overrides", {}) or {})
-        for name, provider in overrides.items():
-            if provider is not None:
-                decision_port.set_provider(name, provider)
-        self._decision_provider_overrides.clear()
-
-    def _get_decision_provider(self, name: str):
-        port = getattr(getattr(self, "game", None), "decision_port", None)
-        if port is not None:
-            provider = port.get_provider(name)
-            if provider is not None:
-                return provider
-        return getattr(self, "_decision_provider_overrides", {}).get(name)
-
-    def _set_decision_provider(self, name: str, provider) -> None:
-        port = getattr(getattr(self, "game", None), "decision_port", None)
-        if port is not None:
-            port.set_provider(name, provider)
-            return
-        overrides = getattr(self, "_decision_provider_overrides", None)
-        if overrides is None:
-            object.__setattr__(self, "_decision_provider_overrides", {})
-            overrides = self._decision_provider_overrides
-        overrides[name] = provider
-
     def bump_state_generation(self, reason: str = "") -> int:
         self.state_generation = int(getattr(self, "state_generation", 0) or 0) + 1
         visibility_cache = getattr(self, "_visibility_context_cache", None)
@@ -139,151 +110,6 @@ class Map:
             visibility_cache.clear()
         clear_enemy_model_cache(self)
         return int(self.state_generation)
-
-    @staticmethod
-    def _reroll_prompt_title(roll_type: str) -> str:
-        rt = str(roll_type or "").strip().lower()
-        if rt == "advance":
-            return "Advance Roll"
-        if rt == "charge":
-            return "Charge Roll"
-        if rt in ("blood_surge", "blood surge"):
-            return "Blood Surge Roll"
-        if rt == "hit":
-            return "Hit Roll"
-        if rt == "wound":
-            return "Wound Roll"
-        return "Re-roll?"
-
-    def _fallback_roll_reroll_choice(
-        self,
-        *,
-        player=None,
-        unit=None,
-        roll_type: str = "",
-        value=None,
-        dice=None,
-        allow_reroll: bool = True,
-        **kwargs,
-    ) -> bool:
-        if not bool(allow_reroll):
-            return False
-        provider = self._get_decision_provider("roll_reroll_provider")
-        if callable(provider):
-            return bool(
-                provider(
-                    player=player,
-                    unit=unit,
-                    roll_type=roll_type,
-                    value=value,
-                    dice=dice,
-                    allow_reroll=allow_reroll,
-                    **kwargs,
-                )
-            )
-        if "fallback_choice" in kwargs and kwargs.get("fallback_choice", None) is not None:
-            return bool(kwargs.get("fallback_choice"))
-        success = kwargs.get("success", None)
-        if success is not None:
-            return not bool(success)
-        needed = kwargs.get("needed", None)
-        try:
-            if needed is not None and value is not None:
-                return float(value) < float(needed)
-        except (TypeError, ValueError):
-            return False
-        return False
-
-    def _resolve_roll_reroll_provider(self, player=None, unit=None, roll_type: str = "", value=None, dice=None, **kwargs):
-        allow_reroll = bool(kwargs.get("allow_reroll", True))
-        fallback_kwargs = dict(kwargs or {})
-        fallback_kwargs["allow_reroll"] = bool(allow_reroll)
-        fallback_kwargs.pop("game", None)
-        if not allow_reroll:
-            return False
-        game = kwargs.get("game", None)
-        if game is None:
-            game = getattr(self, "game", None)
-        if game is None and player is not None:
-            game = getattr(player, "game", None)
-        request_fn = getattr(game, "request_decision", None) if game is not None else None
-        if not callable(request_fn):
-            return self._fallback_roll_reroll_choice(
-                player=player,
-                unit=unit,
-                roll_type=roll_type,
-                value=value,
-                dice=dice,
-                **fallback_kwargs,
-            )
-
-        from ..engine.decision_kinds import DECISION_REROLL_ROLL
-        from ..engine.decisions import DecisionOption, DecisionRequest
-        from ..utility.decision_utils import (
-            decision_request_is_pending,
-            require_synchronous_decision_resolution,
-            resolve_or_reuse_payload_choice,
-        )
-
-        rt = str(roll_type or "").strip().lower()
-        request = DecisionRequest.create(
-            DECISION_REROLL_ROLL,
-            self._reroll_prompt_title(rt),
-            player_id=getattr(player, "id", None) if player is not None else None,
-            options=[
-                DecisionOption.create("Keep", payload={"reroll": False}),
-                DecisionOption.create("Re-roll", payload={"reroll": True}),
-            ],
-            context={
-                "roll_type": rt,
-                "roll_value": value,
-                "unit_id": str(maybe_entity_id(unit) or ""),
-            },
-        )
-        try:
-            request_fn(request)
-        except ValueError:
-            return self._fallback_roll_reroll_choice(
-                player=player,
-                unit=unit,
-                roll_type=roll_type,
-                value=value,
-                dice=dice,
-                **fallback_kwargs,
-            )
-
-        fallback_choice = None
-        if decision_request_is_pending(game, request):
-            fallback_choice = self._fallback_roll_reroll_choice(
-                player=player,
-                unit=unit,
-                roll_type=roll_type,
-                value=value,
-                dice=dice,
-                **fallback_kwargs,
-            )
-
-        resolved_choice, apply_result = resolve_or_reuse_payload_choice(
-            game,
-            request,
-            payload_key="reroll",
-            fallback_value=fallback_choice,
-            player_id=getattr(player, "id", None) if player is not None else None,
-        )
-        require_synchronous_decision_resolution(
-            game,
-            request,
-            detail="Reroll decision remained pending without a synchronous decision owner.",
-        )
-        return bool(resolved_choice and apply_result is not None and getattr(apply_result, "ok", False))
-
-    @property
-    def roll_reroll_provider(self):
-        return self._resolve_roll_reroll_provider
-
-    @roll_reroll_provider.setter
-    def roll_reroll_provider(self, provider) -> None:
-        self._set_decision_provider("roll_reroll_provider", provider if callable(provider) else None)
 
     def create_boundary_polygon(self) -> Polygon:
         """

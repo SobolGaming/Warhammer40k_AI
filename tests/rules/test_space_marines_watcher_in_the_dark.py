@@ -235,7 +235,7 @@ def test_watcher_in_the_dark_local_provider_consumes_queued_confirmation():
         assert apply_result is not None and getattr(apply_result, "ok", False)
         return "use"
 
-    game.map.unit_mortal_wound_fnp_provider = _provider
+    game.install_decision_providers(unit_mortal_wound_fnp_provider=_provider)
 
     with patch("warhammer40k_ai.units.model.get_roll", return_value=4):
         damage_applied = target_unit.models[0].take_damage(1, is_mortal=True, weapon_profile=None, game_map=game.map)

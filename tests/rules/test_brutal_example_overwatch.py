@@ -311,7 +311,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
             self.assertTrue(getattr(apply_result, "ok", False))
             return value
 
-        game.map.bodyguard_loss_provider = _provider
+        game.install_decision_providers(bodyguard_loss_provider=_provider)
 
         removed_model = game.resolve_bodyguard_loss_immediately(
             leader_unit=None,

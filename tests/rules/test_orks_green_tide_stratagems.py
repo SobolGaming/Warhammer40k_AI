@@ -328,7 +328,7 @@ def test_go_get_em_waits_until_attacker_finishes_shooting_and_uses_reroll_branch
     _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
 
     provider_calls: list[dict] = []
-    game.map.roll_reroll_provider = lambda **kwargs: provider_calls.append(dict(kwargs)) or True
+    game.install_decision_providers(roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or True)
 
     game.event_system.publish(
         "shooting_targets_selected",
@@ -421,7 +421,7 @@ def test_go_get_em_checks_ten_model_reroll_after_attacker_finishes_shooting() ->
     _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
 
     provider_calls: list[dict] = []
-    game.map.roll_reroll_provider = lambda **kwargs: provider_calls.append(dict(kwargs)) or True
+    game.install_decision_providers(roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or True)
 
     game.event_system.publish(
         "shooting_targets_selected",

@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
+
 
 class _MockDatasheet:
     def __init__(self, name, *, abilities=None):
@@ -63,8 +65,10 @@ class TestLeadingUnmodifiedSix(unittest.TestCase):
             turn=1,
             phase=SimpleNamespace(name="Shooting"),
             get_current_player=lambda: player,
-            map=SimpleNamespace(leading_unmodified_six_provider=provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"leading_unmodified_six_provider": provider}),
         )
+        game.map.game = game
         player.game = game
         return game
 

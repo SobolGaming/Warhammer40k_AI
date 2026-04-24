@@ -133,7 +133,7 @@ class TestModelAllocatedMonsterVehicleDamageReroll(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         profile = next(iter(attacker.models[0].wargear[0].profiles.values()))
         rolls = iter([4, 4, 1, 1, 3])  # hit, wound, save, damage, damage re-roll
@@ -183,7 +183,7 @@ class TestModelAllocatedMonsterVehicleDamageReroll(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         profile = next(iter(attacker.models[0].wargear[0].profiles.values()))
         rolls = iter([4, 3, 1, 1])  # hit, wound, save, damage (no reroll expected)

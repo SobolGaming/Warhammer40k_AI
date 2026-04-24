@@ -113,7 +113,7 @@ class TestStructuralCollapse(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         rolls = iter([3, 3, 1, 1, 4])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -158,7 +158,7 @@ class TestStructuralCollapse(unittest.TestCase):
         game.map.units = [attacker, target]
 
         calls = []
-        game.map.roll_reroll_provider = lambda **kwargs: calls.append(kwargs) or True
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
 
         rolls = iter([3, 3, 1, 5, 2])
         original_get_dice_roll = dice_mod.get_dice_roll

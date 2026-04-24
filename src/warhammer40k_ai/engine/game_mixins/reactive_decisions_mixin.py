@@ -11411,8 +11411,7 @@ class GameReactiveDecisionsMixin:
         if decision_request_is_pending(self, request):
             provider_choice = None
             try:
-                game_map = getattr(self, "map", None)
-                provider = getattr(game_map, "bodyguard_loss_provider", None) if game_map is not None else None
+                provider = get_decision_provider(self, "bodyguard_loss_provider")
                 if resolved_player is not None and callable(getattr(resolved_player, "has_control", None)) and resolved_player.has_control() and callable(provider):
                     provider_choice = provider(
                         player=resolved_player,

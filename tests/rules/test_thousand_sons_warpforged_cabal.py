@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -119,7 +120,7 @@ def _aura_stub():
 
 
 def _build_game(*, army: Army, enemy_army: Army, phase_name: str = "SHOOTING_PHASE"):
-    game_map = SimpleNamespace(roll_reroll_provider=None)
+    game_map = SimpleNamespace()
     player = SimpleNamespace(
         id="P1",
         name="P1",
@@ -141,8 +142,11 @@ def _build_game(*, army: Army, enemy_army: Army, phase_name: str = "SHOOTING_PHA
         phase=SimpleNamespace(name=str(phase_name)),
         players=[player, enemy_player],
         map=game_map,
+        decision_port=DecisionPort(),
         get_current_player=lambda: player,
     )
+    game.install_decision_providers = lambda **providers: game.decision_port.install(providers)
+    game_map.game = game
     player.game = game
     enemy_player.game = game
     army.player = player
@@ -298,7 +302,7 @@ def test_warpfire_infusion_rerolls_hit_wound_and_damage_in_attack_resolution(mon
     _set_location(target, 8.0, 0.0)
     game = _build_game(army=army, enemy_army=enemy_army, phase_name="SHOOTING_PHASE")
     army.player.has_control = lambda: True
-    game.map.roll_reroll_provider = lambda **_kwargs: True
+    game.install_decision_providers(roll_reroll_provider=lambda **_kwargs: True)
 
     mgr = army.thousand_sons_detachments
     assert mgr.warpfire_infusion_start_selection(vehicle, action="shoot", game=game)

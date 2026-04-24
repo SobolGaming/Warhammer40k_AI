@@ -261,7 +261,7 @@ def test_death_vision_of_sanguinius_local_provider_consumes_queued_confirmation(
         assert apply_result is not None and getattr(apply_result, "ok", False)
         return "use"
 
-    game.map.death_vision_of_sanguinius_provider = _provider
+    game.install_decision_providers(death_vision_of_sanguinius_provider=_provider)
 
     with patch("warhammer40k_ai.units.unit.get_roll", return_value=4):
         tycho._handle_model_destroyed(model, game.map)

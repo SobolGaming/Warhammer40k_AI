@@ -136,7 +136,7 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         target.models[0].set_location(1, 0, 0, 0)
         game.map.units = [attacker, target]
 
-        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_NEGATIVE
+        game.install_decision_providers(hit_modifier_choice_provider=lambda **_kwargs: CHOICE_IGNORE_NEGATIVE)
 
         rolls = iter([4, 4, 4])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -184,7 +184,7 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         target.models[0].set_location(1, 0, 0, 0)
         game.map.units = [attacker, target]
 
-        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_POSITIVE
+        game.install_decision_providers(hit_modifier_choice_provider=lambda **_kwargs: CHOICE_IGNORE_POSITIVE)
 
         rolls = iter([3, 4, 4])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -238,7 +238,10 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         target.models[0].set_location(1, 0, 0, 0)
         game.map.units = [attacker, target]
 
-        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_POSITIVE
+        game.install_decision_providers(
+            hit_modifier_choice_provider=lambda **_kwargs: CHOICE_IGNORE_POSITIVE,
+            skill_modifier_choice_provider=lambda **_kwargs: CHOICE_IGNORE_POSITIVE,
+        )
 
         rolls = iter([3, 4, 4])
         original_get_dice_roll = dice_mod.get_dice_roll
@@ -283,7 +286,7 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         target.models[0].set_location(1, 0, 0, 0)
         game.map.units = [attacker, target]
 
-        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_NEGATIVE
+        game.install_decision_providers(hit_modifier_choice_provider=lambda **_kwargs: CHOICE_IGNORE_NEGATIVE)
 
         rolls = iter([4, 4, 4])
         original_get_dice_roll = dice_mod.get_dice_roll

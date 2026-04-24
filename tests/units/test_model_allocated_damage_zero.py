@@ -292,7 +292,7 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
             self.assertTrue(getattr(apply_result, "ok", False))
             return "use"
 
-        game.map.model_allocated_damage_zero_provider = _provider
+        game.install_decision_providers(model_allocated_damage_zero_provider=_provider)
 
         profile = _make_profile()
         with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):

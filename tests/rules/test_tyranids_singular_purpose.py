@@ -148,7 +148,7 @@ class TestTyranidsSingularPurpose(unittest.TestCase):
         )
         game.objectives = [near_objective]
         game.map.objectives = [near_objective]
-        game.map.roll_reroll_provider = lambda **kwargs: not kwargs.get("success")
+        game.install_decision_providers(roll_reroll_provider=lambda **kwargs: not kwargs.get("success"))
 
         game.rebuild_entity_registry()
         army.on_battle_round_start(1)

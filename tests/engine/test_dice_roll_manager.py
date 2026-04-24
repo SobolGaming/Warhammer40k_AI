@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield
-from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL
+from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.utility.dice import get_roll, suppress_get_roll_requests
 from warhammer40k_ai.utility.game_context import game_context
@@ -141,19 +141,15 @@ def test_get_roll_uses_request_roll_with_modifier():
     assert game.decision_queue.get(req.decision_id) is None
 
 
-def test_auto_pick_reroll_action_uses_reroll_decision_for_remote_player():
+def test_auto_pick_reroll_action_uses_decision_port_provider_for_remote_player():
     game = _make_game_with_players()
     game.auto_resolve_dice_rolls = False
     player = game.players[0]
     player.has_control = lambda: False
-    game.map.roll_reroll_provider = lambda **_kwargs: True
-    requested = []
-
-    def _capture_request(request=None, **_kwargs):
-        if request is not None:
-            requested.append(request)
-
-    game.event_system.subscribe("decision_requested", _capture_request, group="test:auto_pick_reroll")
+    provider_calls = []
+    game.install_decision_providers(
+        roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or True
+    )
     req = game.roll_manager.request_roll(
         game,
         player_id=player.id,
@@ -181,39 +177,8 @@ def test_auto_pick_reroll_action_uses_reroll_decision_for_remote_player():
 
     assert action_id == "reroll_ones"
     assert list(selected or [])
-    assert any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
-    assert not any(
-        str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
-        for req in list(game.decision_queue.list() or [])
-    )
-
-
-def test_reroll_decision_without_sync_owner_uses_emitted_request_and_headless_strategy():
-    game = _make_game_with_players()
-    player = game.players[0]
-    requested = []
-    original_request_decision = game.request_decision
-
-    def _capture(request):
-        requested.append(request)
-        return original_request_decision(request)
-
-    game.request_decision = _capture
-    reroll = game.map.roll_reroll_provider(
-        player=player,
-        unit=None,
-        roll_type="hit",
-        value=1,
-        dice=[1],
-        game=game,
-    )
-
-    assert reroll is False
-    assert any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
-    assert not any(
-        str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL
-        for req in list(game.decision_queue.list() or [])
-    )
+    assert provider_calls
+    assert str(provider_calls[0].get("roll_type", "") or "") == "hit"
 
 
 def test_get_roll_d33_uses_request_roll():

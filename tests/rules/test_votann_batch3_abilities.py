@@ -277,7 +277,7 @@ class TestVotannBatch3Abilities(unittest.TestCase):
 
         game.request_decision = _capture
         game.apply_command = _apply
-        game.map.model_unmodified_six_provider = lambda **_kwargs: "use"
+        game.install_decision_providers(model_unmodified_six_provider=lambda **_kwargs: "use")
 
         parent = SimpleNamespace(name="Autoch-pattern bolter", is_melee=lambda: False, is_ranged=lambda: True)
         profile = WargearProfile(

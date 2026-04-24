@@ -427,7 +427,7 @@ def test_relics_of_the_matriarchs_ebon_chalice_still_substitutes_only_one_die_in
     acts_mgr = getattr(sororitas, "acts_of_faith", None)
     assert acts_mgr is not None
     acts_mgr.miracle_dice = [6, 5]
-    game.map.miracle_dice_provider = lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None)
+    game.install_decision_providers(miracle_dice_provider=lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None))
 
     old_get_dice_roll = acts_of_faith_rules.get_dice_roll
     acts_of_faith_rules.get_dice_roll = lambda _faces=6: 1

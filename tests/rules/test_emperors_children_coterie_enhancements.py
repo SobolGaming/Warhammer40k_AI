@@ -262,7 +262,7 @@ class TestEmperorsChildrenCoterieEnhancements(unittest.TestCase):
                 return "skip"
             return str(options[0].get("ability_key", "") or "")
 
-        game.map.leading_unmodified_six_provider = _provider
+        game.install_decision_providers(leading_unmodified_six_provider=_provider)
 
         profile = WargearProfile(
             profile_name="default",

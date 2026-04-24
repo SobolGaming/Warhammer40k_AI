@@ -47,6 +47,7 @@ from ..decision_kinds import (
 from ..random_source import RandomSource
 from ..decision_controller import DecisionController, DecisionControllerHub
 from ..decision_record import DecisionRecordStore
+from ..decision_port import get_decision_provider
 from ..ruleset import RulesetBundle
 from ..tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from ..tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle

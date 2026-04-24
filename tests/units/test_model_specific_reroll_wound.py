@@ -90,7 +90,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "24",
@@ -146,7 +146,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "24",
@@ -197,7 +197,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
         army1.add_unit(attacker)
         army2.add_unit(target)
 
-        game.map.roll_reroll_provider = lambda **_kwargs: True
+        game.install_decision_providers(roll_reroll_provider=lambda **_kwargs: True)
 
         data = {
             "range": "24",
@@ -253,7 +253,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "24",
@@ -304,7 +304,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
         army1.add_unit(attacker)
         army2.add_unit(target)
 
-        game.map.roll_reroll_provider = lambda **_kwargs: True
+        game.install_decision_providers(roll_reroll_provider=lambda **_kwargs: True)
 
         data = {
             "range": "24",
@@ -359,7 +359,7 @@ class TestModelSpecificRerollWound(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "Melee",
@@ -417,7 +417,7 @@ class TestModelSpecificRerollHit(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "24",
@@ -473,7 +473,7 @@ class TestModelSpecificRerollHit(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         data = {
             "range": "Melee",
@@ -524,7 +524,7 @@ class TestModelSpecificRerollHit(unittest.TestCase):
         army1.add_unit(attacker)
         army2.add_unit(target)
 
-        game.map.roll_reroll_provider = lambda **_kwargs: True
+        game.install_decision_providers(roll_reroll_provider=lambda **_kwargs: True)
 
         data = {
             "range": "24",

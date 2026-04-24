@@ -287,7 +287,7 @@ def test_grot_assistant_rerolls_shokk_attack_gun_attacks_once_per_battle():
     target_unit = _make_unit("Enemy Target", faction_name="Enemy", faction_keywords=["EN"], model_count=1)
     enemy_army.add_unit(target_unit)
 
-    game.map.roll_reroll_provider = lambda **_kwargs: True
+    game.install_decision_providers(roll_reroll_provider=lambda **_kwargs: True)
     model.return_closest_model_in_unit = lambda _unit: (target_unit.models[0], 12.0)
 
     weapon = Wargear(

@@ -19,6 +19,7 @@ from .combat_timing import fight_phase_move_steps, fight_phase_starting_player
 from . import fight_engagement as _fight_engagement
 from . import fight_order as _fight_order
 from . import fight_resolution as _fight_resolution
+from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
 from .decision_kinds import DECISION_CONFIRM_YES_NO
 from .game import Game
@@ -1320,9 +1321,7 @@ class FightPhaseManager:
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
         }
-        base_provider = None
-        if game_map is not None:
-            base_provider = getattr(game_map, "damage_allocation_provider", None)
+        base_provider = get_decision_provider(self.game, "damage_allocation_provider")
 
         for declaration in weapon_declarations:
             model = declaration.get('model')
@@ -1340,14 +1339,14 @@ class FightPhaseManager:
 
             logger.info(f"{model.name} attacks with {weapon_profile.name}")
             provider_reset = False
-            if game_map is not None and wound_target is not None:
+            if wound_target is not None:
                 def _forced_provider(unit, candidates, ctx, *, _target=wound_target, _base=base_provider):
                     if isinstance(candidates, (list, tuple, set)) and _target in candidates and getattr(_target, "is_alive", True):
                         return _target
                     if callable(_base):
                         return _base(unit, candidates, ctx)
                     return None
-                setattr(game_map, "damage_allocation_provider", _forced_provider)
+                self.game.install_decision_providers(damage_allocation_provider=_forced_provider)
                 provider_reset = True
             try:
                 weapon_profile.attack(
@@ -1360,8 +1359,8 @@ class FightPhaseManager:
                     attacks_override_note=attacks_override_note,
                 )
             finally:
-                if provider_reset and game_map is not None:
-                    setattr(game_map, "damage_allocation_provider", base_provider)
+                if provider_reset:
+                    self.game.install_decision_providers(damage_allocation_provider=base_provider)
 
         try:
             if hasattr(attacking_unit, "_resolve_pending_attack_mortal_wounds"):

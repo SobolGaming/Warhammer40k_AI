@@ -153,7 +153,7 @@ def test_righteous_repugnance_fight_selection_discards_miracle_and_buffs_named_w
     game.phase = BattleRoundPhases.FIGHT_PHASE
     game.turn = 2
     sororitas_army.acts_of_faith.miracle_dice = [2, 6]
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0]})
 
     sororitas_army.acts_of_faith.on_fight_unit_selected(morvenn, game=game, selecting_player=sororitas_player)
 
@@ -233,7 +233,7 @@ def test_righteous_repugnance_shoot_selection_and_enemy_destroyed_gain_miracle_d
     game.phase = BattleRoundPhases.SHOOTING_PHASE
     game.turn = 3
     sororitas_army.acts_of_faith.miracle_dice = [1]
-    game.map.miracle_dice_pool_reroll_provider = lambda **_kwargs: {"indices": [0]}
+    game.install_decision_providers(miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0]})
 
     sororitas_army.acts_of_faith.on_shoot_unit_selected(morvenn, game=game, selecting_player=sororitas_player)
 

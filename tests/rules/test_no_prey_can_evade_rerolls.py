@@ -64,7 +64,7 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         p1.game = g
 
         # Provider always says "reroll"
-        g.map.roll_reroll_provider = lambda **_k: True
+        g.install_decision_providers(roll_reroll_provider=lambda **_k: True)
 
         published = []
         orig_publish = g.event_system.publish
@@ -93,8 +93,7 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         self.assertTrue(rm, "Expected an advance roll_made publish")
         self.assertTrue(bool(rm[-1][1].get("reroll_locked", False)))
 
-    def test_remote_advance_reroll_emits_decision_request_before_resolving(self):
-        from warhammer40k_ai.engine.decision_kinds import DECISION_REROLL_ROLL
+    def test_remote_advance_reroll_uses_decision_port_provider(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.units.unit import Unit
@@ -154,12 +153,9 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         u.set_parent_army(army)
         p1.game = g
 
-        g.map.roll_reroll_provider = lambda **_k: True
-        requested = []
-        g.event_system.subscribe(
-            "decision_requested",
-            lambda request=None, **_kwargs: requested.append(request),
-            group="test_remote_advance_reroll_request",
+        provider_calls = []
+        g.install_decision_providers(
+            roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or True
         )
 
         from warhammer40k_ai.units import unit as unit_mod
@@ -174,9 +170,8 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
 
         self.assertEqual(int(result), 5)
         self.assertEqual(int(u.round_state.advance_roll), 5)
-        self.assertTrue(
-            any(str(getattr(req, "decision_type", "") or "") == DECISION_REROLL_ROLL for req in requested)
-        )
+        self.assertTrue(provider_calls)
+        self.assertEqual(str(provider_calls[0].get("roll_type", "") or ""), "advance")
         self.assertEqual(list(g.decision_queue.list() or []), [])
 
 

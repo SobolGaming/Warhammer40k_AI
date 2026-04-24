@@ -160,7 +160,7 @@ class TestUnitWoundRerollOnes(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         parent = SimpleNamespace(name="Choppa", is_melee=lambda: True, is_ranged=lambda: False)
         profile = WargearProfile(

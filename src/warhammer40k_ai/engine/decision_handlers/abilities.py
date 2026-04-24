@@ -5,6 +5,7 @@ import re
 from typing import Sequence
 
 from ..decision_dispatcher import register_decision_handler
+from ..decision_port import get_decision_provider
 from ..decision_kinds import (
     DECISION_CHOOSE_BLESSINGS,
     DECISION_CHOOSE_BLOOD_TITHE,
@@ -19144,7 +19145,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         reanimated_wounds = max(0, int(get_roll("D6") or 0))
         game_map = getattr(game, "map", None)
-        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        provider = get_decision_provider(game, "reanimation_allocation_provider")
         is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
         target_root.apply_reanimation_protocols(
             int(reanimated_wounds),
@@ -19286,7 +19287,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
 
         reanimated_wounds = max(0, int(get_roll("D3") or 0))
         game_map = getattr(game, "map", None)
-        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        provider = get_decision_provider(game, "reanimation_allocation_provider")
         is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
         target_root.apply_reanimation_protocols(
             int(reanimated_wounds),

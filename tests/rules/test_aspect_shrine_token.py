@@ -315,7 +315,7 @@ class TestAspectShrineToken(unittest.TestCase):
 
         game.request_decision = _capture
         game.apply_command = _apply
-        game.map.aspect_shrine_provider = lambda **_kwargs: "use"
+        game.install_decision_providers(aspect_shrine_provider=lambda **_kwargs: "use")
 
         profile = _make_profile()
         hit = profile._hit_target_with_tracking(

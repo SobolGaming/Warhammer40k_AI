@@ -5,6 +5,7 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .roll_explanation import apply_roll_explanation
+from .decision_port import get_decision_provider
 
 
 RollHandler = Callable[[object, "DiceRollState"], Any]
@@ -796,11 +797,7 @@ class DiceRollManager:
         unit_obj = _resolve_unit(game, spec.get("unit_id"))
         provider = None
         is_human = False
-        try:
-            game_map = getattr(game, "map", None)
-            provider = getattr(game_map, "roll_reroll_provider", None)
-        except Exception:
-            provider = None
+        provider = get_decision_provider(game, "roll_reroll_provider")
         try:
             if player_obj is not None and bool(getattr(player_obj, "has_control", lambda: False)()):
                 is_human = True

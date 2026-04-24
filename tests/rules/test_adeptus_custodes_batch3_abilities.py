@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.roster.army import Army
@@ -101,8 +102,10 @@ class TestAdeptusCustodesBatch3Abilities(unittest.TestCase):
             turn=1,
             phase=SimpleNamespace(name="Shooting"),
             get_current_player=lambda: player,
-            map=SimpleNamespace(model_unmodified_six_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"model_unmodified_six_provider": _provider}),
         )
+        game.map.game = game
         player.game = game
 
         profile = _make_profile()
@@ -145,8 +148,10 @@ class TestAdeptusCustodesBatch3Abilities(unittest.TestCase):
             turn=1,
             phase=SimpleNamespace(name="Shooting"),
             get_current_player=lambda: player,
-            map=SimpleNamespace(model_unmodified_six_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"model_unmodified_six_provider": _provider}),
         )
+        game.map.game = game
         player.game = game
 
         profile = _make_profile()
@@ -187,8 +192,10 @@ class TestAdeptusCustodesBatch3Abilities(unittest.TestCase):
             turn=1,
             phase=SimpleNamespace(name="Shooting"),
             get_current_player=lambda: player,
-            map=SimpleNamespace(model_unmodified_six_provider=_provider),
+            map=SimpleNamespace(),
+            decision_port=DecisionPort({"model_unmodified_six_provider": _provider}),
         )
+        game.map.game = game
         player.game = game
 
         profile = _make_profile()

@@ -239,13 +239,13 @@ def test_reanimation_provider_path_emits_allocate_damage_request():
 
     game.request_decision = _capture
     game.apply_command = _apply
-    game.map.reanimation_allocation_provider = _provider
+    game.install_decision_providers(reanimation_allocation_provider=_provider)
 
     result = unit.apply_reanimation_protocols(
         1,
         game_map=game.map,
         is_human=True,
-        provider=game.map.reanimation_allocation_provider,
+        provider=game.decision_port.get_provider("reanimation_allocation_provider"),
     )
 
     assert result == {"healed": 1, "returned": 0}

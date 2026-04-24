@@ -397,7 +397,7 @@ class TestSpaceMarinesLiberatorAssaultGroupEnhancements(unittest.TestCase):
         _set_unit_position(source, 0.0, 0.0)
         _set_unit_position(target, 1.0, 0.0)
         game.map.units = [source, target]
-        game.map.model_unmodified_six_provider = lambda **_kwargs: "use"
+        game.install_decision_providers(model_unmodified_six_provider=lambda **_kwargs: "use")
         game.rebuild_entity_registry()
 
         Enhancement(

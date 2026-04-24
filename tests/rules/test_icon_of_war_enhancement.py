@@ -147,7 +147,7 @@ class TestIconOfWarEnhancement(unittest.TestCase):
             calls["count"] += 1
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
         game.random_source = _StubRng([6, 3, 2, 3])
         target.take_battle_shock_test(current_turn=1)
 

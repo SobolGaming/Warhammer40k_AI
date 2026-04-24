@@ -294,7 +294,7 @@ class TestUnitHitRerollOnes(unittest.TestCase):
             called["reason"] = kwargs.get("reason")
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
         profile = WargearProfile(
@@ -399,7 +399,7 @@ class TestUnitHitRerollOnes(unittest.TestCase):
             called["called"] = True
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
         profile = WargearProfile(
@@ -464,7 +464,7 @@ class TestUnitHitRerollOnes(unittest.TestCase):
             called["called"] = True
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
         profile = WargearProfile(
@@ -529,7 +529,7 @@ class TestUnitHitRerollOnes(unittest.TestCase):
             called["called"] = True
             return True
 
-        game.map.roll_reroll_provider = _provider
+        game.install_decision_providers(roll_reroll_provider=_provider)
 
         parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
         profile = WargearProfile(

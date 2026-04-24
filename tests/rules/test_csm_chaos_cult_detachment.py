@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_port import DecisionPort
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
@@ -96,9 +97,11 @@ def _build_simple_game(*, armies: list[Army], phase_name: str, current_player_in
         turn=1,
         phase=SimpleNamespace(name=str(phase_name)),
         players=players,
-        map=SimpleNamespace(roll_reroll_provider=None),
+        map=SimpleNamespace(),
+        decision_port=DecisionPort(),
         get_current_player=lambda: players[int(current_player_index)],
     )
+    game.map.game = game
     for player in list(players or []):
         player.game = game
     return game

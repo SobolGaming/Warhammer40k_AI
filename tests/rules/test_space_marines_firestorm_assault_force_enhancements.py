@@ -384,7 +384,7 @@ class TestSpaceMarinesFirestormAssaultForceEnhancements(unittest.TestCase):
 
         game.request_decision = _capture
         game.apply_command = _apply
-        game.map.leading_unmodified_six_provider = lambda **_kwargs: "use"
+        game.install_decision_providers(leading_unmodified_six_provider=lambda **_kwargs: "use")
 
         profile = _make_profile(is_melee=False)
         attack_context = {
