@@ -235,6 +235,7 @@ def _visibility_context_cache_key(game_map: object, shooter_model: object, targe
     shooter_unit = getattr(shooter_model, "parent_unit", None)
     return (
         "visibility_context_v2",
+        int(getattr(game_map, "state_generation", 0) or 0),
         bool(preview_visibility_semantics_enabled(game_map)),
         str(getattr(game_map, "preview_visibility_ruleset", "") or ""),
         str(getattr(game_map, "terrain_hidden_current_player_turn", "") or ""),

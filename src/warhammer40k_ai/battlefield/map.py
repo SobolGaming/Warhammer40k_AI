@@ -1,7 +1,14 @@
 from typing import List, Optional, Tuple, Dict, Any
 from ..units.unit import Unit
 from ..units.model import Model
-from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level, get_pivot_cost
+from ..utility.calcs import (
+    clear_enemy_model_cache,
+    get_dist,
+    convert_mm_to_inches,
+    can_traverse_freely,
+    _resolve_ruins_floor_level,
+    get_pivot_cost,
+)
 from ..utility.constants import RUINS_FLOOR_HEIGHT, RUINS_FLOOR_THICKNESS, RUINS_WALL_THICKNESS
 from ..engine.combat_timing import (
     CombatEngagementState,
@@ -93,6 +100,7 @@ class Map:
         self.terrain_areas: List['TerrainArea'] = []
         self.preview_visibility_semantics_enabled = False
         self.preview_visibility_ruleset = ""
+        self.state_generation = 0
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
@@ -123,6 +131,14 @@ class Map:
             object.__setattr__(self, "_decision_provider_overrides", {})
             overrides = self._decision_provider_overrides
         overrides[name] = provider
+
+    def bump_state_generation(self, reason: str = "") -> int:
+        self.state_generation = int(getattr(self, "state_generation", 0) or 0) + 1
+        visibility_cache = getattr(self, "_visibility_context_cache", None)
+        if hasattr(visibility_cache, "clear"):
+            visibility_cache.clear()
+        clear_enemy_model_cache(self)
+        return int(self.state_generation)
 
     @staticmethod
     def _reroll_prompt_title(roll_type: str) -> str:
@@ -278,24 +294,36 @@ class Map:
     def add_terrain_feature(self, terrain_feature: 'TerrainFeature') -> None:
         """Add terrain feature."""
         self.terrain_features.append(terrain_feature)
+        self.bump_state_generation("terrain_feature_added")
 
     def add_terrain_features(self, terrain_features: List['TerrainFeature']) -> None:
         """Add multiple terrain features."""
-        self.terrain_features.extend(terrain_features)
+        values = list(terrain_features or [])
+        self.terrain_features.extend(values)
+        if values:
+            self.bump_state_generation("terrain_features_added")
 
     def add_terrain_area(self, terrain_area: 'TerrainArea') -> None:
         """Add terrain area."""
         self.terrain_areas.append(terrain_area)
+        self.bump_state_generation("terrain_area_added")
 
     def add_terrain_areas(self, terrain_areas: List['TerrainArea']) -> None:
         """Add multiple terrain areas."""
-        self.terrain_areas.extend(terrain_areas)
+        values = list(terrain_areas or [])
+        self.terrain_areas.extend(values)
+        if values:
+            self.bump_state_generation("terrain_areas_added")
 
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)
+        self.bump_state_generation("objective_added")
 
     def add_objectives(self, objectives: List['Objective']) -> None:
-        self.objectives.extend(objectives)
+        values = list(objectives or [])
+        self.objectives.extend(values)
+        if values:
+            self.bump_state_generation("objectives_added")
 
     def get_objectives(self, is_secret: bool = False) -> List['Objective']:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
@@ -319,6 +347,7 @@ class Map:
             if self.check_collision_with_other_enemy_units(model):
                 return False
         self.units.append(unit)
+        self.bump_state_generation("unit_placed")
         return True
 
     def get_all_models(self, units: Optional[List[Unit]] = None) -> List[Model] :

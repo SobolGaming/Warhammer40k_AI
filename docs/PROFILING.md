@@ -75,3 +75,9 @@ validation, and both terrain-service and legacy shooting-mixin LoS checks are ca
 checks of the same model pair at the same positions and terrain/blocker state. Section timer call
 counts should therefore be interpreted as cache miss/work counts rather than every high-level
 shooting or deployment policy probe.
+
+## Cache Invalidation
+
+`Map.state_generation` increments when terrain, objectives, or placed units change. Visibility
+cache keys include this generation, and map mutations clear per-map enemy-model collision caches,
+so generated geometry caches do not survive battlefield topology changes.
