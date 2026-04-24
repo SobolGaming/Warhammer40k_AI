@@ -182,6 +182,7 @@ class DecisionRequest:
     def finalize_candidates(self) -> None:
         if not self.candidates:
             self.candidates = self._build_candidates_from_options()
+            self._sort_candidates_with_masks()
         self._ensure_masks()
 
     def action_id_for_option_id(self, option_id: Optional[str]) -> str:
@@ -228,8 +229,24 @@ class DecisionRequest:
                     metadata={"label": str(opt.label or "")},
                 )
             )
-        candidates.sort(key=lambda cand: str(cand.action_id))
         return candidates
+
+    def _sort_candidates_with_masks(self) -> None:
+        if not self.candidates:
+            return
+        indexed_candidates = list(enumerate(self.candidates))
+        indexed_candidates.sort(key=lambda item: str(item[1].action_id))
+        if self.mask:
+            if len(self.mask) != len(indexed_candidates):
+                raise ValueError("DecisionRequest mask length must match candidates length.")
+            original_mask = list(self.mask)
+            self.mask = [bool(original_mask[index]) for index, _candidate in indexed_candidates]
+        if self.mask_reasons:
+            if len(self.mask_reasons) != len(indexed_candidates):
+                raise ValueError("DecisionRequest mask_reasons length must match candidates length.")
+            original_reasons = list(self.mask_reasons)
+            self.mask_reasons = [original_reasons[index] for index, _candidate in indexed_candidates]
+        self.candidates = [candidate for _index, candidate in indexed_candidates]
 
     def _ensure_masks(self) -> None:
         if not self.candidates:

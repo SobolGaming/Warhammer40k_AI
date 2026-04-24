@@ -741,7 +741,7 @@ class NetworkServer:
             game.is_authoritative = True
         except Exception:
             pass
-        game.map = Map(*game.get_battlefield_size())
+        game.set_map(Map(*game.get_battlefield_size()))
         self._player_ids = {
             "player1": player1.id,
             "player2": player2.id,

@@ -18,6 +18,8 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **Headless auto-decisions**: by default, server-side headless auto-resolution handles **dice roll + dice reroll** only when `auto_resolve_dice_rolls` is enabled. Full masked policy auto-resolution is available through `HeadlessPolicyDecisionController` (`src/warhammer40k_ai/engine/headless_policy_controller.py`) when explicitly attached.
 - **Decision timeouts**: `DecisionRequest` supports `timeout_seconds` (payload field). Enforcement is a planned server feature; see “Decision Timeouts” below.
 - **Candidates + mask**: every DecisionRequest includes deterministic `candidates[]` and a `mask[]` (false = illegal).
+  When candidates are built from options, candidates are canonicalized by `action_id` and the positional
+  `mask[]` / `mask_reasons[]` arrays are reordered with them, preserving legality alignment.
 
 **Simultaneous vs Sequential**
 - **Simultaneous**: both players can decide independently at the same time (e.g., formations).

@@ -36,6 +36,8 @@ The engine is the single source of truth. The UI does not mutate core state dire
 - It emits a **DecisionRequest** (enumerated options + bounded parameters).
 - A controller (UI, headless agent, or network client) responds with a **Command** / **DecisionResult**.
 - The engine validates and applies it, then emits deterministic **Events**.
+- `Game.map` is assigned through the `Game.map` property or `Game.set_map(...)`; both restore the
+  `map.game` back-reference used by terrain, network snapshots, and local script initialization.
 
 This pattern enables:
 - deterministic replay and debugging

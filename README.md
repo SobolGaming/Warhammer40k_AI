@@ -2,7 +2,7 @@
 
 Interactive Warhammer 40k rules engine with a graphical UI, official setup phases, and full deployment sequencing.
 
-Version `0.2.105` is the current 10th Edition milestone release: all in-scope 10th Edition factions now have engine and support-matrix coverage. Active development is now focused on 11th-edition-first port prep while preserving the existing 10th Edition engine baseline.
+Version `0.2.106` is the current 10th Edition milestone release: all in-scope 10th Edition factions now have engine and support-matrix coverage. Active development is now focused on 11th-edition-first port prep while preserving the existing 10th Edition engine baseline.
 
 The repository is now in an 11th-edition-first port-prep phase. Structural work is
 landing behind stable façades so release-day 11th rules ingestion can happen

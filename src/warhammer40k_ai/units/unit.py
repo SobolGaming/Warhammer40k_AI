@@ -42,6 +42,10 @@ logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
 
 
+class UnitInitializationError(RuntimeError):
+    pass
+
+
 class UnitRoundState:
     remained_stationary_this_round: bool = True  # Units are stationary by default until they move
     advanced_this_round: bool = False
@@ -170,10 +174,10 @@ class Unit(
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
         try:
             self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
-        except Exception as e:
-            logger.exception(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
-            self.unit_composition = {}
-            return
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise UnitInitializationError(
+                f"Failed to parse unit composition for {self.name!r}."
+            ) from exc
         try:
             self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
         except Exception as e:
@@ -305,19 +309,14 @@ class Unit(
             self._refresh_targeted_stratagem_cp_refund_flags()
         except Exception:
             pass
-        try:
-            self._refresh_targeted_stratagem_cp_increase_flags()
-        except Exception:
-            pass
-        try:
-            self._refresh_targeted_stratagem_cp_increase_flags()
-        except Exception:
-            pass
         # Parse stratagem CP increases applied to enemy targets.
         try:
             self._refresh_targeted_stratagem_cp_increase_flags()
-        except Exception:
-            pass
+        except (AttributeError, TypeError, ValueError, re.error):
+            logger.exception(
+                "Failed to refresh targeted stratagem CP increase flags for unit %s",
+                self.name,
+            )
         # Parse "first time destroyed" return-to-battlefield abilities.
         try:
             self._refresh_return_on_death_flags()

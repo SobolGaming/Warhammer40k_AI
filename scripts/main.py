@@ -96,7 +96,7 @@ def initialize_game(
     game = Game(battlefield, [player1, player2])
 
     game_map = Map(*game.get_battlefield_size())
-    game.map = game_map
+    game.set_map(game_map)
 
     game.army_files = {
         "player1": player1_army_file,

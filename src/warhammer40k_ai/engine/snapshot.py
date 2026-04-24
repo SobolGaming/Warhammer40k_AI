@@ -1656,7 +1656,7 @@ def load_game_snapshot(snapshot: dict) -> Game:
             player.army = army
             army.player = player
 
-    game.map = Map(int(map_data.get("width", 0) or 0), int(map_data.get("height", 0) or 0))
+    game.set_map(Map(int(map_data.get("width", 0) or 0), int(map_data.get("height", 0) or 0)))
     game.map.terrain_features = [_deserialize_terrain_feature(t) for t in map_data.get("terrain_features", []) or []]
     game.map.terrain_areas = [_deserialize_terrain_area(t) for t in map_data.get("terrain_areas", []) or []]
 

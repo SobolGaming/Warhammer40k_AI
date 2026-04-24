@@ -140,6 +140,23 @@ def test_attempt_charge_can_route_around_terrain_to_reach_target():
     assert game_map.is_within_engagement_range(charger, target) is True
 
 
+def test_attempt_charge_returns_false_when_no_charge_roll_is_available():
+    game_map = Map(width=60, height=44)
+    charger = make_unit("Charger")
+    target = make_unit("Target", faction="B")
+    game, _p1, _p2 = attach_to_game(game_map, [charger], [target])
+
+    charger.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    target.models[0].set_location(18.0, 10.0, 0.0, 0.0)
+    target_id = get_entity_id(target)
+    charger_id = get_entity_id(charger)
+    game.declare_charge = lambda _charger, _targets, **_kwargs: {"target_unit_ids": [target_id]}
+    charger.round_state.charge_target_ids = {target_id}
+    game.phase_charge_targets[target_id] = {charger_id}
+
+    assert game.attempt_charge(charger, target) is False
+
+
 def test_charge_end_state_blocks_non_targets():
     game_map = Map(width=60, height=44)
     charger = make_unit("Charger")

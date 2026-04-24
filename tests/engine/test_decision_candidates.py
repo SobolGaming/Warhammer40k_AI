@@ -42,7 +42,8 @@ def test_mask_blocks_illegal_choice():
         options=options,
         mask=[False, True],
     )
-    masked_action_id = req.candidates[0].action_id
+    masked_index = req.mask.index(False)
+    masked_action_id = req.candidates[masked_index].action_id
     masked_option_id = None
     for opt in req.options:
         if opt.payload.get("action_id") == masked_action_id:
@@ -52,6 +53,29 @@ def test_mask_blocks_illegal_choice():
     result = DecisionResult(decision_id=req.decision_id, player_id=None, option_id=masked_option_id)
     errors = validate_decision(None, req, result)
     assert any("masked" in err for err in errors)
+
+
+def test_mask_stays_with_candidate_after_option_sort():
+    options = [
+        DecisionOption.create("B", payload={"action_id": "b"}),
+        DecisionOption.create("A", payload={"action_id": "a"}),
+    ]
+    req = DecisionRequest.create(
+        DECISION_CONFIRM_EXAMPLE,
+        "Prompt",
+        options=options,
+        mask=[True, False],
+        mask_reasons=[None, "illegal"],
+    )
+
+    by_id = {
+        candidate.action_id: (req.mask[index], req.mask_reasons[index])
+        for index, candidate in enumerate(req.candidates)
+    }
+
+    assert [candidate.action_id for candidate in req.candidates] == ["a", "b"]
+    assert by_id["b"] == (True, None)
+    assert by_id["a"] == (False, "illegal")
 
 
 def test_mask_reasons_populated_for_masked_candidates():
@@ -66,4 +90,6 @@ def test_mask_reasons_populated_for_masked_candidates():
         mask=[False, True],
     )
 
-    assert req.mask_reasons == ["masked_as_illegal", None]
+    masked_index = req.mask.index(False)
+    assert req.mask_reasons[masked_index] == "masked_as_illegal"
+    assert req.mask_reasons[1 - masked_index] is None

@@ -196,6 +196,23 @@ class Game(
     GameShootingFightHandlersMixin,
     GamePhaseHandlersMixin,
 ):
+    @property
+    def map(self) -> Map:
+        return self._map
+
+    @map.setter
+    def map(self, value: Map) -> None:
+        self._map = value
+        if value is None:
+            return
+        try:
+            value.game = self
+        except (AttributeError, TypeError):
+            return
+
+    def set_map(self, game_map: Map) -> None:
+        self.map = game_map
+
     def __init__(
         self,
         battlefield: Battlefield,
@@ -217,7 +234,6 @@ class Game(
         self.turn = 1
         self.current_player_index = 0
         self.map = Map(battlefield.width, battlefield.height)
-        self.map.game = self
         self.event_system = EventSystem()
         self.event_log = DeterministicEventLog()
         self.event_log.attach(self)
@@ -15017,7 +15033,7 @@ class Game(
         *,
         out_of_turn: bool = False,
         count_as_charged: bool = True,
-    ) -> Optional[bool]:
+    ) -> bool:
         """Attempt a charge move with the given unit against the target.
 
         According to 10th edition rules, a successful charge requires at least one model
@@ -15042,7 +15058,7 @@ class Game(
 
         base_charge_roll = int(getattr(charging_unit.round_state, "charge_roll", 0) or 0)
         if not base_charge_roll:
-            return None
+            return False
         individual_dice = list(getattr(charging_unit.round_state, "charge_dice", []) or [])
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll, target_unit=target_unit)
 

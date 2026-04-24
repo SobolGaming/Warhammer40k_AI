@@ -143,6 +143,9 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
   so the player sees an explicit `Make Roll` decision and resulting roll telemetry/events.
 - `utility.dice.get_roll(...)` now emits `REQUEST_DICE_ROLL` directly when a game context is active or an explicit game is passed,
   ensuring roll helpers still produce deterministic dice decisions and roll telemetry.
+- `DiceCollection.from_string(...)` accepts `D6`, `2D6`, additive/subtractive modifiers such as
+  `D6+1` and `2D6-3`, and legacy prefix modifiers such as `2 + D6`; invalid parser input raises
+  `ValueError` before any dice request is emitted.
 - `D3` request rolls now resolve using a physical `D6` with explicit mapping (`1-2 => 1`, `3-4 => 2`, `5-6 => 3`).
   Roll UI and telemetry expose both raw `D6` values and mapped `D3` results to avoid ambiguity.
 

@@ -12,6 +12,27 @@ logger = logging.getLogger(__name__)
 
 # get result of a random dice roll, defaults to D6
 
+_DICE_RE = re.compile(
+    r"""
+    ^\s*
+    (?P<count>\d*)\s*[dD]\s*(?P<faces>\d+)
+    (?:
+        \s*(?P<sign>[+-])\s*(?P<modifier>\d+)
+    )?
+    \s*$
+    """,
+    re.VERBOSE,
+)
+_PREFIX_MODIFIER_DICE_RE = re.compile(
+    r"""
+    ^\s*
+    (?P<modifier>\d+)\s*\+\s*
+    (?P<count>\d*)\s*[dD]\s*(?P<faces>\d+)
+    \s*$
+    """,
+    re.VERBOSE,
+)
+
 
 _SUPPRESS_GET_ROLL_REQUESTS: ContextVar[bool] = ContextVar("_SUPPRESS_GET_ROLL_REQUESTS", default=False)
 
@@ -196,28 +217,22 @@ class DiceCollection:
 
     @classmethod
     def from_string(cls, dice_string: str) -> 'DiceCollection':
-        d_collection = cls()
-
-        patterns = [
-            r"(\d+)?D(\d+)(?:\s*\+\s*(\d+))?",
-            r"(\d+)\s*\+\s*(\d+)?D(\d+)"
-        ]
-
-        for pattern in patterns:
-            match = re.match(pattern, dice_string, re.IGNORECASE)
-            if match:
-                groups = match.groups()
-                if len(groups) == 3:
-                    d_collection.number = int(groups[0] or 1)
-                    d_collection.die_faces = int(groups[1])
-                    d_collection.modifier = int(groups[2] or 0)
-                else:
-                    d_collection.number = int(groups[1] or 1)
-                    d_collection.die_faces = int(groups[2])
-                    d_collection.modifier = int(groups[0] or 0)
-                return d_collection
-
-        raise ValueError(f"Invalid dice string: {dice_string}")
+        raw = str(dice_string or "").strip()
+        match = _DICE_RE.match(raw)
+        prefix_match = None if match else _PREFIX_MODIFIER_DICE_RE.match(raw)
+        if match:
+            count = int(match.group("count") or 1)
+            faces = int(match.group("faces"))
+            modifier = int(match.group("modifier") or 0)
+            if match.group("sign") == "-":
+                modifier = -modifier
+            return cls(count, faces, modifier)
+        if prefix_match:
+            count = int(prefix_match.group("count") or 1)
+            faces = int(prefix_match.group("faces"))
+            modifier = int(prefix_match.group("modifier") or 0)
+            return cls(count, faces, modifier)
+        raise ValueError(f"Invalid dice string: {dice_string!r}")
 
     def roll(self) -> int:
         roll_value = sum(get_dice_roll(self.die_faces) for _ in range(self.number)) + self.modifier
@@ -240,7 +255,12 @@ class DiceCollection:
         return (self.number * (self.die_faces + 1) / 2) + self.modifier
 
     def __str__(self) -> str:
-        return f"{self.number}D{self.die_faces}{'+' + str(self.modifier) if self.modifier > 0 else ''}"
+        modifier = ""
+        if self.modifier > 0:
+            modifier = f"+{self.modifier}"
+        elif self.modifier < 0:
+            modifier = str(self.modifier)
+        return f"{self.number}D{self.die_faces}{modifier}"
 
     def __repr__(self) -> str:
         return f"DiceCollection({self.number}, {self.die_faces}, {self.modifier})"

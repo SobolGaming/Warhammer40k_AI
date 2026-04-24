@@ -23,6 +23,8 @@ and non-additive dice mechanics (e.g., 3D6 drop lowest).
 - Some effects filter negative modifiers (e.g., Internal Rivalries / Driven by Ultimate Rage).
 - Charge eligibility uses `Game.get_max_charge_distance(...)`, which includes modifiers and
   the configured charge dice spec.
+- `Game.attempt_charge(...)` returns an explicit `False` when a declared charge has no available
+  charge roll, rather than leaking a third `None` result into UI/network callers.
 - Re-roll prompts are handled by the reroll provider / unit abilities; the roll itself
   uses the configured charge dice spec.
 - Declared charge targets are now preserved separately from post-roll movement legality.
