@@ -219,6 +219,56 @@ class EmperorsChildrenStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._ec_sort_key)
 
+    def _ec_peerless_bladesmen_active(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_peerless_bladesmen", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _ec_peerless_terrifying_spectacle_candidates(self) -> list[Any]:
+        if not self._ec_peerless_bladesmen_active():
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        candidates: list[Any] = []
+        for root in self._ec_friendly_battlefield_units():
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if not bool(special_rules.get("ec_last_turn_charged", False)):
+                continue
+            if not bool(special_rules.get("ec_last_turn_destroyed_enemy_in_fight", False)):
+                continue
+            if game_map is None:
+                continue
+            has_nearby_enemy = False
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                enemy_root = self._ec_root(enemy)
+                if enemy_root is None or not self._ec_is_alive(enemy_root):
+                    continue
+                if not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                in_reserves = getattr(enemy_root, "is_in_reserves", None)
+                if callable(in_reserves) and bool(in_reserves()):
+                    continue
+                distance = self._ec_distance_between_units(root, enemy_root)
+                if distance is not None and float(distance) <= 6.0:
+                    has_nearby_enemy = True
+                    break
+            if has_nearby_enemy:
+                candidates.append(root)
+        return sorted(candidates, key=self._ec_sort_key)
+
+    def _ec_peerless_terrifying_spectacle_tool_action_context(self) -> dict[str, Any]:
+        return {"candidates": self._ec_peerless_terrifying_spectacle_candidates()}
+
+    def _ec_can_use_peerless_terrifying_spectacle_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        root = self._ec_root((kwargs or {}).get("unit") or (kwargs or {}).get("target_unit"))
+        if root is None:
+            return False
+        candidate_ids = {self._ec_sort_key(candidate) for candidate in self._ec_peerless_terrifying_spectacle_candidates()}
+        return self._ec_sort_key(root) in candidate_ids
+
     def _ec_friendly_battlefield_units(self) -> list[Any]:
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)

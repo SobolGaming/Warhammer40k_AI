@@ -573,6 +573,44 @@ class DeathGuardStratagemMixin:
         candidates.sort(key=self._dg_sort_key)
         return candidates
 
+    def _dg_mortarions_hammer_tool_action_context(self, stratagem_name: str, *, phase_name: str) -> dict[str, Any]:
+        name_u = str(stratagem_name or "").strip().upper()
+        phase_key = self._dg_phase_key(phase_name)
+        if name_u == "FONT OF FILTH":
+            if phase_key != "SHOOTING_PHASE":
+                return {"candidates": []}
+            return {
+                "candidates": self._dg_mortarions_hammer_vehicle_candidates(require_not_shot=True),
+            }
+        if name_u == "RELENTLESS GRIND":
+            if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                return {"candidates": []}
+            return {
+                "candidates": self._dg_mortarions_hammer_vehicle_candidates(
+                    require_not_selected_to_move=phase_key == "MOVEMENT_PHASE",
+                    require_not_selected_to_charge=phase_key == "CHARGE_PHASE",
+                ),
+            }
+        return {}
+
+    def _dg_can_use_mortarions_hammer_tool_action(self, stratagem_name: str, kwargs: dict[str, Any]) -> bool | None:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"FONT OF FILTH", "RELENTLESS GRIND"}:
+            return None
+        root = self._dg_root((kwargs or {}).get("unit") or (kwargs or {}).get("target_unit"))
+        if root is None:
+            return False
+        phase_key = self._dg_phase_key((kwargs or {}).get("phase_name") or self._current_phase_name)
+        if name_u == "FONT OF FILTH":
+            candidates = self._dg_mortarions_hammer_vehicle_candidates(require_not_shot=True)
+        else:
+            candidates = self._dg_mortarions_hammer_vehicle_candidates(
+                require_not_selected_to_move=phase_key == "MOVEMENT_PHASE",
+                require_not_selected_to_charge=phase_key == "CHARGE_PHASE",
+            )
+        candidate_ids = {self._dg_sort_key(candidate) for candidate in list(candidates or [])}
+        return self._dg_sort_key(root) in candidate_ids
+
     def _dg_tallyband_plague_legions_candidates(
         self,
         *,

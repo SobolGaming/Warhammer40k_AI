@@ -1002,6 +1002,16 @@ class ImperialKnightsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ik_sort_key)
 
+    def _imperial_knights_full_tilt_tool_action_context(self) -> dict[str, Any]:
+        return {"candidates": self._imperial_knights_full_tilt_candidates()}
+
+    def _imperial_knights_can_use_full_tilt_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        root = self._ik_root((kwargs or {}).get("unit") or (kwargs or {}).get("target_unit"))
+        if root is None:
+            return False
+        candidate_ids = {self._ik_sort_key(candidate) for candidate in self._imperial_knights_full_tilt_candidates()}
+        return self._ik_sort_key(root) in candidate_ids
+
     def _imperial_knights_run_them_through_candidates(self) -> list[Any]:
         if not self._is_valourstrike_lance():
             return []

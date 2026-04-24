@@ -3267,6 +3267,77 @@ class WorldEatersStratagemMixin:
                 break
         return unit, candidates, enemy_unit
 
+    def _cult_bloodthirsty_horde_candidates(self) -> list[Any]:
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        candidates: list[Any] = []
+        for root in self._cult_battlefield_candidates(
+            require_not_fought=True,
+            require_jakhals_or_goremongers=True,
+        ):
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                enemy_root = self._goretrack_root(enemy)
+                if enemy_root is None or not self._is_unit_alive(enemy_root):
+                    continue
+                if not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    candidates.append(root)
+                    break
+        return sorted(candidates, key=self._goretrack_sort_key)
+
+    def _cult_brazen_idol_choice_keys(self) -> list[str]:
+        mgr = self._get_world_eaters_mgr()
+        abilities = list(getattr(mgr, "get_idols_of_khorne_abilities", lambda: [])() or []) if mgr is not None else []
+        choice_keys = [
+            str(getattr(ability, "key", "") or "").strip().upper()
+            for ability in abilities
+            if str(getattr(ability, "key", "") or "").strip()
+        ]
+        return sorted(set(choice_keys))
+
+    def _cult_tool_action_context(self, stratagem_name: str, *, phase_name: str) -> dict[str, Any]:
+        name_u = str(stratagem_name or "").strip().upper()
+        phase_key = str(phase_name or "").strip().lower()
+        if name_u == "BLOODTHIRSTY HORDE":
+            if phase_key != "fight phase":
+                return {"candidates": []}
+            return {"candidates": self._cult_bloodthirsty_horde_candidates()}
+        if name_u == "BRAZEN IDOL":
+            if phase_key != "command phase" or bool(getattr(self, "_cult_brazen_idol_used", False)):
+                return {"candidates": [], "allowed_choice_keys": []}
+            return {
+                "candidates": self._cult_battlefield_candidates(require_monster_or_titanic=True),
+                "allowed_choice_keys": self._cult_brazen_idol_choice_keys(),
+            }
+        return {}
+
+    def _cult_can_use_tool_action(self, stratagem_name: str, kwargs: dict[str, Any]) -> bool | None:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"BLOODTHIRSTY HORDE", "BRAZEN IDOL"}:
+            return None
+        root = self._goretrack_root((kwargs or {}).get("unit") or (kwargs or {}).get("target_unit"))
+        if root is None:
+            return False
+        if name_u == "BLOODTHIRSTY HORDE":
+            candidates = self._cult_bloodthirsty_horde_candidates()
+            candidate_ids = {self._goretrack_sort_key(candidate) for candidate in list(candidates or [])}
+            return self._goretrack_sort_key(root) in candidate_ids
+        candidates = self._cult_battlefield_candidates(require_monster_or_titanic=True)
+        candidate_ids = {self._goretrack_sort_key(candidate) for candidate in list(candidates or [])}
+        if self._goretrack_sort_key(root) not in candidate_ids:
+            return False
+        idol_key = self._parse_idol_key(
+            (kwargs or {}).get("idol_key")
+            or (kwargs or {}).get("ability_key")
+            or (kwargs or {}).get("selected_idol")
+            or (kwargs or {}).get("idol")
+            or (kwargs or {}).get("choice_key")
+            or (kwargs or {}).get("override_key")
+        )
+        return bool(idol_key and idol_key in set(self._cult_brazen_idol_choice_keys()))
+
     def _cult_reaction_already_queued(
         self,
         *,
@@ -3843,6 +3914,8 @@ class WorldEatersStratagemMixin:
             or kwargs.get("ability_key")
             or kwargs.get("selected_idol")
             or kwargs.get("idol")
+            or kwargs.get("choice_key")
+            or kwargs.get("override_key")
         )
         if not idol_key:
             logger.error("ERROR: BRAZEN IDOL: missing or invalid idol selection")

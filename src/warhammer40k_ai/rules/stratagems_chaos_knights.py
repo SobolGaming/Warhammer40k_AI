@@ -3104,6 +3104,57 @@ class ChaosKnightsStratagemMixin:
         candidates.sort(key=self._chaos_knights_sort_key)
         return candidates
 
+    def _traitoris_a_long_leash_tool_action_context(self) -> dict[str, Any]:
+        source_candidates = self._traitoris_a_long_leash_source_candidates()
+        support_by_unit: dict[str, list[Any]] = {}
+        all_war_dogs: list[Any] = []
+        seen_war_dogs: set[str] = set()
+        for source in list(source_candidates or []):
+            source_id = self._chaos_knights_sort_key(source)
+            war_dogs = self._traitoris_a_long_leash_war_dog_candidates(source)
+            if source_id:
+                support_by_unit[source_id] = list(war_dogs)
+            for war_dog in list(war_dogs or []):
+                war_dog_id = self._chaos_knights_sort_key(war_dog)
+                if war_dog_id and war_dog_id in seen_war_dogs:
+                    continue
+                if war_dog_id:
+                    seen_war_dogs.add(war_dog_id)
+                all_war_dogs.append(war_dog)
+        return {
+            "candidates": source_candidates,
+            "source_candidates": source_candidates,
+            "support_candidates_by_unit": support_by_unit,
+            "war_dog_candidates": sorted(all_war_dogs, key=self._chaos_knights_sort_key),
+            "max_units": 2,
+            "secondary_optional": True,
+        }
+
+    def _traitoris_can_use_a_long_leash_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        source_root = self._chaos_knights_root((kwargs or {}).get("source_unit") or (kwargs or {}).get("unit") or (kwargs or {}).get("target_unit"))
+        if source_root is None:
+            return False
+        source_ids = {self._chaos_knights_sort_key(source) for source in self._traitoris_a_long_leash_source_candidates()}
+        if self._chaos_knights_sort_key(source_root) not in source_ids:
+            return False
+        selected_roots = self._traitoris_resolve_selected_units(
+            (kwargs or {}).get("selected_units")
+            or (kwargs or {}).get("target_units")
+            or (kwargs or {}).get("units")
+            or (kwargs or {}).get("selected_unit_ids")
+            or (kwargs or {}).get("war_dog_units")
+            or (kwargs or {}).get("war_dog_unit_ids")
+        )
+        if not selected_roots:
+            return False
+        if len(selected_roots) > 2:
+            return False
+        candidate_ids = {
+            self._chaos_knights_sort_key(candidate)
+            for candidate in self._traitoris_a_long_leash_war_dog_candidates(source_root)
+        }
+        return all(self._chaos_knights_sort_key(root) in candidate_ids for root in selected_roots)
+
     def _traitoris_imperious_advance_war_dog_candidates(self, *, phase_name: str) -> List[Any]:
         if not self._is_traitoris_lance_detachment():
             return []
@@ -4733,7 +4784,7 @@ class ChaosKnightsStratagemMixin:
         if not self._is_traitoris_lance_detachment() or self.game is None:
             return False
         merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
-        source_root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        source_root = self._chaos_knights_root(merged.get("source_unit") or merged.get("unit") or merged.get("target_unit"))
         if source_root is None:
             logger.error("ERROR: A LONG LEASH: no ABHORRENT source unit provided")
             return False

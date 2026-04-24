@@ -2746,6 +2746,9 @@ class Model:
             return True  # No condition means always applies
         
         condition_lower = condition.lower().strip()
+        condition_lower = condition_lower.lstrip("*•- ").rstrip(".").strip()
+        if condition_lower == "model only" or condition_lower.endswith(" model only"):
+            return True
         
         # Parse "against XXX attacks" pattern
         import re

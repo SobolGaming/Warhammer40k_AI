@@ -1141,6 +1141,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "DETONATOR",
     "EMP GRENADES",
     "ENCIRCLING THE PREY",
     "FAIL-SAFE DETONATOR",
@@ -3737,17 +3738,19 @@ class StratagemManager(
                 missing.append(key_text)
         if effect_params.get("choices") and _context_value_missing(choice_key):
             missing.append("choice_key")
+        support_optional = bool(kwargs.get("secondary_optional", effect_params.get("secondary_optional", False)))
         needs_support = (
             "source_and" in target_text
             or ("within_6" in target_text and "_and_" in target_text)
-            or bool(effect_params.get("requires_support_unit", False))
-            or bool(effect_params.get("support_unit_keyword") and not effect_params.get("secondary_optional", False))
-            or bool(effect_params.get("support_required_keywords_any") and not effect_params.get("secondary_optional", False))
-            or bool(effect_params.get("support_required_keywords_all") and not effect_params.get("secondary_optional", False))
-            or bool(effect_params.get("support_unit_keywords_all") and not effect_params.get("secondary_optional", False))
+            or bool(effect_params.get("requires_support_unit", False) and not support_optional)
+            or bool(effect_params.get("support_unit_keyword") and not support_optional)
+            or bool(effect_params.get("support_required_keywords_any") and not support_optional)
+            or bool(effect_params.get("support_required_keywords_all") and not support_optional)
+            or bool(effect_params.get("support_unit_keywords_all") and not support_optional)
             or bool(effect_params.get("paired_support_keywords_any"))
             or (
                 "_and_" in target_text
+                and not support_optional
                 and any(
                     token in target_text
                     for token in (
@@ -5217,6 +5220,62 @@ class StratagemManager(
         spec = parse_charge_melee_ap_stratagem(stratagem.name or "", stratagem.description or "")
         self._charge_melee_ap_cache[key] = spec
         return spec
+
+    def _charge_melee_ap_candidates(self, stratagem: Stratagem) -> List[Any]:
+        spec = self._get_charge_melee_ap_spec(stratagem)
+        if not spec:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in self._tool_action_friendly_units():
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = self._tool_action_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if _unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if not self._unit_matches_defensive_target_spec(root, spec):
+                continue
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u == "CRUEL BLADESMAN":
+                get_army = getattr(root, "get_parent_army", None)
+                army = get_army() if callable(get_army) else getattr(root, "parent_army", None)
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                    continue
+                if not bool(getattr(mgr, "is_emperors_children_unit", lambda _unit: False)(root)):
+                    continue
+            round_state = getattr(root, "round_state", None)
+            if spec.get("requires_charge") and not bool(getattr(round_state, "charged_this_round", False)):
+                continue
+            if spec.get("requires_not_fought") and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._tool_action_sort_key)
+        return candidates
+
+    def _can_use_charge_melee_ap_tool_action(self, stratagem: Stratagem, kwargs: Dict[str, Any]) -> Optional[bool]:
+        if not self._get_charge_melee_ap_spec(stratagem):
+            return None
+        root = kwargs.get("unit") or kwargs.get("target_unit")
+        get_root = getattr(root, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else root
+        if root is None:
+            return False
+        candidate_ids = {self._tool_action_sort_key(candidate) for candidate in self._charge_melee_ap_candidates(stratagem)}
+        return self._tool_action_sort_key(root) in candidate_ids
 
     def _get_consolidate_move_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
         if stratagem is None:
@@ -7101,6 +7160,55 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Movement phase, just after an ADEPTUS CUSTODES unit from your army Falls Back"
+            return result
+
+        if name_u in {
+            "CRUEL BLADESMAN",
+            "TERRIFYING SPECTACLE",
+            "FONT OF FILTH",
+            "RELENTLESS GRIND",
+            "FULL TILT",
+            "BLOODTHIRSTY HORDE",
+        }:
+            candidates = list(context.get("candidates") or [])
+            if target is not None:
+                if self.can_use(stratagem.name, **context):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            elif candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires valid target"
+            return result
+        if name_u == "BRAZEN IDOL":
+            candidates = list(context.get("candidates") or [])
+            choice_keys = self._tool_action_choice_keys(context)
+            if target is not None:
+                if self.can_use(stratagem.name, **context):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            elif candidates and choice_keys:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires valid target and Idol selection"
+            return result
+        if name_u == "A LONG LEASH":
+            source_candidates = list(context.get("source_candidates") or context.get("candidates") or [])
+            war_dogs = list(context.get("war_dog_candidates") or [])
+            if target is not None:
+                if self.can_use(stratagem.name, **context):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            elif source_candidates and war_dogs:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ABHORRENT source and WAR DOG target"
             return result
 
         # Last pass: delegate to stratagem conditions
@@ -22629,6 +22737,21 @@ class StratagemManager(
             return False
         if name_u == "VIOLENT CRESCENDO" and not self._ec_can_use_carnival_violent_crescendo_tool_action(kwargs):
             return False
+        charge_melee_ap_result = self._can_use_charge_melee_ap_tool_action(s, kwargs)
+        if charge_melee_ap_result is not None and not charge_melee_ap_result:
+            return False
+        if name_u == "TERRIFYING SPECTACLE" and not self._ec_can_use_peerless_terrifying_spectacle_tool_action(kwargs):
+            return False
+        dg_mortarions_result = self._dg_can_use_mortarions_hammer_tool_action(name_u, kwargs)
+        if dg_mortarions_result is not None and not dg_mortarions_result:
+            return False
+        if name_u == "A LONG LEASH" and not self._traitoris_can_use_a_long_leash_tool_action(kwargs):
+            return False
+        if name_u == "FULL TILT" and not self._imperial_knights_can_use_full_tilt_tool_action(kwargs):
+            return False
+        cult_result = self._cult_can_use_tool_action(name_u, kwargs)
+        if cult_result is not None and not cult_result:
+            return False
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
             necron_result = self._awakened_dynasty_can_use_undying_legions_tool_action(s, kwargs)
             if necron_result is not None:
@@ -31473,6 +31596,26 @@ class StratagemManager(
         tyranids_context = self._tyr_invasion_fleet_tool_action_context(name_u, phase_name=phase_label)
         if tyranids_context:
             return dict(tyranids_context)
+        if name_u == "CRUEL BLADESMAN":
+            if phase_label.lower() != "fight phase":
+                return {"candidates": []}
+            return {"candidates": self._charge_melee_ap_candidates(stratagem)}
+        if name_u == "TERRIFYING SPECTACLE":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            return dict(self._ec_peerless_terrifying_spectacle_tool_action_context() or {})
+        if name_u in {"FONT OF FILTH", "RELENTLESS GRIND"}:
+            return dict(self._dg_mortarions_hammer_tool_action_context(name_u, phase_name=phase_label) or {})
+        if name_u == "A LONG LEASH":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            return dict(self._traitoris_a_long_leash_tool_action_context() or {})
+        if name_u == "FULL TILT":
+            if phase_label.lower() != "movement phase":
+                return {"candidates": []}
+            return dict(self._imperial_knights_full_tilt_tool_action_context() or {})
+        if name_u in {"BLOODTHIRSTY HORDE", "BRAZEN IDOL"}:
+            return dict(self._cult_tool_action_context(name_u, phase_name=phase_label) or {})
         return {}
 
     # -------- UI helpers for non-disruptive prompts --------

@@ -135,6 +135,24 @@ def test_catalog_accepts_source_case_votann_faction_id(waha_helper: WahaHelper) 
 
 
 @pytest.mark.integration
+def test_chaos_space_marines_synthesis_accepts_heretic_astartes_datasheets(
+    waha_helper: WahaHelper,
+) -> None:
+    report = synthesize_rosters(
+        RosterSynthesisSeed(max_points=500, faction="Chaos Space Marines"),
+        waha_helper=waha_helper,
+        rules_bundle_id=RULES_BUNDLE_ID,
+        top_k=1,
+        random_seed=7,
+    )
+
+    assert report.candidates
+    assert report.best_candidate is not None
+    assert report.best_candidate.army_blueprint.faction == "Chaos Space Marines"
+    assert report.best_candidate.army_blueprint.unit_entries
+
+
+@pytest.mark.integration
 def test_khorne_daemonkin_musters_blood_legions_as_allies_not_primary_faction(
     waha_helper: WahaHelper,
 ) -> None:

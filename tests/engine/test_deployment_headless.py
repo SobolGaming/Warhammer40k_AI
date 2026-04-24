@@ -9,6 +9,7 @@ from shapely.geometry import Point
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.deployment import DeploymentDecisionMaker, DeploymentManager
 from warhammer40k_ai.engine.deployment_ranker import DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import GameSetupDeploymentReservesMixin
@@ -51,6 +52,20 @@ class _StubModel:
             float(self.model_base.z),
             float(self.model_base.facing),
         )
+
+
+class _NoCandidateDecisionMaker(DeploymentDecisionMaker):
+    def choose_deployment_zone(self, available_zones):
+        return available_zones[0]
+
+    def declare_reserves(self, player):
+        return {}
+
+    def choose_unit_deployment_position(self, unit, deployment_zone, already_deployed):
+        raise AssertionError("deployment fallback should not be called after an overridden builder returns no candidates")
+
+    def build_deployment_move_candidates(self, unit, deployment_zone, already_deployed, *, max_candidates: int = 8):
+        return []
 
 
 class _StubUnit:
@@ -125,6 +140,22 @@ class _ZoneStub:
 
     def contains_point(self, x: float, y: float) -> bool:
         return self.min_x <= float(x) <= self.max_x and self.min_y <= float(y) <= self.max_y
+
+
+def test_deployment_manager_returns_empty_when_overridden_builder_has_no_candidates() -> None:
+    manager = DeploymentManager.__new__(DeploymentManager)
+    unit = _StubUnit("crowded", must_start_in_reserves=False)
+    decision_maker = _NoCandidateDecisionMaker()
+
+    candidates = manager._build_deployment_move_candidates(
+        unit,
+        decision_maker=decision_maker,
+        deployment_zone={"bounds": [0.0, 0.0, 10.0, 10.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates == []
 
 
 def test_forced_only_reserve_policy_keeps_optional_units_deployed() -> None:

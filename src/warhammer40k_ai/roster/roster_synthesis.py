@@ -793,6 +793,8 @@ def _faction_keyword_aliases(faction_id: str, blueprint_faction: str) -> set[str
     fid = str(faction_id or "").strip().upper()
     if fid == "SM":
         aliases.update({"space marines", "adeptus astartes"})
+    elif fid == "CSM":
+        aliases.update({"chaos space marines", "heretic astartes"})
     elif fid == "AOI":
         aliases.update({"imperial agents", "agents of the imperium", "agents of imperium"})
     elif fid == "AE":
