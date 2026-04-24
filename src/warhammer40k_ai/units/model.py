@@ -118,15 +118,15 @@ class Model:
             fn = getattr(pu, "has_keyword_local", None)
             if callable(fn):
                 return bool(fn("Character"))
-        except Exception:
-            pass
+        except (AttributeError, TypeError, ValueError):
+            logger.debug("Model.is_character failed has_keyword_local lookup.", exc_info=True)
         try:
             if not hasattr(pu, "keywords"):
                 return bool(getattr(pu, "is_character", False))
             kws = getattr(pu, "keywords", []) or []
             return "character" in [str(k).lower() for k in kws]
-        except Exception:
-            pass
+        except (AttributeError, TypeError, ValueError):
+            logger.debug("Model.is_character failed keyword list fallback.", exc_info=True)
         return bool(getattr(pu, "is_character", False))
 
     def has_keyword(self, keyword: str) -> bool:
@@ -147,13 +147,13 @@ class Model:
         try:
             if kw in [k.lower() for k in (self.keywords or [])]:
                 return True
-        except Exception:
-            pass
+        except (AttributeError, TypeError):
+            logger.debug("Model.has_any_keyword failed keywords lookup.", exc_info=True)
         try:
             if kw in [k.lower() for k in (self.faction_keywords or [])]:
                 return True
-        except Exception:
-            pass
+        except (AttributeError, TypeError):
+            logger.debug("Model.has_any_keyword failed faction_keywords lookup.", exc_info=True)
         return False
 
     @property
@@ -2121,10 +2121,13 @@ class Model:
 
     def set_location(self, x: float, y: float, z: float, facing: float) -> None:
         """Set the location and facing of the model."""
+        old_loc = (self.model_base.x, self.model_base.y, self.model_base.z, self.model_base.facing)
         self.model_base.x = x
         self.model_base.y = y
         self.model_base.z = z
         self.model_base.set_facing(facing)
+        if old_loc != (x, y, z, facing):
+            self._bump_parent_map_state_generation("model_moved")
 
     def get_location(self) -> Tuple[float, float, float, float]:
         """Get the location and facing of the model."""
@@ -2591,7 +2594,10 @@ class Model:
 
     @wounds.setter
     def wounds(self, value: int) -> None:
+        old_wounds = getattr(self, "_wounds", None)
         self._wounds = value
+        if old_wounds != value:
+            self._bump_parent_map_state_generation("model_wounds_changed")
 
     @property
     def leadership(self) -> int:
@@ -2803,3 +2809,16 @@ class Model:
 
     def __hash__(self) -> int:
         return hash(self.id)
+
+    def _bump_parent_map_state_generation(self, reason: str) -> None:
+        unit = getattr(self, "parent_unit", None)
+        if unit is None:
+            return
+        get_army = getattr(unit, "get_parent_army", None)
+        army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
+        player = getattr(army, "player", None)
+        game = getattr(player, "game", None)
+        game_map = getattr(game, "map", None)
+        bump = getattr(game_map, "bump_state_generation", None)
+        if callable(bump):
+            bump(reason)

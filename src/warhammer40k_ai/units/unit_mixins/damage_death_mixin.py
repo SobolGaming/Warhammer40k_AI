@@ -842,6 +842,8 @@ class DamageDeathMixin:
             self.round_state.num_lost_models_this_round += 1
             self.models_lost.append(model)
         self.models.remove(model)
+        if game_map is not None and hasattr(game_map, "bump_state_generation"):
+            game_map.bump_state_generation("model_destroyed")
 
         # Invalidate ability cache since unit composition changed
         self._invalidate_ability_cache()

@@ -223,6 +223,10 @@ class PlayerResourceMixin:
             "source": source,
         }
         self.cp_history.append(entry)
+        game_map = getattr(game, "map", None) if game is not None else None
+        bump = getattr(game_map, "bump_state_generation", None)
+        if callable(bump):
+            bump("command_points_changed")
 
     def _cp_gain_source_counts_as_ability(
         self,

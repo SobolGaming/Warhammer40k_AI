@@ -78,6 +78,19 @@ shooting or deployment policy probe.
 
 ## Cache Invalidation
 
-`Map.state_generation` increments when terrain, objectives, or placed units change. Visibility
-cache keys include this generation, and map mutations clear per-map enemy-model collision caches,
-so generated geometry caches do not survive battlefield topology changes.
+`Map.state_generation` increments when battlefield topology changes **and** when runtime state
+changes that affect geometry/rules cache validity:
+
+- model movement (`Model.set_location`)
+- model wounds changing
+- model destruction/removal
+- phase transitions and battle-round advancement
+- command-point changes
+- active stratagem/rule effects that modify runtime legality
+
+Visibility cache keys include this generation, and map mutations clear per-map enemy-model
+collision caches, so generated geometry caches do not survive stale game-state transitions.
+
+Static datasheet parsing now uses immutable cached `ParsedDatasheetRecord` snapshots (composition,
+abilities, keywords, wargear, and options). `Unit` instances consume cloned copies from that cache
+and keep mutable battlefield state locally.

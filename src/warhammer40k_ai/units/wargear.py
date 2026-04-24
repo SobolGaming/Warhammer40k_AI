@@ -198,10 +198,21 @@ class WargearProfile:
                 # Choose the highest expected value (e.g. Sustained Hits 2 over Sustained Hits 1).
                 try:
                     return max(candidates, key=lambda c: float(c.stat_average()))
-                except Exception:
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Unable to rank keyword suffix counts for %r on %s; falling back to first candidate.",
+                        prefix,
+                        getattr(self, "name", "<unknown>"),
+                        exc_info=True,
+                    )
                     return candidates[0]
-        except Exception:
-            pass
+        except (AttributeError, TypeError, ValueError):
+            logger.warning(
+                "Failed to parse keyword suffix count for %r on %s; defaulting to 0.",
+                prefix,
+                getattr(self, "name", "<unknown>"),
+                exc_info=True,
+            )
         return Count.from_string("0")
 
     ###########################################################################

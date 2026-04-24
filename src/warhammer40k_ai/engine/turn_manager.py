@@ -47,6 +47,11 @@ def next_phase(game: "Game") -> None:
     current_phase_value = game.phase.value
     next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
     game.phase = BattleRoundPhases(next_phase_value)
+    try:
+        if hasattr(game.map, "bump_state_generation"):
+            game.map.bump_state_generation(f"phase_changed:{getattr(game.phase, 'name', game.phase)}")
+    except (AttributeError, TypeError):
+        logger.debug("Unable to bump map state generation for phase change.", exc_info=True)
     if next_phase_value != 0:
         try:
             refresh_csm_fn = getattr(game, "_refresh_csm_tyrannical_motivation_phase_state", None)
@@ -109,6 +114,11 @@ def next_phase(game: "Game") -> None:
             except Exception:
                 pass
             game.turn += 1
+            try:
+                if hasattr(game.map, "bump_state_generation"):
+                    game.map.bump_state_generation("battle_round_advanced")
+            except (AttributeError, TypeError):
+                logger.debug("Unable to bump map state generation for battle-round advance.", exc_info=True)
             game.battle_round_starting_player_index = game.current_player_index  # This player starts the next round
 
             # Reset round state for ALL units at the start of a new battle round

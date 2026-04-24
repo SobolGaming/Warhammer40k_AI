@@ -1,6 +1,7 @@
 import logging
 from typing import List, Tuple, Optional, Callable
 from typing import TYPE_CHECKING
+import hashlib
 from .model import Model
 from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
@@ -113,6 +114,11 @@ from .unit_mixins import (
     SelectedToShootMixin,
     LateGameplayMixin,
 )
+from .parsed_datasheet import (
+    ParsedDatasheetRecord,
+    get_cached_parsed_datasheet_record,
+    put_cached_parsed_datasheet_record,
+)
 from .unit_mixins import (
     rules_parsing_mixin as _rules_parsing_mixin,
     datasheet_wargear_mixin as _datasheet_wargear_mixin,
@@ -165,32 +171,122 @@ class Unit(
     SelectedToShootMixin,
     LateGameplayMixin,
 ):
+    @staticmethod
+    def _datasheet_cache_key(datasheet) -> str:
+        datasheet_id = str(getattr(datasheet, "id", "") or "").strip()
+        attrs = getattr(datasheet, "__dict__", None)
+        if isinstance(attrs, dict) and attrs:
+            payload_source = tuple((str(key), attrs[key]) for key in sorted(attrs))
+        else:
+            payload_source = (
+                ("name", getattr(datasheet, "name", "")),
+                ("faction_id", getattr(datasheet, "faction_id", "")),
+                ("datasheets_unit_composition", getattr(datasheet, "datasheets_unit_composition", [])),
+                ("datasheets_models_cost", getattr(datasheet, "datasheets_models_cost", [])),
+                ("datasheets_wargear", getattr(datasheet, "datasheets_wargear", [])),
+                ("datasheets_options", getattr(datasheet, "datasheets_options", [])),
+                ("datasheets_abilities", getattr(datasheet, "datasheets_abilities", [])),
+                ("keywords", getattr(datasheet, "keywords", [])),
+                ("faction_keywords", getattr(datasheet, "faction_keywords", [])),
+            )
+        payload = repr(payload_source)
+        digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()
+        if datasheet_id:
+            return f"id:{datasheet_id}:{digest}"
+        return f"repr:{digest}"
+
+    def _build_parsed_datasheet_record(
+        self,
+        datasheet,
+        *,
+        unit_composition: dict[str, tuple[int, int]],
+        unit_composition_options: list[dict[str, tuple[int, int]]],
+        unit_models_maximum: int | None,
+        models_cost: dict,
+        models_cost_addons: dict[str, int],
+    ) -> ParsedDatasheetRecord:
+        keywords = tuple(str(v or "") for v in list(getattr(datasheet, "keywords", []) or []))
+        faction_keywords = tuple(str(v or "") for v in list(getattr(datasheet, "faction_keywords", []) or []))
+        possible_wargear = list(getattr(self, "possible_wargear", []) or [])
+        possible_abilities = list(getattr(self, "possible_abilities", []) or [])
+        wargear_constraints = dict(getattr(self, "_wargear_constraints", {}) or {})
+        return ParsedDatasheetRecord.from_parsed(
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+            unit_composition=unit_composition,
+            unit_composition_options=unit_composition_options,
+            unit_models_maximum=unit_models_maximum,
+            models_cost=models_cost,
+            models_cost_addons=models_cost_addons,
+            possible_wargear=possible_wargear,
+            wargear_options=self.wargear_options,
+            possible_abilities=possible_abilities,
+            wargear_constraints=wargear_constraints,
+        )
+
     def __init__(self, datasheet, quantity=None, enhancement=None):
         self._id = str(uuid.uuid4())
         self._datasheet = datasheet
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
-        self.keywords = getattr(datasheet, 'keywords', [])  # Use getattr with a default value
-        self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
-        try:
-            self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise UnitInitializationError(
-                f"Failed to parse unit composition for {self.name!r}."
-            ) from exc
-        try:
-            self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
-        except Exception as e:
-            #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING MODELS COST: {e}")
-            self.models_cost = { "spawn_on_death": 0 }
-        self.models = self._create_models(datasheet, quantity)
-        self._initialize_horrors_state()
-
-        # Wargear Stuff
-        self.possible_wargear = self._parse_wargear(datasheet)
-        self.wargear_options = []
-        self._parse_wargear_options(datasheet) # this needs to here, sets above variable
-        self.possible_abilities = self._parse_abilities(datasheet)
+        cache_key = self._datasheet_cache_key(datasheet)
+        parsed_record = get_cached_parsed_datasheet_record(cache_key)
+        if parsed_record is None:
+            self.keywords = list(getattr(datasheet, 'keywords', []) or [])
+            self.faction_keywords = list(getattr(datasheet, 'faction_keywords', []) or [])
+            try:
+                self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
+                unit_composition = dict(self.unit_composition)
+                unit_composition_options = [
+                    dict(option)
+                    for option in list(getattr(self, "unit_composition_options", []) or [])
+                ]
+                unit_models_maximum = getattr(self, "unit_models_maximum", None)
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise UnitInitializationError(
+                    f"Failed to parse unit composition for {self.name!r}."
+                ) from exc
+            try:
+                self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
+            except (AttributeError, TypeError, ValueError):
+                self.models_cost = {"spawn_on_death": 0}
+                self.models_cost_addons = {}
+            models_cost = dict(getattr(self, "models_cost", {}) or {})
+            models_cost_addons = dict(getattr(self, "models_cost_addons", {}) or {})
+            self.possible_wargear = self._parse_wargear(datasheet)
+            self.models = self._create_models(datasheet, quantity)
+            self._initialize_horrors_state()
+            self.wargear_options = []
+            self._parse_wargear_options(datasheet)
+            self.possible_abilities = self._parse_abilities(datasheet)
+            parsed_record = self._build_parsed_datasheet_record(
+                datasheet,
+                unit_composition=unit_composition,
+                unit_composition_options=unit_composition_options,
+                unit_models_maximum=unit_models_maximum,
+                models_cost=models_cost,
+                models_cost_addons=models_cost_addons,
+            )
+            put_cached_parsed_datasheet_record(cache_key, parsed_record)
+        else:
+            self.keywords = list(parsed_record.keywords)
+            self.faction_keywords = list(parsed_record.faction_keywords)
+            try:
+                self.unit_composition = parsed_record.clone_unit_composition()
+                self.unit_composition_options = parsed_record.clone_unit_composition_options()
+                self.unit_models_maximum = parsed_record.unit_models_maximum
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise UnitInitializationError(
+                    f"Failed to parse unit composition for {self.name!r}."
+                ) from exc
+            self.models_cost = parsed_record.clone_models_cost()
+            self.models_cost_addons = parsed_record.clone_models_cost_addons()
+            self.possible_wargear = parsed_record.clone_possible_wargear()
+            self.models = self._create_models(datasheet, quantity)
+            self._initialize_horrors_state()
+            self.wargear_options = parsed_record.clone_wargear_options()
+            self._wargear_constraints = parsed_record.clone_wargear_constraints()
+            self.possible_abilities = parsed_record.clone_possible_abilities()
         self.add_wargear()
 
         # Attachments
