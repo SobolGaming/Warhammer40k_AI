@@ -1,7 +1,9 @@
-import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
-
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class _StubUnit:
     def __init__(self, name, army, *, toughness=5, keywords=None, faction_keywords=None, is_transport=False, is_character=False):
@@ -264,7 +266,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         player = Player("P1", PlayerControl.LOCAL, army)
         player.command_points = 0
-        player.set_game(SimpleNamespace(turn=1))
+        player.set_game(install_decision_request_support(SimpleNamespace(turn=1)))
 
         strat = Stratagem(
             id="core-hi",
@@ -817,7 +819,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         army = Army.with_detachment("Emperor's Children", detachment_type="Court of the Phoenician")
         army.faction_id = "EC"
         player = Player("P1", PlayerControl.LOCAL, army=army)
-        player.game = SimpleNamespace(turn=1)
+        player.game = install_decision_request_support(SimpleNamespace(turn=1))
 
         fulgrim_unit = _StubUnit("Fulgrim", army, keywords=["FULGRIM"])
         strat = Stratagem(

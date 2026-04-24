@@ -131,7 +131,7 @@ def resolve_or_reuse_confirmation_choice(
     game: object,
     request: DecisionRequest,
     *,
-    fallback_choice: Optional[bool] = None,
+    preselected_choice: Optional[bool] = None,
     player_id: Optional[str] = None,
 ) -> Tuple[Optional[bool], Any]:
     if request is None:
@@ -139,10 +139,10 @@ def resolve_or_reuse_confirmation_choice(
     option_id = None
     result_payload = None
     if decision_request_is_pending(game, request):
-        if fallback_choice is None:
+        if preselected_choice is None:
             return None, None
-        option_id = option_id_for_boolean_choice(request, bool(fallback_choice))
-        result_payload = {"choice": bool(fallback_choice)}
+        option_id = option_id_for_boolean_choice(request, bool(preselected_choice))
+        result_payload = {"choice": bool(preselected_choice)}
     else:
         options = list(getattr(request, "options", []) or [])
         if options:
@@ -157,8 +157,13 @@ def resolve_or_reuse_confirmation_choice(
         player_id=player_id,
     )
     choice = choice_from_decision_value(value)
-    if choice is None and fallback_choice is not None and apply_result is not None and getattr(apply_result, "ok", False):
-        choice = bool(fallback_choice)
+    if (
+        choice is None
+        and preselected_choice is not None
+        and apply_result is not None
+        and getattr(apply_result, "ok", False)
+    ):
+        choice = bool(preselected_choice)
     return choice, apply_result
 
 
@@ -167,7 +172,7 @@ def resolve_or_reuse_payload_choice(
     request: DecisionRequest,
     *,
     payload_key: str,
-    fallback_value: Any = None,
+    preselected_value: Any = None,
     use_skip_when_pending: bool = False,
     player_id: Optional[str] = None,
 ) -> Tuple[Any, Any]:
@@ -176,9 +181,9 @@ def resolve_or_reuse_payload_choice(
     option_id = None
     result_payload = None
     if decision_request_is_pending(game, request):
-        if fallback_value is not None:
-            option_id = option_id_for_payload_value(request, payload_key, fallback_value)
-            result_payload = {str(payload_key or ""): fallback_value}
+        if preselected_value is not None:
+            option_id = option_id_for_payload_value(request, payload_key, preselected_value)
+            result_payload = {str(payload_key or ""): preselected_value}
         elif use_skip_when_pending:
             option_id = option_id_for_skip_action(request)
     else:

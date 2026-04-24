@@ -8862,6 +8862,7 @@ class WargearProfile:
             if note not in attack_result.attacks_special_modifiers:
                 attack_result.attacks_special_modifiers.append(note)
         # Enemy psychic auras that make Psychic weapons hazardous (e.g., Discordant Disruption).
+        enemy_psychic_hazardous = False
         try:
             from ..utility.aura_effects import get_enemy_aura_psychic_hazardous
             enemy_hazardous, enemy_reasons = get_enemy_aura_psychic_hazardous(
@@ -8870,6 +8871,7 @@ class WargearProfile:
                 game_map=game_map,
             )
             if enemy_hazardous:
+                enemy_psychic_hazardous = True
                 hazardous_active = True
                 hazardous_source_count += 1
                 try:
@@ -8930,20 +8932,30 @@ class WargearProfile:
                 # Eligible models: alive models in the (attached) unit equipped with >=1 Hazardous weapon
                 root_sr = getattr(root_unit, "special_rules", None)
                 pain_hazardous = isinstance(root_sr, dict) and root_sr.get("pain_melee_hazardous_non_character")
-                try:
-                    from ..utility.hazardous import collect_hazardous_eligible_models
-                    eligible = collect_hazardous_eligible_models(
-                        root_unit,
-                        include_melee_non_character=bool(pain_hazardous),
-                        include_melee_all=bool(target_melee_hazardous or bonus_melee_hazardous),
-                        include_ranged_all=bool(target_ranged_hazardous or attacker_ranged_hazardous or bonus_ranged_hazardous),
-                    )
-                except Exception:
-                    eligible = []
-
-                # If somehow no eligible model found, fall back to the attacker model.
+                from ..utility.hazardous import collect_hazardous_eligible_models
+                eligible = collect_hazardous_eligible_models(
+                    root_unit,
+                    include_melee_non_character=bool(pain_hazardous),
+                    include_melee_all=bool(target_melee_hazardous or bonus_melee_hazardous),
+                    include_ranged_all=bool(target_ranged_hazardous or attacker_ranged_hazardous or bonus_ranged_hazardous),
+                )
+                profile_source_makes_attacker_eligible = bool(
+                    self.is_hazardous()
+                    or attacker_ranged_hazardous
+                    or target_ranged_hazardous
+                    or bonus_ranged_hazardous
+                    or target_melee_hazardous
+                    or bonus_melee_hazardous
+                    or possessed_blade_hazardous
+                    or dread_mob_manual_hazardous
+                    or enemy_psychic_hazardous
+                )
+                if profile_source_makes_attacker_eligible and attacker not in eligible:
+                    eligible.append(attacker)
                 if not eligible:
-                    eligible = [attacker]
+                    raise RuntimeError(
+                        f"Hazardous failure for {getattr(attacker, 'name', 'model')} has no eligible model"
+                    )
                 elif possessed_blade_hazardous:
                     attacker_entity_id = str(get_entity_id(attacker) or "")
                     seen_ids = {str(get_entity_id(model) or "") for model in list(eligible or [])}
@@ -9981,37 +9993,31 @@ class WargearProfile:
                     if hasattr(game, "request_decision"):
                         game.request_decision(req)
 
-                    fallback_choice = None
+                    local_choice = None
                     if is_human and callable(provider):
-                        try:
-                            provider_decision = provider(
-                                player=player,
-                                model=target_model,
-                                ability_name=ability_name,
-                                ability_key=ability_key,
-                                attacker=attacker,
-                                target=target,
-                                weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
-                                or getattr(self, "name", "Weapon"),
-                            )
-                        except Exception:
-                            provider_decision = None
-                        fallback_choice = str(provider_decision or "").strip().lower() in ("use", "yes", "true")
+                        provider_decision = provider(
+                            player=player,
+                            model=target_model,
+                            ability_name=ability_name,
+                            ability_key=ability_key,
+                            attacker=attacker,
+                            target=target,
+                            weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                            or getattr(self, "name", "Weapon"),
+                        )
+                        local_choice = str(provider_decision or "").strip().lower() in ("use", "yes", "true")
                     else:
-                        try:
-                            fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                            if callable(fallback_fn):
-                                fallback_choice = fallback_fn(
-                                    "MODEL_ALLOCATED_DAMAGE_ZERO",
-                                    {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
-                                )
-                        except Exception:
-                            fallback_choice = None
+                        local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                        if callable(local_choice_fn):
+                            local_choice = local_choice_fn(
+                                "MODEL_ALLOCATED_DAMAGE_ZERO",
+                                {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
+                            )
 
                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                         game,
                         req,
-                        fallback_choice=fallback_choice,
+                        preselected_choice=local_choice,
                         player_id=getattr(player, "id", None),
                     )
                     require_synchronous_decision_resolution(
@@ -10139,14 +10145,14 @@ class WargearProfile:
                 )
                 if game is not None and hasattr(game, "request_decision"):
                     game.request_decision(request)
-                fallback_choice = None
-                fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                if callable(fallback_fn):
-                    fallback_choice = fallback_fn("DESTINED_BY_FATE", dict(ctx))
+                local_choice = None
+                local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                if callable(local_choice_fn):
+                    local_choice = local_choice_fn("DESTINED_BY_FATE", dict(ctx))
                 resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                     game,
                     request,
-                    fallback_choice=fallback_choice,
+                    preselected_choice=local_choice,
                     player_id=getattr(player, "id", None),
                 )
                 require_synchronous_decision_resolution(
@@ -14561,7 +14567,7 @@ class WargearProfile:
                                     game_local,
                                     request,
                                     payload_key="choice",
-                                    fallback_value=fallback_choice,
+                                    preselected_value=fallback_choice,
                                     player_id=getattr(player, "id", None) if player is not None else None,
                                 )
                                 if apply_result is None or not getattr(apply_result, "ok", False):
@@ -21826,7 +21832,7 @@ class WargearProfile:
                                 game_local,
                                 request,
                                 payload_key="choice",
-                                fallback_value=fallback_choice,
+                                preselected_value=fallback_choice,
                                 player_id=getattr(player, "id", None) if player is not None else None,
                             )
                             if apply_result is None or not getattr(apply_result, "ok", False):
@@ -25980,24 +25986,21 @@ class WargearProfile:
                                     if hasattr(game, "request_decision"):
                                         game.request_decision(request)
                                     use_now = None
-                                    try:
-                                        fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                                        if callable(fallback_fn):
-                                            use_now = fallback_fn(
-                                                "DISTRACTION_GROT",
-                                                {
-                                                    "ability_name": source,
-                                                    "unit_id": root_id,
-                                                    "usage_key": usage_key,
-                                                    "invuln": int(inv_value),
-                                                },
-                                            )
-                                    except Exception:
-                                        use_now = None
+                                    local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                                    if callable(local_choice_fn):
+                                        use_now = local_choice_fn(
+                                            "DISTRACTION_GROT",
+                                            {
+                                                "ability_name": source,
+                                                "unit_id": root_id,
+                                                "usage_key": usage_key,
+                                                "invuln": int(inv_value),
+                                            },
+                                        )
                                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                                         game,
                                         request,
-                                        fallback_choice=use_now,
+                                        preselected_choice=use_now,
                                         player_id=getattr(player, "id", None),
                                     )
                                     require_synchronous_decision_resolution(
@@ -26734,19 +26737,16 @@ class WargearProfile:
                                     if hasattr(game, "request_decision"):
                                         game.request_decision(request)
                                     use_now = None
-                                    try:
-                                        fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                                        if callable(fallback_fn):
-                                            use_now = fallback_fn(
-                                                "FIRST_FAILED_SAVE_DAMAGE_ZERO",
-                                                {"ability_name": source, "usage_key": usage_key},
-                                            )
-                                    except Exception:
-                                        use_now = None
+                                    local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                                    if callable(local_choice_fn):
+                                        use_now = local_choice_fn(
+                                            "FIRST_FAILED_SAVE_DAMAGE_ZERO",
+                                            {"ability_name": source, "usage_key": usage_key},
+                                        )
                                     resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                                         game,
                                         request,
-                                        fallback_choice=use_now,
+                                        preselected_choice=use_now,
                                         player_id=getattr(player, "id", None),
                                     )
                                     require_synchronous_decision_resolution(

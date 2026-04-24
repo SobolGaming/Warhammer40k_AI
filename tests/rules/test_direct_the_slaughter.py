@@ -2,6 +2,8 @@
 from unittest.mock import patch
 from types import SimpleNamespace
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class TestDirectTheSlaughter(unittest.TestCase):
     def _mk_player_with_dts(self, *, battle_round: int = 1):
@@ -35,7 +37,7 @@ class TestDirectTheSlaughter(unittest.TestCase):
         dts_unit = _Unit(has_dts=True)
         army.units = [dts_unit]
         p = Player("P1", control=PlayerControl.LOCAL, army=army)
-        game = SimpleNamespace(turn=battle_round, map=SimpleNamespace())
+        game = install_decision_request_support(SimpleNamespace(turn=battle_round, map=SimpleNamespace()))
         p.set_game(game)
         p.command_points = 1
         return p, _TargetUnit()
@@ -100,4 +102,3 @@ class TestDirectTheSlaughter(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

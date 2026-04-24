@@ -1058,8 +1058,21 @@ class FightPhaseManager:
         if skip_initial_move and move_steps:
             move_steps = move_steps[1:]
         if not move_steps:
-            self._resolve_target_declaration_attacks(fighting_unit, target_declarations)
-            self._complete_attacks_for_unit(fighting_unit, current_player, opponent_player)
+            self._pending_fight_sequence = {
+                "mode": "activation",
+                "fighting_unit_id": str(get_entity_id(fighting_unit) or ""),
+                "target_declarations": self._serialize_target_declarations(target_declarations),
+                "step": "declare_melee_weapons",
+            }
+            request = self._queue_declare_melee_weapons_request(
+                fighting_unit=fighting_unit,
+                target_declarations=target_declarations,
+            )
+            if request is None:
+                self.on_melee_weapons_declared(
+                    unit_id=str(get_entity_id(fighting_unit) or ""),
+                    weapon_declarations=[],
+                )
             return
         self._pending_fight_sequence = {
             "mode": "activation",
@@ -1084,11 +1097,23 @@ class FightPhaseManager:
         logger.info(f"Starting UI-based fight sequence with declarations: {fighting_unit.name}")
         move_steps = list(fight_phase_move_steps(self.game))
         if not move_steps:
-            self._resolve_target_declaration_attacks(fighting_unit, target_declarations)
-            self._complete_attacks_for_unit(fighting_unit, current_player, opponent_player)
+            self._pending_fight_sequence = {
+                "mode": "activation",
+                "fighting_unit_id": str(get_entity_id(fighting_unit) or ""),
+                "target_declarations": self._serialize_target_declarations(target_declarations),
+                "step": "declare_melee_weapons",
+            }
+            request = self._queue_declare_melee_weapons_request(
+                fighting_unit=fighting_unit,
+                target_declarations=target_declarations,
+            )
+            if request is None:
+                self.on_melee_weapons_declared(
+                    unit_id=str(get_entity_id(fighting_unit) or ""),
+                    weapon_declarations=[],
+                )
             return
         first_step = move_steps[0]
-        final_step = move_steps[-1]
 
         # Step 1: Pile-in using Individual Model Movement Dialog
         def on_pile_in_complete(completed: bool):
@@ -1100,89 +1125,23 @@ class FightPhaseManager:
             except Exception:
                 pass
 
-            # Step 2: Make melee attacks based on declarations
-            logger.info(f"{fighting_unit.name} makes melee attacks")
-            auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
-            hits_by_target_total = {}
-            hit_models_by_target_total = {}
-            hit_models_by_target_psychic_total = {}
-            killing_models_by_target_total = {}
-            for target_unit, attacking_models in target_declarations.items():
-                logger.info(f"  {len(attacking_models)} models attacking {target_unit.name}")
-                decls = list(auto_decls or [])
-                if attacking_models:
-                    decls = [d for d in decls if d.get("model") in attacking_models]
-                attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
-                for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
-                    hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
-                for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
-                    if unit not in hit_models_by_target_total:
-                        hit_models_by_target_total[unit] = set()
-                    try:
-                        hit_models_by_target_total[unit].update(set(models or []))
-                    except Exception:
-                        pass
-                for unit, models in (attack_summary.get("hit_models_by_target_psychic") or {}).items():
-                    if unit not in hit_models_by_target_psychic_total:
-                        hit_models_by_target_psychic_total[unit] = set()
-                    try:
-                        hit_models_by_target_psychic_total[unit].update(set(models or []))
-                    except Exception:
-                        pass
-                for unit, models in (attack_summary.get("killing_models_by_target") or {}).items():
-                    if unit not in killing_models_by_target_total:
-                        killing_models_by_target_total[unit] = set()
-                    try:
-                        killing_models_by_target_total[unit].update(set(models or []))
-                    except Exception:
-                        pass
-            if hits_by_target_total:
-                self.game._maybe_trigger_daemonic_poisons(
-                    attacker_unit=self._as_attached_view(fighting_unit),
-                    hits_by_target=hits_by_target_total,
-                    hit_models_by_target=hit_models_by_target_total,
-                    phase="fight",
+            self._current_player = current_player
+            self._opponent_player = opponent_player
+            self._pending_fight_sequence = {
+                "mode": "activation",
+                "fighting_unit_id": str(get_entity_id(fighting_unit) or ""),
+                "target_declarations": self._serialize_target_declarations(target_declarations),
+                "step": "declare_melee_weapons",
+            }
+            request = self._queue_declare_melee_weapons_request(
+                fighting_unit=fighting_unit,
+                target_declarations=target_declarations,
+            )
+            if request is None:
+                self.on_melee_weapons_declared(
+                    unit_id=str(get_entity_id(fighting_unit) or ""),
+                    weapon_declarations=[],
                 )
-            try:
-                setattr(
-                    fighting_unit,
-                    "_gift_of_chaos_hit_models_by_target_psychic",
-                    dict(hit_models_by_target_psychic_total or {}),
-                )
-            except Exception:
-                pass
-            try:
-                if hasattr(self.game, "event_system"):
-                    self.game.event_system.publish(
-                        "fight_attacks_resolved",
-                        unit=fighting_unit,
-                        target_unit=None,
-                        hits_by_target=hits_by_target_total,
-                        hit_models_by_target=hit_models_by_target_total,
-                        hit_models_by_target_psychic=hit_models_by_target_psychic_total,
-                        killing_models_by_target=killing_models_by_target_total,
-                    )
-            except Exception:
-                pass
-
-            if self.scheduler is not None and self.scheduler.uses_consolidate_batch():
-                self._complete_attacks_for_unit(fighting_unit, current_player, opponent_player)
-                return
-
-            # Step 3: Consolidate using Individual Model Movement Dialog
-            def on_consolidate_complete(completed: bool):
-                logger.info(f"{fighting_unit.name} consolidate completed: {completed}")
-
-                try:
-                    if completed and hasattr(fighting_unit, "consolidate_towards_enemies"):
-                        fighting_unit.consolidate_towards_enemies(getattr(self.game, "map", None))
-                except Exception:
-                    pass
-
-                self._complete_attacks_for_unit(fighting_unit, current_player, opponent_player)
-
-            # Show consolidate dialog
-            ui_callback(final_step, fighting_unit, on_consolidate_complete)
 
         # Show pile-in dialog
         ui_callback(first_step, fighting_unit, on_pile_in_complete)
@@ -1236,8 +1195,8 @@ class FightPhaseManager:
         """Check if the fight phase is complete."""
         return self.current_stage == FightStage.COMPLETE
 
-    def _auto_select_melee_weapons(self, unit: Unit) -> List[dict]:
-        """Fallback melee selection: one primary + all extra-attacks profiles per model."""
+    def _default_melee_weapon_declarations(self, unit: Unit) -> List[dict]:
+        """Default declaration payload: one primary + all extra-attacks profiles per model."""
         declarations: list[dict] = []
         if unit is None:
             return declarations

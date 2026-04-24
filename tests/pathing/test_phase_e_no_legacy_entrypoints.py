@@ -38,3 +38,20 @@ def test_phase_e_src_has_no_legacy_pathing_entrypoint_imports_or_calls() -> None
                     violations.append(f"{file_path}:{node.lineno} calls .{func.attr}")
 
     assert not violations, "Legacy pathing entrypoints detected:\n" + "\n".join(violations)
+
+
+def test_phase_e_pathing_validation_does_not_import_utility_calcs() -> None:
+    validation_path = _repo_root() / "src" / "warhammer40k_ai" / "pathing" / "validation.py"
+    source = validation_path.read_text(encoding="utf-8-sig")
+    tree = ast.parse(source, filename=str(validation_path))
+
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.endswith("utility.calcs"):
+            violations.append(f"{validation_path}:{node.lineno} imports {node.module}")
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.endswith("utility.calcs"):
+                    violations.append(f"{validation_path}:{node.lineno} imports {alias.name}")
+
+    assert not violations, "pathing.validation must own validation logic:\n" + "\n".join(violations)

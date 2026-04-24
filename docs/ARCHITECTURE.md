@@ -113,7 +113,7 @@ Current headless flow:
 - `scripts/run_headless_self_play.py` drives setup and phase progression through the same authoritative runtime/driver shell as local interactive play, then drains pending decisions until the game ends or the configured phase-step cap is reached.
 - Driver-managed mission selection stays in `AuthoritativeSessionDriver`; the generic `HeadlessPolicyDecisionController` skips `CHOOSE_MISSION` rather than trying to resolve setup-owned mission/layout requests itself.
 - Deployment is not a special UI-only path in headless mode. Zone selection, reserve declarations, next-unit selection, and placement are resolved by `DeterministicDeploymentDecisionMaker`, optionally with a deployment ranking model.
-- Other non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates, synthesizes deterministic `DECLARE_SHOTS` payloads when the request exposes only a coarse Confirm/Skip choice, allows Hazardous profiles, chooses one profile per multi-profile ranged weapon by best hit-probability x wound-probability against legal targets, prevalidates `MOVE_UNIT` payloads before auto-submission, and falls back to bounded reserves-arrival brute force before any skip fallback when no legal placement candidate survives masking.
+- Other non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates, synthesizes deterministic `DECLARE_SHOTS` payloads when the request exposes only a coarse Confirm/Skip choice, allows Hazardous profiles, chooses one profile per multi-profile ranged weapon by best hit-probability x wound-probability against legal targets, prevalidates `MOVE_UNIT` payloads before auto-submission, and tries bounded reserves-arrival brute force before any deterministic skip when no legal placement candidate survives masking.
 - Time-budgeted solvers feed candidate metadata into `DecisionRecord`s, so headless runs capture candidates, masks, chosen actions, wall-clock timing, and fallback mode for replay/training use.
 - Headless deployment reuses generated placement payloads during validation so candidate generation does not run the same formation search twice for one anchor.
 - Line-of-sight visibility contexts and legacy shooting-mixin LOS checks are cached by model positions, unit visibility flags, blocker positions, hidden/preview state, and terrain signatures. These caches are diagnostic/performance-only and do not change DecisionRecord or replay semantics.
@@ -301,7 +301,15 @@ Key responsibilities:
 - **Stable identity and registries** (`entity_ids.py`, `entity_registry.py`) so references are by ID (not object pointers).
 - **Deterministic ordering** utilities (`ordering.py`) to keep replay/network sync stable.
 - **Modifiers, auras, and calculation helpers** (`modifiers.py`, `aura_*`, `calcs.py`).
-- **Rules-adjacent mechanics utilities**: movement validation, range/distance helpers, damage allocation helpers.
+- **Rules-adjacent mechanics utilities**: range/distance helpers and damage allocation helpers.
+
+Movement/path validation is owned by `src/warhammer40k_ai/pathing/validation.py`,
+not by `utility.calcs`, so pathing entrypoints fail fast when required map context
+is missing and do not route through legacy utility validation.
+State-transfer helpers also fail explicitly: unit splitting raises `UnitSplitError`
+when cloning, detaching, map/army insertion, registry rebuild, or subscriber refresh
+cannot complete, and Hazardous helper utilities raise `TypeError`/`ValueError` for
+malformed profile, wargear, model, or roll inputs.
 
 Why `utility/` is included here: these are not “domain entities” themselves, but they define the *rules of representation* (IDs, ordering, fixed-point usage) that make the domain model safe for networking and persistence.
 
@@ -324,7 +332,7 @@ Responsibilities:
 - UI must not originate decision requests. UI modules consume already-issued pending requests via engine bridge readers (`require_pending_decision_request(...)`) and only submit deterministic decision commands/results.
 - `engine/ui_decision_bridge.py` is intentionally reader-only for UI call sites (no UI-facing request construction/enqueue helpers).
 - Mission selection request issuance is engine-authoritative: when setup advances into `SELECT_MISSION_OBJECTIVES`, the engine queues `CHOOSE_MISSION` and UI only consumes that pending request.
-- Fight-phase target selection, melee weapon declaration, and melee target allocation follow the same authoritative request path in UI and headless modes; UI dialogs only override pending request payloads, they do not run a separate local fight sequencer.
+- Fight-phase target selection, melee weapon declaration, and melee target allocation follow the same authoritative request path in UI and headless modes; UI dialogs only override pending request payloads, they do not run a separate local fight sequencer. Melee attack resolution requires `DECLARE_MELEE_WEAPONS` declarations; deterministic default declarations may be exposed as request payload data, but are not applied implicitly by resolution code.
 - project authoritative game updates through shared UI/HUD orchestration (`session_presentation_orchestrator.py`)
 - rebuild HUD state from authoritative presentation transcripts (`presentation_state_hydrator.py`)
 - avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable
@@ -351,6 +359,9 @@ Purpose: **load structured game data** (datasheets, wargear, keywords, etc.) int
   and known mojibake forms). `WahaHelper.clean_data()` applies the same normalization at
   runtime for generated or intermediate text, and matching code should use canonical text keys
   for user-authored/imported army-list names.
+- `WahaHelper` raises `WahaDataError` for a missing data directory, missing mandatory JSON
+  files, invalid JSON, malformed rows, and enhancement parsing failures. Data snapshots are
+  cached only after a complete successful load.
 
 ### Tests (`tests/`)
 

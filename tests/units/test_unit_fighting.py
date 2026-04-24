@@ -348,8 +348,8 @@ class TestFightPhaseManager(unittest.TestCase):
         self.assertEqual(stage_info["active_player"], "Player 2")
         self.assertFalse(stage_info["is_complete"])
 
-    def test_auto_select_melee_weapons_respects_extra_attacks(self):
-        """Fallback melee selection should pick 1 primary + all EXTRA ATTACKS weapons per model."""
+    def test_default_melee_weapon_declarations_respects_extra_attacks(self):
+        """Default melee declaration payload should pick 1 primary + all EXTRA ATTACKS weapons per model."""
         from types import SimpleNamespace
 
         class _Profile:
@@ -376,7 +376,7 @@ class TestFightPhaseManager(unittest.TestCase):
         model = SimpleNamespace(is_alive=True, name="Model", wargear=[wargear])
         unit = SimpleNamespace(name="Unit", models=[model])
 
-        decls = self.manager._auto_select_melee_weapons(unit)
+        decls = self.manager._default_melee_weapon_declarations(unit)
         # Expect: exactly 2 declarations (1 primary + 1 extra)
         self.assertEqual(len(decls), 2)
         chosen_profiles = [d["weapon_profile"] for d in decls]

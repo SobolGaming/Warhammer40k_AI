@@ -1,3 +1,3 @@
-from .waha_helper import WahaHelper
+from .waha_helper import WahaDataError, WahaHelper
 
-__all__ = ['WahaHelper']
+__all__ = ['WahaHelper', 'WahaDataError']

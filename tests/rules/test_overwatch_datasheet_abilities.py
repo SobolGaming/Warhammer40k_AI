@@ -6,6 +6,8 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class TestOverwatchDatasheetAbilities(unittest.TestCase):
     def _make_unit(self, name, army, *, abilities=None):
@@ -98,7 +100,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         unit = self._make_unit("Hexmark Destroyer", army, abilities=[ability])
 
         player = Player("Necron", PlayerControl.REMOTE, army=army)
-        game = SimpleNamespace(turn=1, current_player_index=0, get_current_player=lambda: player, players=[player])
+        game = install_decision_request_support(
+            SimpleNamespace(turn=1, current_player_index=0, get_current_player=lambda: player, players=[player])
+        )
         player.game = game
         player.stratagems = SimpleNamespace(_used_this_turn={})
 
@@ -163,7 +167,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         unit = self._make_unit("Sporocyst", army, abilities=[ability])
 
         player = Player("Tyranid", PlayerControl.REMOTE, army=army)
-        game = SimpleNamespace(turn=3, current_player_index=0, get_current_player=lambda: player, players=[player])
+        game = install_decision_request_support(
+            SimpleNamespace(turn=3, current_player_index=0, get_current_player=lambda: player, players=[player])
+        )
         player.game = game
         player.stratagems = SimpleNamespace(_used_this_turn={"OVERWATCH": True})
 
@@ -199,7 +205,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         unit = self._make_unit("Hammerfall Bunker", army, abilities=[ability])
 
         player = Player("Astartes", PlayerControl.REMOTE, army=army)
-        game = SimpleNamespace(turn=1, current_player_index=0, get_current_player=lambda: player, players=[player])
+        game = install_decision_request_support(
+            SimpleNamespace(turn=1, current_player_index=0, get_current_player=lambda: player, players=[player])
+        )
         player.game = game
         player.stratagems = SimpleNamespace(_used_this_turn={"OVERWATCH": True})
 

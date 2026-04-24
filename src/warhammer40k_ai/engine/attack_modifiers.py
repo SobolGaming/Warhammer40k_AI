@@ -177,7 +177,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                             game,
                             request,
                             payload_key="choice",
-                            fallback_value=fallback_choice,
+                            preselected_value=fallback_choice,
                             player_id=getattr(player, "id", None) if player is not None else None,
                         )
                     elif fallback_choice is not None:
@@ -234,7 +234,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                             game,
                             request,
                             payload_key="choice",
-                            fallback_value=fallback_choice,
+                            preselected_value=fallback_choice,
                             player_id=getattr(player, "id", None) if player is not None else None,
                         )
                     elif fallback_choice is not None:
@@ -295,7 +295,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                             game,
                             request,
                             payload_key="choice",
-                            fallback_value=fallback_choice,
+                            preselected_value=fallback_choice,
                             player_id=getattr(player, "id", None) if player is not None else None,
                         )
                     elif fallback_choice is not None:
@@ -352,7 +352,7 @@ def _ensure_hit_modifier_choices(manager, game: object, seq: AttackSequence) -> 
                             game,
                             request,
                             payload_key="choice",
-                            fallback_value=fallback_choice,
+                            preselected_value=fallback_choice,
                             player_id=getattr(player, "id", None) if player is not None else None,
                         )
                     elif fallback_choice is not None:
@@ -482,7 +482,7 @@ def _ensure_wound_modifier_choices(manager, game: object, seq: AttackSequence) -
                 game,
                 request,
                 payload_key="choice",
-                fallback_value=fallback_choice,
+                preselected_value=fallback_choice,
                 player_id=getattr(player, "id", None) if player is not None else None,
             )
         elif fallback_choice is not None:

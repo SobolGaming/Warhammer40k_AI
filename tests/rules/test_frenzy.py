@@ -288,12 +288,8 @@ class TestFrenzy(unittest.TestCase):
         game._frenzy_can_fight_target = lambda *_a, **_k: True
         game.resolve_frenzy_melee_attacks = lambda *_a, **_k: None
 
-        with patch(
-            "warhammer40k_ai.engine.fight_phase_manager.FightPhaseManager._auto_select_melee_weapons",
-            return_value=[{"model": object(), "weapon_profile": object()}],
-        ):
-            ok = game._execute_frenzy_fight(defender, attacker, phase_name="FIGHT_PHASE")
-        self.assertTrue(ok)
+        with self.assertRaisesRegex(RuntimeError, "DECLARE_MELEE_WEAPONS"):
+            game._execute_frenzy_fight(defender, attacker, phase_name="FIGHT_PHASE")
         self.assertFalse(bool(getattr(defender.round_state, "fought_this_phase", False)))
 
     def test_has_frenzy_filters_non_helbrute_text(self):

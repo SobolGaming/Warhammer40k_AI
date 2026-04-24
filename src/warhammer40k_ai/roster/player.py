@@ -639,16 +639,11 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         words = [part for part in str(key or "").strip().split("_") if part]
         return " ".join(word.capitalize() for word in words)
 
-    def _resolve_optional_ability_fallback_choice(self, key: str, context: dict) -> bool | None:
-        """Consume one-shot overrides or synchronous hooks without emitting a request."""
+    def _resolve_optional_ability_local_choice(self, key: str, context: dict) -> bool | None:
+        """Consume one-shot overrides or synchronous hooks for an emitted request."""
         k = (key or "").strip().upper()
         if not k:
             return None
-        current_impl = getattr(self, "_should_use_optional_ability", None)
-        default_impl = getattr(type(self), "_should_use_optional_ability", None)
-        current_func = getattr(current_impl, "__func__", current_impl)
-        if callable(current_impl) and current_func is not default_impl:
-            return bool(current_impl(k, dict(context or {}, _fallback_only=True)))
         overrides = getattr(self, "_next_optional_decisions", None)
         if isinstance(overrides, dict) and k in overrides:
             return bool(overrides.pop(k))
@@ -2859,13 +2854,13 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
         if not k:
             return False
         ctx = dict(context or {})
-        if bool(ctx.pop("_fallback_only", False)):
-            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
 
         game = getattr(self, "game", None)
         request_fn = getattr(game, "request_decision", None) if game is not None else None
         if not callable(request_fn):
-            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
+            raise RuntimeError(
+                f"Optional decision '{k}' requires game.request_decision before local choices can be consumed."
+            )
 
         from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from ..engine.decisions import DecisionOption, DecisionRequest
@@ -2887,19 +2882,16 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
             ],
             context=ctx,
         )
-        try:
-            request_fn(request)
-        except ValueError:
-            return bool(self._resolve_optional_ability_fallback_choice(k, ctx))
+        request_fn(request)
 
-        fallback_choice = None
+        local_choice = None
         if decision_request_is_pending(game, request):
-            fallback_choice = self._resolve_optional_ability_fallback_choice(k, ctx)
+            local_choice = self._resolve_optional_ability_local_choice(k, ctx)
 
         resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
             game,
             request,
-            fallback_choice=fallback_choice,
+            preselected_choice=local_choice,
             player_id=getattr(self, "id", None),
         )
         if decision_request_is_pending(game, request):

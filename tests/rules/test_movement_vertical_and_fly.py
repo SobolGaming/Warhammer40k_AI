@@ -133,7 +133,7 @@ def test_fly_move_over_enemy_models():
         model=fly_unit.models[0],
         target=target,
         movement_type=MovementType.MOVE,
-        max_distance=6.0,
+        max_distance=5.2,
         game_map=game_map,
     )
     assert not blocked_big["valid"], "FLY infantry should be blocked by enemy VEHICLE models"

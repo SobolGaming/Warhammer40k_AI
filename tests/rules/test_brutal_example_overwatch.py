@@ -13,6 +13,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.rules.stratagems import StratagemManager
 from warhammer40k_ai.utility.decision_utils import resolve_decision_value
 from warhammer40k_ai.utility.entity_ids import get_entity_id
+from tests.decision_request_helpers import install_decision_request_support
 
 
 class TestBrutalExampleOverwatch(unittest.TestCase):
@@ -108,7 +109,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         bodyguard, _leader = self._setup_units_with_brutal_example(army)
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
-        game = SimpleNamespace(turn=1, get_current_player=lambda: player, players=[player])
+        game = install_decision_request_support(SimpleNamespace(turn=1, get_current_player=lambda: player, players=[player]))
         player.game = game
         player.stratagems = SimpleNamespace(_used_this_turn={})
 

@@ -842,6 +842,21 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(ctx.get("ability_key"), "TEST_OPTIONAL")
         self.assertTrue(bool(ctx.get("optional")))
 
+    def test_optional_ability_without_request_decision_raises(self):
+        army = Army.with_detachment("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+        player = Player("Player", PlayerControl.LOCAL, army=army)
+        player.game = SimpleNamespace()
+
+        with self.assertRaisesRegex(RuntimeError, "requires game.request_decision"):
+            player._should_use_optional_ability(
+                "TEST_OPTIONAL",
+                {
+                    "ability_name": "Test Optional",
+                    "message": "Use Test Optional?",
+                },
+            )
+
     def test_optional_decision_hook_resolves_existing_confirmation_request(self):
         army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"

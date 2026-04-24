@@ -172,14 +172,14 @@ class DamageDeathMixin:
                     provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
                 else:
                     provider_choice = None
-                    fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                    if callable(fallback_fn):
-                        provider_choice = fallback_fn("WATCHER_IN_THE_DARK", context)
+                    local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                    if callable(local_choice_fn):
+                        provider_choice = local_choice_fn("WATCHER_IN_THE_DARK", context)
 
                 resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                     game,
                     request,
-                    fallback_choice=provider_choice,
+                    preselected_choice=provider_choice,
                     player_id=getattr(player, "id", None),
                 )
                 require_synchronous_decision_resolution(
@@ -391,14 +391,14 @@ class DamageDeathMixin:
                 provider_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
             else:
                 provider_choice = None
-                fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-                if callable(fallback_fn):
-                    provider_choice = fallback_fn("NULL_NODULES", context)
+                local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+                if callable(local_choice_fn):
+                    provider_choice = local_choice_fn("NULL_NODULES", context)
 
             resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                 game,
                 request,
-                fallback_choice=provider_choice,
+                preselected_choice=provider_choice,
                 player_id=getattr(player, "id", None),
             )
             require_synchronous_decision_resolution(
@@ -581,17 +581,17 @@ class DamageDeathMixin:
                 mid_expr=str(rule.get("mid_expr", "") or ""),
                 high_expr=str(rule.get("high_expr", "") or ""),
             )
-            fallback_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
+            local_choice = str(decision or "").strip().lower() in ("use", "yes", "true")
         else:
-            fallback_choice = None
-            fallback_fn = getattr(player, "_resolve_optional_ability_fallback_choice", None)
-            if callable(fallback_fn):
-                fallback_choice = fallback_fn("DEATH_VISION_OF_SANGUINIUS", context)
+            local_choice = None
+            local_choice_fn = getattr(player, "_resolve_optional_ability_local_choice", None)
+            if callable(local_choice_fn):
+                local_choice = local_choice_fn("DEATH_VISION_OF_SANGUINIUS", context)
 
         resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
             game,
             request,
-            fallback_choice=fallback_choice,
+            preselected_choice=local_choice,
             player_id=getattr(player, "id", None),
         )
         require_synchronous_decision_resolution(

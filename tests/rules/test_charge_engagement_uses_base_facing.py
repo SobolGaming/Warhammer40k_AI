@@ -1,5 +1,6 @@
 import unittest
 import math
+from types import SimpleNamespace
 
 
 class TestChargeEngagementUsesBaseFacing(unittest.TestCase):
@@ -52,13 +53,14 @@ class TestChargeEngagementUsesBaseFacing(unittest.TestCase):
         moving_model.parent_unit = moving_unit
 
         target_unit = _TargetUnit(_EnemyModel())
+        game_map = SimpleNamespace(width=100.0, height=100.0, units=[moving_unit, target_unit])
 
         res = is_position_valid_unified_detailed(
             position=(10.0, 10.0, 0.0),
             model=moving_model,
             collision_trees={},
             validation_rules={"must_end_in_engagement_range": True, "target_unit": target_unit},
-            game_map=None,
+            game_map=game_map,
             is_final_position=True,
         )
         self.assertTrue(bool(res.get("valid", False)), res.get("reason"))
@@ -66,5 +68,4 @@ class TestChargeEngagementUsesBaseFacing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

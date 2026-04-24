@@ -299,7 +299,7 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
         army1.add_unit(boyz)
         army1.add_unit(stompa)
         _place_unit(game, boyz, 10.0, 10.0)
-        _place_unit(game, stompa, 14.0, 10.0)
+        _place_unit(game, stompa, 30.0, 10.0)
 
         game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
         game.current_player_index = 0

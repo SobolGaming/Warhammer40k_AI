@@ -1,6 +1,8 @@
 ﻿import unittest
 from types import SimpleNamespace
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class _MockDatasheet:
     def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
@@ -53,7 +55,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
                 pass
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
         player.command_points = 1
-        player.set_game(SimpleNamespace(turn=battle_round))
+        player.set_game(install_decision_request_support(SimpleNamespace(turn=battle_round)))
         return player
 
     def _ability_text(self):

@@ -234,7 +234,7 @@ def test_aegis_emplacement_platform_rejects_non_infantry_top_surface():
     tank = _make_unit(
         "Leman Russ",
         datasheet_id="am-vehicle-1",
-        base_size="Hull",
+        base_size="32mm",
         keywords=["VEHICLE"],
         faction_keywords=["ASTRA MILITARUM"],
         save="2",

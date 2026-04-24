@@ -122,6 +122,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         game.add_player(player)
 
         unit = SimpleNamespace(
+            _id="bearer-unit",
             name="Bearer Unit",
             special_rules={},
             deployed=True,

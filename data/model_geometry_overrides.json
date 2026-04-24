@@ -234,6 +234,86 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "sagitaur_hull"
+      },
+      "000001188": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000001178": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000002715": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000002727": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "rhino_chassis"
+      },
+      "000000392": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000066": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000004139": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "land_raider_hull"
+      },
+      "000000698": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000003986": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hydra_chimera_hull"
+      },
+      "000000721": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "taurox_hull"
+      },
+      "000003953": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "taurox_hull"
+      },
+      "000001158": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "invader_atv_hull"
+      },
+      "000000026": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "trukk_hull"
+      },
+      "000000046": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "stompa_hull"
+      },
+      "000000435": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "tidewall_hull"
+      },
+      "000000436": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "tidewall_hull"
       }
     }
   },
@@ -346,7 +426,57 @@
     "000002602": "sagitaur_hull",
     "sagitaur_hull": "sagitaur_hull",
     "sagitaur hull": "sagitaur_hull",
-    "sagitaur": "sagitaur_hull"
+    "sagitaur": "sagitaur_hull",
+
+    "000001188": "rhino_chassis",
+    "000001178": "rhino_chassis",
+    "000002715": "rhino_chassis",
+    "000002727": "rhino_chassis",
+    "vindicator": "rhino_chassis",
+    "vindicator laser destroyer": "rhino_chassis",
+    "predator destructor": "rhino_chassis",
+    "whirlwind": "rhino_chassis",
+
+    "000000392": "land_raider_hull",
+    "000000066": "land_raider_hull",
+    "000004139": "land_raider_hull",
+    "land raider crusader": "land_raider_hull",
+
+    "000000698": "hydra_chimera_hull",
+    "000003986": "hydra_chimera_hull",
+    "manticore": "hydra_chimera_hull",
+
+    "000000721": "taurox_hull",
+    "000003953": "taurox_hull",
+    "taurox_hull": "taurox_hull",
+    "taurox hull": "taurox_hull",
+    "taurox prime": "taurox_hull",
+
+    "000001158": "invader_atv_hull",
+    "invader_atv_hull": "invader_atv_hull",
+    "invader atv hull": "invader_atv_hull",
+    "invader atv": "invader_atv_hull",
+
+    "000000026": "trukk_hull",
+    "trukk_hull": "trukk_hull",
+    "trukk hull": "trukk_hull",
+    "trukk": "trukk_hull",
+
+    "000000046": "stompa_hull",
+    "stompa_hull": "stompa_hull",
+    "stompa hull": "stompa_hull",
+    "stompa": "stompa_hull",
+
+    "000000435": "tidewall_hull",
+    "000000436": "tidewall_hull",
+    "tau_test_shieldline": "tidewall_hull",
+    "tidewall_hull": "tidewall_hull",
+    "tidewall hull": "tidewall_hull",
+    "tidewall droneport": "tidewall_hull",
+    "tidewall shieldline": "tidewall_hull",
+
+    "bike squad::attack bike": "attack_bike_hull",
+    "attack bike": "attack_bike_hull"
   },
   "units": {
     "aegis_defence_line": {
@@ -532,6 +662,60 @@
       "width_mm": 68.0,
       "height_mm": 70.0,
       "notes": "Bounding rectangle proxy for Sagitaur. Official Base Size Guide classifies this datasheet as Hull; dimensions use community tabletop model measurement: 10.5cm long, 6.8cm wide, 7cm high. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/LeaguesofVotann/comments/1ae778q/"
+    },
+    "taurox_hull": {
+      "display_name": "Taurox Prime",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 105.0,
+      "width_mm": 70.0,
+      "height_mm": 75.0,
+      "notes": "Explicit hull override for Taurox Prime datasheets that publish `Use model` base size. Dimensions are a conservative Taurox chassis bounding box."
+    },
+    "invader_atv_hull": {
+      "display_name": "Invader ATV",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 95.0,
+      "width_mm": 70.0,
+      "height_mm": 60.0,
+      "notes": "Explicit hull override for Invader ATV `Use model` base-size data."
+    },
+    "trukk_hull": {
+      "display_name": "Ork Trukk",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 130.0,
+      "width_mm": 75.0,
+      "height_mm": 80.0,
+      "notes": "Explicit hull override for Trukk `Use model` base-size data."
+    },
+    "stompa_hull": {
+      "display_name": "Stompa",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 180.0,
+      "width_mm": 150.0,
+      "height_mm": 230.0,
+      "notes": "Explicit hull override for Stompa `Use model` base-size data."
+    },
+    "tidewall_hull": {
+      "display_name": "Tidewall fortification",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 150.0,
+      "width_mm": 105.0,
+      "height_mm": 60.0,
+      "notes": "Explicit hull override for Tidewall Droneport/Shieldline `Use model` base-size data and local Tidewall test doubles."
+    },
+    "attack_bike_hull": {
+      "display_name": "Attack Bike",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 75.0,
+      "width_mm": 50.0,
+      "height_mm": 45.0,
+      "notes": "Explicit geometry for legacy Attack Bike profile-selection tests that materialize a `Use model` attack-bike profile."
     },
     "goliath_rockgrinder_hull": {
       "display_name": "Goliath Rockgrinder",

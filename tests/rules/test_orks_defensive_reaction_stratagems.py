@@ -197,9 +197,9 @@ def test_orks_defensive_candidate_helper_dedupes_and_sorts():
         enemy_units=[enemy],
     )
     _deploy_unit(game, speed_freeks, 10.0, 10.0)
-    _deploy_unit(game, trukk, 12.0, 10.0)
-    _deploy_unit(game, ineligible, 14.0, 10.0)
-    _deploy_unit(game, enemy, 20.0, 10.0)
+    _deploy_unit(game, trukk, 22.0, 10.0)
+    _deploy_unit(game, ineligible, 34.0, 10.0)
+    _deploy_unit(game, enemy, 44.0, 10.0)
     _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=1, active_player=enemy_player)
 
     mgr = ork_player.stratagems

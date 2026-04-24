@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class _MockDatasheet:
     def __init__(self, name, *, faction_name="Genestealer Cults", abilities=None, keywords=None, faction_keywords=None):
@@ -64,13 +66,13 @@ def _make_players(active_units, opponent_units, *, turn=1):
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
     p2 = Player("P2", control=PlayerControl.LOCAL, army=army2)
-    game = SimpleNamespace(
+    game = install_decision_request_support(SimpleNamespace(
         turn=turn,
         current_player_index=0,
         players=[p1, p2],
         phase=BattleRoundPhases.SHOOTING_PHASE,
         map=None,
-    )
+    ))
     game.get_current_player = lambda: p1
     p1.set_game(game)
     p2.set_game(game)

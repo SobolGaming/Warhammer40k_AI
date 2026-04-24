@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.decision_request_helpers import install_decision_request_support
+
 from shapely.geometry import Polygon
 
 from warhammer40k_ai.roster.army import Army
@@ -96,7 +98,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         army.units = [bodyguard, leader]
 
         player = Player("Daemon", PlayerControl.REMOTE, army=army)
-        player.game = SimpleNamespace(turn=1, players=[player])
+        player.game = install_decision_request_support(SimpleNamespace(turn=1, players=[player]))
         player.stratagems = SimpleNamespace(_used_this_turn={})
 
         strat = SimpleNamespace(name="Heroic Intervention", cp_cost=1)

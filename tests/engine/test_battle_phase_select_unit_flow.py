@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_ALLOCATE_MELEE_TARGETS,
     DECISION_CONFIRM_YES_NO,
@@ -23,6 +25,7 @@ from warhammer40k_ai.engine.decision_requests import (
 from warhammer40k_ai.engine.decision_handlers.shooting import _apply_declare_shots
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.fight_phase_manager import FightStage
+from warhammer40k_ai.engine.fight_resolution import _resolve_target_declaration_attacks
 from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
 
 
@@ -671,6 +674,14 @@ def test_build_allocate_melee_targets_request_defaults_to_first_eligible_target(
     payload = request.options[0].payload
     assert payload["attack_declarations"][0]["model_id"] == unit.models[0].id
     assert payload["attack_declarations"][0]["target_unit_id"] == enemy.id
+
+
+def test_melee_resolution_requires_weapon_declarations() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit()
+    manager = SimpleNamespace()
+
+    with pytest.raises(RuntimeError, match="DECLARE_MELEE_WEAPONS"):
+        _resolve_target_declaration_attacks(manager, unit, {enemy: [unit.models[0]]}, weapon_declarations=None)
 
 
 def test_fight_melee_weapon_followup_calls_fight_manager() -> None:

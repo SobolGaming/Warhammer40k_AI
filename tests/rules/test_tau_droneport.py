@@ -10,7 +10,8 @@ class _MockDatasheet:
     ) -> None:
         self.name = name
         self.faction_data = {"name": "Test Faction"}
-        self.keywords = ["FORTIFICATION"] if "Tidewall" in name else ["INFANTRY"]
+        is_tidewall = "Tidewall" in name
+        self.keywords = ["FORTIFICATION"] if is_tidewall else ["INFANTRY"]
         self.faction_keywords = ["T'AU EMPIRE"] if "Tidewall" in name else ["ENEMY"]
         self.datasheets_unit_composition = [{"description": f"1 {name}"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": "100"}]
@@ -22,7 +23,7 @@ class _MockDatasheet:
                 "W": "10",
                 "Ld": "7",
                 "OC": "0",
-                "base_size": "Use model",
+                "base_size": "Use model" if is_tidewall else "32mm",
                 "inv_sv": "-",
                 "inv_sv_descr": "",
             }

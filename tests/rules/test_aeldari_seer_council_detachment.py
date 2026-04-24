@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class TestAeldariSeerCouncilDetachment(unittest.TestCase):
     def _make_player(self):
@@ -15,12 +17,12 @@ class TestAeldariSeerCouncilDetachment(unittest.TestCase):
 
     @staticmethod
     def _attach_game(player, *, turn: int = 1):
-        game = SimpleNamespace(
+        game = install_decision_request_support(SimpleNamespace(
             turn=int(turn),
             current_player_index=0,
             players=[player],
             get_current_player=lambda: player,
-        )
+        ))
         player.game = game
         return game
 

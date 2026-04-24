@@ -519,16 +519,12 @@ def _process_hazardous_failures(manager, game: object, seq: AttackSequence) -> b
 
     game_map = getattr(game, "map", None)
     while remaining > 0:
-        eligible = []
-        try:
-            eligible = collect_hazardous_eligible_models(
-                root_unit,
-                include_melee_non_character=pain_hazardous,
-                include_melee_all=target_melee_all,
-                include_ranged_all=target_ranged_all,
-            )
-        except (AttributeError, TypeError, ValueError):
-            eligible = []
+        eligible = collect_hazardous_eligible_models(
+            root_unit,
+            include_melee_non_character=pain_hazardous,
+            include_melee_all=target_melee_all,
+            include_ranged_all=target_ranged_all,
+        )
         if not eligible:
             for model_id in list(seq.model_ids or []):
                 model = manager._resolve_model(game, model_id)

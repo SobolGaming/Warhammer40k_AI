@@ -20,13 +20,13 @@ This note tracks the specific decision-parity regressions audited in this pass.
   flows.
 - [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:9939)
   now uses the resolved `DECISION_CONFIRM_YES_NO` result for the audited optional
-  wargear flows instead of reconstructing the answer from controller fallbacks
+  wargear flows instead of reconstructing the answer from controller-side values
   (`MODEL_ALLOCATED_DAMAGE_ZERO`, `DESTINED_BY_FATE`, `DISTRACTION_GROT`, and
   `FIRST_FAILED_SAVE_DAMAGE_ZERO`).
 - [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:9243)
   now reuses already-settled multi-option decision payloads for
   `DECISION_USE_LEADING_UNMODIFIED_SIX`, `DECISION_USE_MODEL_UNMODIFIED_SIX`,
-  and `DECISION_CHOOSE_ASPECT` instead of reconstructing a post-request fallback
+  and `DECISION_CHOOSE_ASPECT` instead of reconstructing a post-request
   answer from `_next_optional_selections`.
 - [acts_of_faith.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/acts_of_faith.py:658)
   now emits and settles `DECISION_USE_MIRACLE_DIE` before consuming a Miracle
@@ -37,10 +37,10 @@ This note tracks the specific decision-parity regressions audited in this pass.
   Miracle-dice-pool discard abilities (`Chaplet of Sacrifice`, `Righteous
   Repugnance`, `Rapturous Blows`, `Righteous Rage`, `Manual of Saint Griselda`,
   and `Psalm of Righteous Judgement`) instead of jumping straight from
-  `miracle_dice_pool_reroll_provider` or the deterministic fallback heuristic
+  `miracle_dice_pool_reroll_provider` or a deterministic local heuristic
   to the final discard effect.
 - [acts_of_faith.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/acts_of_faith.py:1561)
-  now consults local/provider Miracle-pool discard fallbacks one queued request
+  now consults local/provider Miracle-pool discard answers one queued request
   at a time. The provider path no longer tries to pre-answer later
   `DECISION_USE_MIRACLE_DIE` prompts before those later requests exist, which
   keeps local discard flows aligned with the same sequential request chain used
@@ -51,11 +51,13 @@ This note tracks the specific decision-parity regressions audited in this pass.
   `DECISION_CHOOSE_SKILL_MODIFIER_IGNORES` for local/provider modifier-ignore
   choices instead of writing directly into attack state.
 - [player.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/roster/player.py:2843)
-  now routes legacy `_should_use_optional_ability(...)` yes/no choices through an
-  emitted `DECISION_CONFIRM_YES_NO`, while keeping a separate fallback-only helper
-  for already-queued request flows. Preview checks also now treat attached decision
-  controllers as reachable choice paths, so optional discounts are not hidden from
-  headless/controller-driven play before the actual request is issued.
+  now requires `_should_use_optional_ability(...)` yes/no choices to emit
+  `DECISION_CONFIRM_YES_NO` before any local hook or one-shot value is consumed.
+  If the owning game object does not provide `request_decision`, optional ability
+  resolution raises `RuntimeError` instead of producing an implicit answer.
+  Preview checks also now treat attached decision controllers as reachable choice
+  paths, so optional discounts are not hidden from headless/controller-driven play
+  before the actual request is issued.
 - [player.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/roster/player.py:2843),
   [game_ui.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/UI/game_ui.py:3427),
   and [reactive_decisions_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/engine/game_mixins/reactive_decisions_mixin.py:266)
@@ -86,7 +88,7 @@ This note tracks the specific decision-parity regressions audited in this pass.
   [stratagems_world_eaters.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/stratagems_world_eaters.py:2617),
   and the audited reroll paths in [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:5768)
   now route local, remote, and headless reroll prompts through the same emitted
-  `DECISION_REROLL_ROLL` request. The reroll wrapper preserves the old fallback
+  `DECISION_REROLL_ROLL` request. The reroll wrapper preserves the old local
   strategies where they existed (`below average` attack/damage rolls and the
   reactive `<= 3` distance heuristics) instead of skipping the reroll decision
   entirely in non-local flows.
@@ -160,11 +162,11 @@ This note tracks the specific decision-parity regressions audited in this pass.
   [cabal_of_sorcerers.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/cabal_of_sorcerers.py:899),
   [damage_death_mixin.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/unit_mixins/damage_death_mixin.py:179),
   and the audited confirmation paths in [wargear.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/units/wargear.py:9999)
-  now preserve tri-state fallback ownership when a `DECISION_CONFIRM_YES_NO`
+  now preserve tri-state request ownership when a `DECISION_CONFIRM_YES_NO`
   has already been queued. External synchronous rule callers no longer coerce a
-  missing fallback owner into `False`; if they emit one of these confirmations
-  without a synchronous controller, provider, or override attached, they now
-  fail explicitly and leave the queued request pending instead of silently
+  missing synchronous owner into `False`; if they emit one of these confirmations
+  without a controller, provider, or explicit preselected value attached, they
+  now fail explicitly and leave the queued request pending instead of silently
   auto-skipping it.
 - [map.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/battlefield/map.py:172),
   [acts_of_faith.py](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/src/warhammer40k_ai/rules/acts_of_faith.py:666),

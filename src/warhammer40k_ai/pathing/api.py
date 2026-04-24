@@ -29,9 +29,9 @@ from .validation import (
 from .world_snapshot import build_world_snapshot
 
 
-def _tuple_target(target: tuple[float, float, float] | tuple[float, float], fallback_z: float) -> tuple[float, float, float]:
+def _tuple_target(target: tuple[float, float, float] | tuple[float, float], default_z: float) -> tuple[float, float, float]:
     if len(target) == 2:
-        return (float(target[0]), float(target[1]), float(fallback_z))
+        return (float(target[0]), float(target[1]), float(default_z))
     return (float(target[0]), float(target[1]), float(target[2]))
 
 
@@ -431,6 +431,7 @@ def _validate_final_pose_with_context(
         dict(validation_rules),
         query.game_map,
         is_final_position=True,
+        facing=float(pose.facing),
     )
     if not bool(legacy_validation.get("valid", False)):
         return ValidationResult(
@@ -532,6 +533,7 @@ def _validate_transit_path_with_context(
                 dict(validation_rules),
                 query.game_map,
                 is_final_position=False,
+                facing=model_facing,
             )
             if not bool(validation.get("valid", False)):
                 return ValidationResult(
@@ -555,6 +557,8 @@ def plan_model_path(query: PathQuery) -> PathResult:
             used_exact_refiner=False,
             failure_reason="Invalid input: model is None",
         )
+    if query.game_map is None:
+        raise ValueError("plan_model_path requires game_map; received None.")
 
     model_base = getattr(model, "model_base", None)
     if model_base is None:
@@ -684,13 +688,13 @@ def plan_model_path(query: PathQuery) -> PathResult:
     path_debug_artifacts = dict(graph_path.debug_artifacts) if query.debug_enabled else {}
     used_exact_refiner = bool(graph_path.used_exact_refiner)
     if not graph_path.success:
-        fallback_waypoints = _direct_emplacement_platform_waypoints(
+        direct_platform_waypoints = _direct_emplacement_platform_waypoints(
             query,
             movement_profile,
             start=(start_x, start_y, start_z),
             target=target,
         )
-        if not fallback_waypoints:
+        if not direct_platform_waypoints:
             return PathResult(
                 valid=False,
                 poses=(),
@@ -701,14 +705,14 @@ def plan_model_path(query: PathQuery) -> PathResult:
                 failure_reason=str(graph_path.failure_reason or "No portal/connector route found"),
                 debug_artifacts=path_debug_artifacts,
             )
-        waypoints = tuple(fallback_waypoints)
+        waypoints = tuple(direct_platform_waypoints)
         distance_cost = _waypoint_distance_cost(
             waypoints,
             ignore_vertical=bool(movement_profile.can_ignore_vertical_distance),
         )
         if query.debug_enabled:
-            path_debug_artifacts["fallback_mode"] = "direct_emplacement_platform"
-            path_debug_artifacts["fallback_waypoint_count"] = len(waypoints)
+            path_debug_artifacts["path_mode"] = "direct_emplacement_platform"
+            path_debug_artifacts["direct_emplacement_platform_waypoint_count"] = len(waypoints)
     else:
         waypoints = tuple(graph_path.waypoints)
         distance_cost = float(graph_path.distance_cost)
@@ -807,6 +811,8 @@ def validate_final_pose(query: PathQuery, pose: Pose) -> ValidationResult:
     model = query.model
     if model is None:
         return ValidationResult(valid=False, reason="Invalid input: model is None")
+    if query.game_map is None:
+        raise ValueError("validate_final_pose requires game_map; received None.")
 
     model_base = getattr(model, "model_base", None)
     if model_base is None:

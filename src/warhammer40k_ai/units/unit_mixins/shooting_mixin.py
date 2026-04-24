@@ -3511,7 +3511,7 @@ class ShootingMixin:
                             game,
                             request,
                             payload_key="model_id",
-                            fallback_value=fallback_model_id,
+                            preselected_value=fallback_model_id,
                             player_id=getattr(player, "id", None),
                         )
                         require_synchronous_decision_resolution(

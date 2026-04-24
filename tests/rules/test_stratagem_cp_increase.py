@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.decision_request_helpers import install_decision_request_support
+
 
 class _MockDatasheet:
     def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
@@ -59,7 +61,9 @@ def _make_players(active_units, opponent_units, *, turn=1, current_player_index=
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
     p2 = Player("P2", control=PlayerControl.LOCAL, army=army2)
-    game = SimpleNamespace(turn=turn, current_player_index=current_player_index, players=[p1, p2])
+    game = install_decision_request_support(
+        SimpleNamespace(turn=turn, current_player_index=current_player_index, players=[p1, p2])
+    )
     p1.set_game(game)
     p2.set_game(game)
     return p1, p2, game

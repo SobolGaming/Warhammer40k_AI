@@ -34,6 +34,10 @@ from ..pathing.rules_profile import (
     units_share_army_identity as _units_share_army_identity,
 )
 from ..pathing.surfaces import extract_ground_transit_obstacles
+from ..pathing.validation import (
+    clear_validation_caches as _clear_pathing_validation_caches,
+    clear_validation_enemy_model_cache as _clear_pathing_validation_enemy_model_cache,
+)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -79,6 +83,7 @@ def clear_collision_caches():
     _enemy_aircraft_model_cache.clear()
     _enemy_engagement_buffer_cache.clear()
     _enemy_aircraft_engagement_buffer_cache.clear()
+    _clear_pathing_validation_caches()
     logger.debug("Cleared collision detection caches")
 
 
@@ -92,6 +97,7 @@ def clear_enemy_model_cache(game_map_id: object = None):
         _enemy_aircraft_model_cache.clear()
         _enemy_engagement_buffer_cache.clear()
         _enemy_aircraft_engagement_buffer_cache.clear()
+        _clear_pathing_validation_enemy_model_cache()
         logger.debug("Cleared all enemy model caches")
     else:
         cache_key = int(game_map_id) if isinstance(game_map_id, int) else game_map_cache_key(game_map_id)
@@ -110,6 +116,7 @@ def clear_enemy_model_cache(game_map_id: object = None):
         keys_to_remove = [key for key in _enemy_aircraft_engagement_buffer_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_aircraft_engagement_buffer_cache[key]
+        _clear_pathing_validation_enemy_model_cache(game_map_id)
         logger.debug("Cleared enemy model cache for game map %s", cache_key)
 
 
@@ -2063,6 +2070,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         if position_shape_cache is not None:
             position_shape_cache[shape_cache_key] = test_shape
 
+    if game_map is None:
+        raise ValueError("Movement validation requires game_map; received None.")
+
     # Check if the entire model base fits within battlefield boundaries
     if game_map:
         bounds = test_shape.bounds
@@ -2078,12 +2088,6 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
             elif not game_map.is_within_boundary(model, (px, py)):
                 return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
-    else:
-        # Fallback basic boundary check if no game_map provided
-        bounds = test_shape.bounds  # (minx, miny, maxx, maxy)
-        if bounds[0] < 0 or bounds[1] < 0:
-            return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
-
     # Check terrain collisions using shape intersection
     allow_through_terrain = bool(validation_rules.get('can_move_through_terrain', False))
     if collision_trees.get('terrain') and not (allow_through_terrain and not is_final_position):

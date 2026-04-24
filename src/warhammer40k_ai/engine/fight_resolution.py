@@ -216,7 +216,9 @@ def _finalize_attack_totals(manager, fighting_unit, totals) -> None:
 def _resolve_target_declaration_attacks(manager, fighting_unit, target_declarations, *, weapon_declarations=None) -> None:
     decl_source = weapon_declarations
     if decl_source is None:
-        decl_source = manager._auto_select_melee_weapons(manager._as_attached_view(fighting_unit))
+        raise RuntimeError(
+            "Melee attack resolution requires declarations from DECLARE_MELEE_WEAPONS."
+        )
     totals = {
         "hits_by_target": {},
         "hit_models_by_target": {},

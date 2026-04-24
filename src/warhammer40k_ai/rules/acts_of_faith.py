@@ -732,7 +732,7 @@ class ActsOfFaithManager:
                     game,
                     request,
                     payload_key="die_value",
-                    fallback_value=fallback_value,
+                    preselected_value=fallback_value,
                     use_skip_when_pending=fallback_use_skip,
                     player_id=getattr(player, "id", None) if player is not None else None,
                 )
@@ -1747,7 +1747,7 @@ class ActsOfFaithManager:
                         game,
                         request,
                         payload_key="die_value",
-                        fallback_value=fallback_value,
+                        preselected_value=fallback_value,
                         use_skip_when_pending=fallback_use_skip,
                         player_id=getattr(player, "id", None) if player is not None else None,
                     )

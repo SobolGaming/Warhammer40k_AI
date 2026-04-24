@@ -412,7 +412,7 @@ def test_create_models_preserves_lord_of_skulls_name_and_suppresses_fallback_war
     assert "base size for 'Khorne Lord of Skull' is unspecified" not in caplog.text
 
 
-def test_unit_model_build_still_warns_when_unknown_base_has_no_override(caplog):
+def test_unit_model_build_rejects_unknown_base_without_override(caplog):
     from warhammer40k_ai.units.unit import Unit
 
     unit = Unit.__new__(Unit)
@@ -442,10 +442,9 @@ def test_unit_model_build_still_warns_when_unknown_base_has_no_override(caplog):
     )
 
     caplog.set_level(logging.WARNING, logger="warhammer40k_ai.units.unit_mixins.datasheet_wargear_mixin")
-    model = unit._build_model_from_profile(datasheet, "Test Tank", profile)
 
-    assert model.model_base.base_type == BaseType.HULL
-    assert "base size for 'Test Tank' is unspecified; using 80x40mm hull" in caplog.text
+    with pytest.raises(ValueError, match="complete geometry override"):
+        unit._build_model_from_profile(datasheet, "Test Tank", profile)
 
 
 def test_unit_model_build_applies_z_offset_for_flying_base():

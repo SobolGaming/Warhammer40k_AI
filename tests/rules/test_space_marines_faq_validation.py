@@ -13,6 +13,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
 from warhammer40k_ai.rules.stratagems import Stratagem
 from warhammer40k_ai.units.unit import Unit
+from tests.decision_request_helpers import install_decision_request_support
 from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -138,7 +139,7 @@ def _make_player(units, *, detachment: str = "Gladius Task Force", control: Play
     for unit in list(army.units or []):
         unit.set_parent_army(army)
     player = Player("Space Marines", control=control, army=army)
-    player.set_game(SimpleNamespace(turn=1))
+    player.set_game(install_decision_request_support(SimpleNamespace(turn=1)))
     return player, army
 
 

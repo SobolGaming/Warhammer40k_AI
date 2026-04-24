@@ -235,7 +235,6 @@ def test_emperors_champion_armour_of_faith_sets_damage_to_zero_once_per_phase():
     sm_army.add_unit(champion)
     enemy_army.add_unit(attacker)
     _register_units(game, champion, attacker)
-    sm_player._should_use_optional_ability = lambda *_args, **_kwargs: True
 
     profile = WargearProfile(
         "Test Gun",
@@ -245,6 +244,7 @@ def test_emperors_champion_armour_of_faith_sets_damage_to_zero_once_per_phase():
     target_model = champion.models[0]
 
     attack_instance = {}
+    sm_player.set_next_optional_decision("FIRST_FAILED_SAVE_DAMAGE_ZERO", True)
     save_result = profile._save_with_tracking(
         target_model,
         attack_instance,
@@ -270,6 +270,7 @@ def test_emperors_champion_armour_of_faith_sets_damage_to_zero_once_per_phase():
 
     game.phase = BattleRoundPhases.FIGHT_PHASE
     attack_instance_3 = {}
+    sm_player.set_next_optional_decision("FIRST_FAILED_SAVE_DAMAGE_ZERO", True)
     save_result_3 = profile._save_with_tracking(
         target_model,
         attack_instance_3,

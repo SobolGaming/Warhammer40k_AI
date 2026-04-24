@@ -13,11 +13,18 @@ Some datasheets use `Use model` or otherwise need manual hull footprints.
 - Base Size Guide classifications that require manual geometry (`hull` / `unique`)
 - default flying-base `z_offset` when no explicit override is provided
 
+Materialized models with incomplete base-size source data must have complete
+geometry data. A datasheet/model with `Use model`, blank base size, `No official
+base size`, or bare `Hull` raises `ValueError` during model construction unless
+`data/model_geometry_overrides.json` provides the required support base/hull
+geometry.
+
 ## Resolution order
 
 Geometry is resolved in `src/warhammer40k_ai/utility/model_geometry.py` via `resolve_model_geometry(...)`.
 
-1. Parse base from datasheet/base-size text (existing flow).
+1. Parse base from datasheet/base-size text. Incomplete source base sizes require
+   an explicit geometry override before the model can be materialized.
 2. Apply Base Size Guide classification override (if configured).
 3. Apply unit geometry override entry (if present).
 4. If no unit override is present and `settings.hull_proxy_policy == "bounding"`, flying-base
@@ -27,17 +34,18 @@ Geometry is resolved in `src/warhammer40k_ai/utility/model_geometry.py` via `res
 5. Resolve model height in this order:
    - explicit override (`height_mm` or per-part max for compound)
    - keyword heuristic
-   - fallback: base minor-axis diameter (legacy behavior)
+   - derived height from base minor-axis diameter when no specific height signal exists
 6. Resolve `z_offset` in this order:
    - explicit `z_offset_mm` override
    - flying-base size mapping (for bases parsed as `* flying base`)
-   - fallback: `0`
+   - `0` for grounded models with no explicit z-offset
 
 For models with a footprint override (e.g. compound base-or-hull vehicles), flying-base
 size mapping is derived from the parsed support base size, not from the overridden hull
 footprint bounds.
 
-If Base Size Guide marks a unit as `hull` or `unique` and `requires_manual_geometry=true`, missing override data raises a `ValueError`.
+If Base Size Guide marks a unit as `hull` or `unique` and
+`requires_manual_geometry=true`, missing override data raises a `ValueError`.
 
 ## Compound footprints
 

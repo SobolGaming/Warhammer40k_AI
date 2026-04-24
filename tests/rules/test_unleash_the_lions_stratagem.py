@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.status_effects import BattleShockEffect
-from warhammer40k_ai.utility.unit_split import split_unit_into_single_model_units
+from warhammer40k_ai.utility.unit_split import UnitSplitError, split_unit_into_single_model_units
 
 
 @dataclass
@@ -166,3 +168,27 @@ def test_split_helper_copies_battleshock_effect():
     assert len(new_units) == 2
     for new_unit in new_units:
         assert new_unit.is_battle_shocked()
+
+
+def test_split_helper_raises_when_registry_rebuild_fails():
+    game, _player, army = _build_game()
+
+    unit = Unit(
+        _MockDatasheet(
+            name="Allarus Custodians",
+            keywords=["Adeptus Custodes", "Infantry"],
+            faction_keywords=["Adeptus Custodes"],
+        ),
+        quantity=2,
+    )
+    unit.faction_id = "AC"
+    unit.deployed = True
+    army.add_unit(unit)
+
+    def _broken_rebuild():
+        raise RuntimeError("registry unavailable")
+
+    game.rebuild_entity_registry = _broken_rebuild
+
+    with pytest.raises(UnitSplitError, match="registry unavailable"):
+        split_unit_into_single_model_units(unit, game=game)

@@ -892,14 +892,14 @@ class CabalOfSorcerersManager:
                         )
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
-                        fallback_choice = None
-                        fallback_fn = getattr(army_player, "_resolve_optional_ability_fallback_choice", None)
-                        if callable(fallback_fn):
-                            fallback_choice = fallback_fn("ARCANE_FOCUS", dict(ctx))
+                        local_choice = None
+                        local_choice_fn = getattr(army_player, "_resolve_optional_ability_local_choice", None)
+                        if callable(local_choice_fn):
+                            local_choice = local_choice_fn("ARCANE_FOCUS", dict(ctx))
                         resolved_choice, apply_result = resolve_or_reuse_confirmation_choice(
                             game,
                             request,
-                            fallback_choice=fallback_choice,
+                            preselected_choice=local_choice,
                             player_id=getattr(army_player, "id", None),
                         )
                         require_synchronous_decision_resolution(

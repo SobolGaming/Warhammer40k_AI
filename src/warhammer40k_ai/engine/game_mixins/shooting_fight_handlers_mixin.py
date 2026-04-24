@@ -19444,12 +19444,4 @@ class GameShootingFightHandlersMixin:
             return False
         if not self._frenzy_can_fight_target(unit, attacker_unit, phase_name=phase_name):
             return False
-        try:
-            from ..fight_phase_manager import FightPhaseManager
-            declarations = FightPhaseManager(self)._auto_select_melee_weapons(unit)
-        except Exception:
-            declarations = []
-        if not declarations:
-            return False
-        self.resolve_frenzy_melee_attacks(unit, attacker_unit, declarations)
-        return True
+        raise RuntimeError("Frenzy fight resolution requires DECLARE_MELEE_WEAPONS declarations.")

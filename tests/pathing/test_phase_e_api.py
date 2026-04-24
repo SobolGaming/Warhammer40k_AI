@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from warhammer40k_ai.battlefield.map import Map
 from warhammer40k_ai.pathing.api import (
     PathQuery,
@@ -93,6 +95,22 @@ def test_phase_e_validate_final_pose_rejects_outside_boundary() -> None:
 
     assert not validation.valid
     assert "outside battlefield boundaries" in validation.reason.lower()
+
+
+def test_phase_e_plan_and_validate_require_game_map() -> None:
+    mover = _make_unit("Mover", x=2.0, y=2.0)
+    query = PathQuery(
+        model=mover.models[0],
+        target=(8.0, 2.0, 0.0),
+        movement_type=MovementType.MOVE,
+        max_distance=12.0,
+        game_map=None,
+    )
+
+    with pytest.raises(ValueError, match="game_map"):
+        plan_model_path(query)
+    with pytest.raises(ValueError, match="game_map"):
+        validate_final_pose(query, Pose(x=8.0, y=2.0, z=0.0, facing=0.0))
 
 
 def test_phase_e_compute_swept_interactions_reports_enemy_models_moved_over() -> None:

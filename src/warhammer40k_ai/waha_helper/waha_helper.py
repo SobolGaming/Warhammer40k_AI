@@ -14,8 +14,24 @@ logger = logging.getLogger(__name__)
 # Suppress the specific warnings at the module level
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
+
+class WahaDataError(RuntimeError):
+    """Raised when structured Wahapedia data cannot be loaded or parsed."""
+
+
 class WahaHelper:
     _DATA_CACHE: dict[str, dict] = {}
+    _MANDATORY_JSON_FILES = (
+        "Abilities.json",
+        "Stratagems.json",
+        "Enhancements.json",
+        "Source.json",
+        "Factions.json",
+        "Detachment_abilities.json",
+        "Datasheets_leader.json",
+        "Datasheets_enhancements.json",
+        "Datasheets.json",
+    )
 
     def __init__(self, data_dir='wahapedia_data'):
         self.data_dir = data_dir
@@ -79,9 +95,13 @@ class WahaHelper:
             return data
 
     def load_data(self):
-        if not os.path.exists(self.data_dir):
-            logger.error(f"Error: Directory '{self.data_dir}' does not exist.")
-            return
+        if not os.path.isdir(self.data_dir):
+            raise WahaDataError(f"Wahapedia data directory does not exist: {self.data_dir}")
+
+        for filename in self._MANDATORY_JSON_FILES:
+            file_path = os.path.join(self.data_dir, filename)
+            if not os.path.isfile(file_path):
+                raise WahaDataError(f"Mandatory Wahapedia data file is missing: {file_path}")
 
         self.load_json_file('Abilities.json', self.abilities, 'id')
         self.load_json_file('Stratagems.json', self.stratagems, 'id')
@@ -94,29 +114,22 @@ class WahaHelper:
         self.load_datasheets_leaders()
         self.load_datasheets_enhancements()
 
-        datasheets_path = os.path.join(self.data_dir, 'Datasheets.json')
-        if not os.path.exists(datasheets_path):
-            logger.error(f"Error: Datasheets.json not found in {self.data_dir}")
-            return
-
-        try:
-            with open(datasheets_path, 'r', encoding='utf-8') as f:
-                datasheets = json.load(f)
-            filtered_datasheets: dict[str, dict] = {}
-            for sheet in datasheets:
-                cleaned_sheet = self.clean_data(sheet)
-                source_id = str(cleaned_sheet.get("source_id", "") or "").strip()
-                source_row = self.sources.get(source_id) if source_id else None
-                if self._source_is_excluded(source_row):
-                    continue
-                ds_id = str(cleaned_sheet.get("id", "") or "").strip()
-                if not ds_id:
-                    continue
-                filtered_datasheets[ds_id] = cleaned_sheet
-            self.datasheets = filtered_datasheets
-            self.merge_additional_data()
-        except Exception as e:
-            logger.exception(f"Error loading data: {str(e)}")
+        datasheets = self._load_json_list('Datasheets.json')
+        filtered_datasheets: dict[str, dict] = {}
+        for index, sheet in enumerate(datasheets):
+            if not isinstance(sheet, dict):
+                raise WahaDataError(f"Datasheets.json row {index} must be an object")
+            cleaned_sheet = self.clean_data(sheet)
+            source_id = str(cleaned_sheet.get("source_id", "") or "").strip()
+            source_row = self.sources.get(source_id) if source_id else None
+            if self._source_is_excluded(source_row):
+                continue
+            ds_id = str(cleaned_sheet.get("id", "") or "").strip()
+            if not ds_id:
+                raise WahaDataError(f"Datasheets.json row {index} is missing required id")
+            filtered_datasheets[ds_id] = cleaned_sheet
+        self.datasheets = filtered_datasheets
+        self.merge_additional_data()
 
     @staticmethod
     def _source_is_excluded(source_row) -> bool:
@@ -167,37 +180,44 @@ class WahaHelper:
                 continue
         return results
 
-    def load_json_file(self, filename, target_dict, key):
+    def _load_json_list(self, filename: str) -> list:
         file_path = os.path.join(self.data_dir, filename)
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            target_dict.update({item[key]: self.clean_data(item) for item in data})
-        else:
-            logger.warning(f"Warning: {filename} not found in {self.data_dir}")
-
-    def load_datasheets_leaders(self) -> None:
-        """Load leader->bodyguard relationships (many attached_id per leader_id)."""
-        file_path = os.path.join(self.data_dir, 'Datasheets_leader.json')
-        if not os.path.exists(file_path):
-            logger.warning(f"Warning: Datasheets_leader.json not found in {self.data_dir}")
-            return
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-        except Exception as e:
-            logger.exception(f"Error loading Datasheets_leader.json: {str(e)}")
-            return
+        except json.JSONDecodeError as exc:
+            raise WahaDataError(f"Invalid JSON in {file_path}: {exc.msg}") from exc
+        except OSError as exc:
+            raise WahaDataError(f"Unable to read Wahapedia data file {file_path}: {exc}") from exc
+        if not isinstance(data, list):
+            raise WahaDataError(f"{filename} must contain a JSON list")
+        return data
+
+    def load_json_file(self, filename, target_dict, key):
+        data = self._load_json_list(filename)
+        loaded = {}
+        for index, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise WahaDataError(f"{filename} row {index} must be an object")
+            if key not in item or str(item.get(key, "") or "").strip() == "":
+                raise WahaDataError(f"{filename} row {index} is missing required {key!r}")
+            loaded[item[key]] = self.clean_data(item)
+        target_dict.update(loaded)
+
+    def load_datasheets_leaders(self) -> None:
+        """Load leader->bodyguard relationships (many attached_id per leader_id)."""
+        data = self._load_json_list('Datasheets_leader.json')
 
         self.datasheets_leaders = {}
-        for item in data or []:
-            try:
-                leader_id = self.clean_data(item.get('leader_id'))
-                attached_id = self.clean_data(item.get('attached_id'))
-            except Exception:
-                continue
+        for index, item in enumerate(data or []):
+            if not isinstance(item, dict):
+                raise WahaDataError(f"Datasheets_leader.json row {index} must be an object")
+            if 'leader_id' not in item or 'attached_id' not in item:
+                raise WahaDataError(f"Datasheets_leader.json row {index} must contain leader_id and attached_id")
+            leader_id = self.clean_data(item.get('leader_id'))
+            attached_id = self.clean_data(item.get('attached_id'))
             if not leader_id or not attached_id:
-                continue
+                raise WahaDataError(f"Datasheets_leader.json row {index} has blank leader_id or attached_id")
             self.datasheets_leaders.setdefault(leader_id, []).append(attached_id)
 
         # Deduplicate while preserving order
@@ -212,26 +232,32 @@ class WahaHelper:
             self.datasheets_leaders[leader_id] = deduped
 
     def load_datasheets_enhancements(self):
-        file_path = os.path.join(self.data_dir, 'Datasheets_enhancements.json')
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            for item in data:
-                datasheet_id = item['datasheet_id']
-                if datasheet_id not in self.datasheets_enhancements:
-                    self.datasheets_enhancements[datasheet_id] = []
-                self.datasheets_enhancements[datasheet_id].append(self.clean_data(item['enhancement_id']))
-        else:
-            logger.warning(f"Warning: Datasheets_enhancements.json not found in {self.data_dir}")
+        data = self._load_json_list('Datasheets_enhancements.json')
+        for index, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise WahaDataError(f"Datasheets_enhancements.json row {index} must be an object")
+            if 'datasheet_id' not in item or 'enhancement_id' not in item:
+                raise WahaDataError(
+                    f"Datasheets_enhancements.json row {index} must contain datasheet_id and enhancement_id"
+                )
+            datasheet_id = self.clean_data(item['datasheet_id'])
+            enhancement_id = self.clean_data(item['enhancement_id'])
+            if not datasheet_id or not enhancement_id:
+                raise WahaDataError(
+                    f"Datasheets_enhancements.json row {index} has blank datasheet_id or enhancement_id"
+                )
+            if datasheet_id not in self.datasheets_enhancements:
+                self.datasheets_enhancements[datasheet_id] = []
+            self.datasheets_enhancements[datasheet_id].append(enhancement_id)
 
     def merge_additional_data(self):
         for filename in os.listdir(self.data_dir):
             if filename.endswith('.json') and filename not in ['Datasheets.json', 'Abilities.json', 'Stratagems.json', 'Enhancements.json', 'Datasheets_enhancements.json', 'Source.json', 'Factions.json', 'Detachment_abilities.json']:
-                file_path = os.path.join(self.data_dir, filename)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                data = self._load_json_list(filename)
                 
-                for item in data:
+                for index, item in enumerate(data):
+                    if not isinstance(item, dict):
+                        raise WahaDataError(f"{filename} row {index} must be an object")
                     if 'datasheet_id' in item and item['datasheet_id'] in self.datasheets:
                         datasheet = self.datasheets[item['datasheet_id']]
                         key = filename[:-5].lower()
@@ -399,9 +425,8 @@ class WahaHelper:
             enhancement_data = self.enhancements[enhancement_id]
             try:
                 return Enhancement.from_waha_dict(enhancement_data)
-            except Exception as exc:
-                logger.exception(f"Error parsing enhancement id {enhancement_id}: {exc}")
-                return None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise WahaDataError(f"Error parsing enhancement id {enhancement_id}: {exc}") from exc
         return None
 
     def get_enhancement_by_name(self, name: str) -> Enhancement:
@@ -412,10 +437,9 @@ class WahaHelper:
             if self.strip_special_chars(enhancement['name']) == self.strip_special_chars(name):
                 try:
                     return Enhancement.from_waha_dict(enhancement)
-                except Exception as exc:
+                except (KeyError, TypeError, ValueError) as exc:
                     enh_name = enhancement.get("name", "") or name
-                    logger.exception(f"Error parsing enhancement {enh_name}: {exc}")
-                    return None
+                    raise WahaDataError(f"Error parsing enhancement {enh_name}: {exc}") from exc
         return None
 
     def get_ability(self, ability_id: str) -> Ability:
