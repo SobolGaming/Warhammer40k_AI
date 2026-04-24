@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 from ..utility import dice as dice_module
 from ..utility.aura_utils import distance_between_models_bases_3d
 from ..utility.entity_ids import get_entity_id
+from ..engine.decision_port import get_decision_provider
 
 logger = logging.getLogger(__name__)
 
@@ -2557,7 +2558,7 @@ class NecronsStratagemMixin:
         roll = int(dice_module.get_roll("D3") or 0)
         if roll > 0:
             game_map = getattr(self.game, "map", None)
-            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 roll,
@@ -3020,7 +3021,7 @@ class NecronsStratagemMixin:
         total_wounds = int(roll) + (1 if self._cryptek_conclave_unit_has_cryptek_keyword(root) else 0)
         if total_wounds > 0:
             game_map = getattr(self.game, "map", None)
-            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 total_wounds,
@@ -3484,7 +3485,7 @@ class NecronsStratagemMixin:
         roll = int(dice_module.get_roll("D3") or 0)
         if roll > 0:
             game_map = getattr(self.game, "map", None)
-            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 roll,
@@ -3943,7 +3944,7 @@ class NecronsStratagemMixin:
         total_wounds = int(roll) + int(bonus)
         if total_wounds > 0:
             game_map = getattr(self.game, "map", None)
-            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 total_wounds,
@@ -4277,7 +4278,7 @@ class NecronsStratagemMixin:
             return False
         roll = int(dice_module.get_roll("D3") or 0)
         if roll > 0:
-            provider = getattr(game_map, "reanimation_allocation_provider", None)
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 roll,
@@ -6061,7 +6062,7 @@ class NecronsStratagemMixin:
         roll = int(dice_module.get_roll("D3") or 0)
         if roll > 0:
             game_map = getattr(self.game, "map", None)
-            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
             is_human = bool(getattr(self.player, "has_control", lambda: False)())
             root.apply_reanimation_protocols(
                 roll,
@@ -7427,7 +7428,7 @@ class NecronsStratagemMixin:
         if not self._necrons_spend_cp(stratagem, target_unit=warlord):
             return False
         game_map = getattr(self.game, "map", None)
-        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
         is_human = bool(getattr(self.player, "has_control", lambda: False)())
         triggered = 0
         for reserve_unit in list(reserve_units or []):

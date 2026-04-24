@@ -168,3 +168,64 @@ def test_network_version_mismatch_rejects_auth_tls():
         await server.stop()
 
     asyncio.run(run_flow())
+
+
+def test_network_rejects_control_before_successful_hello_tls():
+    async def run_flow():
+        server = NetworkServer(
+            host="127.0.0.1",
+            port=0,
+            cert_path=str(CERT_PATH),
+            key_path=str(KEY_PATH),
+        )
+        await server.start()
+        server_task = asyncio.create_task(server.run())
+
+        uri = f"wss://localhost:{server.transport.port}"
+        client = NetworkClient(uri=uri, ca_cert=str(CERT_PATH))
+        await client.connect()
+
+        await client.send_auth()
+        auth_event = await _wait_for(client, "control", "auth")
+        payload = auth_event.message.get("payload", {})
+        assert payload.get("ok") is False
+        assert payload.get("code") == "version_negotiation_required"
+        assert "version_negotiation_required" in payload.get("errors", [])
+
+        await client.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.stop()
+
+    asyncio.run(run_flow())
+
+
+def test_network_rejects_game_command_before_successful_hello_tls():
+    async def run_flow():
+        server = NetworkServer(
+            host="127.0.0.1",
+            port=0,
+            cert_path=str(CERT_PATH),
+            key_path=str(KEY_PATH),
+        )
+        await server.start()
+        server_task = asyncio.create_task(server.run())
+
+        uri = f"wss://localhost:{server.transport.port}"
+        client = NetworkClient(uri=uri, ca_cert=str(CERT_PATH))
+        await client.connect()
+
+        command = GameCommand.create(CMD_NEXT_PHASE, player_id="p1")
+        await client.transport.send(CommandMessage(command=command, client_last_event_id=0))
+        error_event = await _wait_for(client, "game", "error")
+        errors = error_event.message.get("payload", {}).get("errors", [])
+        assert "version_negotiation_required" in errors
+
+        await client.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.stop()
+
+    asyncio.run(run_flow())

@@ -222,6 +222,9 @@ Key responsibilities:
 - Local authoritative runtime composition (`local_runtime.py`)
 - Decision system (`decision_requests.py`, `decisions.py`, `decision_kinds.py`, `decision_dispatcher.py`, `decision_handlers/`)
 - Decision controllers & routing (`decision_controller.py`) for UI/AI/network integration
+- Runtime provider hooks are owned by `Game.decision_port`; `Map` provider
+  accessors are compatibility shims for older UI/test wiring and should not be
+  the primary lookup path from rules or unit logic.
 - Headless setup/deployment and policy control (`deployment_headless.py`, `headless_policy_controller.py`)
 - Time-budgeted candidate generation and telemetry (`time_manager.py`, `tier2_orchestrator.py`, `movement_solver.py`, `decision_record.py`)
 - Shared movement/fight planning and authoritative movement validation (`movement_intent.py`, `fight_move.py`, `decision_handlers/movement.py`)

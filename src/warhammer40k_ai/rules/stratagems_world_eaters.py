@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from ..engine.decision_port import get_decision_provider
 from ..utility.entity_ids import get_entity_id
 import logging
 logger = logging.getLogger(__name__)
@@ -2954,7 +2955,7 @@ class WorldEatersStratagemMixin:
         reroll_used = False
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if can_reroll:
-            provider = getattr(getattr(self.game, "map", None), "roll_reroll_provider", None) if self.game is not None else None
+            provider = get_decision_provider(self.game, "roll_reroll_provider")
             if callable(provider):
                 want = bool(
                     provider(

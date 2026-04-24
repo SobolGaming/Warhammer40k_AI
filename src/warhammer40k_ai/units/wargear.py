@@ -14,6 +14,7 @@ from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 from warhammer40k_ai.utility.entity_ids import get_entity_id, maybe_entity_id
+from warhammer40k_ai.engine.decision_port import get_decision_provider
 from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
@@ -5765,7 +5766,7 @@ class WargearProfile:
                                     except Exception:
                                         game = None
                                         player = None
-                                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                    provider = get_decision_provider(game, "roll_reroll_provider")
                                     reason = str(rule.get("source", "") or "Point-blank Devastation").strip() or "Point-blank Devastation"
                                     average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
                                     if callable(provider):
@@ -5829,7 +5830,7 @@ class WargearProfile:
                         except Exception:
                             game = None
                             player = None
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                         reason = "Breath of Vaul"
                         average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
                         if callable(provider):
@@ -5898,7 +5899,7 @@ class WargearProfile:
                                 game = None
                                 player = None
                             reason = str(spec.get("source", "") or "Attack-count re-roll").strip() or "Attack-count re-roll"
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                             average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
                             if callable(provider):
                                 do_reroll = bool(
@@ -5986,7 +5987,7 @@ class WargearProfile:
                                     applies = False
                             if applies:
                                 do_reroll = False
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                                 source = str(tsr.get("overwhelming_generosity_source", "") or "Overwhelming Generosity").strip() or "Overwhelming Generosity"
                                 average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
                                 if callable(provider):
@@ -6062,7 +6063,7 @@ class WargearProfile:
                                         apply_reroll = False
                             if apply_reroll:
                                 do_reroll = False
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                                 source = str(usr.get("tau_experimental_weaponry_source", "") or "EXPERIMENTAL WEAPONRY").strip()
                                 source = source or "EXPERIMENTAL WEAPONRY"
                                 average_reroll = self._should_reroll_below_average(num_attacks, self.attacks)
@@ -9104,7 +9105,7 @@ class WargearProfile:
             game = getattr(player, "game", None) if player is not None else None
             game_map = getattr(game, "map", None) if game is not None else None
             is_human = bool(getattr(player, "has_control", lambda: False)())
-            provider = getattr(game_map, "leading_unmodified_six_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "leading_unmodified_six_provider", game_map=game_map)
         except Exception:
             player = None
             game_map = None
@@ -9551,7 +9552,7 @@ class WargearProfile:
             game = getattr(player, "game", None) if player is not None else None
             game_map = getattr(game, "map", None) if game is not None else None
             is_human = bool(getattr(player, "has_control", lambda: False)())
-            provider = getattr(game_map, "model_unmodified_six_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "model_unmodified_six_provider", game_map=game_map)
         except Exception:
             player = None
             game_map = None
@@ -9917,7 +9918,7 @@ class WargearProfile:
             game = getattr(player, "game", None) if player is not None else None
             game_map = getattr(game, "map", None) if game is not None else None
             is_human = bool(getattr(player, "has_control", lambda: False)())
-            provider = getattr(game_map, "model_allocated_damage_zero_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "model_allocated_damage_zero_provider", game_map=game_map)
         except Exception:
             player = None
             game_map = None
@@ -10209,7 +10210,7 @@ class WargearProfile:
             game = getattr(player, "game", None) if player is not None else None
             game_map = getattr(game, "map", None) if game is not None else None
             is_human = bool(getattr(player, "has_control", lambda: False)())
-            provider = getattr(game_map, "aspect_shrine_provider", None) if game_map is not None else None
+            provider = get_decision_provider(None, "aspect_shrine_provider", game_map=game_map)
         except Exception:
             player = None
             game_map = None
@@ -12771,7 +12772,7 @@ class WargearProfile:
                     army = unit.get_parent_army() if unit is not None else None
                     player = getattr(army, "player", None) if army is not None else None
                     game = getattr(player, "game", None) if player is not None else None
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                     is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
                     if callable(provider):
                         do_reroll = bool(
@@ -14705,7 +14706,7 @@ class WargearProfile:
                     skill_mods,
                     choice_key="skill_modifier_choice",
                     provider_attr="skill_modifier_choice_provider"
-                    if (game_map is None or callable(getattr(game_map, "skill_modifier_choice_provider", None)))
+                    if (game_map is None or callable(get_decision_provider(None, "skill_modifier_choice_provider", game_map=game_map)))
                     else "hit_modifier_choice_provider",
                     ability_label=f"{driven_rule_name} (Weapon Skill)",
                     player=player,
@@ -15853,7 +15854,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -15921,7 +15922,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -15968,7 +15969,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -16016,7 +16017,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -16214,7 +16215,7 @@ class WargearProfile:
                         game = army.player.game
                         player = army.player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16262,7 +16263,7 @@ class WargearProfile:
                         game = army.player.game
                         player = army.player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16315,7 +16316,7 @@ class WargearProfile:
                             game = army.player.game
                             player = army.player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -16363,7 +16364,7 @@ class WargearProfile:
                             game = army.player.game
                             player = army.player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -16409,7 +16410,7 @@ class WargearProfile:
                         game = army.player.game
                         player = army.player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16453,7 +16454,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16505,7 +16506,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16564,7 +16565,7 @@ class WargearProfile:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
                         game_local = getattr(player, "game", None) if player is not None else None
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16620,7 +16621,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16669,7 +16670,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16714,7 +16715,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -16761,7 +16762,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -16808,7 +16809,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -16857,7 +16858,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -16911,7 +16912,7 @@ class WargearProfile:
                     )
                     player = getattr(army, "player", None) if army is not None else None
                     is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                     source_name = str(source or "Sadistic Fulcrum").strip() or "Sadistic Fulcrum"
                     if callable(provider):
                         do_reroll = bool(
@@ -17009,7 +17010,7 @@ class WargearProfile:
                         try:
                             player = army.player if army is not None else None
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -17060,7 +17061,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -17113,7 +17114,7 @@ class WargearProfile:
                                 unit = attacker.parent_unit
                                 game = unit.get_parent_army().player.game
                                 player = unit.get_parent_army().player
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 provider = None
                                 player = None
@@ -17168,7 +17169,7 @@ class WargearProfile:
                         try:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             provider = None
                             player = None
@@ -17230,7 +17231,7 @@ class WargearProfile:
                             try:
                                 game = unit.get_parent_army().player.game
                                 player = unit.get_parent_army().player
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 provider = None
                                 player = None
@@ -17288,7 +17289,7 @@ class WargearProfile:
                             try:
                                 game = unit.get_parent_army().player.game
                                 player = unit.get_parent_army().player
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 provider = None
                                 player = None
@@ -21772,7 +21773,7 @@ class WargearProfile:
                         player = None
                         game_map = None
                         game_local = None
-                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+                    provider = get_decision_provider(None, "hit_modifier_choice_provider", game_map=game_map)
                     if game_local is not None and hasattr(game_local, "request_decision"):
                         try:
                             from ..engine.decision_kinds import DECISION_CHOOSE_HIT_MODIFIER_IGNORES
@@ -22898,7 +22899,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -22988,7 +22989,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -23057,7 +23058,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -23297,7 +23298,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -23380,7 +23381,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -23448,7 +23449,7 @@ class WargearProfile:
                         game = army.player.game if army is not None else None
                         player = army.player if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -23575,7 +23576,7 @@ class WargearProfile:
                         try:
                             player = army.player if army is not None else None
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -23650,7 +23651,7 @@ class WargearProfile:
                             game = army.player.game
                             player = army.player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -23776,7 +23777,7 @@ class WargearProfile:
                                 game = army.player.game
                                 player = army.player
                                 is_human = bool(getattr(player, "has_control", lambda: False)())
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 is_human = False
                                 provider = None
@@ -23852,7 +23853,7 @@ class WargearProfile:
                             game = army.player.game
                             player = army.player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -23932,7 +23933,7 @@ class WargearProfile:
                             game = army.player.game
                             player = army.player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -24018,7 +24019,7 @@ class WargearProfile:
                                 game = army.player.game
                                 player = army.player
                                 is_human = bool(getattr(player, "has_control", lambda: False)())
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 is_human = False
                                 provider = None
@@ -24101,7 +24102,7 @@ class WargearProfile:
                                 game = army.player.game
                                 player = army.player
                                 is_human = bool(getattr(player, "has_control", lambda: False)())
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 is_human = False
                                 provider = None
@@ -24172,7 +24173,7 @@ class WargearProfile:
                         game = army.player.game
                         player = army.player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24239,7 +24240,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24315,7 +24316,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24398,7 +24399,7 @@ class WargearProfile:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
                         game_local = getattr(player, "game", None) if player is not None else None
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24478,7 +24479,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24549,7 +24550,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -24630,7 +24631,7 @@ class WargearProfile:
                                 unit = attacker.parent_unit
                                 game = unit.get_parent_army().player.game
                                 player = unit.get_parent_army().player
-                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                                provider = get_decision_provider(game, "roll_reroll_provider")
                             except Exception:
                                 provider = None
                                 player = None
@@ -27175,7 +27176,7 @@ class WargearProfile:
                             game = unit.get_parent_army().player.game
                             player = unit.get_parent_army().player
                             is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            provider = get_decision_provider(game, "roll_reroll_provider")
                         except Exception:
                             is_human = False
                             provider = None
@@ -27249,7 +27250,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -27293,7 +27294,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -27337,7 +27338,7 @@ class WargearProfile:
                     game = unit.get_parent_army().player.game
                     player = unit.get_parent_army().player
                     is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    provider = get_decision_provider(game, "roll_reroll_provider")
                 except Exception:
                     is_human = False
                     provider = None
@@ -27382,7 +27383,7 @@ class WargearProfile:
                         game = unit.get_parent_army().player.game
                         player = unit.get_parent_army().player
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -27441,7 +27442,7 @@ class WargearProfile:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
                         game_local = getattr(player, "game", None) if player is not None else None
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -27498,7 +27499,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None
@@ -27546,7 +27547,7 @@ class WargearProfile:
                     try:
                         player = getattr(army, "player", None) if army is not None else None
                         is_human = bool(getattr(player, "has_control", lambda: False)())
-                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game_local, "roll_reroll_provider")
                     except Exception:
                         is_human = False
                         provider = None

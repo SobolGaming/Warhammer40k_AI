@@ -19,6 +19,7 @@ DECISION_PROVIDER_NAMES: tuple[str, ...] = (
     "model_unmodified_six_provider",
     "model_allocated_damage_zero_provider",
     "unit_mortal_wound_fnp_provider",
+    "unit_psychic_attack_fnp_provider",
     "death_vision_of_sanguinius_provider",
     "hit_modifier_choice_provider",
     "skill_modifier_choice_provider",
@@ -51,6 +52,43 @@ class DecisionPort:
             name: callable(provider)
             for name, provider in sorted(self.providers.items(), key=lambda item: item[0])
         }
+
+
+def get_decision_provider(
+    game: object | None,
+    name: str,
+    *,
+    game_map: object | None = None,
+) -> DecisionProvider | None:
+    """Resolve a runtime decision provider from Game first, then Map compatibility accessors."""
+    provider_name = _normalize_provider_name(name)
+    provider = _provider_from_game(game, provider_name)
+    if provider is not None:
+        return provider
+
+    resolved_map = game_map
+    if resolved_map is None and game is not None:
+        resolved_map = getattr(game, "map", None)
+    if resolved_map is None:
+        return None
+
+    map_game = getattr(resolved_map, "game", None)
+    if map_game is not None and map_game is not game:
+        provider = _provider_from_game(map_game, provider_name)
+        if provider is not None:
+            return provider
+
+    provider = getattr(resolved_map, provider_name, None)
+    return provider if callable(provider) else None
+
+
+def _provider_from_game(game: object | None, provider_name: str) -> DecisionProvider | None:
+    port = getattr(game, "decision_port", None) if game is not None else None
+    getter = getattr(port, "get_provider", None)
+    if not callable(getter):
+        return None
+    provider = getter(provider_name)
+    return provider if callable(provider) else None
 
 
 def _normalize_provider_name(name: str) -> str:

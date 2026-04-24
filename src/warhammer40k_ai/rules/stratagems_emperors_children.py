@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ..engine.decision_port import get_decision_provider
 from ..utility.aura_utils import horizontal_distance_between_bases_2d, unit_wholly_within_range_of_unit
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
@@ -2202,7 +2203,7 @@ class EmperorsChildrenStratagemMixin:
         reroll_used = False
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
         if can_reroll:
-            provider = getattr(getattr(self.game, "map", None), "roll_reroll_provider", None) if self.game is not None else None
+            provider = get_decision_provider(self.game, "roll_reroll_provider")
             if callable(provider):
                 want = bool(
                     provider(

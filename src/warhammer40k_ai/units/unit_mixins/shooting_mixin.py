@@ -3232,7 +3232,7 @@ class ShootingMixin:
                         reroll_sources.append("Leadership re-roll")
                 if reroll_sources:
                     try:
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        provider = get_decision_provider(game, "roll_reroll_provider")
                         is_human = self._player_has_local_control(player)
                     except Exception:
                         provider = None

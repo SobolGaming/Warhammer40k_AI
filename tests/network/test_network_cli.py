@@ -16,3 +16,4 @@ def test_network_cli_parses_client_headless_mode() -> None:
     assert args.server == "wss://localhost:8765"
     assert args.role == "player1"
     assert float(args.max_reserves_arrival_seconds) == 10.0
+    assert float(args.response_timeout) == 10.0

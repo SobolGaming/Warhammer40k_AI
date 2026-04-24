@@ -11,6 +11,7 @@ from ..utility.aura_utils import (
     unit_within_range_of_unit,
     distance_between_models_bases_3d,
 )
+from ..engine.decision_port import get_decision_provider
 
 
 class ActsOfFaithManager:
@@ -662,7 +663,7 @@ class ActsOfFaithManager:
         if not pool:
             return None
         player = getattr(self.army, "player", None) if self.army is not None else None
-        provider = getattr(getattr(game, "map", None), "miracle_dice_provider", None) if game is not None else None
+        provider = get_decision_provider(game, "miracle_dice_provider")
         if game is not None and hasattr(game, "request_decision"):
             try:
                 from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
@@ -906,7 +907,7 @@ class ActsOfFaithManager:
         if not allow_reroll:
             return int(value or 0)
         player = getattr(self.army, "player", None) if self.army is not None else None
-        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+        provider = get_decision_provider(game, "roll_reroll_provider")
         if callable(provider):
             try:
                 want = bool(provider(
@@ -1583,7 +1584,7 @@ class ActsOfFaithManager:
         if max_select <= 0 or not pool:
             return []
         player = getattr(self.army, "player", None) if self.army is not None else None
-        provider = getattr(getattr(game, "map", None), "miracle_dice_pool_reroll_provider", None) if game is not None else None
+        provider = get_decision_provider(game, "miracle_dice_pool_reroll_provider")
         plan_values: list[int] | None = None
         provider_requires_single_pending_request = bool(
             callable(provider)

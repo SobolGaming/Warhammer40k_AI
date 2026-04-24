@@ -219,6 +219,9 @@ class NetworkServer:
             await self._send_control(connection_id, "hello", response)
             await self._broadcast_lobby_state()
             return
+        if not self._connection_version_ok(connection_id):
+            await self._send_version_negotiation_required(connection_id, msg_type)
+            return
         if msg_type == "auth":
             result = apply_auth(
                 self._state,
@@ -270,6 +273,21 @@ class NetworkServer:
             await self._send_control(connection_id, "disconnect", {"ok": True})
             return
         await self._send_control(connection_id, msg_type, {"ok": False, "errors": ["Unhandled control message."]})
+
+    def _connection_version_ok(self, connection_id: str) -> bool:
+        connection = self._state.connections.get(connection_id)
+        return bool(connection is not None and connection.hello_received and connection.version_ok)
+
+    async def _send_version_negotiation_required(self, connection_id: str, msg_type: str) -> None:
+        await self._send_control(
+            connection_id,
+            msg_type,
+            {
+                "ok": False,
+                "code": "version_negotiation_required",
+                "errors": ["version_negotiation_required"],
+            },
+        )
 
     async def _handle_army_submit(self, connection_id: str, payload: dict) -> None:
         connection = self._state.connections.get(connection_id)
@@ -755,6 +773,9 @@ class NetworkServer:
         return game
 
     async def _handle_game_event(self, connection_id: str, message: dict) -> None:
+        if not self._connection_version_ok(connection_id):
+            await self._send_error(connection_id, "version_negotiation_required")
+            return
         if self._game is None:
             await self._send_error(connection_id, "Game not started.")
             return
@@ -810,7 +831,12 @@ class NetworkServer:
     async def _send_control(self, connection_id: str, msg_type: str, payload: dict) -> None:
         message = build_control_message(msg_type, payload)
         if connection_id == "all":
-            await self.transport.broadcast(message)
+            for target_id, connection in list(self._state.connections.items()):
+                if connection.version_ok:
+                    try:
+                        await self.transport.send(target_id, message)
+                    except (RuntimeError, ValueError):
+                        continue
             return
         await self.transport.send(connection_id, message)
 

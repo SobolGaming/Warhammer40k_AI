@@ -101,7 +101,7 @@ class DamageDeathMixin:
         except Exception:
             weapon_name = ""
 
-        provider = getattr(game_map, "unit_mortal_wound_fnp_provider", None) if game_map is not None else None
+        provider = get_decision_provider(None, "unit_mortal_wound_fnp_provider", game_map=game_map)
 
         for spec in list(specs):
             ability_key = str(spec.get("ability_key") or "watcher_in_the_dark").strip().lower()
@@ -348,7 +348,7 @@ class DamageDeathMixin:
             "weapon_name": weapon_name,
         }
 
-        provider = getattr(game_map, "unit_psychic_attack_fnp_provider", None) if game_map is not None else None
+        provider = get_decision_provider(None, "unit_psychic_attack_fnp_provider", game_map=game_map)
 
         use_now = False
         request = None
@@ -531,7 +531,7 @@ class DamageDeathMixin:
         except Exception:
             attacker_unit_id = ""
 
-        provider = getattr(game_map, "death_vision_of_sanguinius_provider", None) if game_map is not None else None
+        provider = get_decision_provider(None, "death_vision_of_sanguinius_provider", game_map=game_map)
         if game is None:
             return False
 

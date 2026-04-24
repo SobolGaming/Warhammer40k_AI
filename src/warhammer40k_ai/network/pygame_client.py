@@ -51,8 +51,9 @@ async def run_pygame_network_client(
     role: Optional[str] = None,
     army_file: Optional[str] = None,
     ready: bool = False,
+    response_timeout: float = NetworkClient.DEFAULT_RESPONSE_TIMEOUT,
 ) -> None:
-    client = NetworkClient(uri=uri, ca_cert=ca_cert, insecure=insecure)
+    client = NetworkClient(uri=uri, ca_cert=ca_cert, insecure=insecure, response_timeout=response_timeout)
     await client.connect()
     await client.send_hello(display_name)
     screen = create_pygame_screen()
@@ -63,11 +64,7 @@ async def run_pygame_network_client(
     )
 
     async def _wait_control(expected_type: str) -> None:
-        while True:
-            event = await client.next_message()
-            await session.handle_message(event)
-            if event.category == "control" and event.message_type == expected_type:
-                return event.message
+        return await client.wait_for_control(expected_type, timeout=response_timeout)
 
     try:
         hello_msg = await _wait_control("hello")

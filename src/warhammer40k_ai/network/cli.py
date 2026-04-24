@@ -73,6 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
     client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
     client.add_argument("--army-file", help="Army list file to submit")
     client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    client.add_argument("--response-timeout", type=float, default=NetworkClient.DEFAULT_RESPONSE_TIMEOUT)
     client.add_argument(
         "-l",
         "--log",
@@ -93,6 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ui_client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
     ui_client.add_argument("--army-file", help="Army list file to submit")
     ui_client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    ui_client.add_argument("--response-timeout", type=float, default=NetworkClient.DEFAULT_RESPONSE_TIMEOUT)
     ui_client.add_argument(
         "-l",
         "--log",
@@ -112,6 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     headless_client.add_argument("--role", choices=["player1", "player2"], required=True, help="Controlled role")
     headless_client.add_argument("--army-file", help="Army list file to submit")
     headless_client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    headless_client.add_argument("--response-timeout", type=float, default=NetworkClient.DEFAULT_RESPONSE_TIMEOUT)
     headless_client.add_argument(
         "--max-reserves-arrival-seconds",
         type=float,
@@ -148,13 +151,8 @@ async def _run_server(args: argparse.Namespace) -> None:
         await server.stop()
 
 
-async def _wait_for_control(client: NetworkClient, expected_type: str):
-    while True:
-        event = await client.next_message()
-        client.handle_message(event)
-        msg = event.message
-        if event.category == "control" and msg.get("type") == expected_type:
-            return msg
+async def _wait_for_control(client: NetworkClient, expected_type: str, *, timeout: float | None = None):
+    return await client.wait_for_control(expected_type, timeout=timeout)
 
 
 async def _run_client(args: argparse.Namespace) -> None:
@@ -162,17 +160,18 @@ async def _run_client(args: argparse.Namespace) -> None:
         uri=args.server,
         ca_cert=args.ca_cert,
         insecure=args.insecure,
+        response_timeout=args.response_timeout,
     )
     await client.connect()
     await client.send_hello(args.display_name)
-    hello_msg = await _wait_for_control(client, "hello")
+    hello_msg = await _wait_for_control(client, "hello", timeout=args.response_timeout)
     hello_payload = hello_msg.get("payload", {})
     if not hello_payload.get("ok"):
         logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
         await client.close()
         return
     await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
-    auth_msg = await _wait_for_control(client, "auth")
+    auth_msg = await _wait_for_control(client, "auth", timeout=args.response_timeout)
     payload = auth_msg.get("payload", {})
     if not payload.get("ok"):
         logger.error(f"Auth failed: {payload.get('errors', [])}")
@@ -180,14 +179,14 @@ async def _run_client(args: argparse.Namespace) -> None:
         return
     if args.role:
         await client.send_role_select(args.role)
-        await _wait_for_control(client, "role_select")
+        await _wait_for_control(client, "role_select", timeout=args.response_timeout)
     if args.army_file:
         text = Path(args.army_file).read_text(encoding="utf-8")
         await client.send_army_submit(text, list_name=Path(args.army_file).name)
-        await _wait_for_control(client, "army_submit")
+        await _wait_for_control(client, "army_submit", timeout=args.response_timeout)
     if args.ready:
         await client.send_ready(True)
-        await _wait_for_control(client, "ready")
+        await _wait_for_control(client, "ready", timeout=args.response_timeout)
 
     logger.info("Connected. Listening for updates...")
     try:
@@ -206,6 +205,7 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
         uri=args.server,
         ca_cert=args.ca_cert,
         insecure=args.insecure,
+        response_timeout=args.response_timeout,
     )
     session = NetworkGameSession(client, allow_commands=True)
     current_controller: HeadlessPolicyDecisionController | None = None
@@ -227,21 +227,21 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
 
     await client.connect()
     await client.send_hello(args.display_name)
-    hello_msg = await _wait_for_control(client, "hello")
+    hello_msg = await _wait_for_control(client, "hello", timeout=args.response_timeout)
     hello_payload = hello_msg.get("payload", {})
     if not hello_payload.get("ok"):
         logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
         await client.close()
         return
     await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
-    auth_msg = await _wait_for_control(client, "auth")
+    auth_msg = await _wait_for_control(client, "auth", timeout=args.response_timeout)
     payload = auth_msg.get("payload", {})
     if not payload.get("ok"):
         logger.error(f"Auth failed: {payload.get('errors', [])}")
         await client.close()
         return
     await client.send_role_select(str(args.role))
-    role_msg = await _wait_for_control(client, "role_select")
+    role_msg = await _wait_for_control(client, "role_select", timeout=args.response_timeout)
     role_payload = role_msg.get("payload", {})
     if not role_payload.get("ok"):
         logger.error(f"Role selection failed: {role_payload.get('errors', [])}")
@@ -250,7 +250,7 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
     if args.army_file:
         text = Path(args.army_file).read_text(encoding="utf-8")
         await client.send_army_submit(text, list_name=Path(args.army_file).name)
-        army_msg = await _wait_for_control(client, "army_submit")
+        army_msg = await _wait_for_control(client, "army_submit", timeout=args.response_timeout)
         army_payload = army_msg.get("payload", {})
         if not army_payload.get("ok"):
             logger.error(f"Army submission failed: {army_payload.get('errors', [])}")
@@ -258,7 +258,7 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
             return
     if args.ready:
         await client.send_ready(True)
-        ready_msg = await _wait_for_control(client, "ready")
+        ready_msg = await _wait_for_control(client, "ready", timeout=args.response_timeout)
         ready_payload = ready_msg.get("payload", {})
         if not ready_payload.get("ok"):
             logger.error(f"Ready state update failed: {ready_payload.get('errors', [])}")
@@ -306,6 +306,7 @@ def main() -> None:
                 role=args.role,
                 army_file=args.army_file,
                 ready=args.ready,
+                response_timeout=args.response_timeout,
             )
         )
         return

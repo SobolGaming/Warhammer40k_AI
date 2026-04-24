@@ -147,7 +147,7 @@ class StateAttachmentMixin:
                 # If status effect check fails, just continue
                 # This prevents crashes from incomplete status effect implementations
                 pass
-        
+
         # Reset reserves arrival flag
         self.arrived_from_reserves_this_turn = False
         # Reset edge-touch Strategic Reserves restriction (only applies on the turn the unit arrives).
@@ -192,10 +192,10 @@ class StateAttachmentMixin:
     def is_below_half_strength(self) -> bool:
         """
         Check if the unit is below half its starting strength for Battle-Shock purposes.
-        
+
         For multi-model units: Check if current model count is less than half starting count
         For single-model units: Check if current wounds are less than half starting wounds
-        
+
         Returns:
             bool: True if unit is below half strength and should take Battle-Shock tests
         """
@@ -322,7 +322,7 @@ class StateAttachmentMixin:
     def is_battle_shocked(self) -> bool:
         """
         Check if the unit is currently battle-shocked.
-        
+
         Returns:
             bool: True if the unit has a BattleShockEffect status effect
         """
@@ -1578,7 +1578,7 @@ class StateAttachmentMixin:
         reroll_reason: str = "Leadership re-roll",
     ) -> bool:
         """Perform a Leadership test by rolling 2D6 against the unit's Leadership characteristic.
-        
+
         Returns:
             bool: True if the test is passed, False if failed
         """
@@ -1781,7 +1781,7 @@ class StateAttachmentMixin:
                     continue
                 seen.add(key)
                 reroll_sources.append(label)
-        
+
         # Provide detailed feedback
         dice_note = ""
         try:
@@ -1817,7 +1817,7 @@ class StateAttachmentMixin:
             except Exception:
                 game_map = None
             try:
-                provider = getattr(game_map, "roll_reroll_provider", None)
+                provider = get_decision_provider(None, "roll_reroll_provider", game_map=game_map)
             except Exception:
                 provider = None
             try:
@@ -1874,7 +1874,7 @@ class StateAttachmentMixin:
                 else:
                     logger.info(f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} "
                         f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
-        
+
         return passed
 
     def pass_leadership_check_for_model(self, model: Optional['Model']) -> bool:
@@ -4724,14 +4724,14 @@ class StateAttachmentMixin:
             self._ability_cache = {}
         self._ability_cache['kill_team'] = found
         return found
-    
+
 
     def can_move_through_ruins_walls(self) -> bool:
         """Check if this unit can move through RUINS walls via Breachable-style rules."""
         return (self.counts_as_infantry_for_terrain() or self.is_beast or
                 self.is_imperium_primarch or self.is_belisarius_cawl or
                 self.is_thulia_ghuld)
-    
+
 
     def can_access_upper_floors(self) -> bool:
         """Check if this unit can be placed on upper floors of RUINS."""
@@ -4739,7 +4739,7 @@ class StateAttachmentMixin:
                 self.is_imperium_primarch or self.is_belisarius_cawl or
                 self.is_thulia_ghuld or
                 self.is_flying)
-    
+
 
     def can_overhang_floor(self) -> bool:
         """Check if this unit's base can overhang floor edges on upper floors."""

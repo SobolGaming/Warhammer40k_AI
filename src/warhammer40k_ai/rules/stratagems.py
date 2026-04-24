@@ -10,6 +10,7 @@ from itertools import combinations
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
+from ..engine.decision_port import get_decision_provider
 from ..engine.stratagem_ledger import StratagemApplicationLedger
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
@@ -29835,7 +29836,7 @@ class StratagemManager(
                 raise
             if roll > 0:
                 try:
-                    provider = getattr(game_map, "reanimation_allocation_provider", None)
+                    provider = get_decision_provider(None, "reanimation_allocation_provider", game_map=game_map)
                     is_human = bool(getattr(self.player, "has_control", lambda: False)())
                     root.apply_reanimation_protocols(
                         roll,

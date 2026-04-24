@@ -705,6 +705,13 @@ This keeps AI and network clients identical to human UI behavior.
 ## Network Flow
 
 - Server is authoritative.
+- Clients must complete the `hello` app-version handshake before any other control
+  message or game command is accepted.
+- A control or game message received before successful version negotiation is
+  rejected with `version_negotiation_required`; server broadcasts of lobby/start
+  control state are limited to version-compatible connections.
+- Network clients use bounded waits for expected control responses so malformed
+  or silent servers fail with a timeout instead of blocking indefinitely.
 - Client sends Command; server validates and emits Event(s).
 - Server broadcasts Event(s) to all clients for visualization.
 - Client UIs replay events to update local views.

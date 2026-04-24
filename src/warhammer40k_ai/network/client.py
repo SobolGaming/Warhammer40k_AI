@@ -13,6 +13,8 @@ from .transport import TransportClient, build_client_ssl_context
 
 
 class NetworkClient:
+    DEFAULT_RESPONSE_TIMEOUT = 10.0
+
     def __init__(
         self,
         *,
@@ -22,6 +24,7 @@ class NetworkClient:
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
         max_message_size: int = 1_000_000,
+        response_timeout: float = DEFAULT_RESPONSE_TIMEOUT,
     ) -> None:
         ssl_context = None
         if uri.startswith("wss://"):
@@ -44,6 +47,7 @@ class NetworkClient:
         self.server_version: Optional[str] = None
         self.version_ok: Optional[bool] = None
         self.version_error: Optional[str] = None
+        self.response_timeout = float(response_timeout)
 
     async def connect(self) -> None:
         await self.transport.connect()
@@ -53,6 +57,32 @@ class NetworkClient:
 
     async def send_control(self, message_type: str, payload: dict) -> None:
         await self.transport.send(build_control_message(message_type, payload))
+
+    async def send_control_and_wait(
+        self,
+        message_type: str,
+        payload: dict,
+        *,
+        timeout: Optional[float] = None,
+    ) -> dict:
+        await self.send_control(message_type, payload)
+        return await self.wait_for_control(message_type, timeout=timeout)
+
+    async def wait_for_control(self, expected_type: str, *, timeout: Optional[float] = None) -> dict:
+        expected = str(expected_type or "").strip()
+        if not expected:
+            raise ValueError("expected_type is required.")
+        wait_timeout = self.response_timeout if timeout is None else float(timeout)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait_timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            event = await self.next_message(timeout=remaining)
+            self.handle_message(event)
+            if event.category == "control" and event.message_type == expected:
+                return dict(event.message)
 
     async def send_hello(self, display_name: str, *, app_version: Optional[str] = None) -> None:
         payload = {

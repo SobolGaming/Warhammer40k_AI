@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from warhammer40k_ai.network.messages import PROTOCOL_VERSION, SnapshotMessage
+from warhammer40k_ai.network.client import NetworkClient
 from warhammer40k_ai.network.transport import (
     CONTROL_MESSAGE_TYPES,
     TransportEvent,
@@ -88,3 +89,29 @@ def test_transport_client_try_next_message():
     client._incoming.put_nowait(event)
     assert client.try_next_message() == event
     assert client.try_next_message() is None
+
+
+def test_network_client_wait_for_control_times_out_when_server_is_silent():
+    async def run_timeout():
+        client = NetworkClient(uri="ws://example", response_timeout=0.01)
+        with pytest.raises(asyncio.TimeoutError):
+            await client.wait_for_control("hello")
+
+    asyncio.run(run_timeout())
+
+
+def test_network_client_wait_for_control_times_out_on_unexpected_control_response():
+    async def run_timeout():
+        client = NetworkClient(uri="ws://example", response_timeout=0.01)
+        client._pending_messages.append(
+            TransportEvent(
+                connection_id="client",
+                category="control",
+                message_type="auth",
+                message={"type": "auth", "protocol_version": PROTOCOL_VERSION, "payload": {"ok": False}},
+            )
+        )
+        with pytest.raises(asyncio.TimeoutError):
+            await client.wait_for_control("hello")
+
+    asyncio.run(run_timeout())
