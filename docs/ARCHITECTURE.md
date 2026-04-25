@@ -234,11 +234,11 @@ Key responsibilities:
   - Snapshot/ref encoding preserves stable object references, including `WargearProfile` values via parent-wargear/profile-name reconstruction during load/resync.
 
 `Game` composition notes:
-- `game.py` keeps constructor/state wiring, service composition, and compatibility wrappers for stable callers.
-- Explicit facade services own extracted domains: `game_charge.py` for charge declaration/movement follow-up, `game_fight.py` for lightweight fight eligibility/stage queries, `game_commands.py` for command queue/application orchestration over `command_dispatcher.py`, `game_scoring.py` for mission scoring/actions, and `game_faction_state.py` for faction transient runtime storage.
-- `game_mixins/` contains specialized legacy handlers that are still inherited by `Game`: setup/deployment/reserves, reactive decisions, shooting/fight handlers, and phase start/end hooks. The old missions/scoring/actions mixin remains importable for focused tests, but `Game` now reaches that behavior through `GameScoringService`.
-- `game_mixins/` remains legacy composition until each domain is migrated behind services; do not treat `game.py` as a complete thin facade while inherited mixin behavior remains.
-- This split keeps import paths and old `Game` method names stable (`from warhammer40k_ai.engine.game import Game`) while reducing monolithic file churn and improving targeted testability.
+- `game.py` is a thin facade for constructor/state wiring, service composition, ruleset/map helpers, and stable method-name compatibility.
+- Explicit facade services own lifecycle domains: charge, fight eligibility, command dispatch, scoring/actions, setup/deployment/reserves, phase handlers, reactive decisions, shooting/heavy fight handlers, direct rule-event callbacks, and faction transient runtime storage.
+- `game_mixins/` remains as legacy implementation bases for service classes and focused tests, but `Game` no longer inherits those mixins.
+- Rule-provider subscriptions can resolve dotted service handlers such as `rule_events._on_unit_destroyed_rules` while bare legacy handler names remain compatible through the facade.
+- This split keeps `from warhammer40k_ai.engine.game import Game` stable while enforcing the facade line-budget guardrail.
 
 ### Rules layer (`src/warhammer40k_ai/rules/`)
 

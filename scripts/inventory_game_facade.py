@@ -14,7 +14,12 @@ SERVICE_FILES = (
     "game_commands.py",
     "game_faction_state.py",
     "game_fight.py",
+    "game_phase_handlers.py",
+    "game_reactive_rules.py",
+    "game_rule_events.py",
     "game_scoring.py",
+    "game_setup_deployment.py",
+    "game_shooting.py",
 )
 
 

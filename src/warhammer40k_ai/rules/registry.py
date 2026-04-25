@@ -35,7 +35,7 @@ class RuleProvider:
             return registered
         for event_name, handler_name in list(self.subscriptions or []):
             try:
-                handler = getattr(game, handler_name, None)
+                handler = self._resolve_handler(game, handler_name)
             except Exception:
                 handler = None
             if not callable(handler):
@@ -46,6 +46,17 @@ class RuleProvider:
             except Exception:
                 continue
         return registered
+
+    @staticmethod
+    def _resolve_handler(game: object, handler_name: str):
+        current = game
+        for part in str(handler_name or "").split("."):
+            if not part:
+                return None
+            current = getattr(current, part, None)
+            if current is None:
+                return None
+        return current
 
     def unregister(self, game: object, event_system: object) -> None:
         group_name = self.group or f"rule:{self.name}"

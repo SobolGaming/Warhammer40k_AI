@@ -1,6 +1,16 @@
+from pathlib import Path
+
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
+from warhammer40k_ai.engine.game_mixins.reactive_decisions_mixin import GameReactiveDecisionsMixin
 from warhammer40k_ai.engine.game_mixins.missions_scoring_actions_mixin import (
     GameMissionsScoringActionsMixin,
+)
+from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import (
+    GameSetupDeploymentReservesMixin,
+)
+from warhammer40k_ai.engine.game_mixins.shooting_fight_handlers_mixin import (
+    GameShootingFightHandlersMixin,
 )
 
 
@@ -184,6 +194,22 @@ def test_game_private_compatibility_hooks() -> None:
     assert not missing
 
 
-def test_game_scoring_domain_is_service_backed() -> None:
-    assert GameMissionsScoringActionsMixin not in Game.__mro__
+def test_game_facade_is_service_backed() -> None:
+    legacy_mixins = {
+        GameMissionsScoringActionsMixin,
+        GamePhaseHandlersMixin,
+        GameReactiveDecisionsMixin,
+        GameSetupDeploymentReservesMixin,
+        GameShootingFightHandlersMixin,
+    }
+    assert not (legacy_mixins & set(Game.__mro__))
     assert callable(getattr(Game, "_ensure_scoring_service", None))
+    assert callable(getattr(Game, "_ensure_setup_deployment_service", None))
+    assert callable(getattr(Game, "_ensure_phase_handlers_service", None))
+    assert callable(getattr(Game, "_ensure_reactive_rules_service", None))
+    assert callable(getattr(Game, "_ensure_shooting_service", None))
+
+
+def test_game_facade_line_count_budget() -> None:
+    game_path = Path(__file__).resolve().parents[2] / "src/warhammer40k_ai/engine/game.py"
+    assert len(game_path.read_text().splitlines()) <= 1500
