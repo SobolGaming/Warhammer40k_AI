@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_OVERRIDES_FILE = ("data", "model_geometry_overrides.json")
 _SHAPE_TYPES = {"circle", "ellipse", "hull"}
-_ENTRY_TYPES = {"hull", "compound"}
+_ENTRY_TYPES = {"hull", "compound", "flying_hull"}
 _GUIDE_CLASSIFICATIONS = {"hull", "unique", "circle", "ellipse"}
 
 _HEIGHT_INFANTRY_OR_CHARACTER = 1.4
@@ -129,6 +129,15 @@ def _validate_unit_entry(unit_key: str, entry: dict) -> None:
                 raise ValueError(
                     f"{context} must define 'height_mm' or provide 'height_mm' for every part"
                 )
+        elif entry_type == "flying_hull":
+            support_base = entry.get("support_base")
+            if not isinstance(support_base, dict):
+                raise ValueError(f"{context}.support_base must be an object")
+            _validate_shape_spec(support_base, context=f"{context}.support_base")
+            _to_inch(entry.get("length_mm"), field="length_mm", context=context)
+            _to_inch(entry.get("width_mm"), field="width_mm", context=context)
+            if "height_mm" not in entry:
+                raise ValueError(f"{context} must define 'height_mm'")
     elif shape:
         _validate_shape_spec(entry, context=context)
     else:
@@ -317,7 +326,10 @@ def _resolve_entry_geometry(entry: dict, *, context: str) -> tuple[BaseType, tup
     compound_parts: tuple[dict, ...] = tuple()
     if entry_type == "compound":
         raw_parts = list(entry.get("parts", []) or [])
-        part_specs = tuple(_part_to_local_spec(part, context=f"{context}.parts[{idx}]") for idx, part in enumerate(raw_parts))
+        part_specs = tuple(
+            _part_to_local_spec(part, context=f"{context}.parts[{idx}]")
+            for idx, part in enumerate(raw_parts)
+        )
         part_geoms = [_part_local_shape(spec) for spec in part_specs]
         union_shape = unary_union(part_geoms)
         bounds = union_shape.bounds
@@ -327,6 +339,30 @@ def _resolve_entry_geometry(entry: dict, *, context: str) -> tuple[BaseType, tup
         )
         if radius[0] <= 0.0 or radius[1] <= 0.0:
             raise ValueError(f"{context}: compound footprint bounds are degenerate")
+        compound_parts = part_specs
+        base_type = BaseType.HULL
+    elif entry_type == "flying_hull":
+        support_base = dict(entry.get("support_base", {}) or {})
+        support_base["part_id"] = "support_base"
+        support_base.setdefault("offset_mm", [0.0, 0.0])
+        hull_proxy = {
+            "part_id": "hull_proxy",
+            "shape": "hull",
+            "length_mm": entry.get("length_mm"),
+            "width_mm": entry.get("width_mm"),
+            "offset_mm": [0.0, 0.0],
+        }
+        raw_parts = [support_base, hull_proxy]
+        part_specs = tuple(_part_to_local_spec(part, context=f"{context}.parts[{idx}]") for idx, part in enumerate(raw_parts))
+        part_geoms = [_part_local_shape(spec) for spec in part_specs]
+        union_shape = unary_union(part_geoms)
+        bounds = union_shape.bounds
+        radius = (
+            float(max(abs(bounds[0]), abs(bounds[2]))),
+            float(max(abs(bounds[1]), abs(bounds[3]))),
+        )
+        if radius[0] <= 0.0 or radius[1] <= 0.0:
+            raise ValueError(f"{context}: flying hull footprint bounds are degenerate")
         compound_parts = part_specs
         base_type = BaseType.HULL
     elif entry_type == "hull":

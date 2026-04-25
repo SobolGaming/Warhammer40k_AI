@@ -550,6 +550,46 @@
         "requires_manual_geometry": true,
         "geometry_key": "hydra_chimera_hull"
       },
+      "000000038": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "mek_gunz_hull"
+      },
+      "000000039": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "battlewagon_hull"
+      },
+      "000000097": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "hammerfall_bunker_hull"
+      },
+      "000000437": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "tidewall_hull"
+      },
+      "000000533": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "necron_barge_hull"
+      },
+      "000000540": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "triarch_stalker_hull"
+      },
+      "000000553": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "necron_barge_hull"
+      },
+      "000000693": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "taurox_hull"
+      },
       "000000721": {
         "classification": "hull",
         "requires_manual_geometry": true,
@@ -560,10 +600,50 @@
         "requires_manual_geometry": true,
         "geometry_key": "taurox_hull"
       },
+      "000003952": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "taurox_hull"
+      },
       "000001158": {
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "invader_atv_hull"
+      },
+      "Outrider Squad::INVADER ATV": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "invader_atv_hull"
+      },
+      "000001470": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "feculent_gnarlmaw_hull"
+      },
+      "000001587": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "noctilith_crown_hull"
+      },
+      "000001588": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "skull_altar_hull"
+      },
+      "000002361": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "convergence_of_dominion_hull"
+      },
+      "000002462": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "miasmic_malignifier_hull"
+      },
+      "000002499": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "big_ed_bossbunka_hull"
       },
       "000000026": {
         "classification": "hull",
@@ -763,6 +843,77 @@
     "wave_serpent": "wave_serpent",
     "wave serpent": "wave_serpent",
 
+    "000000029": "ork_aircraft_hull",
+    "000000030": "ork_aircraft_hull",
+    "000000031": "ork_aircraft_hull",
+    "000000032": "ork_aircraft_hull",
+    "000000084": "stormtalon_stormhawk_hull",
+    "000000238": "ravenwing_speeder_hull",
+    "000000239": "nephilim_dark_talon_hull",
+    "000000240": "nephilim_dark_talon_hull",
+    "000000242": "ravenwing_speeder_hull",
+    "000000358": "corvus_blackstar_hull",
+    "000000398": "stormraven_hull",
+    "000000423": "piranha_hull",
+    "000000424": "tau_devilfish_chassis_hull",
+    "000000425": "tau_aircraft_hull",
+    "000000426": "tau_aircraft_hull",
+    "000000430": "tau_devilfish_chassis_hull",
+    "000000432": "tau_devilfish_chassis_hull",
+    "000000484": "gargoyle_hull",
+    "000000485": "tyranid_harpy_crone_hull",
+    "000000486": "tyranid_harpy_crone_hull",
+    "000000544": "night_doom_scythe_hull",
+    "000000545": "night_doom_scythe_hull",
+    "000000548": "tomb_blade_hull",
+    "000000551": "canoptek_spyder_hull",
+    "000000554": "doomsday_ark_hull",
+    "000000555": "transcendent_ctan_hull",
+    "000000556": "tesseract_vault_obelisk_hull",
+    "000000557": "tesseract_vault_obelisk_hull",
+    "000000583": "aeldari_skyrunner_hull",
+    "000000587": "aeldari_skyrunner_hull",
+    "000000591": "aeldari_skyrunner_hull",
+    "000000602": "shining_spear_hull",
+    "000000603": "crimson_hunter_hemlock_hull",
+    "000000606": "crimson_hunter_hemlock_hull",
+    "000000609": "aeldari_grav_tank_hull",
+    "000000610": "aeldari_grav_tank_hull",
+    "000000611": "aeldari_grav_tank_hull",
+    "000000656": "drukhari_raider_ravager_hull",
+    "000000657": "venom_hull",
+    "000000658": "reaver_jetbike_hull",
+    "000000659": "hellion_hull",
+    "000000660": "razorwing_jetfighter_hull",
+    "000000661": "voidraven_bomber_hull",
+    "000000663": "talos_cronos_hull",
+    "000000664": "talos_cronos_hull",
+    "000000665": "drukhari_raider_ravager_hull",
+    "000000727": "valkyrie_hull",
+    "000000961": "heldrake_hull",
+    "000001024": "heldrake_hull",
+    "000001119": "blue_scribes_hull",
+    "000001127": "screamer_hull",
+    "000001190": "stormtalon_stormhawk_hull",
+    "000001191": "stormraven_hull",
+    "000001363": "stormtalon_stormhawk_hull",
+    "000001364": "stormtalon_stormhawk_hull",
+    "000001464": "fluxmaster_hull",
+    "000002291": "sammael_corvex_hull",
+    "000002351": "lokhust_destroyer_hull",
+    "000002359": "lokhust_destroyer_hull",
+    "000002533": "shroud_runner_hull",
+    "000002539": "skyweaver_hull",
+    "000002641": "heldrake_hull",
+    "000003817": "corvus_blackstar_hull",
+    "000003881": "gargoyle_hull",
+    "000003919": "reaver_jetbike_hull",
+    "000003920": "drukhari_raider_ravager_hull",
+    "000003921": "venom_hull",
+    "000004092": "heldrake_hull",
+    "000004126": "screamer_hull",
+    "000004163": "skyweaver_hull",
+
     "000000087": "drop_pod",
     "drop_pod": "drop_pod",
     "drop pod": "drop_pod",
@@ -812,16 +963,82 @@
     "000003986": "hydra_chimera_hull",
     "manticore": "hydra_chimera_hull",
 
+    "000000038": "mek_gunz_hull",
+    "mek_gunz_hull": "mek_gunz_hull",
+    "mek gunz hull": "mek_gunz_hull",
+    "mek gunz": "mek_gunz_hull",
+
+    "000000039": "battlewagon_hull",
+    "battlewagon_hull": "battlewagon_hull",
+    "battlewagon hull": "battlewagon_hull",
+    "battlewagon": "battlewagon_hull",
+
+    "000000097": "hammerfall_bunker_hull",
+    "hammerfall_bunker_hull": "hammerfall_bunker_hull",
+    "hammerfall bunker hull": "hammerfall_bunker_hull",
+    "hammerfall bunker": "hammerfall_bunker_hull",
+
+    "000000533": "necron_barge_hull",
+    "000000553": "necron_barge_hull",
+    "necron_barge_hull": "necron_barge_hull",
+    "necron barge hull": "necron_barge_hull",
+    "catacomb command barge": "necron_barge_hull",
+    "annihilation barge": "necron_barge_hull",
+
+    "000000540": "triarch_stalker_hull",
+    "triarch_stalker_hull": "triarch_stalker_hull",
+    "triarch stalker hull": "triarch_stalker_hull",
+    "triarch stalker": "triarch_stalker_hull",
+
+    "000001470": "feculent_gnarlmaw_hull",
+    "feculent_gnarlmaw_hull": "feculent_gnarlmaw_hull",
+    "feculent gnarlmaw hull": "feculent_gnarlmaw_hull",
+    "feculent gnarlmaw": "feculent_gnarlmaw_hull",
+
+    "000001587": "noctilith_crown_hull",
+    "noctilith_crown_hull": "noctilith_crown_hull",
+    "noctilith crown hull": "noctilith_crown_hull",
+    "noctilith crown": "noctilith_crown_hull",
+
+    "000001588": "skull_altar_hull",
+    "skull_altar_hull": "skull_altar_hull",
+    "skull altar hull": "skull_altar_hull",
+    "skull altar": "skull_altar_hull",
+
+    "000002361": "convergence_of_dominion_hull",
+    "convergence_of_dominion_hull": "convergence_of_dominion_hull",
+    "convergence of dominion hull": "convergence_of_dominion_hull",
+    "convergence of dominion": "convergence_of_dominion_hull",
+    "convergence of dominion starstele": "convergence_of_dominion_hull",
+
+    "000002462": "miasmic_malignifier_hull",
+    "miasmic_malignifier_hull": "miasmic_malignifier_hull",
+    "miasmic malignifier hull": "miasmic_malignifier_hull",
+    "miasmic malignifier": "miasmic_malignifier_hull",
+
+    "000002499": "big_ed_bossbunka_hull",
+    "big_ed_bossbunka_hull": "big_ed_bossbunka_hull",
+    "big ed bossbunka hull": "big_ed_bossbunka_hull",
+    "big'ed bossbunka": "big_ed_bossbunka_hull",
+    "biged bossbunka": "big_ed_bossbunka_hull",
+
+    "000000437": "tidewall_hull",
+    "tidewall gunrig": "tidewall_hull",
+
     "000000721": "taurox_hull",
     "000003953": "taurox_hull",
+    "000000693": "taurox_hull",
+    "000003952": "taurox_hull",
     "taurox_hull": "taurox_hull",
     "taurox hull": "taurox_hull",
+    "taurox": "taurox_hull",
     "taurox prime": "taurox_hull",
 
     "000001158": "invader_atv_hull",
     "invader_atv_hull": "invader_atv_hull",
     "invader atv hull": "invader_atv_hull",
     "invader atv": "invader_atv_hull",
+    "outrider squad::invader atv": "invader_atv_hull",
 
     "000000026": "trukk_hull",
     "trukk_hull": "trukk_hull",
@@ -1092,14 +1309,113 @@
       "height_mm": 70.0,
       "notes": "Bounding rectangle proxy for Sagitaur. Official Base Size Guide classifies this datasheet as Hull; dimensions use community tabletop model measurement: 10.5cm long, 6.8cm wide, 7cm high. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/LeaguesofVotann/comments/1ae778q/"
     },
+    "mek_gunz_hull": {
+      "display_name": "Mek Gunz",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 100.0,
+      "width_mm": 52.0,
+      "height_mm": 60.0,
+      "notes": "Bounding rectangle proxy for the Orks Mek Gunz `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community Ork vehicle-size references list the new Mek Gunz footprint as 7.5cm base length, 10cm with weapon, 5.2cm wide, and 6cm tall. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/orks/comments/18gcu3q"
+    },
+    "battlewagon_hull": {
+      "display_name": "Battlewagon",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 165.0,
+      "width_mm": 76.0,
+      "height_mm": 127.0,
+      "notes": "Bounding rectangle proxy for the Orks Battlewagon `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community Ork vehicle-size references list the Battlewagon as 6.5in long, 3in wide, and 5in tall to the turret. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/orks/comments/18gcu3q"
+    },
+    "hammerfall_bunker_hull": {
+      "display_name": "Hammerfall Bunker",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 110.0,
+      "width_mm": 110.0,
+      "height_mm": 97.0,
+      "notes": "Bounding square proxy for the Space Marines Hammerfall Bunker `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; Feldherr-compatible listings identify the bunker tray diameter as 110mm, and Adeptus Ars lists the assembled model height at about 3.8in. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.fantasywelt.de/Feldherr-Schaumstoffeinlage-fuer-Hammerschlag-Sturmbunker_1, and https://www.adeptusars.com/miniatures/hammerfall-bunker"
+    },
+    "necron_barge_hull": {
+      "display_name": "Catacomb Command Barge / Annihilation Barge",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 127.0,
+      "width_mm": 76.0,
+      "height_mm": 76.0,
+      "notes": "Bounding rectangle proxy for Necron Catacomb Command Barge and Annihilation Barge `Use model` datasheets. Official Base Size Guide classifies both datasheets as Hull; community Necron measurements list the barge body at about 5in by 3in, and Annihilation Barge stand discussion identifies the kit as using a 60mm flying base with about a 1.5in original stand. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Necrontyr/comments/oakkbg, and https://www.reddit.com/r/Necrontyr/comments/1r10ocp/annihilation_barge_height/"
+    },
+    "triarch_stalker_hull": {
+      "display_name": "Triarch Stalker",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 165.0,
+      "width_mm": 120.0,
+      "height_mm": 110.0,
+      "notes": "Bounding rectangle proxy for the Necrons Triarch Stalker `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; Feldherr's model-specific Necron tray lists a Triarch Stalker compartment at 165mm long by 120mm wide by 110mm deep. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.feldherr.net/hs120a011-feldherr-foam-tray-for-necrons/a-61546"
+    },
+    "feculent_gnarlmaw_hull": {
+      "display_name": "Feculent Gnarlmaw",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 121.0,
+      "width_mm": 95.0,
+      "height_mm": 114.0,
+      "notes": "Bounding rectangle proxy for the Chaos Daemons Feculent Gnarlmaw `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community measurements describe the terrain footprint as a rough 4.75in by 3.75in oval and about 4.5in tall. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/MaggotkinofNurgle/comments/vtsg1m"
+    },
+    "noctilith_crown_hull": {
+      "display_name": "Noctilith Crown",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 220.0,
+      "width_mm": 100.0,
+      "height_mm": 190.0,
+      "notes": "Bounding rectangle proxy for the Chaos Space Marines Noctilith Crown `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community scratch-build measurements give the bottom footprint as 220mm by 100mm, and DakkaDakka model measurements list the crown outer ring diameter at 190mm before spikes/protrusions. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Chaos40k/comments/13y6dot, and https://www.dakkadakka.com/dakkaforum/posts/list/780576.page"
+    },
+    "skull_altar_hull": {
+      "display_name": "Skull Altar",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 135.0,
+      "width_mm": 127.0,
+      "height_mm": 165.0,
+      "notes": "Bounding rectangle proxy for the Chaos Daemons Skull Altar `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community measurements describe a base structure around 8cm across with a 5.5cm stair extension and side panels, and another model measurement gives about 6.5in tall, 4in wide, or 5in wide with stairs. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Khorne/comments/178o9r1, and https://www.reddit.com/r/ChaosDaemons40k/comments/1d6ov66"
+    },
+    "convergence_of_dominion_hull": {
+      "display_name": "Convergence Of Dominion Starstele",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 70.0,
+      "width_mm": 38.0,
+      "height_mm": 108.0,
+      "notes": "Per-Starstele bounding rectangle proxy for the Necrons Convergence Of Dominion `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; Battle Foam's stacked Convergence/Silent King tray lists a 70mm by 38mm cut-out and 4.25in tray height for the stacked Convergence models. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://thegamershaven.net/products/battle-foam-szarekh-the-silent-king-convergence-of-dominion-ctan-shard-of-the-void-dragon-and-illuminor-szeras-foam-tray"
+    },
+    "miasmic_malignifier_hull": {
+      "display_name": "Miasmic Malignifier",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 229.0,
+      "width_mm": 51.0,
+      "height_mm": 203.0,
+      "notes": "Bounding rectangle proxy for the Death Guard Miasmic Malignifier `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; Target lists overall dimensions as 9in wide by 2in deep by 6in high, while Adeptus Ars lists the model height at 8in, so height uses the taller hobby measurement. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.target.com/p/-/A-1000032052, and https://www.adeptusars.com/miniatures/miasmic-malignifier"
+    },
+    "big_ed_bossbunka_hull": {
+      "display_name": "Big'ed Bossbunka",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 190.0,
+      "width_mm": 150.0,
+      "height_mm": 200.0,
+      "notes": "Bounding rectangle proxy for the Orks Big'ed Bossbunka `Use model` datasheet. Official Base Size Guide classifies the datasheet as Hull; community measurements confirm about 15cm across, 19cm deep including mounted dakka, and 15cm tall without the pole or 20cm tall with it. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/orks/comments/1gnxd7l"
+    },
     "taurox_hull": {
-      "display_name": "Taurox Prime",
+      "display_name": "Taurox / Taurox Prime",
       "type": "hull",
       "rules_footprint": "hull",
       "length_mm": 105.0,
       "width_mm": 70.0,
       "height_mm": 75.0,
-      "notes": "Explicit hull override for Taurox Prime datasheets that publish `Use model` base size. Dimensions are a conservative Taurox chassis bounding box."
+      "notes": "Explicit hull override for Taurox and Taurox Prime datasheets that publish `Use model` base size. Dimensions are a conservative Taurox chassis bounding box, consistent with community references describing the Taurox around 4in long, 3in wide, and 2.5in tall. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/TheAstraMilitarum/comments/1kk11ru/taurox_dimensions/"
     },
     "invader_atv_hull": {
       "display_name": "Invader ATV",
@@ -1108,7 +1424,7 @@
       "length_mm": 95.0,
       "width_mm": 70.0,
       "height_mm": 60.0,
-      "notes": "Explicit hull override for Invader ATV `Use model` base-size data."
+      "notes": "Explicit hull override for standalone Invader ATV and the Invader ATV model inside Outrider Squad `Use model` base-size data. Dimensions are a conservative bound over community measurements around 3.25-3.5in long, 2.5-2.69in wide, and 2in tall. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Warhammer40k/comments/1rtka66, and https://www.reddit.com/r/Warhammer40k/comments/s1mq2q"
     },
     "trukk_hull": {
       "display_name": "Ork Trukk",
@@ -1135,7 +1451,7 @@
       "length_mm": 150.0,
       "width_mm": 105.0,
       "height_mm": 60.0,
-      "notes": "Explicit hull override for Tidewall Droneport/Shieldline `Use model` base-size data and local Tidewall test doubles."
+      "notes": "Explicit hull override for Tidewall Droneport, Tidewall Shieldline, Tidewall Gunrig, and local Tidewall test doubles. Official Base Size Guide classifies these datasheets as Hull; the shared key preserves the existing 150mm by 105mm Tidewall platform footprint, and community Gunrig discussion describes the Gunrig as a Tidewall ring/platform with an added tower and Hammerhead rail weapon parts. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/Tau40K/comments/1rcz99o/tidewall_gunrig/"
     },
     "attack_bike_hull": {
       "display_name": "Attack Bike",
@@ -1208,6 +1524,376 @@
       "width_mm": 40.0,
       "notes": "Central hull proxy only; open fins and ramps are excluded from the collision footprint so other models can move or end on them."
     },
+    "ork_aircraft_hull": {
+      "display_name": "Ork aircraft",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 190.0,
+      "width_mm": 292.0,
+      "height_mm": 75.0,
+      "notes": "Compound support-base plus hull proxy for Dakkajet/Burna-bommer/Blitza-bommer/Wazbom Blastajet. The support part preserves the 120 x 92mm flying base; the hull proxy uses community Dakkajet measurements reporting about 11-12in wingspan and a conservative 190mm fuselage length. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/orks/comments/r2ma27/"
+    },
+    "stormtalon_stormhawk_hull": {
+      "display_name": "Stormtalon Gunship / Stormhawk Interceptor",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 153.0,
+      "width_mm": 145.0,
+      "height_mm": 95.0,
+      "notes": "Compound support-base plus hull proxy for Stormtalon Gunship and Stormhawk Interceptor. The support part preserves the 120 x 92mm flying base; the hull proxy uses community Stormtalon length of 15.3cm and Feldherr's variant-specific 95mm usable tray height for both Stormtalon and Stormhawk builds. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Warhammer/comments/17abndz, and https://www.feldherr.net/en/for/warhammer-40-000/space-marines/hsmesv105bo-feldherr-foam-tray-for-stormtalon-gunship/a-59496"
+    },
+    "ravenwing_speeder_hull": {
+      "display_name": "Ravenwing Darkshroud / Land Speeder Vengeance",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 165.0,
+      "width_mm": 120.0,
+      "height_mm": 109.0,
+      "notes": "Compound support-base plus hull proxy for Ravenwing Darkshroud and Land Speeder Vengeance. The support part preserves the 60mm flying base; the hull proxy uses Feldherr's custom Darkshroud/Vengeance compartment of 165mm x 120mm and Adeptus Ars' Land Speeder Vengeance height of about 4.3in. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.feldherr.net/hs0105a110-feldherr-foam-tray-for-landspeeder-darkshroud/a-64328, and https://www.adeptusars.com/miniatures/land-speeder-vengeance"
+    },
+    "sammael_corvex_hull": {
+      "display_name": "Sammael on Corvex",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 75.0,
+      "width_mm": 60.0,
+      "height_mm": 60.0,
+      "notes": "Compound support-base plus hull proxy for Sammael on the Corvex jetbike. The support part preserves the 60mm flying base; the hull proxy uses a conservative Imperial jetbike envelope rather than the larger Land Speeder Sableclaw profile. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/DarkAngels40k/comments/1hx2exr, https://warhammer40k.fandom.com/wiki/Sammael, and https://wh40k.lexicanum.com/wiki/Corvex"
+    },
+    "nephilim_dark_talon_hull": {
+      "display_name": "Nephilim Jetfighter / Ravenwing Dark Talon",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 185.0,
+      "width_mm": 185.0,
+      "height_mm": 80.0,
+      "notes": "Compound support-base plus hull proxy for Nephilim Jetfighter and Ravenwing Dark Talon. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative square aircraft envelope for the shared Ravenwing fighter kit, informed by community model-size references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "corvus_blackstar_hull": {
+      "display_name": "Corvus Blackstar",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 200.0,
+      "width_mm": 190.0,
+      "height_mm": 95.0,
+      "notes": "Compound support-base plus hull proxy for Corvus Blackstar. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative aircraft envelope and Feldherr's model-specific 95mm usable tray height. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.feldherr.net/en/for/warhammer-40-000/deathwatch/fsmepx105bo-feldherr-foam-tray-for-corvus-blackstar/a-59133, and https://www.adeptusars.com/miniatures/corvus-blackstar"
+    },
+    "stormraven_hull": {
+      "display_name": "Stormraven Gunship",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 180.0,
+      "width_mm": 200.0,
+      "height_mm": 127.0,
+      "notes": "Compound support-base plus hull proxy for Space Marines and Grey Knights Stormraven Gunships. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative 180mm x 200mm aircraft envelope and Adeptus Ars' about 5in assembled height. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.adeptusars.com/miniatures/stormraven-gunship, and https://www.feldherr.net/fsmemm125bo-foam-tray-for-stormraven-gunship/a-58658"
+    },
+    "piranha_hull": {
+      "display_name": "T'au Piranha",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 90.0,
+      "width_mm": 100.0,
+      "height_mm": 40.0,
+      "notes": "Compound support-base plus hull proxy for T'au Piranha. The support part preserves the 60mm flying base; the hull proxy uses the published technical aspect ratio of the TX4 Piranha with a tabletop footprint scaled to fit the model over its large flying base. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://warhammer40k.fandom.com/wiki/TX-4_Piranha"
+    },
+    "tau_devilfish_chassis_hull": {
+      "display_name": "T'au Devilfish chassis",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 150.0,
+      "width_mm": 125.0,
+      "height_mm": 75.0,
+      "notes": "Compound support-base plus hull proxy for Devilfish, Sky Ray Gunship, and Hammerhead Gunship. The support part preserves the 60mm flying base; the hull proxy uses community Hammerhead measurements of about 15cm long, a little over 12cm wide, and about 7.5cm high to the gun. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Tau40K/comments/spj3i2, and https://www.reddit.com/r/Tau40K/comments/16ufq2n"
+    },
+    "tau_aircraft_hull": {
+      "display_name": "T'au Razorshark / Sun Shark aircraft",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 180.0,
+      "width_mm": 230.0,
+      "height_mm": 75.0,
+      "notes": "Compound support-base plus hull proxy for Razorshark Strike Fighter and Sun Shark Bomber. The support part preserves the 120 x 92mm flying base; the hull proxy uses the shared AX3/AX39 aircraft frame noted by community and Lexicanum sources, scaled to a conservative 180mm length and 230mm wingspan. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://wh40k.lexicanum.com/wiki/Sun_Shark, and https://frontlinegaming.org/2019/02/25/tau-codex-review-flyers-ax39-sun-shark-bomber/"
+    },
+    "gargoyle_hull": {
+      "display_name": "Gargoyles",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 45.0,
+      "width_mm": 35.0,
+      "height_mm": 35.0,
+      "notes": "Compound support-base plus hull proxy for Tyranid and Genestealer Cults Gargoyles. The support part preserves the 32mm flying base; the hull proxy is a conservative winged gaunt envelope over the small flying base, using the Gargoyle's winged Tyranid bioform description and community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Gargoyle, and https://minicompare.info/"
+    },
+    "tyranid_harpy_crone_hull": {
+      "display_name": "Harpy / Hive Crone",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 210.0,
+      "width_mm": 260.0,
+      "height_mm": 178.0,
+      "notes": "Compound support-base plus hull proxy for Harpy and Hive Crone. The support part preserves the 120 x 92mm flying base; the hull proxy uses the shared Harpy/Hive Crone kit and Adeptus Ars' about 7in Hive Crone height with a conservative large-winged monster footprint. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.adeptusars.com/miniatures/hive-crone, and https://wh40k.lexicanum.com/wiki/Hive_Crone"
+    },
+    "night_doom_scythe_hull": {
+      "display_name": "Night Scythe / Doom Scythe",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 170.0,
+      "width_mm": 210.0,
+      "height_mm": 70.0,
+      "notes": "Compound support-base plus hull proxy for Night Scythe and Doom Scythe. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative crescent-aircraft envelope for the shared kit, with the Night Scythe/Doom Scythe relationship from community and wiki references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Night_Scythe, and https://www.reddit.com/r/Warhammer40k/comments/bu2hmn"
+    },
+    "tomb_blade_hull": {
+      "display_name": "Tomb Blades",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 58.0,
+      "width_mm": 45.0,
+      "height_mm": 38.0,
+      "notes": "Compound support-base plus hull proxy for Necron Tomb Blades. The support part preserves the 32mm flying base; the hull proxy uses a conservative jetbike envelope and kit/base references for Tomb Blades. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.adeptusars.com/miniatures/tomb-blades, and https://www.tomsbunker.com/bunkerstore/p/tomb-blades"
+    },
+    "canoptek_spyder_hull": {
+      "display_name": "Canoptek Spyders",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 75.0,
+      "width_mm": 65.0,
+      "height_mm": 45.0,
+      "notes": "Compound support-base plus hull proxy for Canoptek Spyders. The support part preserves the 60mm flying base; the hull proxy uses a conservative Canoptek construct envelope over the large flying base from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "doomsday_ark_hull": {
+      "display_name": "Doomsday Ark",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 203.0,
+      "width_mm": 114.0,
+      "height_mm": 140.0,
+      "notes": "Compound support-base plus hull proxy for Doomsday Ark. The support part preserves the 60mm flying base; the hull proxy uses community measurements of about 8in length, 4.5in width, and 5.5in rear height. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/Necrons40k/comments/1i1t7fk"
+    },
+    "transcendent_ctan_hull": {
+      "display_name": "Transcendent C'tan",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 70.0,
+      "width_mm": 60.0,
+      "height_mm": 105.0,
+      "notes": "Compound support-base plus hull proxy for Transcendent C'tan. The support part preserves the 60mm flying base; the hull proxy uses the C'tan body from the Tesseract Vault/Obelisk kit and community visual scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.adeptusars.com/miniatures/tesseract-vault, and https://minicompare.info/"
+    },
+    "tesseract_vault_obelisk_hull": {
+      "display_name": "Tesseract Vault / Obelisk",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 254.0,
+      "width_mm": 254.0,
+      "height_mm": 229.0,
+      "notes": "Compound support-base plus hull proxy for Tesseract Vault and Obelisk. The support part preserves the 120 x 92mm flying base; the hull proxy uses Adeptus Ars dimensions of over 9in height and about 10in width for the shared kit. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.adeptusars.com/miniatures/tesseract-vault"
+    },
+    "aeldari_skyrunner_hull": {
+      "display_name": "Aeldari Skyrunner / Windrider",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 72.0,
+      "width_mm": 38.0,
+      "height_mm": 42.0,
+      "notes": "Compound support-base plus hull proxy for Farseer Skyrunner, Warlock Skyrunners, and Windriders. The support part preserves the 32mm flying base; the hull proxy uses the shared Aeldari jetbike body and community/kit base references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Jetbike_%28Aeldari%29, and https://themagnetbaron.com/blogs/aeldari/windrider-jetbikes-magnetization-recommendations"
+    },
+    "shining_spear_hull": {
+      "display_name": "Shining Spears",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 95.0,
+      "width_mm": 60.0,
+      "height_mm": 55.0,
+      "notes": "Compound support-base plus hull proxy for Shining Spear and Shining Spear Exarch models. The support part preserves the 60mm flying base; the hull proxy extends the Aeldari jetbike envelope for the lance-bearing Aspect Warrior build. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://warhammer40k.fandom.com/wiki/Jetbike_%28Aeldari%29"
+    },
+    "crimson_hunter_hemlock_hull": {
+      "display_name": "Crimson Hunter / Hemlock Wraithfighter",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 210.0,
+      "width_mm": 240.0,
+      "height_mm": 70.0,
+      "notes": "Compound support-base plus hull proxy for Crimson Hunter and Hemlock Wraithfighter. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative Aeldari aircraft envelope for the shared fighter kit and community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "aeldari_grav_tank_hull": {
+      "display_name": "Aeldari Falcon chassis grav tank",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 165.0,
+      "width_mm": 115.0,
+      "height_mm": 75.0,
+      "notes": "Compound support-base plus hull proxy for Falcon, Fire Prism, and Night Spinner. The support part preserves the 60mm flying base; the hull proxy uses the community-confirmed shared Falcon chassis and a conservative 6.5in by 4.5in grav-tank footprint. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Eldar/comments/1be2f9g, and https://www.reddit.com/r/Eldar/comments/1j83e4j"
+    },
+    "drukhari_raider_ravager_hull": {
+      "display_name": "Drukhari Raider / Ravager",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 190.0,
+      "width_mm": 85.0,
+      "height_mm": 95.0,
+      "notes": "Compound support-base plus hull proxy for Raider, Ravager, and Ynnari Raider. The support part preserves the 60mm flying base; the hull proxy uses the shared Raider/Ravager chassis noted by community and wiki references with a conservative long skiff envelope. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Ravager, and https://www.reddit.com/r/Drukhari/comments/1age57u"
+    },
+    "venom_hull": {
+      "display_name": "Drukhari Venom",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 95.0,
+      "width_mm": 75.0,
+      "height_mm": 65.0,
+      "notes": "Compound support-base plus hull proxy for Venom and Ynnari Venom. The support part preserves the 60mm flying base; the hull proxy uses a conservative compact Drukhari skimmer envelope from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "reaver_jetbike_hull": {
+      "display_name": "Drukhari Reavers",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 70.0,
+      "width_mm": 35.0,
+      "height_mm": 35.0,
+      "notes": "Compound support-base plus hull proxy for Reavers and Ynnari Reavers. The support part preserves the 32mm flying base; the hull proxy uses a conservative Drukhari jetbike envelope from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "hellion_hull": {
+      "display_name": "Hellions",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 45.0,
+      "width_mm": 55.0,
+      "height_mm": 45.0,
+      "notes": "Compound support-base plus hull proxy for Hellions. The support part preserves the 32mm flying base; the hull proxy uses a conservative skyboard-and-rider envelope from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "razorwing_jetfighter_hull": {
+      "display_name": "Razorwing Jetfighter",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 190.0,
+      "width_mm": 220.0,
+      "height_mm": 80.0,
+      "notes": "Compound support-base plus hull proxy for Razorwing Jetfighter. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative Drukhari aircraft envelope and community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "voidraven_bomber_hull": {
+      "display_name": "Voidraven Bomber",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 230.0,
+      "width_mm": 260.0,
+      "height_mm": 90.0,
+      "notes": "Compound support-base plus hull proxy for Voidraven Bomber. The support part preserves the 120 x 92mm flying base; the hull proxy uses a conservative bomber envelope larger than the Razorwing, informed by community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "talos_cronos_hull": {
+      "display_name": "Talos / Cronos",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 80.0,
+      "width_mm": 75.0,
+      "height_mm": 80.0,
+      "notes": "Compound support-base plus hull proxy for Talos and Cronos. The support part preserves the 60mm flying base; the hull proxy uses the shared Talos/Cronos kit envelope from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "valkyrie_hull": {
+      "display_name": "Valkyrie",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 280.0,
+      "width_mm": 250.0,
+      "height_mm": 65.0,
+      "notes": "Compound support-base plus hull proxy for Valkyrie. The support part preserves the 120 x 92mm flying base; the hull proxy uses community tabletop measurements of about 28cm length, 25cm wingspan, and 6.5cm height, with Lexicanum/Fandom technical proportions as a cross-check. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Warhammer40k/comments/nhs4tr, and https://warhammer40k.fandom.com/wiki/Valkyrie"
+    },
+    "heldrake_hull": {
+      "display_name": "Heldrake",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
+      "length_mm": 191.0,
+      "width_mm": 254.0,
+      "height_mm": 110.0,
+      "notes": "Compound support-base plus hull proxy for Heldrakes across Chaos Space Marines, Thousand Sons, World Eaters, and Emperor's Children. The support part preserves the 120 x 92mm flying base; the hull proxy uses community model measurements of about 7.5in head-to-tail and 10in wingtip-to-wingtip. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Warhammer40k/comments/1cvkqnt, and https://wh40k.lexicanum.com/wiki/Heldrake"
+    },
+    "blue_scribes_hull": {
+      "display_name": "The Blue Scribes",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 60.0,
+      "width_mm": 60.0,
+      "height_mm": 65.0,
+      "notes": "Compound support-base plus hull proxy for The Blue Scribes. The support part preserves the 60mm flying base; the hull proxy uses the disc/chariot footprint over the large flying base from community Tzeentch measurements. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/tzeentch/comments/mqwhxw, and https://www.tga.community/forums/topic/9619-base-size-for-blue-scribes/"
+    },
+    "screamer_hull": {
+      "display_name": "Screamers",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 32.0},
+      "length_mm": 55.0,
+      "width_mm": 35.0,
+      "height_mm": 18.0,
+      "notes": "Compound support-base plus hull proxy for Chaos Daemons and Thousand Sons Screamers. The support part preserves the 32mm flying base; the hull proxy uses a conservative manta-like daemon body envelope and small flying-base references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Screamer, and https://eurobitz.com/en/138-screamer-of-tzeentch"
+    },
+    "fluxmaster_hull": {
+      "display_name": "Fluxmaster",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 60.0,
+      "width_mm": 60.0,
+      "height_mm": 75.0,
+      "notes": "Compound support-base plus hull proxy for Fluxmaster on Disc of Tzeentch. The support part preserves the 60mm flying base; the hull proxy uses the Disc of Tzeentch footprint over a large flying base. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.adeptusars.com/miniatures/fluxmaster-herald-of-tzeentch"
+    },
+    "lokhust_destroyer_hull": {
+      "display_name": "Lokhust Lord / Lokhust Destroyers",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 70.0,
+      "width_mm": 60.0,
+      "height_mm": 55.0,
+      "notes": "Compound support-base plus hull proxy for Lokhust Lord and Lokhust Destroyers. The support part preserves the 60mm flying base; the hull proxy uses a conservative Destroyer hover-body envelope from community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://minicompare.info/"
+    },
+    "shroud_runner_hull": {
+      "display_name": "Shroud Runners",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 95.0,
+      "width_mm": 60.0,
+      "height_mm": 50.0,
+      "notes": "Compound support-base plus hull proxy for Shroud Runners. The support part preserves the 60mm flying base; the hull proxy uses the official Shroud Runner large flying-base profile and extended scout jetbike form. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.40k.app/factions/aeldari/unit/shroud-runners, and https://www.warhammer-community.com/2022/01/25/swift-and-sneaky-just-what-is-a-shroud-runner-anyway/"
+    },
+    "skyweaver_hull": {
+      "display_name": "Skyweavers",
+      "type": "flying_hull",
+      "rules_footprint": "closest_of_base_or_hull",
+      "support_base": {"shape": "circle", "diameter_mm": 60.0},
+      "length_mm": 90.0,
+      "width_mm": 60.0,
+      "height_mm": 55.0,
+      "notes": "Compound support-base plus hull proxy for Aeldari and Drukhari Skyweavers. The support part preserves the 60mm flying base; the hull proxy uses a conservative two-rider Harlequin jetbike envelope from Aeldari jetbike references and community scale references. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://warhammer40k.fandom.com/wiki/Jetbike_%28Aeldari%29, and https://minicompare.info/"
+    },
     "wave_serpent": {
       "display_name": "Wave Serpent",
       "type": "compound",
@@ -1234,7 +1920,7 @@
           ]
         }
       ],
-      "notes": "Rules footprint uses closest point of base or hull; hull proxy uses conservative 190.5x139.7mm bounds."
+      "notes": "Rules footprint uses closest point of base or hull. Support part preserves the 60mm flying base; hull proxy uses community Wave Serpent dimensions of 7.5in length, 5.5in width, and 3.5in height. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf and https://www.reddit.com/r/Eldar/comments/1j83e4j"
     }
   }
 }

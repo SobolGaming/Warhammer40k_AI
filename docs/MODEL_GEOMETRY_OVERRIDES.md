@@ -55,6 +55,15 @@ Compound models are stored as multiple local parts and treated as one model foot
 - rules footprint is the union of all parts
 - pathing/LoS/collision use the true union geometry
 
+Flying-base hull overrides may use the compact `flying_hull` entry type. These entries
+expand to the same compound representation with:
+
+- `support_base`: the published flying base holding the model up
+- `hull_proxy`: a rectangular proxy for the actual model body or vehicle hull
+
+This keeps the flying-base dimensions available for stem height while adding the model
+dimensions needed for closest-of-base-or-hull measurement.
+
 Important: connectivity metadata is descriptive only.  
 For Aegis Defence Line (`DEPLOYMENT` ability), section composition and connectivity are enforced during deployment validation.
 The Aegis `platform` section is also used as an elevated support surface for `Emplacement Platform`
@@ -77,7 +86,11 @@ placement/movement legality.
 - `Land Raider` / `Chaos Land Raider` (manual hull rectangle)
 - `Hekaton Land Fortress` (manual hull rectangle)
 - `Sagitaur` (manual hull rectangle)
-- `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
+- `Mek Gunz`, `Battlewagon`, `Big'ed Bossbunka`, `Taurox` / `Taurox Prime`, and `Invader ATV` / Outrider Squad ATV (manual hull rectangles)
+- `Hammerfall Bunker`, `Tidewall Droneport` / `Tidewall Shieldline` / `Tidewall Gunrig` (manual hull rectangles)
+- `Catacomb Command Barge` / `Annihilation Barge`, `Triarch Stalker`, and `Convergence Of Dominion` Starsteles (manual hull rectangles)
+- `Feculent Gnarlmaw`, `Noctilith Crown`, `Skull Altar`, and `Miasmic Malignifier` (manual hull rectangles)
+- all in-scope published `* flying base` datasheets (compound support-base + hull proxy footprints for closest-of-base-or-hull measurement)
 
 Vehicle hull overrides use source notes embedded in `data/model_geometry_overrides.json`. Where only
 community model measurements are available, the override is a deterministic bounding rectangle and the

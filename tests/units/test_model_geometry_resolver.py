@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +10,41 @@ from warhammer40k_ai.utility.aura_utils import horizontal_distance_between_bases
 from warhammer40k_ai.utility.calcs import convert_mm_to_inches
 from warhammer40k_ai.utility.model_base import Base, BaseType, clone_base
 from warhammer40k_ai.utility.model_geometry import resolve_model_geometry
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_OUT_OF_SCOPE_SOURCE_TOKENS = (
+    "warhammer legends",
+    "legends:",
+    "forge world",
+    "boarding actions",
+    "kill team",
+    "crusade",
+    "adeptus titanicus",
+)
+
+
+def _load_wahapedia_json(filename: str) -> list[dict]:
+    return json.loads((_REPO_ROOT / "wahapedia_data" / filename).read_text(encoding="utf-8"))
+
+
+def _parse_flying_base_size(base_size: str) -> tuple[BaseType, tuple[float, float]]:
+    match = re.match(
+        r"^\s*(?P<major>\d+(?:\.\d+)?)\s*(?:x\s*(?P<minor>\d+(?:\.\d+)?))?\s*mm\s+flying\s+base\b",
+        base_size,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        raise AssertionError(f"Unexpected flying base size: {base_size!r}")
+    major_mm = float(match.group("major"))
+    minor_mm = match.group("minor")
+    if minor_mm is None:
+        radius = convert_mm_to_inches(major_mm / 2.0)
+        return BaseType.CIRCULAR, (radius, radius)
+    return BaseType.ELLIPTICAL, (
+        convert_mm_to_inches(major_mm / 2.0),
+        convert_mm_to_inches(float(minor_mm) / 2.0),
+    )
 
 
 def test_resolve_khorne_lord_of_skulls_hull_override():
@@ -146,6 +183,81 @@ def test_resolve_manual_vehicle_hull_overrides_from_recent_headless_warnings(
     assert resolved.height_source == "override"
 
 
+@pytest.mark.parametrize(
+    "datasheet_id,datasheet_name,model_name,expected_key,length_mm,width_mm,height_mm",
+    [
+        ("000000038", "Mek Gunz", "Mek Gunz", "mek_gunz_hull", 100.0, 52.0, 60.0),
+        ("000000039", "Battlewagon", "Battlewagon", "battlewagon_hull", 165.0, 76.0, 127.0),
+        ("000000097", "Hammerfall Bunker", "Hammerfall Bunker", "hammerfall_bunker_hull", 110.0, 110.0, 97.0),
+        ("000000437", "Tidewall Gunrig", "Tidewall Gunrig", "tidewall_hull", 150.0, 105.0, 60.0),
+        ("000000533", "Catacomb Command Barge", "Catacomb Command Barge", "necron_barge_hull", 127.0, 76.0, 76.0),
+        ("000000540", "Triarch Stalker", "Triarch Stalker", "triarch_stalker_hull", 165.0, 120.0, 110.0),
+        ("000000553", "Annihilation Barge", "Annihilation Barge", "necron_barge_hull", 127.0, 76.0, 76.0),
+        ("000000693", "Taurox", "Taurox", "taurox_hull", 105.0, 70.0, 75.0),
+        ("000001470", "Feculent Gnarlmaw", "Feculent Gnarlmaw", "feculent_gnarlmaw_hull", 121.0, 95.0, 114.0),
+        ("000001587", "Noctilith Crown", "Noctilith Crown", "noctilith_crown_hull", 220.0, 100.0, 190.0),
+        ("000001588", "Skull Altar", "Skull Altar", "skull_altar_hull", 135.0, 127.0, 165.0),
+        (
+            "000002361",
+            "Convergence Of Dominion",
+            "Convergence Of Dominion Starstele",
+            "convergence_of_dominion_hull",
+            70.0,
+            38.0,
+            108.0,
+        ),
+        ("000002462", "Miasmic Malignifier", "Miasmic Malignifier", "miasmic_malignifier_hull", 229.0, 51.0, 203.0),
+        ("000002499", "Big'ed Bossbunka", "Big'ed Bossbunka", "big_ed_bossbunka_hull", 190.0, 150.0, 200.0),
+        ("000002712", "Outrider Squad", "INVADER ATV", "invader_atv_hull", 95.0, 70.0, 60.0),
+        ("000003952", "Taurox", "Taurox", "taurox_hull", 105.0, 70.0, 75.0),
+    ],
+)
+def test_resolve_in_scope_use_model_hull_overrides(
+    datasheet_id,
+    datasheet_name,
+    model_name,
+    expected_key,
+    length_mm,
+    width_mm,
+    height_mm,
+):
+    resolved = resolve_model_geometry(
+        datasheet_id=datasheet_id,
+        datasheet_name=datasheet_name,
+        model_name=model_name,
+        unit_keywords=["Vehicle", "Fortification"],
+        parsed_base_type=BaseType.HULL,
+        parsed_radius=(convert_mm_to_inches(80.0) / 2.0, convert_mm_to_inches(40.0) / 2.0),
+    )
+    assert resolved.base_type == BaseType.HULL
+    assert resolved.radius[0] == pytest.approx(convert_mm_to_inches(length_mm) / 2.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(convert_mm_to_inches(width_mm) / 2.0, abs=1e-4)
+    assert resolved.model_height == pytest.approx(convert_mm_to_inches(height_mm), abs=1e-4)
+    assert resolved.geometry_source == f"geometry_override:{expected_key}"
+    assert resolved.height_source == "override"
+
+
+def test_outrider_squad_atv_override_does_not_apply_to_outrider_bikes():
+    parsed_radius = (
+        convert_mm_to_inches(90.0) / 2.0,
+        convert_mm_to_inches(52.0) / 2.0,
+    )
+    resolved = resolve_model_geometry(
+        datasheet_id="000002712",
+        datasheet_name="Outrider Squad",
+        model_name="OUTRIDER",
+        unit_keywords=["Mounted", "Grenades", "Imperium", "Tacticus"],
+        parsed_base_type=BaseType.ELLIPTICAL,
+        parsed_radius=parsed_radius,
+    )
+
+    assert resolved.geometry_source == "parsed_base"
+    assert resolved.base_type == BaseType.ELLIPTICAL
+    assert resolved.radius[0] == pytest.approx(parsed_radius[0], abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(parsed_radius[1], abs=1e-4)
+    assert not resolved.compound_parts
+
+
 def test_resolve_aegis_compound_override():
     resolved = resolve_model_geometry(
         datasheet_id="000002619",
@@ -232,6 +344,59 @@ def test_resolve_flying_base_z_offset_uses_parsed_support_base_when_override_cha
     assert resolved.z_offset == pytest.approx(convert_mm_to_inches(32.0), abs=1e-4)
 
 
+def test_resolve_flying_hull_override_expands_to_support_base_and_hull_proxy(tmp_path):
+    overrides = {
+        "schema_version": "5.3",
+        "units": {
+            "test_aircraft": {
+                "type": "flying_hull",
+                "support_base": {
+                    "shape": "ellipse",
+                    "major_mm": 120.0,
+                    "minor_mm": 92.0,
+                },
+                "length_mm": 200.0,
+                "width_mm": 80.0,
+                "height_mm": 70.0,
+            }
+        },
+        "aliases": {"test_aircraft_datasheet": "test_aircraft"},
+    }
+    path = tmp_path / "overrides.json"
+    path.write_text(json.dumps(overrides), encoding="utf-8")
+
+    parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
+    resolved = resolve_model_geometry(
+        datasheet_id="test_aircraft_datasheet",
+        datasheet_name="Test Aircraft",
+        model_name="Test Aircraft",
+        unit_keywords=["Vehicle", "Aircraft"],
+        parsed_base_type=BaseType.CIRCULAR,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+        catalog_path=str(path),
+    )
+
+    assert resolved.geometry_source == "geometry_override:test_aircraft"
+    assert resolved.base_type == BaseType.HULL
+    assert resolved.radius[0] == pytest.approx(convert_mm_to_inches(200.0) / 2.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(convert_mm_to_inches(92.0) / 2.0, abs=1e-4)
+    assert resolved.model_height == pytest.approx(convert_mm_to_inches(70.0), abs=1e-4)
+    assert resolved.height_source == "override"
+    assert resolved.z_offset == pytest.approx(convert_mm_to_inches(32.0), abs=1e-4)
+
+    support = resolved.compound_parts[0]
+    hull = resolved.compound_parts[1]
+    assert support["part_id"] == "support_base"
+    assert support["shape"] == "ellipse"
+    assert support["radius"][0] == pytest.approx(convert_mm_to_inches(120.0) / 2.0, abs=1e-4)
+    assert support["radius"][1] == pytest.approx(convert_mm_to_inches(92.0) / 2.0, abs=1e-4)
+    assert hull["part_id"] == "hull_proxy"
+    assert hull["shape"] == "hull"
+    assert hull["radius"][0] == pytest.approx(convert_mm_to_inches(200.0) / 2.0, abs=1e-4)
+    assert hull["radius"][1] == pytest.approx(convert_mm_to_inches(80.0) / 2.0, abs=1e-4)
+
+
 def test_resolve_auto_compound_for_flying_vehicle_without_override():
     parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
     resolved = resolve_model_geometry(
@@ -270,6 +435,61 @@ def test_resolve_flying_non_vehicle_keeps_parsed_geometry():
     assert resolved.geometry_source == "parsed_base"
     assert resolved.base_type == BaseType.CIRCULAR
     assert not resolved.compound_parts
+
+
+def test_all_in_scope_flying_base_datasheets_have_explicit_geometry_overrides():
+    datasheets = {row["id"]: row for row in _load_wahapedia_json("Datasheets.json")}
+    sources = {row["id"]: row["name"].lower() for row in _load_wahapedia_json("Source.json")}
+    keywords_by_datasheet: dict[str, list[str]] = {}
+    for row in _load_wahapedia_json("Datasheets_keywords.json"):
+        keywords_by_datasheet.setdefault(row["datasheet_id"], []).append(row["keyword"])
+
+    rows = []
+    for model_row in _load_wahapedia_json("Datasheets_models.json"):
+        base_size = str(model_row.get("base_size", ""))
+        if " flying base" not in base_size.lower():
+            continue
+        datasheet = datasheets[model_row["datasheet_id"]]
+        source_name = sources.get(datasheet.get("source_id", ""), "")
+        if any(token in source_name for token in _OUT_OF_SCOPE_SOURCE_TOKENS):
+            continue
+        rows.append((datasheet, model_row))
+    rows.sort(key=lambda item: (item[0]["id"], item[1]["line"], item[1]["name"]))
+
+    assert len(rows) == 72
+    missing = []
+    for datasheet, model_row in rows:
+        parsed_base_type, parsed_radius = _parse_flying_base_size(str(model_row["base_size"]))
+        resolved = resolve_model_geometry(
+            datasheet_id=datasheet["id"],
+            datasheet_name=datasheet["name"],
+            model_name=model_row["name"],
+            unit_keywords=keywords_by_datasheet.get(datasheet["id"], []),
+            parsed_base_type=parsed_base_type,
+            parsed_radius=parsed_radius,
+            parsed_is_flying_base=True,
+        )
+        if not resolved.geometry_source.startswith("geometry_override:"):
+            missing.append((datasheet["id"], datasheet["name"], model_row["name"], resolved.geometry_source))
+            continue
+
+        parts = {part["part_id"]: part for part in resolved.compound_parts}
+        assert {"support_base", "hull_proxy"}.issubset(parts), (datasheet["id"], datasheet["name"])
+        support = parts["support_base"]
+        assert support["radius"][0] == pytest.approx(parsed_radius[0], abs=1e-4)
+        assert support["radius"][1] == pytest.approx(parsed_radius[1], abs=1e-4)
+        assert support["shape"] in {"circle", "ellipse"}
+        if parsed_base_type == BaseType.CIRCULAR:
+            assert support["shape"] == "circle"
+        else:
+            assert support["shape"] == "ellipse"
+        assert parts["hull_proxy"]["shape"] == "hull"
+        assert resolved.base_type == BaseType.HULL
+        assert resolved.height_source == "override"
+        assert resolved.model_height > 0.0
+        assert resolved.z_offset > 0.0
+
+    assert missing == []
 
 
 def test_resolve_wave_serpent_compound_override_uses_base_or_hull_footprint():
