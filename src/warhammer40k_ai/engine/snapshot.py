@@ -1381,6 +1381,12 @@ def _deserialize_deployment_zones(data: dict) -> dict:
     return zones
 
 
+def _faction_runtime_value(game: Game, legacy_attr: str, default):
+    # Faction runtime state lives behind Game compatibility properties so the
+    # snapshot wire shape stays stable while storage moves off the facade.
+    return getattr(game, legacy_attr, default)
+
+
 def _serialize_game_state(game: Game) -> dict:
     destroyed_by_player = []
     for player, count in (getattr(game, "destroyed_units_this_battle_round_by_player", {}) or {}).items():
@@ -1427,24 +1433,24 @@ def _serialize_game_state(game: Game) -> dict:
         "phase_charge_targets": {
             str(k): sorted(list(v or [])) for k, v in (getattr(game, "phase_charge_targets", {}) or {}).items()
         },
-        "_phoenix_gem_pending": encode_refs(list(getattr(game, "_phoenix_gem_pending", []) or [])),
-        "_blood_surge_shooting_snapshot": encode_refs(getattr(game, "_blood_surge_shooting_snapshot", {}) or {}),
-        "_brazen_fury_shooting_snapshot": encode_refs(getattr(game, "_brazen_fury_shooting_snapshot", {}) or {}),
-        "_horde_move_shooting_snapshot": encode_refs(getattr(game, "_horde_move_shooting_snapshot", {}) or {}),
-        "_unhinged_vengeance_shooting_snapshot": encode_refs(getattr(game, "_unhinged_vengeance_shooting_snapshot", {}) or {}),
-        "_blistering_assault_shooting_snapshot": encode_refs(getattr(game, "_blistering_assault_shooting_snapshot", {}) or {}),
+        "_phoenix_gem_pending": encode_refs(list(_faction_runtime_value(game, "_phoenix_gem_pending", []) or [])),
+        "_blood_surge_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_blood_surge_shooting_snapshot", {}) or {}),
+        "_brazen_fury_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_brazen_fury_shooting_snapshot", {}) or {}),
+        "_horde_move_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_horde_move_shooting_snapshot", {}) or {}),
+        "_unhinged_vengeance_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_unhinged_vengeance_shooting_snapshot", {}) or {}),
+        "_blistering_assault_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_blistering_assault_shooting_snapshot", {}) or {}),
         "_aggressive_leader_beast_shooting_snapshot": encode_refs(
-            getattr(game, "_aggressive_leader_beast_shooting_snapshot", {}) or {}
+            _faction_runtime_value(game, "_aggressive_leader_beast_shooting_snapshot", {}) or {}
         ),
-        "_frenzy_shooting_targets": encode_refs(getattr(game, "_frenzy_shooting_targets", {}) or {}),
-        "_frenzy_fight_targets": encode_refs(getattr(game, "_frenzy_fight_targets", {}) or {}),
-        "_pain_parasite_shooting_snapshot": encode_refs(getattr(game, "_pain_parasite_shooting_snapshot", {}) or {}),
-        "_pain_parasite_fight_snapshot": encode_refs(getattr(game, "_pain_parasite_fight_snapshot", {}) or {}),
+        "_frenzy_shooting_targets": encode_refs(_faction_runtime_value(game, "_frenzy_shooting_targets", {}) or {}),
+        "_frenzy_fight_targets": encode_refs(_faction_runtime_value(game, "_frenzy_fight_targets", {}) or {}),
+        "_pain_parasite_shooting_snapshot": encode_refs(_faction_runtime_value(game, "_pain_parasite_shooting_snapshot", {}) or {}),
+        "_pain_parasite_fight_snapshot": encode_refs(_faction_runtime_value(game, "_pain_parasite_fight_snapshot", {}) or {}),
         "army_muster_requests": encode_refs(getattr(game, "army_muster_requests", {}) or {}),
         "fates_in_flux": getattr(getattr(game, "fates_in_flux", None), "to_dict", lambda: {})(),
         "_shadow_of_chaos_zone_overrides": {
             str(pid): sorted([str(z) for z in (zones or [])])
-            for pid, zones in (getattr(game, "_shadow_of_chaos_zone_overrides", {}) or {}).items()
+            for pid, zones in (_faction_runtime_value(game, "_shadow_of_chaos_zone_overrides", {}) or {}).items()
         },
     }
 

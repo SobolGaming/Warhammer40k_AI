@@ -8,7 +8,7 @@ Manages the proper two-stage fight phase structure with alternating player selec
 Within each stage, players alternate selecting units to fight, with the non-current player going first.
 """
 
-from typing import List, Optional, Dict, Callable
+from typing import TYPE_CHECKING, List, Optional, Dict, Callable
 from enum import Enum
 from ..units.unit import Unit
 from ..units.model import Model
@@ -22,9 +22,11 @@ from . import fight_resolution as _fight_resolution
 from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
 from .decision_kinds import DECISION_CONFIRM_YES_NO
-from .game import Game
 import logging
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .game import Game
 
 class FightStage(Enum):
     FIGHT_FIRST = "Fight First"

@@ -216,7 +216,7 @@ Explicit controller ownership:
 Purpose: **rules execution and authoritative state transitions**.
 
 Key responsibilities:
-- Game state lifecycle (`game.py` facade + `game_mixins/`, `phase.py`, `turn_manager.py`, setup/deployment managers)
+- Game state lifecycle (`game.py` facade, explicit `game_*` services, legacy `game_mixins/`, `phase.py`, `turn_manager.py`, setup/deployment managers)
 - Command validation & dispatch (`command_dispatcher.py`, `commands.py`, `command_kinds.py`)
 - Shared authoritative orchestration (`authoritative_session_driver.py`) and channel adapters (`command_channel.py`)
 - Local authoritative runtime composition (`local_runtime.py`)
@@ -234,9 +234,11 @@ Key responsibilities:
   - Snapshot/ref encoding preserves stable object references, including `WargearProfile` values via parent-wargear/profile-name reconstruction during load/resync.
 
 `Game` composition notes:
-- `game.py` keeps constructor/state wiring and cross-cutting orchestration.
+- `game.py` keeps constructor/state wiring, service composition, and compatibility wrappers for stable callers.
+- Explicit facade services own extracted domains: `game_charge.py` for charge declaration/movement follow-up, `game_fight.py` for lightweight fight eligibility/stage queries, `game_commands.py` for command queue/application orchestration over `command_dispatcher.py`, and `game_faction_state.py` for faction transient runtime storage.
 - `game_mixins/` contains specialized phase/domain handlers (setup/deployment/reserves, missions/scoring/actions, reactive decisions, shooting/fight handlers, and phase start/end hooks).
-- This split keeps import paths stable (`from warhammer40k_ai.engine.game import Game`) while reducing monolithic file churn and improving targeted testability.
+- `game_mixins/` remains legacy composition until each domain is migrated behind services; do not treat `game.py` as a complete thin facade while inherited mixin behavior remains.
+- This split keeps import paths and old `Game` method names stable (`from warhammer40k_ai.engine.game import Game`) while reducing monolithic file churn and improving targeted testability.
 
 ### Rules layer (`src/warhammer40k_ai/rules/`)
 
