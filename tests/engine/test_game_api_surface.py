@@ -1,4 +1,7 @@
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.game_mixins.missions_scoring_actions_mixin import (
+    GameMissionsScoringActionsMixin,
+)
 
 
 EXPECTED_PUBLIC_GAME_CALLABLES = {
@@ -179,3 +182,8 @@ def test_game_private_compatibility_hooks() -> None:
     }
 
     assert not missing
+
+
+def test_game_scoring_domain_is_service_backed() -> None:
+    assert GameMissionsScoringActionsMixin not in Game.__mro__
+    assert callable(getattr(Game, "_ensure_scoring_service", None))

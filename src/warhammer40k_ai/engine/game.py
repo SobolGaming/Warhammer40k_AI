@@ -73,6 +73,7 @@ from .game_charge import ChargeService
 from .game_commands import GameCommandService
 from .game_faction_state import FactionRuntimeState
 from .game_fight import FightService
+from .game_scoring import GameScoringService
 from .attack_resolution import AttackResolutionManager
 from .ref_codec import encode_refs
 from ..rules.lifecycle import AbilityLifecycle
@@ -90,7 +91,6 @@ from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..utility.entity_registry import EntityRegistry, rebuild_registry_from_game
 from ..utility.game_context import game_context
 from .game_mixins import (
-    GameMissionsScoringActionsMixin,
     GamePhaseHandlersMixin,
     GameReactiveDecisionsMixin,
     GameSetupDeploymentReservesMixin,
@@ -117,13 +117,25 @@ def _command_service_for(game) -> GameCommandService:
     ensure = getattr(game, "_ensure_command_service", None)
     return ensure() if callable(ensure) else GameCommandService(game)
 
+
+def _scoring_service_for(game) -> GameScoringService:
+    ensure = getattr(game, "_ensure_scoring_service", None)
+    return ensure() if callable(ensure) else GameScoringService(game)
+
+
 class Game(
     GameSetupDeploymentReservesMixin,
-    GameMissionsScoringActionsMixin,
     GameReactiveDecisionsMixin,
     GameShootingFightHandlersMixin,
     GamePhaseHandlersMixin,
 ):
+    VP_MAX_TOTAL = GameScoringService.VP_MAX_TOTAL
+    VP_MAX_PRIMARY = GameScoringService.VP_MAX_PRIMARY
+    VP_MAX_SECONDARY = GameScoringService.VP_MAX_SECONDARY
+    VP_MAX_BATTLE_READY = GameScoringService.VP_MAX_BATTLE_READY
+    VP_MAX_PRIMARY_PLUS_SECONDARY = GameScoringService.VP_MAX_PRIMARY_PLUS_SECONDARY
+    VP_MAX_PER_FIXED_SECONDARY_CARD = GameScoringService.VP_MAX_PER_FIXED_SECONDARY_CARD
+
     @property
     def map(self) -> Map:
         return self._map
@@ -225,6 +237,7 @@ class Game(
         self.charge = ChargeService(self)
         self.fight = FightService(self)
         self.commands_service = GameCommandService(self)
+        self.scoring = GameScoringService(self)
         from ..rules.fates_in_flux import FatesInFluxManager
         self.fates_in_flux = FatesInFluxManager(self)
         # Headless/test default: auto-resolve dice roll decisions via headless agent.
@@ -320,6 +333,13 @@ class Game(
         if service is None:
             service = GameCommandService(self)
             self.commands_service = service
+        return service
+
+    def _ensure_scoring_service(self) -> GameScoringService:
+        service = getattr(self, "scoring", None)
+        if service is None:
+            service = GameScoringService(self)
+            self.scoring = service
         return service
 
     @property
@@ -12580,6 +12600,123 @@ class Game(
     def add_command(self, command: str) -> None:
         """Add a command to the game."""
         self.commands.append(command)
+
+    def can_score_objectives(self, *args, **kwargs):
+        return _scoring_service_for(self).can_score_objectives(*args, **kwargs)
+
+    def get_battle_round(self, *args, **kwargs):
+        return _scoring_service_for(self).get_battle_round(*args, **kwargs)
+
+    def _is_fixed_secondaries(self, *args, **kwargs):
+        return _scoring_service_for(self)._is_fixed_secondaries(*args, **kwargs)
+
+    def _cap_card_vp(self, *args, **kwargs):
+        return _scoring_service_for(self)._cap_card_vp(*args, **kwargs)
+
+    def _notify_vp_capped(self, *args, **kwargs):
+        return _scoring_service_for(self)._notify_vp_capped(*args, **kwargs)
+
+    def _current_phase_label(self, *args, **kwargs):
+        return _scoring_service_for(self)._current_phase_label(*args, **kwargs)
+
+    def _record_vp_award(self, *args, **kwargs):
+        return _scoring_service_for(self)._record_vp_award(*args, **kwargs)
+
+    def award_vp(self, *args, **kwargs):
+        return _scoring_service_for(self).award_vp(*args, **kwargs)
+
+    def finalize_battle_scoring(self, *args, **kwargs):
+        return _scoring_service_for(self).finalize_battle_scoring(*args, **kwargs)
+
+    def _queue_dead_reckoning_end_of_turn(self, *args, **kwargs):
+        return _scoring_service_for(self)._queue_dead_reckoning_end_of_turn(*args, **kwargs)
+
+    def _resolve_metaphysical_brokerage_end_of_turn(self, *args, **kwargs):
+        return _scoring_service_for(self)._resolve_metaphysical_brokerage_end_of_turn(*args, **kwargs)
+
+    def end_of_turn_scoring(self, *args, **kwargs):
+        return _scoring_service_for(self).end_of_turn_scoring(*args, **kwargs)
+
+    def end_of_battle_round_scoring(self, *args, **kwargs):
+        return _scoring_service_for(self).end_of_battle_round_scoring(*args, **kwargs)
+
+    def record_unit_destroyed(self, *args, **kwargs):
+        return _scoring_service_for(self).record_unit_destroyed(*args, **kwargs)
+
+    def record_model_destroyed(self, *args, **kwargs):
+        return _scoring_service_for(self).record_model_destroyed(*args, **kwargs)
+
+    def _is_unit_eligible_to_start_action(self, *args, **kwargs):
+        return _scoring_service_for(self)._is_unit_eligible_to_start_action(*args, **kwargs)
+
+    def _unit_is_in_player_deployment(self, *args, **kwargs):
+        return _scoring_service_for(self)._unit_is_in_player_deployment(*args, **kwargs)
+
+    def _objective_in_player_deployment(self, *args, **kwargs):
+        return _scoring_service_for(self)._objective_in_player_deployment(*args, **kwargs)
+
+    def _unit_within_any_terrain_feature(self, *args, **kwargs):
+        return _scoring_service_for(self)._unit_within_any_terrain_feature(*args, **kwargs)
+
+    def _unit_within_range_of_objective(self, *args, **kwargs):
+        return _scoring_service_for(self)._unit_within_range_of_objective(*args, **kwargs)
+
+    def _clear_expired_guards_for_player(self, *args, **kwargs):
+        return _scoring_service_for(self)._clear_expired_guards_for_player(*args, **kwargs)
+
+    def _assign_burden_of_trust_guards(self, *args, **kwargs):
+        return _scoring_service_for(self)._assign_burden_of_trust_guards(*args, **kwargs)
+
+    def _apply_primary_mission_setup_rules(self, *args, **kwargs):
+        return _scoring_service_for(self)._apply_primary_mission_setup_rules(*args, **kwargs)
+
+    def can_start_terraform(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_terraform(*args, **kwargs)
+
+    def can_start_sabotage(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_sabotage(*args, **kwargs)
+
+    def can_start_cleanse(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_cleanse(*args, **kwargs)
+
+    def can_start_establish_locus(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_establish_locus(*args, **kwargs)
+
+    def can_start_the_ritual(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_the_ritual(*args, **kwargs)
+
+    def can_start_move_hazard(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_move_hazard(*args, **kwargs)
+
+    def _mark_unit_started_action(self, *args, **kwargs):
+        return _scoring_service_for(self)._mark_unit_started_action(*args, **kwargs)
+
+    def start_terraform_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_terraform_action(*args, **kwargs)
+
+    def start_sabotage_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_sabotage_action(*args, **kwargs)
+
+    def start_cleanse_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_cleanse_action(*args, **kwargs)
+
+    def start_establish_locus_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_establish_locus_action(*args, **kwargs)
+
+    def start_the_ritual_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_the_ritual_action(*args, **kwargs)
+
+    def start_move_hazard_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_move_hazard_action(*args, **kwargs)
+
+    def can_start_burn_objective(self, *args, **kwargs):
+        return _scoring_service_for(self).can_start_burn_objective(*args, **kwargs)
+
+    def start_burn_objective_action(self, *args, **kwargs):
+        return _scoring_service_for(self).start_burn_objective_action(*args, **kwargs)
+
+    def _complete_actions_for_turn_end(self, *args, **kwargs):
+        return _scoring_service_for(self)._complete_actions_for_turn_end(*args, **kwargs)
 
     def enqueue_command(self, command: GameCommand) -> None:
         return _command_service_for(self).enqueue_command(command)

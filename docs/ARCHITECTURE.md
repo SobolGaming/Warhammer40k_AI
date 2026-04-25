@@ -235,8 +235,8 @@ Key responsibilities:
 
 `Game` composition notes:
 - `game.py` keeps constructor/state wiring, service composition, and compatibility wrappers for stable callers.
-- Explicit facade services own extracted domains: `game_charge.py` for charge declaration/movement follow-up, `game_fight.py` for lightweight fight eligibility/stage queries, `game_commands.py` for command queue/application orchestration over `command_dispatcher.py`, and `game_faction_state.py` for faction transient runtime storage.
-- `game_mixins/` contains specialized phase/domain handlers (setup/deployment/reserves, missions/scoring/actions, reactive decisions, shooting/fight handlers, and phase start/end hooks).
+- Explicit facade services own extracted domains: `game_charge.py` for charge declaration/movement follow-up, `game_fight.py` for lightweight fight eligibility/stage queries, `game_commands.py` for command queue/application orchestration over `command_dispatcher.py`, `game_scoring.py` for mission scoring/actions, and `game_faction_state.py` for faction transient runtime storage.
+- `game_mixins/` contains specialized legacy handlers that are still inherited by `Game`: setup/deployment/reserves, reactive decisions, shooting/fight handlers, and phase start/end hooks. The old missions/scoring/actions mixin remains importable for focused tests, but `Game` now reaches that behavior through `GameScoringService`.
 - `game_mixins/` remains legacy composition until each domain is migrated behind services; do not treat `game.py` as a complete thin facade while inherited mixin behavior remains.
 - This split keeps import paths and old `Game` method names stable (`from warhammer40k_ai.engine.game import Game`) while reducing monolithic file churn and improving targeted testability.
 
