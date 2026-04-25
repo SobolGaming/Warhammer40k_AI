@@ -398,6 +398,7 @@ def _heuristic_charge_candidate(
                 unit=unit,
                 start_positions=start_positions,
                 destination=destination,
+                anchor_model_id=_entity_text_id(charging_model),
             )
             if not model_positions:
                 continue
@@ -460,13 +461,30 @@ def _build_charge_model_positions(
     unit: object,
     start_positions: list[dict[str, Any]],
     destination: tuple[float, float, float],
+    anchor_model_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if not start_positions:
         return []
-    start_anchor = _entry_position(dict(start_positions[0] or {}))
+    anchor_entry = dict(start_positions[0] or {})
+    if anchor_model_id:
+        for entry in list(start_positions or []):
+            candidate = dict(entry or {})
+            if str(candidate.get("model_id", "") or "") == str(anchor_model_id or ""):
+                anchor_entry = candidate
+                break
+    start_anchor = _entry_position(anchor_entry)
     delta_x = float(destination[0]) - float(start_anchor[0])
     delta_y = float(destination[1]) - float(start_anchor[1])
     facing = math.degrees(math.atan2(delta_y, delta_x)) if abs(delta_x) > 1e-6 or abs(delta_y) > 1e-6 else 0.0
+
+    if anchor_model_id:
+        return _translate_positions_by_delta(
+            game,
+            start_positions=start_positions,
+            delta_x=delta_x,
+            delta_y=delta_y,
+            facing=facing,
+        )
 
     calculate_positions = getattr(unit, "calculate_model_positions", None)
     if callable(calculate_positions):
