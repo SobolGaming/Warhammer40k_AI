@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_TOOL_ACTION,
     DECISION_PICK_POINT,
 )
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
@@ -712,6 +714,104 @@ def test_close_range_shoot_out_grants_ranged_lethal_hits_only_within_18():
         game_map=game.map,
     )
     assert bool(expired.get("lethal_hits", False)) is False
+
+
+def test_close_range_shoot_out_tool_action_context_uses_eligible_shooters_only():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+
+    jackals = _make_unit(
+        "Atalan Jackals",
+        faction_name="Genestealer Cults",
+        keywords=["MOUNTED"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    infantry = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(jackals)
+    gsc_army.add_unit(infantry)
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_army.add_unit(enemy)
+    game.map.units = [jackals, infantry, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    item = next(
+        entry
+        for entry in gsc_player.stratagems.get_phase_stratagem_items()
+        if str(entry.get("name", "") or "").upper() == "CLOSE-RANGE SHOOT-OUT"
+    )
+
+    assert item["available"] is True
+    assert list(item["context"].get("candidates") or []) == [jackals]
+
+    jackals.round_state.shot_this_round = True
+    item_after_shooting = next(
+        entry
+        for entry in gsc_player.stratagems.get_phase_stratagem_items()
+        if str(entry.get("name", "") or "").upper() == "CLOSE-RANGE SHOOT-OUT"
+    )
+
+    assert item_after_shooting["available"] is False
+    assert list(item_after_shooting["context"].get("candidates") or []) == []
+
+
+def test_close_range_shoot_out_headless_tool_action_has_bound_unit_context():
+    game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 3
+    game.decision_controller_hub._controllers = [
+        SimpleNamespace(
+            handles_player=lambda player_id: player_id == gsc_player.id,
+            supports_generic_tool_decisions=lambda: True,
+        )
+    ]
+
+    jackals = _make_unit(
+        "Atalan Jackals",
+        faction_name="Genestealer Cults",
+        keywords=["MOUNTED"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    infantry = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    gsc_army.add_unit(jackals)
+    gsc_army.add_unit(infantry)
+    enemy_army.add_unit(enemy)
+    game.map.units = [jackals, infantry, enemy]
+    game.rebuild_entity_registry()
+    gsc_player.stratagems.refresh_available()
+    _publish_current_phase_start(game)
+
+    assert gsc_player.stratagems.queue_headless_tool_action_decision(reactions_only=False) is True
+
+    request = _find_request(game, decision_type=DECISION_SELECT_TOOL_ACTION, ability="tool_action")
+    assert request is not None
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    close_range_payloads = [
+        payload
+        for payload in payloads
+        if str(payload.get("tool_name", "") or "").upper() == "CLOSE-RANGE SHOOT-OUT"
+    ]
+    assert len(close_range_payloads) == 1
+    resolved_kwargs = dict(close_range_payloads[0].get("resolved_kwargs", {}) or {})
+    assert resolved_kwargs["unit"]["__entity_ref__"]["id"] == get_entity_id(jackals)
+    assert gsc_player.stratagems.get_tool_action_probe_diagnostics() == []
 
 
 def test_encircling_the_prey_queues_at_fight_phase_end_and_enters_strategic_reserves():

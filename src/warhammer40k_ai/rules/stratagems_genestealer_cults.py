@@ -920,6 +920,40 @@ class GenestealerCultsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._gsc_sort_key)
 
+    def _gsc_outlander_tool_action_context(self, name_u: str, *, phase_name: str) -> Dict[str, Any]:
+        if not self._is_outlander_claw_detachment():
+            return {}
+        normalized_name = self._gsc_norm_name(name_u)
+        phase_key = str(phase_name or "").strip().lower()
+        if normalized_name == "CLOSE-RANGE SHOOT-OUT":
+            if phase_key != "shooting phase":
+                return {"candidates": []}
+            return {"candidates": list(self._gsc_outlander_close_range_shoot_out_candidates() or [])}
+        return {}
+
+    def _gsc_can_use_outlander_tool_action(self, name_u: str, kwargs: Dict[str, Any]) -> Optional[bool]:
+        normalized_name = self._gsc_norm_name(name_u)
+        if normalized_name != "CLOSE-RANGE SHOOT-OUT":
+            return None
+        if not self._is_outlander_claw_detachment():
+            return False
+        phase_key = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_key != "shooting phase":
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return False
+        candidates = self._gsc_resolve_unit_list(kwargs.get("candidates"))
+        if not candidates:
+            candidates = self._gsc_outlander_close_range_shoot_out_candidates()
+        target_root = self._gsc_root(kwargs.get("unit") or kwargs.get("target_unit"))
+        if target_root is None:
+            return bool(candidates)
+        return self._gsc_unit_in_candidates(target_root, candidates)
+
     def _gsc_outlander_rapid_feint_candidates(self, enemy_unit: Any) -> List[Any]:
         enemy_root = self._gsc_root(enemy_unit)
         if enemy_root is None:

@@ -22845,6 +22845,9 @@ class StratagemManager(
             return False
         if name_u in {"DAEMONIC FURY", "DAEMONTIDE"} and not self._we_can_use_khorne_daemonkin_tool_action(name_u, kwargs):
             return False
+        gsc_outlander_result = self._gsc_can_use_outlander_tool_action(name_u, kwargs)
+        if gsc_outlander_result is not None and not gsc_outlander_result:
+            return False
         possessed_result = self._we_can_use_possessed_tool_action(name_u, kwargs)
         if possessed_result is not None and not possessed_result:
             return False
@@ -31781,6 +31784,9 @@ class StratagemManager(
             ]
             candidates.sort(key=self._tool_action_sort_key)
             return {"candidates": candidates}
+        gsc_outlander_context = self._gsc_outlander_tool_action_context(name_u, phase_name=phase_label)
+        if gsc_outlander_context:
+            return dict(gsc_outlander_context)
         tyranids_context = self._tyr_invasion_fleet_tool_action_context(name_u, phase_name=phase_label)
         if tyranids_context:
             return dict(tyranids_context)
