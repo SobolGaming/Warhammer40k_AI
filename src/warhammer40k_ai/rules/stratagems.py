@@ -46,6 +46,11 @@ from .tool_action_validation import ToolActionCandidateValidator, ToolActionVali
 
 logger = logging.getLogger(__name__)
 
+CORE_ONCE_PER_BATTLE_STRATAGEM_NAMES = {
+    "INSANE BRAVERY",
+    "NEW ORDERS",
+}
+
 
 GENERIC_TOOL_ACTION_EXCLUDED_STRATAGEM_NAMES = {
     # These stratagems are handled by bespoke timing/target queues. The generic
@@ -2333,6 +2338,7 @@ class StratagemManager(
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
+            'NEW ORDERS': False,
         }
         # Once-per-battle-round limits (e.g., SUMMONED BY SLAUGHTER)
         self._used_battle_round: Dict[str, int] = {}
@@ -2364,6 +2370,10 @@ class StratagemManager(
             self._tool_action_probe_diagnostic_keys = set(
                 getattr(self, "_tool_action_probe_diagnostic_keys", []) or []
             )
+        if not isinstance(getattr(self, "_used_once_per_battle", None), dict):
+            self._used_once_per_battle = {}
+        for name in sorted(CORE_ONCE_PER_BATTLE_STRATAGEM_NAMES):
+            self._used_once_per_battle.setdefault(name, False)
         if not isinstance(getattr(self, "_vessels_meet_force_wounds_before", None), dict):
             self._vessels_meet_force_wounds_before = {}
         if not isinstance(getattr(self, "_aeldari_corsair_models_before_shooting", None), dict):
@@ -2447,6 +2457,32 @@ class StratagemManager(
             if name:
                 names.add(name)
         return names
+
+    def _stratagem_once_per_battle_key(self, stratagem: Stratagem | Any) -> str:
+        name = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if not name:
+            return ""
+        if name in CORE_ONCE_PER_BATTLE_STRATAGEM_NAMES:
+            return name
+        used = getattr(self, "_used_once_per_battle", None)
+        if isinstance(used, dict) and name in used:
+            return name
+        return ""
+
+    def _stratagem_once_per_battle_used(self, stratagem: Stratagem | Any) -> bool:
+        key = self._stratagem_once_per_battle_key(stratagem)
+        if not key:
+            return False
+        used = getattr(self, "_used_once_per_battle", None)
+        return bool(isinstance(used, dict) and used.get(key, False))
+
+    def _mark_stratagem_once_per_battle_used(self, stratagem: Stratagem | Any) -> None:
+        key = self._stratagem_once_per_battle_key(stratagem)
+        if not key:
+            return
+        if not isinstance(getattr(self, "_used_once_per_battle", None), dict):
+            self._used_once_per_battle = {}
+        self._used_once_per_battle[key] = True
 
     def _compute_required_handlers(self) -> Dict[str, List[Callable]]:
         handlers: Dict[str, List[Callable]] = {}
@@ -5004,6 +5040,8 @@ class StratagemManager(
         if stratagem is None:
             return False
         phase_label = str(phase_name or "").strip() or "Command phase"
+        if self._stratagem_once_per_battle_used(stratagem):
+            return False
         if not bool(stratagem.can_use(self.player, self.game, phase_name=phase_label)):
             return False
         active_secondaries = list(getattr(self.player, "active_secondaries", []) or [])
@@ -7066,7 +7104,7 @@ class StratagemManager(
             else:
                 result["reason"] = "Already used this phase"
                 return result
-        if name_u and self._used_once_per_battle.get(name_u, False):
+        if self._stratagem_once_per_battle_used(stratagem):
             result["reason"] = "Once per battle used"
             return result
         if name_u == "OVERWATCH" or name_u == "FIRE OVERWATCH":
@@ -22711,6 +22749,8 @@ class StratagemManager(
         if not s:
             return False
         name_u = self._normalize_stratagem_name(s.name or "")
+        if self._stratagem_once_per_battle_used(s):
+            return False
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
             kwargs = self._awakened_dynasty_undying_legions_preflight_context(kwargs)
         if name_u == "DENIZENS OF THE WARP" and not self._can_use_denizens_of_warp(kwargs):
@@ -22793,6 +22833,9 @@ class StratagemManager(
             return False
 
         name_u = self._normalize_stratagem_name(s.name or "")
+        if self._stratagem_once_per_battle_used(s):
+            logger.warning("WARN: %s can only be used once per battle", s.name)
+            return False
         if name_u == "GILDED CHAMPION":
             model = self._resolve_gilded_champion_model(kwargs)
             if model is not None:
@@ -23390,6 +23433,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
+            self._mark_stratagem_once_per_battle_used(s)
             return True
 
         # Core: COUNTER-OFFENSIVE
@@ -24635,6 +24679,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
+            self._mark_stratagem_once_per_battle_used(s)
             return True
 
         # Special-case: RAPID INGRESS (arrive from reserves at end of opponent's Movement phase)
@@ -31468,6 +31513,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
+            self._mark_stratagem_once_per_battle_used(s)
         return ok
 
     def _normalize_phase_item_context(self, context: Dict[str, Any]) -> Dict[str, Any]:

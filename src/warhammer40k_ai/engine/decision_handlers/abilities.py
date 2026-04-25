@@ -33414,6 +33414,13 @@ def _validate_discard_secondary(game: object, request: DecisionRequest, result: 
         return ()
     if _resolve_secondary_card_choice(game, request, result) is None:
         return ("New Orders requires an active secondary card choice.",)
+    manager = getattr(player, "stratagems", None)
+    can_use = getattr(manager, "can_use", None)
+    if callable(can_use):
+        phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "Command phase")
+        stratagem_name = str(request.context.get("stratagem_name", "") or payload.get("stratagem_name", "") or "NEW ORDERS")
+        if not bool(can_use(stratagem_name, phase_name=phase_name)):
+            return ("New Orders stratagem is not available.",)
     return ()
 
 

@@ -9,6 +9,7 @@ from warhammer40k_ai.UI.phases.phase_manager import BattlePhaseHandler
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_CHARGE,
+    DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
@@ -413,6 +414,90 @@ def test_real_game_headless_movement_phase_preserves_decision_chain(build_phase_
         DECISION_MOVE_UNIT,
     ]
     assert list(fixture.game.decision_queue.list() or []) == []
+
+
+@pytest.mark.integration
+def test_real_game_headless_successful_charge_completes_fight_phase(build_phase_game, monkeypatch) -> None:
+    fixture = build_phase_game(enemy_distance=3.0, current_control=PlayerControl.REMOTE)
+    game = fixture.game
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda *_args, **_kwargs: 6)
+
+    original_synthesize = HeadlessPolicyDecisionController._synthesized_move_model_positions
+
+    def _radius(model) -> float:
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return 0.0
+        return float(getattr(base, "get_radius", lambda: 0.0)() or 0.0)
+
+    def _model_position(model, *, x: float | None = None, y: float | None = None, z: float | None = None):
+        current = model.get_location()
+        return {
+            "model_id": model.id,
+            "position": [
+                float(current[0] if x is None else x),
+                float(current[1] if y is None else y),
+                float(current[2] if z is None else z),
+            ],
+            "facing": float(current[3] if len(current) > 3 else 0.0),
+        }
+
+    def _headless_positions_for_charge_and_fight(cls, active_game, request, payload):
+        ctx = dict(getattr(request, "context", {}) or {})
+        movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "").strip().lower()
+        unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
+        unit = active_game._resolve_unit_by_id(unit_id) if unit_id else None
+        if unit is None or movement_type not in {"charge", "pile_in", "consolidate"}:
+            return original_synthesize.__func__(cls, active_game, request, payload)
+        model = unit.models[0]
+        if movement_type != "charge":
+            return [_model_position(model)]
+        target_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
+        target = active_game._resolve_unit_by_id(target_ids[0]) if target_ids else None
+        if target is None:
+            return None
+        target_model = target.models[0]
+        target_location = target_model.get_location()
+        desired_edge_distance = 0.25
+        x = float(target_location[0]) - (_radius(model) + _radius(target_model) + desired_edge_distance)
+        return [_model_position(model, x=x, y=float(target_location[1]), z=float(target_location[2]))]
+
+    monkeypatch.setattr(
+        HeadlessPolicyDecisionController,
+        "_synthesized_move_model_positions",
+        classmethod(_headless_positions_for_charge_and_fight),
+    )
+
+    HeadlessPolicyDecisionController(game=game, auto_attach=True)
+
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    charge_selection = game._queue_charge_phase_selection(player=fixture.current_player)
+
+    assert charge_selection is not None
+    assert bool(getattr(fixture.active_unit.round_state, "charged_this_round", False))
+    assert fixture.active_unit.round_state.charge_move_target_ids == {fixture.enemy_unit.id}
+    assert bool(getattr(fixture.enemy_unit.round_state, "was_charged_this_round", False))
+
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    manager = game._ensure_fight_phase_manager_started()
+
+    assert manager is not None
+    assert manager.is_complete()
+    assert bool(getattr(fixture.active_unit.round_state, "fought_this_phase", False))
+    assert list(game.decision_queue.list() or []) == []
+
+    requested = [
+        str((getattr(event, "payload", {}) or {}).get("decision_type", "") or "")
+        for event in list(game.event_log.events or [])
+        if str(getattr(event, "event_type", "") or "") == "decision_requested"
+    ]
+    assert DECISION_SELECT_UNIT in requested
+    assert DECISION_DECLARE_CHARGE in requested
+    assert DECISION_REQUEST_DICE_ROLL in requested
+    assert DECISION_MOVE_UNIT in requested
+    assert DECISION_SELECT_FIGHT_TARGETS in requested
+    assert DECISION_DECLARE_MELEE_WEAPONS in requested
 
 
 def test_real_local_runtime_routes_phase_contract_request(build_phase_game) -> None:

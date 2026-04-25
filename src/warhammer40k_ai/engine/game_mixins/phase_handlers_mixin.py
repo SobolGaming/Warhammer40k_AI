@@ -413,6 +413,19 @@ class GamePhaseHandlersMixin:
             seen.add(target_id)
             target = registry.get(target_id, kind="unit") if registry is not None else None
             if target is None:
+                resolver = getattr(self, "_resolve_unit_by_id", None)
+                if callable(resolver):
+                    target = resolver(target_id)
+            if target is None:
+                for player in list(getattr(self, "players", []) or []):
+                    army = getattr(player, "army", None)
+                    for unit in list(getattr(army, "units", []) or []):
+                        if str(get_entity_id(unit) or "").strip() == target_id:
+                            target = unit
+                            break
+                    if target is not None:
+                        break
+            if target is None:
                 continue
             get_root = getattr(target, "get_attached_unit_root", None)
             root = get_root() if callable(get_root) else target
@@ -766,6 +779,34 @@ class GamePhaseHandlersMixin:
         unit = self._resolve_unit_by_id(unit_id)
         if unit is None:
             return
+        round_state = getattr(unit, "round_state", None)
+        if bool(getattr(round_state, "charged_this_round", False)):
+            return
+        resolved_value = getattr(request, "_resolved_decision_value", None)
+        if isinstance(resolved_value, dict):
+            if not target_unit_ids:
+                target_unit_ids = [
+                    str(value or "")
+                    for value in list(resolved_value.get("target_unit_ids", []) or [])
+                    if str(value or "")
+                ]
+            if round_state is not None and int(getattr(round_state, "charge_roll", 0) or 0) <= 0:
+                for roll_key in ("charge_roll", "base_roll", "total"):
+                    try:
+                        resolved_roll = int(resolved_value.get(roll_key, 0) or 0)
+                    except (TypeError, ValueError):
+                        resolved_roll = 0
+                    if resolved_roll > 0:
+                        round_state.charge_roll = int(resolved_roll)
+                        dice_values: list[int] = []
+                        for value in list(resolved_value.get("dice", []) or []):
+                            try:
+                                dice_values.append(int(value))
+                            except (TypeError, ValueError):
+                                continue
+                        if dice_values:
+                            round_state.charge_dice = dice_values
+                        break
         pending_modifier_request = None
         queue = getattr(self, "decision_queue", None)
         if queue is not None and hasattr(queue, "list"):

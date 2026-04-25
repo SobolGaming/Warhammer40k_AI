@@ -85,6 +85,29 @@ def test_queue_new_orders_decision_publishes_optional_discard_request() -> None:
     assert len(list(decision_queue.list() or [])) == 1
 
 
+def test_queue_new_orders_decision_respects_once_per_battle_ledger() -> None:
+    manager = StratagemManager.__new__(StratagemManager)
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+    )
+    player = SimpleNamespace(
+        id="player:new-orders",
+        active_secondaries=[SimpleNamespace(name="Cleanse")],
+        can_draw_secondary=lambda: True,
+    )
+    stratagem = SimpleNamespace(name="NEW ORDERS", cp_cost=1, can_use=lambda *_args, **_kwargs: True)
+    manager.game = game
+    manager.player = player
+    manager._used_once_per_battle = {"NEW ORDERS": True}
+    manager.get_by_name = lambda name: stratagem if str(name or "").upper() == "NEW ORDERS" else None
+
+    assert manager._queue_new_orders_decision(phase_name="Command phase") is False
+    assert list(decision_queue.list() or []) == []
+
+
 def test_apply_discard_secondary_uses_new_orders_stratagem() -> None:
     card = SimpleNamespace(name="Cleanse")
     calls: list[tuple[str, dict]] = []
@@ -119,6 +142,27 @@ def test_apply_discard_secondary_uses_new_orders_stratagem() -> None:
             },
         )
     ]
+
+
+def test_validate_discard_secondary_rejects_unavailable_new_orders() -> None:
+    card = SimpleNamespace(name="Cleanse")
+    manager = SimpleNamespace(can_use=lambda *_args, **_kwargs: False)
+    player = SimpleNamespace(id="player:new-orders", active_secondaries=[card], stratagems=manager)
+    game = SimpleNamespace(players=[player])
+    request = _new_orders_request(player_id=player.id, card_name=card.name)
+    choice = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("card_name", "") or "") == card.name
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    assert _validate_discard_secondary(game, request, result) == ("New Orders stratagem is not available.",)
 
 
 def test_apply_discard_secondary_skip_clears_pending_new_orders_reaction() -> None:

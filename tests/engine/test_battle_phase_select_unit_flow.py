@@ -397,6 +397,38 @@ def test_charge_select_unit_resolution_queues_charge_move_when_roll_already_reso
     assert queued.context["target_unit_ids"] == [enemy.id]
 
 
+def test_charge_move_target_resolution_falls_back_to_player_armies() -> None:
+    player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.charge_roll = 8
+    unit.round_state.charge_target_ids = {enemy.id}
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    game.entity_registry = _RegistryStub([unit])
+    game.players = [player, enemy.parent_army.player]
+    request = build_select_unit_request(
+        [unit],
+        player_id="player-1",
+        phase_name="CHARGE_PHASE",
+        phase_step="DECLARE_CHARGES",
+        selection_purpose="ACTIVATE_CHARGING_UNIT",
+        allow_pass=True,
+    )
+    assert request is not None
+
+    game.on_select_unit_resolved(
+        request=request,
+        selected_unit_id=unit.id,
+        selected_unit=unit,
+        payload={"unit_id": unit.id},
+        pass_selected=False,
+    )
+
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["movement_type"] == "charge"
+    assert queued.context["target_unit_ids"] == [enemy.id]
+
+
 def test_charge_followup_queues_charge_move_request_after_declaration() -> None:
     _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
     unit.round_state.charge_roll = 8
@@ -419,6 +451,41 @@ def test_charge_followup_queues_charge_move_request_after_declaration() -> None:
 
     game._maybe_queue_charge_phase_followup(request, result)
 
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["movement_type"] == "charge"
+    assert queued.context["target_unit_ids"] == [enemy.id]
+
+
+def test_charge_followup_uses_resolved_declaration_roll_when_round_state_not_populated() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    request = build_declare_charge_request(
+        game,
+        unit,
+        player_id="player-1",
+        out_of_turn=False,
+        context={"phase_name": "CHARGE_PHASE", "phase_step": "DECLARE_CHARGES"},
+    )
+    assert request is not None
+    option = request.options[0]
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={},
+    )
+    request._resolved_decision_value = {
+        "base_roll": 9,
+        "dice": [3, 6],
+        "target_unit_ids": [enemy.id],
+    }
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert unit.round_state.charge_roll == 9
+    assert unit.round_state.charge_dice == [3, 6]
     assert len(game.queued_requests) == 1
     queued = game.queued_requests[0]
     assert queued.decision_type == DECISION_MOVE_UNIT

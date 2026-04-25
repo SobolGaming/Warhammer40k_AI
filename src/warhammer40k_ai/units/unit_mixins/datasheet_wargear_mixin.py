@@ -1171,11 +1171,11 @@ class DatasheetWargearMixin:
                 continue
             entry = entry.strip()
 
-            if match := re.match(r"^this model is equipped with: (.*)$", entry):
+            if match := re.match(r"^this model is (?:additionally )?equipped with: (.*)$", entry):
                 for item_name in _split_loadout_items(match.group(1)):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     _record_item(item_name, quantity)
-            elif match := re.match(r"^every model is equipped with: (.*)$", entry):
+            elif match := re.match(r"^every model is (?:additionally )?equipped with: (.*)$", entry):
                 for item_name in _split_loadout_items(match.group(1)):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     _record_item(item_name, quantity)
@@ -1192,14 +1192,14 @@ class DatasheetWargearMixin:
                             _record_item(item_name, quantity)
                     else:
                         continue
-            elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
+            elif match := re.match(r"^(?:the|every) (.*) model is (?:additionally )?equipped with: (.*)$", entry):
                 if model_name_norm and model_name_norm == _norm_item(match.group(1).strip()):
                     for item_name in _split_loadout_items(match.group(2)):
                         quantity, item_name = _parse_loadout_quantity(item_name)
                         _record_item(item_name, quantity)
                 else:
                     continue
-            elif match := re.match(r"^(?:the|every|a|an) (\D+) is equipped with: (.*)$", entry):
+            elif match := re.match(r"^(?:the|every|a|an) (\D+) is (?:additionally )?equipped with: (.*)$", entry):
                 actors = [match.group(1)]
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")
@@ -1210,7 +1210,7 @@ class DatasheetWargearMixin:
                             _record_item(item_name, quantity)
                     else:
                         continue
-            elif match := re.match(r"^(\D+) is equipped with: (.*)$", entry):
+            elif match := re.match(r"^(\D+) is (?:additionally )?equipped with: (.*)$", entry):
                 actors = [match.group(1)]
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")

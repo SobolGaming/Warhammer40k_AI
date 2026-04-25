@@ -84,7 +84,27 @@ class TestDatasheetsWargearParsing(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].name.lower(), "onslaught gatling cannon")
 
+    def test_loadout_parses_model_specific_additionally_equipped_wargear_ability(self):
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+
+        u = Unit.__new__(Unit)
+        u.possible_wargear = []
+        u.possible_abilities = [
+            Ability(
+                "Weavefield Crest",
+                "",
+                "The bearer has a 4+ invulnerable save.",
+                "Wargear",
+                "",
+            )
+        ]
+        loadout = "Every model is equipped with: EtaCarn plasma gun. The Hesyr is additionally equipped with: weavefield crest."
+
+        _wargear, optional = u._parse_loadout(loadout, model_name="hesyr", return_optional=True)
+
+        self.assertEqual(optional, ["Weavefield Crest"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

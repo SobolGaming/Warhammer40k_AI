@@ -708,7 +708,10 @@ def bind_charge_move_targets(
         validator = getattr(charging_unit, "can_declare_charge_against", None)
         if not callable(validator):
             continue
-        if not bool(validator(target_root, game, out_of_turn=out_of_turn)):
+        # The declaration has already marked attempted_charge_this_round.  The
+        # post-roll binding step still needs target-specific legality checks,
+        # but it must not reject the declared target because of that marker.
+        if not bool(validator(target_root, game, out_of_turn=True)):
             continue
         reachable_ids.append(target_root_id)
         resolved.append(target_root)
