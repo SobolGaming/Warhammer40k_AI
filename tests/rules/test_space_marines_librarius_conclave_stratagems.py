@@ -188,6 +188,61 @@ def _ranged_wargear(name: str = "Bolt Rifle") -> Wargear:
     )
 
 
+def test_librarius_phase_items_are_not_available_without_bound_candidates():
+    game, sm_player, enemy_player, sm_army, enemy_army = _build_game()
+    librarian = _make_unit(
+        "Librarian",
+        keywords=["INFANTRY", "PSYKER"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    librarian.models[0].wargear = [_ranged_wargear(), _melee_wargear("Force Weapon")]
+    intercessors = _make_unit(
+        "Intercessor Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    sm_army.add_unit(librarian)
+    sm_army.add_unit(intercessors)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, librarian, 10.0, 10.0)
+    _deploy_unit(game, intercessors, 16.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    def available_items(name: str):
+        return [
+            item
+            for item in sm_player.stratagems.get_phase_stratagem_items()
+            if str(item.get("name", "") or "").strip().upper() == name
+            and bool(item.get("available", False))
+        ]
+
+    def assert_bound_available_item(name: str) -> None:
+        items = available_items(name)
+        assert items
+        assert all(list((item.get("context") or {}).get("candidates") or []) for item in items)
+
+    _set_phase(game, enemy_player, "COMMAND_PHASE", 1)
+    assert_bound_available_item("SENSORY ASSAULT")
+    sensory_context = available_items("SENSORY ASSAULT")[0].get("context") or {}
+    assert list(sensory_context.get("enemy_candidates") or [])
+
+    _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
+    assert_bound_available_item("ASSAIL")
+    assail_context = available_items("ASSAIL")[0].get("context") or {}
+    assert list(assail_context.get("enemy_candidates") or [])
+    assert_bound_available_item("PRESCIENT PRECISION")
+
+    _set_phase(game, sm_player, "FIGHT_PHASE", 0)
+    assert_bound_available_item("IRON ARM")
+
+
 def test_librarius_conclave_stratagem_descriptors_registered():
     expected = {
         "000009791006": ("Assail", "psyker_mortal_wound_burst_with_conditional_telekinesis_bonus"),

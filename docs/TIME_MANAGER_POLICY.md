@@ -36,6 +36,7 @@ For `DECISION_MOVE_UNIT`, `Game.request_decision(...)` decorates context via `Ti
 When `time_budget_ms > 0` and a `TimeManager` is present:
 - solver action executes through `run_with_time_budget(...)`.
 - movement candidate generation passes the soft deadline into internal helpers so charge/fight move planning can prefer bounded heuristic search before expensive routed/pathing fallback.
+- charge MOVE_UNIT candidate generation uses a bounded endpoint heuristic while under a deadline. If that heuristic cannot produce a legal charge candidate, it returns the deterministic skip/fallback candidates instead of entering exact routed charge pathing, because the routed path planner can spend unbounded time inside geometry calls that cannot be interrupted mid-call.
 - on over-budget elapsed runtime:
   - solver output is discarded.
   - fallback candidates are rebuilt deterministically from `request.candidates` (already canonicalized/sorted by action id).

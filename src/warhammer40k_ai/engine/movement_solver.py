@@ -555,6 +555,10 @@ def _charge_candidate(
         return heuristic_candidate
     if _deadline_exceeded(deadline):
         return None
+    if deadline is not None:
+        # Exact routed charge pathing can enter non-interruptible geometry calls; keep
+        # budgeted candidate generation bounded once the cheap endpoint search misses.
+        return None
 
     destination_finder = getattr(game, "_find_charge_destination", None)
     if not callable(destination_finder):

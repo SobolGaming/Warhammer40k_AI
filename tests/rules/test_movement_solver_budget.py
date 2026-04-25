@@ -350,3 +350,57 @@ def test_move_solver_charge_prefers_heuristic_endpoint_before_routed_search() ->
     metadata = dict(confirm_candidate.metadata or {})
     assert metadata.get("candidate_kind") == "charge"
     assert metadata.get("candidate_source") == "heuristic_endpoint"
+
+
+def test_move_solver_time_budgeted_charge_skips_routed_search_when_heuristic_misses() -> None:
+    mover_model = _ModelStub("model:mover", x=0.0, y=0.0, melee=True, ranged=False)
+    enemy_model = _ModelStub("model:enemy", x=11.0, y=0.0, melee=False, ranged=True)
+    mover_army = _ArmyStub([])
+    enemy_army = _ArmyStub([])
+    mover_unit = _UnitStub("unit:mover", [mover_model], army=mover_army)
+    enemy_unit = _UnitStub("unit:enemy", [enemy_model], army=enemy_army)
+    mover_army.units = [mover_unit]
+    enemy_army.units = [enemy_unit]
+    game = _LiveGameStub(
+        time_manager=TimeManager(),
+        path_witness_store=PathWitnessStore(),
+        players=[_PlayerStub(mover_army), _PlayerStub(enemy_army)],
+        map=_MapStub(),
+        objectives=[],
+    )
+
+    def _should_not_be_called(*_args, **_kwargs):
+        raise AssertionError("Budgeted charge candidate generation must not enter exact routed pathing.")
+
+    game._find_charge_destination = _should_not_be_called
+    game._iter_charge_destination_candidates = lambda *_args, **_kwargs: []
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:mover",
+            "movement_type": "charge",
+            "max_distance": 12.0,
+            "target_unit_ids": ["unit:enemy"],
+            "time_budget_ms": 25,
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, mask, wall_clock_ms, fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    assert fallback_mode is False
+    assert wall_clock_ms >= 0
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["skip"]

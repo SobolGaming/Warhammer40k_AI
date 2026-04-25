@@ -176,6 +176,55 @@ class TestDrukhariSkysplinterAssaultStratagems(unittest.TestCase):
         self.assertEqual(str(getattr(desc, "name", "") or ""), "Wraithlike Retreat")
         self.assertIn("embark_requirement", str(getattr(desc, "effect", "") or ""))
 
+    def test_phase_items_do_not_offer_skysplinter_stratagems_without_required_triggers(self):
+        game, p1, _p2, drukhari_army, _enemy_army = _build_game()
+        infantry = _make_unit(
+            "Kabalite Warriors",
+            keywords=["INFANTRY", "DRUKHARI", "KABALITE WARRIORS"],
+            faction_keywords=["DRUKHARI"],
+        )
+        drukhari_army.add_unit(infantry)
+        _place_unit(game, infantry, 10.0, 10.0)
+        game.rebuild_entity_registry()
+
+        _set_phase(game, p1, "MOVEMENT_PHASE", 0)
+        movement_items = {
+            str(item.get("name", "") or "").strip().upper(): item
+            for item in p1.stratagems.get_phase_stratagem_items()
+        }
+        self.assertFalse(bool(movement_items["POUNCE ON THE PREY"].get("available", True)))
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        shooting_items = {
+            str(item.get("name", "") or "").strip().upper(): item
+            for item in p1.stratagems.get_phase_stratagem_items()
+        }
+        self.assertFalse(bool(shooting_items["SKYBORNE ANNIHILATION"].get("available", True)))
+        self.assertEqual(list((shooting_items["SKYBORNE ANNIHILATION"].get("context") or {}).get("candidates") or []), [])
+
+    def test_phase_items_offer_skyborne_only_for_disembarked_units_that_have_not_shot(self):
+        game, p1, _p2, drukhari_army, _enemy_army = _build_game()
+        infantry = _make_unit(
+            "Kabalite Warriors",
+            keywords=["INFANTRY", "DRUKHARI", "KABALITE WARRIORS"],
+            faction_keywords=["DRUKHARI"],
+        )
+        drukhari_army.add_unit(infantry)
+        _place_unit(game, infantry, 10.0, 10.0)
+        game.rebuild_entity_registry()
+        infantry.round_state.disembarked_this_round = True
+        infantry.round_state.shot_this_round = False
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        item = next(
+            item
+            for item in p1.stratagems.get_phase_stratagem_items()
+            if str(item.get("name", "") or "").strip().upper() == "SKYBORNE ANNIHILATION"
+        )
+
+        self.assertTrue(bool(item.get("available", False)))
+        self.assertEqual(list((item.get("context") or {}).get("candidates") or []), [infantry])
+
     def test_pounce_on_the_prey_queues_after_disembark_and_removes_charge_lock(self):
         game, p1, _p2, drukhari_army, _enemy_army = _build_game()
         transport = _make_unit(

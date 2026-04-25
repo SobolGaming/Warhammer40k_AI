@@ -1199,6 +1199,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "COUNTERCHARGE",
+    "FIERY SHIELD",
     "FIRE OVERWATCH",
     "OVERWATCH",
     "GO TO GROUND",
@@ -1230,6 +1231,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "JOIN THE HUNT",
     "PINPOINT COUNTER-OFFENSIVE",
+    "POUNCE ON THE PREY",
     "PHOTON GRENADES",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
@@ -1240,6 +1242,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SAVAGE ECHOES",
     "SAVAGE ROAR",
     "SQUAD TACTICS",
+    "SWOOPING MOCKERY",
     "SHOCK BOMBARDMENT",
     "SWIFT INTERCEPTION",
     "SURPRISE ASSAULT",
@@ -1252,6 +1255,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
     "WITHDRAW AND REGROUP",
+    "VICIOUS BLADES",
     "FOREWARNED",
     "WRAITHBONE ARMOUR",
     "CRUSHING STRIDES",
@@ -1324,6 +1328,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
     "WRATHFUL INFERNO",
+    "WRAITHLIKE RETREAT",
     "CRUSHING IMPACT",
     "UNSTOPPABLE MOMENTUM",
     "KRUNCHIN' DESCENT",
@@ -7166,6 +7171,79 @@ class StratagemManager(
                 if name_u != "INSANE BRAVERY":
                     result["reason"] = "Target cannot be selected"
                     return result
+
+        if name_u in {"SENSORY ASSAULT", "ASSAIL", "PRESCIENT PRECISION", "IRON ARM"}:
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                if name_u == "SENSORY ASSAULT":
+                    candidates, enemy_map = self._space_marines_librarius_psyker_source_candidates(require_enemy_target=True)
+                    context = {**context, "candidates": candidates, "enemy_candidates_by_unit": enemy_map}
+                elif name_u == "ASSAIL":
+                    candidates, enemy_map = self._space_marines_librarius_psyker_source_candidates(
+                        require_shooting_eligible=True,
+                        exclude_lone_operative=True,
+                        require_enemy_target=True,
+                    )
+                    context = {**context, "candidates": candidates, "enemy_candidates_by_unit": enemy_map}
+                elif name_u == "PRESCIENT PRECISION":
+                    candidates, _enemy_map = self._space_marines_librarius_psyker_source_candidates(
+                        require_not_selected_to_shoot=True
+                    )
+                    context = {**context, "candidates": candidates}
+                elif name_u == "IRON ARM":
+                    candidates = self._space_marines_librarius_psyker_range_candidates(
+                        require_infantry=True,
+                        require_not_selected_to_fight=True,
+                    )
+                    context = {**context, "candidates": candidates}
+            if target is not None:
+                target_id = self._tool_action_sort_key(target)
+                candidate_ids = {self._tool_action_sort_key(candidate) for candidate in list(candidates or [])}
+                if not candidate_ids or target_id not in candidate_ids:
+                    result["reason"] = "Requires valid target"
+                    return result
+            elif not candidates:
+                result["reason"] = "Requires valid target"
+                return result
+            if name_u in {"SENSORY ASSAULT", "ASSAIL"}:
+                enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+                enemy_candidates_by_unit = dict(context.get("enemy_candidates_by_unit") or {})
+                enemy_candidates = list(context.get("enemy_candidates") or [])
+                if target is not None:
+                    target_id = self._tool_action_sort_key(target)
+                    enemy_candidates = list(enemy_candidates_by_unit.get(target_id) or enemy_candidates)
+                elif not enemy_candidates:
+                    for candidate in list(candidates or []):
+                        enemy_candidates.extend(list(enemy_candidates_by_unit.get(self._tool_action_sort_key(candidate)) or []))
+                if enemy_unit is not None and enemy_candidates:
+                    enemy_id = self._tool_action_sort_key(enemy_unit)
+                    enemy_ids = {self._tool_action_sort_key(candidate) for candidate in list(enemy_candidates or [])}
+                    if enemy_id not in enemy_ids:
+                        result["reason"] = "Requires valid enemy target"
+                        return result
+                if enemy_unit is None and not enemy_candidates:
+                    result["reason"] = "Requires visible enemy target"
+                    return result
+            result["available"] = True
+            result["reason"] = None
+            return result
+
+        if name_u == "SKYBORNE ANNIHILATION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._drukhari_skysplinter_skyborne_annihilation_candidates() or [])
+            if target is not None:
+                target_id = self._tool_action_sort_key(target)
+                candidate_ids = {self._tool_action_sort_key(candidate) for candidate in list(candidates or [])}
+                if not candidate_ids or target_id not in candidate_ids:
+                    result["reason"] = "Requires a Drukhari unit that disembarked this turn and has not shot"
+                    return result
+            elif not candidates:
+                result["reason"] = "Requires a Drukhari unit that disembarked this turn and has not shot"
+                return result
+            result["available"] = True
+            result["reason"] = None
+            return result
 
         # Adeptus Custodes (Lions of the Emperor): UNLEASH THE LIONS
         if name_u == "UNLEASH THE LIONS":
@@ -31564,6 +31642,35 @@ class StratagemManager(
         if not phase_label:
             return {}
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "SENSORY ASSAULT":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            candidates, enemy_map = self._space_marines_librarius_psyker_source_candidates(require_enemy_target=True)
+            enemy_candidates: list[Any] = []
+            seen_enemy_ids: set[str] = set()
+            for values in list(enemy_map.values() or []):
+                for enemy in list(values or []):
+                    enemy_id = self._tool_action_sort_key(enemy)
+                    if enemy_id and enemy_id in seen_enemy_ids:
+                        continue
+                    if enemy_id:
+                        seen_enemy_ids.add(enemy_id)
+                    enemy_candidates.append(enemy)
+            enemy_candidates.sort(key=self._tool_action_sort_key)
+            return {
+                "candidates": candidates,
+                "enemy_candidates_by_unit": enemy_map,
+                "enemy_candidates": enemy_candidates,
+            }
+        if name_u == "IRON ARM":
+            if phase_label.lower() != "fight phase":
+                return {"candidates": []}
+            return {
+                "candidates": self._space_marines_librarius_psyker_range_candidates(
+                    require_infantry=True,
+                    require_not_selected_to_fight=True,
+                ),
+            }
         if name_u == "VIOLENT CRESCENDO":
             return dict(self._ec_carnival_violent_crescendo_tool_action_context() or {})
         if name_u in {
@@ -31582,6 +31689,41 @@ class StratagemManager(
             return dict(self._aeldari_aspect_host_tool_action_context(name_u, phase_name=phase_label) or {})
         if not is_active_turn:
             return {}
+        if name_u == "ASSAIL":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            candidates, enemy_map = self._space_marines_librarius_psyker_source_candidates(
+                require_shooting_eligible=True,
+                exclude_lone_operative=True,
+                require_enemy_target=True,
+            )
+            enemy_candidates = []
+            seen_enemy_ids = set()
+            for values in list(enemy_map.values() or []):
+                for enemy in list(values or []):
+                    enemy_id = self._tool_action_sort_key(enemy)
+                    if enemy_id and enemy_id in seen_enemy_ids:
+                        continue
+                    if enemy_id:
+                        seen_enemy_ids.add(enemy_id)
+                    enemy_candidates.append(enemy)
+            enemy_candidates.sort(key=self._tool_action_sort_key)
+            return {
+                "candidates": candidates,
+                "enemy_candidates_by_unit": enemy_map,
+                "enemy_candidates": enemy_candidates,
+            }
+        if name_u == "PRESCIENT PRECISION":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            candidates, _enemy_map = self._space_marines_librarius_psyker_source_candidates(
+                require_not_selected_to_shoot=True
+            )
+            return {"candidates": candidates}
+        if name_u == "SKYBORNE ANNIHILATION":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            return {"candidates": self._drukhari_skysplinter_skyborne_annihilation_candidates()}
         if name_u == "ERE WE GO":
             if phase_label.lower() != "movement phase":
                 return {}

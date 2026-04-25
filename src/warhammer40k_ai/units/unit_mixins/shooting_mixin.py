@@ -397,6 +397,9 @@ class ShootingMixin:
             weapon_declarations,
             game_map=game_map,
         )
+        if not weapon_declarations:
+            logger.info(f"{self.name}: No legal shooting declarations to execute")
+            return False
 
         ctan_ok, ctan_reason = self.validate_ctan_power_selection(weapon_declarations)
         if not ctan_ok:
@@ -801,7 +804,7 @@ class ShootingMixin:
                 if not target_unit.is_alive():
                     logger.info(f"{target_unit.name} has been destroyed!")
         else:
-            logger.error(f"{self.name} failed to execute any attacks")
+            logger.warning(f"{self.name} resolved shooting with no executable attacks")
             
         # End attack resolution window(s) and resolve pending separations (now that this unit is done attacking).
         try:
