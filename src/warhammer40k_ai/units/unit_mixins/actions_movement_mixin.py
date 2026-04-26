@@ -3,6 +3,11 @@
 from ._common import *
 import logging
 from typing import Sequence
+from ...rules.selectable_section_abilities import (
+    ability_name_to_key as selectable_section_ability_name_to_key,
+    unit_has_active_section_ability,
+    unit_has_selectable_section_sub_ability,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -814,6 +819,10 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_temple_relics(self, key))
         except Exception:
             pass
+        name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+        key = selectable_section_ability_name_to_key(name)
+        if key and unit_has_selectable_section_sub_ability(self):
+            return bool(unit_has_active_section_ability(self, key))
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:
@@ -14959,6 +14968,8 @@ class ActionsMovementMixin:
             return True
         if self._datasheet_no_fire_overwatch_active(target_unit=target_unit):
             return True
+        if self.has_first_prince_slaanesh_no_overwatch():
+            return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:
             return False
@@ -15047,6 +15058,8 @@ class ActionsMovementMixin:
         kw = str(keyword or "").strip()
         if not kw:
             return False
+        if not self._first_prince_of_chaos_active():
+            return False
         try:
             if self.has_any_keyword(kw):
                 return True
@@ -15055,13 +15068,13 @@ class ActionsMovementMixin:
         return False
 
     def has_first_prince_tzeentch_defense(self) -> bool:
-        return False
+        return bool(self._first_prince_has_god_keyword("TZEENTCH"))
 
     def has_first_prince_nurgle_defense(self) -> bool:
-        return False
+        return bool(self._first_prince_has_god_keyword("NURGLE"))
 
     def has_first_prince_slaanesh_no_overwatch(self) -> bool:
-        return False
+        return bool(self._first_prince_has_god_keyword("SLAANESH"))
 
     def _is_belakor(self) -> bool:
         name = str(getattr(self, "name", "") or "").lower().replace("\u2019", "'")
@@ -19532,7 +19545,9 @@ class ActionsMovementMixin:
             return self._ability_cache[cache_key]
 
             found = False
-        if self.has_thrill_seekers():
+        if self._first_prince_has_god_keyword("KHORNE") and "first prince of chaos" not in excluded_source_keys:
+            found = True
+        elif self.has_thrill_seekers():
             found = True
         elif self._thousand_sons_rubricae_stratagem_active(
             active_key="space_marines_angelic_host_death_from_the_skies_active",
@@ -19627,7 +19642,9 @@ class ActionsMovementMixin:
         logger.info(f"{self.name} checking for advance and charge abilities...")
 
         found = False
-        if self.has_thrill_seekers():
+        if self._first_prince_has_god_keyword("KHORNE") and "first prince of chaos" not in excluded_source_keys:
+            found = True
+        elif self.has_thrill_seekers():
             found = True
         elif self._thousand_sons_rubricae_stratagem_active(
             active_key="space_marines_angelic_host_death_from_the_skies_active",

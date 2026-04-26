@@ -5997,7 +5997,7 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_drill_commander_bearer_model_id"] = bearer_id
 
-        if name == "grand strategist" or enh_id == "000008380004":
+        if enh_id == "000008380004" or (name == "grand strategist" and is_combined_arms):
             if not is_combined_arms:
                 return
             unit.special_rules["enhancement_grand_strategist"] = True

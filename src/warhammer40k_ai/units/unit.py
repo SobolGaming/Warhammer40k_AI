@@ -1407,6 +1407,18 @@ class Unit(
                             source=f"detachment:{source_name}",
                         )
                     )
+            rapid_strike_fn = getattr(self, "rapid_strike_vehicle_objective_control_bonus", None)
+            if callable(rapid_strike_fn):
+                bonus, source = rapid_strike_fn()
+                if int(bonus or 0):
+                    source_name = str(source or "Rapid Strike Vehicle").strip() or "Rapid Strike Vehicle"
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source=f"ability:{source_name}",
+                        )
+                    )
 
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).

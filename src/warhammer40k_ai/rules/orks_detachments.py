@@ -16,6 +16,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _KULT_OF_SPEED_ADRENALINE_JUNKIES_SOURCE = "Adrenaline Junkies"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
+    _WAZDAKKA_GUTSMEK_NAMED_UNITS = ("wazdakka gutsmek",)
+    _WAZDAKKA_WARBIKERS_NAMED_UNITS = ("warbikers",)
     _TAKTIKAL_BRIGADE_STORMBOYZ_NAMED_UNITS = ("stormboyz",)
     _TAKTIKAL_BRIGADE_TAKTIK_GET_STUCK_IN = "get_stuck_in"
     _TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT = "get_on_wiv_it"
@@ -1177,6 +1179,45 @@ class OrksDetachmentManager(DetachmentManagerBase):
                 continue
             if not self._unit_contains_keyword(root, "STORMBOYZ"):
                 if not self._unit_name_matches_any(root, self._TAKTIKAL_BRIGADE_STORMBOYZ_NAMED_UNITS):
+                    continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(keyword or "").strip().lower() == "battleline" for keyword in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def _army_warlord_is_wazdakka(self) -> bool:
+        if self.army is None:
+            return False
+        warlord = getattr(self.army, "warlord", None)
+        if warlord is None:
+            for candidate in list(getattr(self.army, "units", []) or []):
+                if bool(getattr(candidate, "is_warlord", False)):
+                    warlord = candidate
+                    break
+        root = self._unit_root(warlord)
+        if root is None:
+            return False
+        if self._unit_name_matches_any(root, self._WAZDAKKA_GUTSMEK_NAMED_UNITS):
+            return True
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text = root._normalize_rules_text(f"{name} {desc}")
+            normalized = text.replace("\u2019", "'").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "waaagh wazdakka" in normalized and "warbikers" in normalized and "battleline" in normalized:
+                return True
+        return False
+
+    def apply_wazdakka_warbikers_battleline_keywords(self, unit=None) -> None:
+        if self.army is None or not self._army_warlord_is_wazdakka():
+            return
+        units = list(getattr(self.army, "units", []) or []) if unit is None else [unit]
+        for entry in units:
+            root = self._unit_root(entry)
+            if root is None or not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_name_matches_any(root, self._WAZDAKKA_WARBIKERS_NAMED_UNITS):
+                if not self._unit_contains_keyword(root, "WARBIKERS"):
                     continue
             keywords = list(getattr(root, "keywords", []) or [])
             if not any(str(keyword or "").strip().lower() == "battleline" for keyword in keywords):

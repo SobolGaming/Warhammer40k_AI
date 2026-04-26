@@ -6064,6 +6064,28 @@ class GamePhaseHandlersMixin:
                         "post_shoot_no_cover_turn",
                     ):
                         sr.pop(key, None)
+                if pname == "COMMAND_PHASE":
+                    effects = list(sr.get("selected_to_shoot_target_attack_keyword_effects", []) or [])
+                    if effects:
+                        kept_effects = []
+                        changed = False
+                        for effect in effects:
+                            if not isinstance(effect, dict):
+                                changed = True
+                                continue
+                            if (
+                                str(effect.get("owner_id", "") or effect.get("owner", "") or "") == owner_id
+                                and str(effect.get("expires_timing", "") or "").strip().upper()
+                                == "OWNER_NEXT_COMMAND_START"
+                            ):
+                                changed = True
+                                continue
+                            kept_effects.append(effect)
+                        if changed:
+                            if kept_effects:
+                                sr["selected_to_shoot_target_attack_keyword_effects"] = kept_effects
+                            else:
+                                sr.pop("selected_to_shoot_target_attack_keyword_effects", None)
                 if str(sr.get("post_shoot_no_overwatch_owner", "") or "") == owner_id:
                     for key in (
                         "post_shoot_no_overwatch_active",
@@ -8180,6 +8202,119 @@ class GamePhaseHandlersMixin:
                 },
             )
             self.request_decision(request)
+
+    def _on_phase_start_selectable_section_abilities(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: queue datasheet section-ability mode selections."""
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        from ...rules.selectable_section_abilities import (
+            SECTION_OPTIONS_BY_PARENT,
+            unit_has_section_parent_ability,
+        )
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        pending: set[tuple[str, str]] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "selectable_section_ability":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                parent_key = str(ctx.get("section_parent_key", "") or "").strip().upper()
+                if source_id and parent_key:
+                    pending.add((source_id, parent_key))
+
+        def _sort_key(unit):
+            return str(get_entity_id(unit) or getattr(unit, "name", "") or "")
+
+        def _unit_available(unit) -> bool:
+            if unit is None:
+                return False
+            is_alive = getattr(unit, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+                return False
+            in_reserves = getattr(unit, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                return False
+            return True
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_sort_key):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not _unit_available(root):
+                continue
+            for parent_key, options_tuple in sorted(SECTION_OPTIONS_BY_PARENT.items()):
+                if (root_id, parent_key) in pending:
+                    continue
+                if not unit_has_section_parent_ability(root, parent_key):
+                    continue
+                options = [
+                    DecisionOption.create(
+                        str(option.name),
+                        payload={
+                            "choice_key": option.key,
+                            "choice_name": option.name,
+                            "source_unit_id": root_id,
+                        },
+                    )
+                    for option in options_tuple
+                ]
+                options.append(
+                    DecisionOption.create(
+                        "None",
+                        payload={"skip": True, "action": "skip", "source_unit_id": root_id},
+                    )
+                )
+                parent_name = str(options_tuple[0].parent_name if options_tuple else "Section Ability")
+                try:
+                    battle_round = int(getattr(self, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    battle_round = 0
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{parent_name}: select one ability for {getattr(root, 'name', 'Unit')} (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "selectable_section_ability",
+                        "ability_name": parent_name,
+                        "phase": "Command phase",
+                        "source_unit_id": root_id,
+                        "unit_id": root_id,
+                        "section_parent_key": parent_key,
+                        "allowed_choice_keys": [option.key for option in options_tuple],
+                        "battle_round": int(battle_round or 0),
+                        "expires_round": int((battle_round or 0) + 1),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
 
     def _on_phase_start_vanguard_of_dark_city(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: Raider Vanguard of the Dark City mode selection."""
@@ -22541,6 +22676,135 @@ class GamePhaseHandlersMixin:
             bonus_kind="hit",
             spec_method="model_movement_phase_end_visible_hit_bonus_specs",
         )
+
+    def _on_phase_end_movement_phase_visible_attack_keywords(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a visible enemy unit to receive temporary attack keyword effects."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _entity_sort_key(entity):
+            return str(get_entity_id(entity) or getattr(entity, "name", "") or "")
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _has_pending_request(*, model_id: str, ability_key: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                context = dict(getattr(req, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "selected_to_shoot_target_attack_keywords":
+                    continue
+                if str(context.get("model_id", "") or "") != str(model_id or ""):
+                    continue
+                if str(context.get("ability_key", "") or "") != str(ability_key or ""):
+                    continue
+                return True
+            return False
+
+        enemy_roots = sorted(list(enemy_roots), key=_entity_sort_key)
+        for unit in sorted(list(army.units or []), key=_entity_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            is_in_reserves = getattr(unit, "is_in_reserves", None)
+            if callable(is_in_reserves) and bool(is_in_reserves()):
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_entity_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_end_visible_attack_keyword_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                source_unit_id = str(get_entity_id(source_unit) or get_entity_id(root) or "")
+                model_id = str(get_entity_id(model) or "")
+                if not source_unit_id or not model_id:
+                    continue
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    ability_key = str(spec.get("ability_key", "") or "movement_phase_visible_attack_keyword")
+                    if _has_pending_request(model_id=model_id, ability_key=ability_key):
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    candidates = sorted(list(candidates), key=_entity_sort_key)
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    for target_root in candidates:
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(target_root, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": get_entity_id(target_root)},
+                            )
+                        )
+                    ability_name = str(spec.get("source", "") or "Movement phase attack keyword").strip() or "Movement phase attack keyword"
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select one enemy unit within {int(range_value)}\" (or None).",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "selected_to_shoot_target_attack_keywords",
+                            "ability_key": ability_key,
+                            "ability_name": ability_name,
+                            "source_unit_id": source_unit_id,
+                            "unit_id": source_unit_id,
+                            "model_id": model_id,
+                            "range": int(range_value),
+                            "requires_visibility": True,
+                            "attack_type": str(spec.get("attack_type", "") or "any"),
+                            "keywords": list(spec.get("keywords", []) or []),
+                            "attacker_keyword_phrase": str(spec.get("attacker_keyword_phrase", "") or ""),
+                            "candidate_unit_ids": [str(get_entity_id(target) or "") for target in candidates],
+                            "phase_name": "",
+                            "expires_timing": str(spec.get("expires_timing", "") or "OWNER_NEXT_COMMAND_START"),
+                            "turn": 0,
+                            "optional": True,
+                        },
+                    )
+                    self.request_decision(request)
 
     def _on_phase_end_movement_phase_pinned(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase: optional visible target selection to apply pinned until next Movement phase."""

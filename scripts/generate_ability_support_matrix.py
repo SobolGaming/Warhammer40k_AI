@@ -734,6 +734,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         ),
         "First Prince of Chaos": (
             r"units from your army have the relevant abilities presented below",
+            r"(?:murderers cowl )?shadow legion khorne units only this unit is eligible to shoot and declare a charge in a turn in which it advanced",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it advanced",
+            r"(?:penumbral puppetry )?shadow legion tzeentch units only each time an attack targets this unit subtract 1 from the hit roll",
+            r"each time an attack targets this unit subtract 1 from the hit roll",
+            r"(?:gloam rot )?shadow legion nurgle units only each time an attack targets this unit if the strength characteristic of that attack is greater than this units toughness characteristic subtract 1 from the wound roll",
+            r"each time an attack targets this unit if the strength characteristic of that attack is greater than this units toughness characteristic subtract 1 from the wound roll",
+            r"(?:shadows caress )?shadow legion slaanesh units only enemy units cannot use the fire overwatch stratagem to shoot at this unit",
+            r"enemy units cannot use the fire overwatch stratagem to shoot at this unit",
             r"shadow legion undivided units only",
             r"this unit has the dark pacts army rule and can use it as described in codex.*",
             r"if this unit is be lakor it automatically passes the leadership test required for dark pacts",
@@ -3372,7 +3380,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "First Prince of Chaos": (
             "Supported",
-            "Shadow Legion: DISCIPLES OF BE'LAKOR Dark Pacts for SHADOW LEGION UNDIVIDED units, Be'lakor auto-pass for those Dark Pacts, and SHADOW LEGION HERETIC ASTARTES Deep Strike are implemented.",
+            "Shadow Legion: KHORNE units can shoot and charge after Advancing, TZEENTCH units impose -1 to hit when targeted, NURGLE units impose -1 to wound when incoming Strength exceeds Toughness, SLAANESH units cannot be targeted by Fire Overwatch, and DISCIPLES OF BE'LAKOR Dark Pacts/Be'lakor auto-pass/SHADOW LEGION HERETIC ASTARTES Deep Strike are implemented.",
         ),
         "Fates in Flux": (
             "Supported",
@@ -3663,6 +3671,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Embodied Prophecy"): (
             "Supported",
             "Fight phase selected-unit trigger: if the unit charged this turn, melee weapons gain both [LETHAL HITS] and [SUSTAINED HITS 1] until end of phase; otherwise a deterministic CHOOSE_QUARRY selection applies one of those keywords until end of phase.",
+        ),
+        ("AS", "Judged for Execution"): (
+            "Supported",
+            "End of Movement phase: optional visible enemy selection within 18\" marks the target until the source owner's next Command phase; friendly ADEPTA SORORITAS attacks against it gain [LETHAL HITS].",
         ),
         ("GC", "Summon the Cult"): (
             "Supported",
@@ -4458,6 +4470,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Bearer wounds characteristic set-value clauses are parsed (e.g., Wounds characteristic becomes 4 or 7 based on the ability text).",
         ),
         ("AM", "Malign Wardings(Psychic)"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
+        ("AM", "Hero of Hades Hive"): (
+            "Supported",
+            "Command phase: queues a deterministic selection of one Hero of Hades Hive section ability, or None, and gates section sub-abilities until the next Command phase.",
+        ),
+        ("AM", "Counterstrategist"): (
+            "Partial",
+            "Only selectable-mode gating is implemented; the opponent Movement phase reactive move/shoot/charge effect is not yet implemented.",
+        ),
+        ("AM", "Decisive Command"): (
+            "Partial",
+            "Only selectable-mode gating is implemented; the extended/splash Order effect is not yet implemented.",
+        ),
+        ("AM", "Inspiring Hero (Aura)"): (
+            "Supported",
+            "Only active when selected through Hero of Hades Hive; friendly ASTRA MILITARUM units within 6\" can re-roll Battle-shock and Leadership tests.",
+        ),
+        ("AM", "USING COMMISSAR GRAVES"): (
+            "Supported",
+            "Army validation enforces that only one total Commissar Graves or Commissar Graves on Foot unit can be included.",
+        ),
+        ("AM", "Rapid Strike Vehicle"): (
+            "Supported",
+            "While not Battle-shocked, the transport gains +1 Objective Control for each full 3 embarked models.",
+        ),
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
         ("GK", "Attuned Onslaught (Psychic)"): ("Supported", "After charging, PALADIN SQUAD melee weapons gain +1 Damage until end of turn."),
         ("GK", "Blessing of the Omnissiah"): ("Supported", "Command phase: select friendly VEHICLE within 3\" to regain D3 wounds and gain +1 to hit until next Command phase."),
@@ -4486,6 +4522,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Leading: attached unit can only be targeted by ranged attacks within 18\".",
         ),
         ("AOI", "Abomination"): ("Supported", "Feel No Pain 2+ against Psychic attacks."),
+        ("AOI", "On My Signal, Fire!"): (
+            "Supported",
+            "After shooting: optional hit enemy target selection marks the target until end of phase; AGENTS OF THE IMPERIUM and IMPERIUM INFANTRY BATTLELINE attacks against it can re-roll Hit rolls.",
+        ),
+        ("AOI", "Tox-cycler"): (
+            "Supported",
+            "After shooting: each Jindarii tox-cycler hit permanently adds +2 Strength and +2 Damage to that weapon, with Damage capped at 6.",
+        ),
         ("AOI", "Backroom Deals"): (
             "Supported",
             "Declare Battle Formations: select one source unit with this ability; while that selected unit is leading, models in that attached unit gain Infiltrators.",
@@ -5338,6 +5382,26 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Phaeron of the Blades (Aura)"): ("Supported", "Aura: friendly NECRONS units within 6\" of Szarekh can re-roll Charge rolls and gain +1 Strength on melee attacks."),
         ("NEC", "Soulless Reaper"): ("Supported", "Enemy units within Engagement Range selected to Fall Back roll D6; on 3+ they cannot Fall Back and must remain stationary."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
+        ("ORK", "Throttlerokkit Shokka Engine"): (
+            "Partial",
+            "Command phase selectable-mode gating is implemented; Turbo Engine and Pulse Jet are supported, but Shokk Attack Engine's Strategic Reserves redeploy remains partial.",
+        ),
+        ("ORK", "Turbo Engine"): (
+            "Supported",
+            "Only active when selected through Throttlerokkit Shokka Engine; the unit can declare charges after Advancing or Falling Back.",
+        ),
+        ("ORK", "Shokk Attack Engine"): (
+            "Partial",
+            "Only selectable-mode gating is implemented; the Command phase Strategic Reserves removal effect is not yet implemented.",
+        ),
+        ("ORK", "Pulse Jet"): (
+            "Supported",
+            "Only active when selected through Throttlerokkit Shokka Engine; Advance rolls are replaced with +6\" Move and Advance movement can pass through models and terrain.",
+        ),
+        ("ORK", "WAAAGH! WAZDAKKA"): (
+            "Supported",
+            "If Wazdakka Gutsmek is the Warlord, Warbikers units in the army gain BATTLELINE.",
+        ),
         ("ORK", "Mekboy"): ("Supported", "Conditional Lone Operative within 3\" of friendly ORKS VEHICLE units."),
         ("ORK", "Grot Oiler"): (
             "Supported",
@@ -23649,7 +23713,7 @@ def _build_matrix() -> str:
         slug = _slugify(faction_name)
         rel_path = f"factions/{slug}.md"
         out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")
-        with open(out_path, "w", encoding="utf-8") as f:
+        with open(out_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
         summary_entries.append(
             (faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path)
@@ -23706,7 +23770,7 @@ def _build_matrix() -> str:
 def main() -> int:
     os.makedirs(DOCS_DIR, exist_ok=True)
     content = _build_matrix()
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
     logger.info(f"Wrote {OUT_PATH}")
     _cleanup_audit_artifacts()

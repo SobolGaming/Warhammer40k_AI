@@ -7,7 +7,7 @@ import logging
 import re
 from enum import Enum
 from itertools import combinations
-from typing import Callable, Optional, Dict, Any, List
+from typing import Callable, Optional, Dict, Any, Iterable, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..engine.decision_port import get_decision_provider
@@ -1087,6 +1087,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBREAKABLE LINES",
     "VENGEFUL ANIMUS",
     "VOID HARDENED",
+}
+
+IMPLEMENTED_STRATAGEM_NAME_IDS = {
+    # Firestorm Assault Force only. Armoured Speartip added a different
+    # RAPID EMBARKATION in the 2026-04-22 Space Marines update.
+    "RAPID EMBARKATION": {"000008483004"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -5235,6 +5241,31 @@ class StratagemManager(
     def _phase_key_from_name(phase_name: str) -> str:
         return str(phase_name or "").strip().upper().replace(" ", "_")
 
+    @staticmethod
+    def _armour_of_contempt_target_keywords(stratagem: Stratagem) -> tuple[str, ...]:
+        description = str(getattr(stratagem, "description", "") or "")
+        description = description.replace("\u2019", "'")
+        description = re.sub(r"<[^>]+>", " ", description)
+        description = re.sub(r"[^A-Za-z0-9]+", " ", description).strip().upper()
+        if "TARGET ONE DEATHWATCH UNIT" in description or "TARGET ONE DEATH WATCH UNIT" in description:
+            return ("DEATHWATCH",)
+        return ("ADEPTUS ASTARTES",)
+
+    @classmethod
+    def _unit_matches_all_required_keywords(cls, unit: Any, keywords: Iterable[str]) -> bool:
+        if unit is None:
+            return False
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            return False
+        for keyword in tuple(keywords or ()):
+            key = str(keyword or "").strip()
+            if not key:
+                continue
+            if not bool(has_any_keyword(key)):
+                return False
+        return True
+
     def _get_defensive_reaction_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
         if stratagem is None:
             return None
@@ -5869,6 +5900,14 @@ class StratagemManager(
         if self._is_custom_implemented_stratagem(stratagem):
             return True
         name_u = (stratagem.name or "").strip().upper()
+        stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
+        scoped_ids = IMPLEMENTED_STRATAGEM_NAME_IDS.get(name_u)
+        if scoped_ids is not None:
+            if stratagem_id in scoped_ids:
+                return True
+            if not stratagem_id and name_u == "RAPID EMBARKATION":
+                return bool(self._is_firestorm_assault_force_detachment())
+            return False
         if name_u in IMPLEMENTED_STRATAGEM_NAMES:
             return True
         if self._get_defensive_reaction_spec(stratagem) is not None:
@@ -18503,6 +18542,7 @@ class StratagemManager(
                     continue
                 if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
                     continue
+                required_keywords = self._armour_of_contempt_target_keywords(s4)
                 candidates = []
                 for u in list(target_units or []):
                     try:
@@ -18512,7 +18552,7 @@ class StratagemManager(
                             continue
                         if _unit_cannot_be_target_of_stratagem(u):
                             continue
-                        if not u.has_any_keyword("ADEPTUS ASTARTES"):
+                        if not self._unit_matches_all_required_keywords(u, required_keywords):
                             continue
                         candidates.append(u)
                     except Exception:
@@ -20061,6 +20101,7 @@ class StratagemManager(
                     continue
                 if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
                     continue
+                required_keywords = self._armour_of_contempt_target_keywords(s4)
                 candidates = []
                 for unit in list(target_units or []):
                     try:
@@ -20070,7 +20111,7 @@ class StratagemManager(
                             continue
                         if _unit_cannot_be_target_of_stratagem(unit):
                             continue
-                        if not unit.has_any_keyword("ADEPTUS ASTARTES"):
+                        if not self._unit_matches_all_required_keywords(unit, required_keywords):
                             continue
                         candidates.append(unit)
                     except Exception:
@@ -23714,8 +23755,10 @@ class StratagemManager(
             except Exception:
                 raise
             try:
-                if not target_unit.has_any_keyword("ADEPTUS ASTARTES"):
-                    logger.error(f"ERROR: {s.name}: target is not ADEPTUS ASTARTES")
+                required_keywords = self._armour_of_contempt_target_keywords(s)
+                if not self._unit_matches_all_required_keywords(target_unit, required_keywords):
+                    label = " ".join(required_keywords) if required_keywords else "an eligible unit"
+                    logger.error(f"ERROR: {s.name}: target is not {label}")
                     return False
             except Exception:
                 raise

@@ -460,6 +460,67 @@ class PositioningAbilityStateMixin:
             total += sum(1 for m in list(models or []) if getattr(m, "is_alive", False))
         return int(total)
 
+    def rapid_strike_vehicle_objective_control_bonus(self) -> tuple[int, str]:
+        """Centaur RSV: +1 OC for every three embarked models while not Battle-shocked."""
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            return (0, "")
+        cache_key = "rapid_strike_vehicle_rule_source"
+        cache = getattr(root, "_ability_cache", None)
+        source = ""
+        if isinstance(cache, dict) and cache_key in cache:
+            source = str(cache.get(cache_key, "") or "")
+        else:
+            found = ""
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                for name, desc in member._iter_ability_entries_for_rules(model=None):
+                    text = member._normalize_rules_text(member._strip_eligibility_prefix(desc or name or ""))
+                    normalized = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    if (
+                        "while one or more units are embarked within this transport" in normalized
+                        and "unless this unit is battle shocked" in normalized
+                        and "add 1 to its objective control characteristic for every 3 models embarked within it" in normalized
+                    ):
+                        found = str(name or "Rapid Strike Vehicle").strip() or "Rapid Strike Vehicle"
+                        break
+                if found:
+                    break
+            if not isinstance(cache, dict):
+                cache = {}
+            cache[cache_key] = found
+            root._ability_cache = cache
+            source = found
+        if not source:
+            return (0, "")
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return (0, "")
+        if not bool(getattr(root, "is_transport", False)):
+            return (0, "")
+        total_models = 0
+        for passenger in list(getattr(root, "transport_passengers", []) or []):
+            if passenger is None:
+                continue
+            get_passenger_root = getattr(passenger, "get_attached_unit_root", None)
+            passenger_root = get_passenger_root() if callable(get_passenger_root) else passenger
+            if passenger_root is None:
+                continue
+            get_models = getattr(passenger_root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(passenger_root, "models", []) or [])
+            total_models += sum(1 for model in list(models or []) if getattr(model, "is_alive", False))
+        bonus = int(total_models // 3)
+        if bonus <= 0:
+            return (0, "")
+        return (int(bonus), source)
 
     def has_vanguard_of_dark_city(self) -> bool:
         cache_key = "vanguard_of_dark_city"

@@ -703,6 +703,9 @@ class Army:
         apply_fn = getattr(orks_mgr, "apply_taktikal_brigade_stormboyz_battleline_keywords", None) if orks_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(orks_mgr, "apply_wazdakka_warbikers_battleline_keywords", None) if orks_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         cd_mgr = getattr(self, "chaos_daemons_detachments", None)
         apply_fn = getattr(cd_mgr, "apply_shadow_legion_keywords", None) if cd_mgr is not None else None
         if callable(apply_fn):
@@ -1607,6 +1610,10 @@ class Army:
             raise ArmyValidationError(f"Warlord has already been selected: '{self.warlord.name}'.")
         unit.is_warlord = True
         self.warlord = unit
+        orks_mgr = getattr(self, "orks_detachments", None)
+        apply_fn = getattr(orks_mgr, "apply_wazdakka_warbikers_battleline_keywords", None) if orks_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn()
 
     def validate_points_limit(self):
         total_points = self.get_total_points()
@@ -1746,6 +1753,11 @@ class Army:
                 continue
             label = display_names.get(cap_key, str(spec.get("unit_name") or cap_key).strip() or "Unknown")
             violations.append(f"{label} ({count}/{limit})")
+
+        graves_keys = {"commissar graves", "commissar graves on foot"}
+        graves_count = sum(int(unit_counts.get(key, 0)) for key in graves_keys)
+        if graves_count > 1:
+            violations.append(f"Commissar Graves / Commissar Graves on Foot ({graves_count}/1)")
 
         if violations:
             joined = ", ".join(violations)

@@ -21,15 +21,15 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         unit._ability_cache = {}
         return unit
 
-    def test_shadow_legion_khorne_no_longer_advances_and_shoots_or_charges(self):
+    def test_shadow_legion_khorne_advances_and_shoots_or_charges(self):
         from warhammer40k_ai.roster.army import Army
 
         army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         unit = self._make_unit(army, keywords=["KHORNE"])
 
-        self.assertFalse(unit.has_advance_and_shoot())
-        self.assertFalse(unit.has_advance_and_charge())
+        self.assertTrue(unit.has_advance_and_shoot())
+        self.assertTrue(unit.has_advance_and_charge())
 
     def test_shadow_legion_deep_strike_still_requires_heretic_astartes_and_undivided(self):
         from warhammer40k_ai.roster.army import Army
@@ -75,7 +75,7 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         self.assertEqual(called["count"], 0)
         self.assertTrue(bool(belakor.special_rules.get("dark_pacts_test_passed", False)))
 
-    def test_removed_first_prince_sub_rules_no_longer_apply(self):
+    def test_first_prince_god_defensive_sub_rules_apply(self):
         from warhammer40k_ai.roster.army import Army
 
         army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
@@ -85,9 +85,14 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         nurgle = self._make_unit(army, keywords=["NURGLE"])
         slaanesh = self._make_unit(army, keywords=["SLAANESH"])
 
-        self.assertFalse(tzeentch.has_first_prince_tzeentch_defense())
-        self.assertFalse(nurgle.has_first_prince_nurgle_defense())
-        self.assertFalse(slaanesh.has_first_prince_slaanesh_no_overwatch())
+        self.assertTrue(tzeentch.has_first_prince_tzeentch_defense())
+        self.assertTrue(nurgle.has_first_prince_nurgle_defense())
+        self.assertTrue(slaanesh.has_first_prince_slaanesh_no_overwatch())
+        self.assertTrue(slaanesh.is_overwatch_prevented_against(None))
+
+        penalty, reasons = tzeentch.get_target_hit_roll_penalty("ranged")
+        self.assertEqual(penalty, 1)
+        self.assertIn("-1 to hit from First Prince of Chaos (Penumbral Puppetry)", reasons)
 
 
 if __name__ == "__main__":

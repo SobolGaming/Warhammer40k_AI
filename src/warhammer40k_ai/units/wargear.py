@@ -14992,13 +14992,33 @@ class WargearProfile:
                                 apply_bonus = False
                         except Exception:
                             apply_bonus = False
+                    keyword_phrases_any = [
+                        str(value or "").strip()
+                        for value in list(tsr.get("post_shoot_keyword_hit_reroll_ones_phrases_any", []) or [])
+                        if str(value or "").strip()
+                    ]
+                    if apply_bonus and keyword_phrases_any:
+                        matched_any = False
+                        for keyword_phrase_any in keyword_phrases_any:
+                            if attacker_unit._unit_matches_keyword_phrase(
+                                attacker_unit,
+                                keyword_phrase_any,
+                                use_effective=True,
+                            ):
+                                matched_any = True
+                                break
+                        if not matched_any:
+                            apply_bonus = False
                     if apply_bonus:
-                        reroll_hit_values.add(1)
                         source = (
                             str(tsr.get("post_shoot_keyword_hit_reroll_ones_source", "") or "Post-shoot Hit reroll").strip()
                             or "Post-shoot Hit reroll"
                         )
-                        reroll_value_reasons.append(f"{source}: re-roll Hit rolls of 1")
+                        if bool(tsr.get("post_shoot_keyword_hit_reroll_full", False)):
+                            reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+                        else:
+                            reroll_hit_values.add(1)
+                            reroll_value_reasons.append(f"{source}: re-roll Hit rolls of 1")
         except Exception:
             pass
         # Target buffs: start-of-shooting keyword hit reroll ones (e.g., Daring Recon).
@@ -20733,6 +20753,21 @@ class WargearProfile:
                         wound_result["modifiers"].append("-1 to wound from Intoxicating Musk")
         except Exception:
             pass
+        # Chaos Daemons: First Prince of Chaos (Nurgle Shadow Legion) defensive wound penalty.
+        target_root = target.get_attached_unit_root() if target is not None and hasattr(target, "get_attached_unit_root") else target
+        nurgle_defense = getattr(target_root, "has_first_prince_nurgle_defense", None)
+        if callable(nurgle_defense) and bool(nurgle_defense()):
+            try:
+                target_toughness_value = float(target_toughness)
+            except (TypeError, ValueError):
+                target_toughness_value = float(getattr(target_root, "toughness", 0) or 0)
+            try:
+                attack_strength_value = float(strength)
+            except (TypeError, ValueError):
+                attack_strength_value = 0.0
+            if attack_strength_value > target_toughness_value:
+                dice_modifier -= 1
+                wound_result["modifiers"].append("-1 to wound from First Prince of Chaos (Gloam Rot)")
         # Harbingers of Dread: Doom (+1 to wound vs Battle-shocked targets).
         try:
             army = attacker.parent_unit.get_parent_army()

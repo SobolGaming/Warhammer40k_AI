@@ -336,6 +336,7 @@ class WahaHelper:
         """
         normalized_name = self.strip_special_chars(name)
         
+        matches = []
         for datasheet in self.datasheets.values():
             if 'name' in datasheet:
                 normalized_datasheet_name = self.strip_special_chars(datasheet['name'])
@@ -344,12 +345,30 @@ class WahaHelper:
                 faction_matches = faction_id is None or datasheet.get('faction_id') == faction_id
                 
                 if name_matches and id_matches and faction_matches:
-                    result = SimpleNamespace(**datasheet)
-                    if 'datasheets_keywords' in datasheet:
-                        keywords, faction_keywords = self.aggregate_keywords(datasheet['datasheets_keywords'])
-                        result.keywords = keywords
-                        result.faction_keywords = faction_keywords
-                    return result
+                    matches.append((datasheet, normalized_datasheet_name))
+        if matches:
+            requested_legendary = "legendary" in normalized_name or "legends" in normalized_name
+            non_legend_matches = [
+                item
+                for item in matches
+                if "legendary" not in item[1] and "legends" not in item[1]
+            ]
+            if datasheet_id is None and not requested_legendary and non_legend_matches:
+                matches = non_legend_matches
+            matches.sort(
+                key=lambda item: (
+                    0 if item[1] == normalized_name else 1,
+                    1 if ("legendary" in item[1] or "legends" in item[1]) else 0,
+                    str(item[0].get("id", "")),
+                )
+            )
+            datasheet = matches[0][0]
+            result = SimpleNamespace(**datasheet)
+            if 'datasheets_keywords' in datasheet:
+                keywords, faction_keywords = self.aggregate_keywords(datasheet['datasheets_keywords'])
+                result.keywords = keywords
+                result.faction_keywords = faction_keywords
+            return result
         return None
 
     def get_full_datasheet_info_by_name(self, name: str, datasheet_id: str = None, faction_id: str = None):

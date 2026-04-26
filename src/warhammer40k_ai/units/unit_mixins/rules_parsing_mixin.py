@@ -5084,6 +5084,23 @@ class RulesParsingMixin:
                         "expires_phase": expires_phase,
                     }
                 )
+        try:
+            from ...rules.selectable_section_abilities import (
+                KEY_PULSE_JET,
+                unit_has_active_section_ability,
+            )
+
+            if unit_has_active_section_ability(root, KEY_PULSE_JET):
+                effects.append(
+                    {
+                        "distance": 6,
+                        "source": "Pulse Jet",
+                        "tag": "section_ability:pulse_jet",
+                        "expires_phase": "MOVEMENT_PHASE",
+                    }
+                )
+        except (ImportError, AttributeError, TypeError, ValueError):
+            pass
         if not effects:
             return None
 

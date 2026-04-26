@@ -13441,7 +13441,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             return None
         source_unit_id = str(get_entity_id(source_root) or "")
         source_model_id = str(get_entity_id(model) or "")
-        expires_phase = str(ctx.get("phase_name", "") or "SHOOTING_PHASE").strip().upper() or "SHOOTING_PHASE"
+        expires_timing = str(ctx.get("expires_timing", "") or "").strip().upper()
+        expires_phase = str(ctx.get("expires_phase", ctx.get("phase_name", "")) or "").strip().upper()
+        if not expires_phase and not expires_timing:
+            expires_phase = "SHOOTING_PHASE"
+        attacker_keyword_phrase = str(
+            payload.get("attacker_keyword_phrase") or ctx.get("attacker_keyword_phrase") or ""
+        ).strip()
         sr = getattr(target_root, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -13467,8 +13473,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 "owner_id": owner_id,
                 "turn": int(turn or 0),
                 "expires_phase": expires_phase,
+                "expires_timing": expires_timing,
                 "attack_type": attack_type,
                 "keywords": list(keywords),
+                "attacker_keyword_phrase": attacker_keyword_phrase,
             }
         )
         sr["selected_to_shoot_target_attack_keyword_effects"] = filtered_effects
@@ -22961,6 +22969,89 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "choice_name": str(choice_name),
             "battle_round": int(start_round or 0),
         }
+    if ability == "selectable_section_ability":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        from ...rules.selectable_section_abilities import (
+            SECTION_OPTIONS_BY_KEY,
+            clear_active_section_ability,
+            set_active_section_ability,
+            unit_has_section_parent_ability,
+        )
+
+        parent_key = str(ctx.get("section_parent_key", "") or payload.get("section_parent_key", "") or "").strip().upper()
+        if not parent_key or not unit_has_section_parent_ability(source_root, parent_key):
+            return None
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (battle_round + 1))
+        except (TypeError, ValueError):
+            expires_round = int(battle_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            owner = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+            player_id = str(getattr(owner, "id", "") or "")
+        ability_name = str(ctx.get("ability_name", "") or "Section Ability").strip() or "Section Ability"
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+
+        if is_skip_choice(request, result):
+            clear_active_section_ability(source_root, parent_key)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "choice_key": "",
+                "battle_round": int(battle_round or 0),
+            }
+
+        choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+        allowed_keys = {
+            str(value or "").strip().upper()
+            for value in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(value or "").strip()
+        }
+        if not choice_key or (allowed_keys and choice_key not in allowed_keys):
+            return None
+        option = SECTION_OPTIONS_BY_KEY.get(choice_key)
+        if option is None or option.parent_key != parent_key:
+            return None
+        if not set_active_section_ability(
+            source_root,
+            choice_key,
+            start_round=int(battle_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        ):
+            return None
+        choice_name = str(payload.get("choice_name", "") or option.name or choice_key).strip() or choice_key
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {choice_name}.",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "choice_key": str(choice_key),
+            "choice_name": str(choice_name),
+            "battle_round": int(battle_round or 0),
+        }
     if ability == "relics_of_the_matriarchs":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -29915,6 +30006,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 turn = 0
             ability_name = str(ctx.get("ability_name", "") or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
             phrase = str(ctx.get("keyword_phrase", "") or "").strip()
+            phrase_any = [
+                str(value or "").strip()
+                for value in list(ctx.get("keyword_phrases_any", []) or [])
+                if str(value or "").strip()
+            ]
             sr = getattr(target_root, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -29923,11 +30019,18 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             sr["post_shoot_keyword_hit_reroll_ones_turn"] = int(turn or 0)
             sr["post_shoot_keyword_hit_reroll_ones_source"] = ability_name
             sr["post_shoot_keyword_hit_reroll_ones_phrase"] = phrase
-            sr["post_shoot_keyword_hit_reroll_ones_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_keyword_hit_reroll_ones_phrases_any"] = list(phrase_any)
+            sr["post_shoot_keyword_hit_reroll_full"] = bool(ctx.get("reroll_full", False))
+            sr["post_shoot_keyword_hit_reroll_ones_expires_phase"] = str(
+                ctx.get("expires_phase", "") or "SHOOTING_PHASE"
+            ).strip().upper()
             target_root.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Hit re-rolls of 1.")
+                if bool(ctx.get("reroll_full", False)):
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Hit re-rolls.")
+                else:
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Hit re-rolls of 1.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_keyword_strength_bonus":

@@ -2314,6 +2314,16 @@ class PositioningAttackBonusesMixin:
                     effect_owner_id = str(effect.get("owner_id", "") or effect.get("owner", "") or "")
                     if effect_owner_id and source_owner_id and effect_owner_id != source_owner_id:
                         continue
+                    attacker_keyword_phrase = str(effect.get("attacker_keyword_phrase", "") or "").strip()
+                    if attacker_keyword_phrase:
+                        matches_keyword = False
+                        match_fn = getattr(root, "_unit_matches_keyword_phrase", None)
+                        if callable(match_fn):
+                            matches_keyword = bool(
+                                match_fn(root, attacker_keyword_phrase, use_effective=True)
+                            )
+                        if not matches_keyword:
+                            continue
                     try:
                         effect_turn = int(effect.get("turn", 0) or 0)
                     except (TypeError, ValueError):

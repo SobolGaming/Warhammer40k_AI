@@ -4101,6 +4101,90 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_post_shoot_self_weapon_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot and hit with a named weapon, that weapon
+        gains Strength and Damage for the rest of the battle.
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_self_weapon_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if (
+                "in your shooting phase after this model has shot" not in normalized
+                and "in your shooting phase after this unit has shot" not in normalized
+            ):
+                continue
+            if "scored a hit with its" not in normalized:
+                continue
+            if "until the end of the battle add" not in normalized:
+                continue
+            match = re.search(
+                r"scored a hit with its (?P<weapon>[a-z0-9 ]+) until the end of the battle add "
+                r"(?P<strength>\d+) to the strength characteristic and (?P<damage>\d+) to the damage characteristic "
+                r"of that weapon to a maximum of (?P<max_damage>\d+)",
+                normalized,
+            )
+            if not match:
+                match = re.search(
+                    r"scored a hit with its (?P<weapon>[a-z0-9 ]+) until the end of the battle add "
+                    r"(?P<both>\d+) to the strength and damage characteristics of that weapon "
+                    r"to a maximum damage characteristic of (?P<max_damage>\d+)",
+                    normalized,
+                )
+            if not match:
+                continue
+            weapon_name = str(match.group("weapon") or "").strip()
+            weapon_key = self._normalize_keyword_phrase(weapon_name) if weapon_name else ""
+            if not weapon_key:
+                continue
+            try:
+                both_bonus = match.groupdict().get("both")
+                if both_bonus is not None:
+                    strength_bonus = int(both_bonus or 0)
+                    damage_bonus = int(both_bonus or 0)
+                else:
+                    strength_bonus = int(match.group("strength") or 0)
+                    damage_bonus = int(match.group("damage") or 0)
+                max_damage = int(match.group("max_damage") or 0)
+            except (TypeError, ValueError):
+                continue
+            if strength_bonus <= 0 or damage_bonus <= 0:
+                continue
+            source = str(name or "Post-shoot weapon bonus").strip() or "Post-shoot weapon bonus"
+            key = (source.lower(), weapon_key, int(strength_bonus), int(damage_bonus), int(max_damage))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "weapon_key": weapon_key,
+                    "weapon_name": weapon_name,
+                    "strength_bonus": int(strength_bonus),
+                    "damage_bonus": int(damage_bonus),
+                    "max_damage": int(max_damage),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_tau_advanced_scouting_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific T'au rule: after this model scores a ranged hit on an enemy unit,
@@ -5268,6 +5352,38 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
+                if (
+                    (
+                        "after this unit has shot you can select one enemy unit hit by one or more of those attacks"
+                        in normalized
+                        or "after this unit has shot you can select one enemy unit hit by those attacks"
+                        in normalized
+                    )
+                    and "until the end of the phase" in normalized
+                    and "agents of the imperium or imperium infantry battleline" in normalized
+                    and "can re roll the hit roll" in normalized
+                ):
+                    source = str(name or "On My Signal, Fire!").strip() or "On My Signal, Fire!"
+                    weapon_key = ""
+                    key = (source.lower(), "agents-or-imperium-battleline", weapon_key)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "keyword_phrase": "",
+                            "keyword_phrases_any": (
+                                "AGENTS OF THE IMPERIUM",
+                                "IMPERIUM INFANTRY BATTLELINE",
+                            ),
+                            "weapon_key": None,
+                            "weapon_name": "",
+                            "reroll_full": True,
+                            "expires_phase": "SHOOTING_PHASE",
+                        }
+                    )
+                    continue
                 m = unit._POST_SHOOT_KEYWORD_HIT_REROLL_ONES_RE.fullmatch(normalized)
                 if not m:
                     continue
@@ -5289,8 +5405,11 @@ class AbilitySpecsMixin:
                     {
                         "source": source,
                         "keyword_phrase": keyword_phrase,
+                        "keyword_phrases_any": (),
                         "weapon_key": weapon_key or None,
                         "weapon_name": weapon_name,
+                        "reroll_full": False,
+                        "expires_phase": "SHOOTING_PHASE",
                     }
                 )
 
@@ -8531,6 +8650,73 @@ class AbilitySpecsMixin:
                     "keyword": keyword,
                     "bonus": int(bonus),
                     "limit_once_per_turn": bool(limit_once),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_visible_attack_keyword_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, select a visible enemy within range;
+        friendly keyworded attacks into that target gain a weapon keyword until next Command phase.
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_visible_attack_keyword:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        pattern = re.compile(
+            r"at the end of your movement phase you can select one enemy unit within (?P<range>\d+) "
+            r"of and visible to this model until the start of your next command phase each time a friendly "
+            r"(?P<attacker_keyword>[a-z0-9 ]+) model makes an attack that targets that enemy unit "
+            r"that attack has the (?P<attack_keyword>[a-z0-9 ]+) ability",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            try:
+                range_value = int(match.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            attacker_keyword = str(match.group("attacker_keyword") or "").strip()
+            attack_keyword = str(match.group("attack_keyword") or "").strip().upper()
+            if not attacker_keyword or not attack_keyword:
+                continue
+            source = str(name or "Movement phase attack keyword").strip() or "Movement phase attack keyword"
+            dedupe_key = (source.lower(), attacker_keyword.lower(), attack_keyword)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            ability_key = self._normalize_keyword_phrase(source) or "movement_phase_visible_attack_keyword"
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "range": int(range_value),
+                    "attacker_keyword_phrase": attacker_keyword,
+                    "attack_type": "any",
+                    "keywords": [attack_keyword],
+                    "expires_timing": "OWNER_NEXT_COMMAND_START",
                 }
             )
 
@@ -15760,6 +15946,14 @@ class AbilitySpecsMixin:
         penalty = 0
         reasons: list[str] = []
         seen: set[str] = set()
+
+        first_prince_tzeentch = getattr(root, "has_first_prince_tzeentch_defense", None)
+        if callable(first_prince_tzeentch) and bool(first_prince_tzeentch()):
+            key = "first_prince_of_chaos:tzeentch"
+            if key not in seen:
+                seen.add(key)
+                penalty += 1
+                reasons.append("-1 to hit from First Prince of Chaos (Penumbral Puppetry)")
 
         def _root_has_leading_keyword(required_keyword: str) -> bool:
             phrase = str(required_keyword or "").strip()

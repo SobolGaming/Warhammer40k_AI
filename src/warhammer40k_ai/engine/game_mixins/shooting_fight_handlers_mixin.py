@@ -5024,6 +5024,122 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_self_weapon_bonus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot self weapon bonus requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+        if not isinstance(hit_models_by_target_weapon, dict):
+            return
+
+        def _normalize_weapon_key(value: str) -> str:
+            normalizer = getattr(attacker_unit, "_normalize_keyword_phrase", None)
+            if callable(normalizer):
+                return str(normalizer(value) or "")
+            text = str(value or "").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _model_hit_with_weapon(model, weapon_key: str) -> bool:
+            normalized_key = _normalize_weapon_key(weapon_key)
+            if not normalized_key:
+                return False
+            model_id = str(get_entity_id(model) or "")
+            for target_map in list(hit_models_by_target_weapon.values() or []):
+                if not isinstance(target_map, dict):
+                    continue
+                models = target_map.get(normalized_key)
+                if not models and normalized_key.endswith("s"):
+                    models = target_map.get(normalized_key[:-1])
+                if not models and not normalized_key.endswith("s"):
+                    models = target_map.get(f"{normalized_key}s")
+                for hit_model in list(models or []):
+                    if hit_model is model:
+                        return True
+                    if model_id and str(get_entity_id(hit_model) or "") == model_id:
+                        return True
+            return False
+
+        def _base_weapon_damage(model, weapon_name: str) -> int:
+            normalized_name = _normalize_weapon_key(weapon_name)
+            if not normalized_name:
+                return 0
+            for wargear in list(getattr(model, "wargear", []) or []):
+                wg_name = _normalize_weapon_key(str(getattr(wargear, "name", "") or ""))
+                if not wg_name:
+                    continue
+                if wg_name != normalized_name and wg_name not in normalized_name and normalized_name not in wg_name:
+                    continue
+                profiles = getattr(wargear, "profiles", None)
+                if not isinstance(profiles, dict):
+                    continue
+                for profile in profiles.values():
+                    damage = getattr(profile, "damage", 0)
+                    if isinstance(damage, int):
+                        return int(damage)
+            return 0
+
+        for model in list(getattr(attacker_unit, "models", []) or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_self_weapon_bonus_specs(model) or []
+            if not specs:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "").strip()
+                if not weapon_key or not _model_hit_with_weapon(model, weapon_key):
+                    continue
+                if not hasattr(model, "set_temporary_weapon_bonus"):
+                    continue
+                source = str(spec.get("source", "") or "Post-shoot weapon bonus").strip() or "Post-shoot weapon bonus"
+                weapon_name = str(spec.get("weapon_name", "") or weapon_key).strip() or weapon_key
+                try:
+                    strength_bonus = int(spec.get("strength_bonus", 0) or 0)
+                    damage_bonus = int(spec.get("damage_bonus", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if strength_bonus <= 0 or damage_bonus <= 0:
+                    continue
+                current_strength_bonus = 0
+                current_damage_bonus = 0
+                get_strength_bonus = getattr(model, "get_temporary_weapon_strength_bonus", None)
+                if callable(get_strength_bonus):
+                    current_strength_bonus, _reasons = get_strength_bonus(weapon_name)
+                get_damage_bonus = getattr(model, "get_temporary_weapon_damage_bonus", None)
+                if callable(get_damage_bonus):
+                    current_damage_bonus, _reasons = get_damage_bonus(weapon_name)
+                next_strength_bonus = int(current_strength_bonus) + int(strength_bonus)
+                next_damage_bonus = int(current_damage_bonus) + int(damage_bonus)
+                try:
+                    max_damage = int(spec.get("max_damage", 0) or 0)
+                except (TypeError, ValueError):
+                    max_damage = 0
+                if max_damage > 0:
+                    base_damage = _base_weapon_damage(model, weapon_name)
+                    if base_damage > 0:
+                        max_bonus = max(0, int(max_damage) - int(base_damage))
+                        next_damage_bonus = min(int(next_damage_bonus), int(max_bonus))
+                model.set_temporary_weapon_bonus(
+                    key=f"post_shoot_self_weapon_bonus:{source.lower()}:{model_id}:{weapon_key}",
+                    weapon_name=weapon_name,
+                    strength_bonus=int(next_strength_bonus),
+                    damage_bonus=int(next_damage_bonus),
+                    source=source,
+                    expires_phase="",
+                )
+
     def _on_unit_shooting_resolved_post_shoot_keyword_hit_bonus(
         self,
         attacker_unit=None,
@@ -5367,6 +5483,12 @@ class GameShootingFightHandlersMixin:
                         payload={"target_unit_id": get_entity_id(cand)},
                     )
                 )
+            options.append(
+                DecisionOption.create(
+                    "None",
+                    payload={"skip": True, "action": "skip"},
+                )
+            )
             if not options:
                 continue
             ability_name = str(spec.get("source", "") or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
@@ -5384,8 +5506,12 @@ class GameShootingFightHandlersMixin:
                     "ability": "post_shoot_keyword_hit_reroll_ones",
                     "ability_name": ability_name,
                     "keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip(),
+                    "keyword_phrases_any": list(spec.get("keyword_phrases_any", ()) or ()),
                     "weapon_key": str(spec.get("weapon_key", "") or ""),
                     "weapon_name": weapon_name,
+                    "reroll_full": bool(spec.get("reroll_full", False)),
+                    "expires_phase": str(spec.get("expires_phase", "") or "SHOOTING_PHASE").strip().upper(),
+                    "optional": True,
                 },
             )
             self.request_decision(request)
