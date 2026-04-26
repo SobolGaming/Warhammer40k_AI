@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from .combat_timing import geometry_profile_for_game
+from .ai_controller_router import AIControllerRouter
 from .decision_controller import DecisionController
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
@@ -95,6 +96,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         max_reserves_arrival_seconds: float = 10.0,
         reserve_policy: str = "forced_only",
         require_authoritative: bool = True,
+        ai_router: AIControllerRouter | None = None,
         auto_attach: bool = True,
     ) -> None:
         super().__init__(player_id=player_id)
@@ -113,6 +115,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
         self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
+        self._ai_router = ai_router
         self._attached = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
         if auto_attach and self._game is not None:
@@ -145,6 +148,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
 
         ranked = self._rank_legal_candidates(request)
+        if self._ai_router is not None:
+            ranked = self._ai_router.rank_legal_candidates(request, fallback_order=ranked)
         if self._is_reserves_arrival_request(request):
             ranked_move = [candidate for candidate in ranked if not self._candidate_requests_skip(candidate)]
             ranked_skip = [candidate for candidate in ranked if self._candidate_requests_skip(candidate)]

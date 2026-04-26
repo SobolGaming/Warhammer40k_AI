@@ -171,6 +171,25 @@ Bundle rules:
   `candidate` or `blessed` artifacts only. Referencing an `experimental` artifact
   requires explicit opt-in.
 
+Hierarchical gameplay controllers use these component names:
+- `strategic_planner`
+- `tactical_orchestrator`
+- `deployment_ranker`
+- `movement_ranker`
+- `shooting_ranker`
+- `charge_ranker`
+- `fight_ranker`
+- `tool_ranker`
+- `reaction_ranker`
+- `dice_policy`
+- `allocation_ranker`
+
+The default framework-free heuristic registry provides baseline resolver ids of
+the form `heuristic:<component>:v1` for each hierarchical gameplay component.
+The existing `candidate_ranker`, `matchup_evaluator`, `playbook_selector`, and
+`roster_edit_ranker` component families remain valid for broader evaluation and
+mustering workflows.
+
 ## Promotion States
 
 Allowed artifact `status` values:

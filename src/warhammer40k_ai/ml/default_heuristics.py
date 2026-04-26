@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from ..engine.ai_domain_agents import ranker_registry_entries
 from ..engine.decisions import DecisionRequest
 from .interfaces import CandidateRanker, MatchupEvaluator, PlaybookSelector
 from .registry import HeuristicRegistry
@@ -113,15 +114,15 @@ class IdentityPlaybookSelector(PlaybookSelector):
 
 def default_heuristic_registry() -> HeuristicRegistry:
     shared_ranker = GreedyCandidateRanker()
-    return HeuristicRegistry(
-        {
-            "heuristic:headless_candidate_ranker:v1": shared_ranker,
-            "heuristic:capability_matchup:v1": CapabilityMatchupHeuristic(),
-            "heuristic:identity_playbook:v1": IdentityPlaybookSelector(),
-            "heuristic:identity_playbook_fallback:v1": IdentityPlaybookSelector(),
-            "heuristic:roster_edit_search:v1": shared_ranker,
-        }
-    )
+    entries: dict[str, object] = {
+        "heuristic:headless_candidate_ranker:v1": shared_ranker,
+        "heuristic:capability_matchup:v1": CapabilityMatchupHeuristic(),
+        "heuristic:identity_playbook:v1": IdentityPlaybookSelector(),
+        "heuristic:identity_playbook_fallback:v1": IdentityPlaybookSelector(),
+        "heuristic:roster_edit_search:v1": shared_ranker,
+    }
+    entries.update(ranker_registry_entries())
+    return HeuristicRegistry(entries)
 
 
 __all__ = [
