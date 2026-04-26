@@ -4720,6 +4720,86 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Provisionally-Prepared"
     },
     {
+        "id": "000004216",
+        "name": "Commissar Yarrick",
+        "faction_id": "AM",
+        "source_id": "000000016",
+        "legend": "Few champions of the Imperium inspire the common soldiery as does Commissar Sebastian Yarrick. He can also tear a swathe through his enemies, delivering thunderous blows with his trophy power klaw, mowing them down with his storm bolter, and delivering laser blasts from his ocular augmetic, the so-called Bale Eye.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> 1 storm bolter; 1 laspistol; 1 Bale Eye; 1 power klaw; 1 power sword.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Commissar-Yarrick"
+    },
+    {
+        "id": "000004217",
+        "name": "Commissar Graves",
+        "faction_id": "AM",
+        "source_id": "000000016",
+        "legend": "Cold-eyed killers always ready to execute soldiers for any perceived failing, Graves and her retinue demand absolute loyalty and devotion to duty. Riding to battle aboard her modified Centaur RSV, Vigilance, Graves readily intercepts and countermands orders she considers cowardly, while acting as a figurehead of fear and inspiration both.",
+        "role": "Other",
+        "loadout": "<b>This model is equipped with:</b> 1 chiron gatling cannon; 2 Prefectus heavy stubbers; 1 power sword and Manus Mortis; 1 Enforcer crew; 1 armoured hull; 1 aquiline prow.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Commissar-Graves"
+    },
+    {
+        "id": "000004218",
+        "name": "Commissar Graves on Foot",
+        "faction_id": "AM",
+        "source_id": "000000016",
+        "legend": "An embodiment of uncompromising intolerance, Commissar Thenia Graves inspires fear and respect in equal measure. She demands absolute obedience and self-sacrificial aggression from officers and soldiers alike, and will not hesitate to execute any who fail to meet her exacting standards.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> 1 bolt pistol; 1 power sword and Manus Mortis.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Commissar-Graves-on-Foot"
+    },
+    {
+        "id": "000004219",
+        "name": "Hippogriff AFV",
+        "faction_id": "AM",
+        "source_id": "000000016",
+        "legend": "The Hippogriff Armoured Fighting Vehicle combines speed and agility with a range of turret-mounted weapon loadouts capable of handling almost any battlefield situation. Excellent rapid-response vehicles well suited to escort duties, reconnaissance in force, and armoured countercharges, they have been the bane of foes many times their size.",
+        "role": "Other",
+        "loadout": "<b>Every model is equipped with:</b> 1 vigilator cannon; 1 heavy stubber; 1 armoured hull.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Hippogriff-AFV"
+    },
+    {
+        "id": "000004220",
+        "name": "Centaur RSV",
+        "faction_id": "AM",
+        "source_id": "000000016",
+        "legend": "Transport compartment loaded with a full squad of Astra Militarum infantry, the Centaur Rapid Strike Vehicle accelerates hard into battle. Rugged and simple, these transports eschew heavy firepower in favour of focusing on their primary role: to ferry their passengers to their destination unharmed and with the greatest possible haste.",
+        "role": "Dedicated Transports",
+        "loadout": "<b>This model is equipped with:</b> 1 pintle-mounted heavy stubber; 1 armoured hull.",
+        "transport": "This model has a transport capacity of 12 Astra Militarum Infantry models. Each Ogryn model takes up the space of 3 models. It cannot transport Artillery models.",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/Centaur-RSV"
+    },
+    {
         "id": "000000870",
         "name": "Vindicare Assassin",
         "faction_id": "AoI",
@@ -5440,6 +5520,22 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/imperial-agents/Aquila-Kill-Team"
     },
     {
+        "id": "000004214",
+        "name": "Inquisitor Kroyle",
+        "faction_id": "AoI",
+        "source_id": "000000259",
+        "legend": "A radical Inquisitor of the Ordo Xenos, Ynighoh Kroyle is a consummate hunter of alien monstrosities. From atop his subjugated Garralisk steed, Kroyle stalks and engages xenos prey, bringing even the most formidable targets down with venom-laced shots from his Jindarii tox-cycler.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> Jindarii tox-cycler; stubcarbine; butcher blade; Garralisk's claws and teeth.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/imperial-agents/Inquisitor-Kroyle"
+    },
+    {
         "id": "000000894",
         "name": "Crusaders",
         "faction_id": "AS",
@@ -6030,6 +6126,22 @@
         "damaged_w": "",
         "damaged_description": "",
         "link": "https://wahapedia.ru/wh40k10ed/factions/adepta-sororitas/Celestian-Insidiants"
+    },
+    {
+        "id": "000004215",
+        "name": "Intranzia Fraye",
+        "faction_id": "AS",
+        "source_id": "000000112",
+        "legend": "Riding into battle atop her Throne of Blame, Intranzia Fraye smites the unclean while bellowing vox-amplified condemnations. Enemies singled out for her judgement become the focus of her sisters' ire, the Adepta Sororitas striving furiously to purge these heretics lest they themselves be judged and punished by their intolerant Dogmata Superior.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> 2 heavy bolters, 2 Ministorum heavy flamers; 1 melta missile array; 1 Mace of Saint Praxedes; 1 Throne of Blame.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/adepta-sororitas/Intranzia-Fraye"
     },
     {
         "id": "000001104",
@@ -10653,7 +10765,7 @@
         "leader_footer": "",
         "damaged_w": "1-6",
         "damaged_description": "While this model has 1-6 wounds remaining, each time this model makes an attack, subtract 1 from the Hit roll.",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Defiler-1"
+        "link": "https://wahapedia.ru/wh40k10ed/factions/death-guard/Defiler"
     },
     {
         "id": "000000634",
@@ -13952,6 +14064,38 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/genestealer-cults/Hyperadapted-Raveners"
     },
     {
+        "id": "000004222",
+        "name": "Centaur RSV",
+        "faction_id": "GC",
+        "source_id": "000000016",
+        "legend": "",
+        "role": "Dedicated Transports",
+        "loadout": "<b>This model is equipped with:</b> 1 pintle-mounted heavy stubber; 1 armoured hull.",
+        "transport": "This model has a transport capacity of 12 Astra Militarum Infantry models. Each Ogryn model takes up the space of 3 models. It cannot transport Artillery models.",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/genestealer-cults/Centaur-RSV"
+    },
+    {
+        "id": "000004223",
+        "name": "Hippogriff AFV",
+        "faction_id": "GC",
+        "source_id": "000000016",
+        "legend": "",
+        "role": "Other",
+        "loadout": "<b>Every model is equipped with:</b> 1 vigilator cannon; 1 heavy stubber; 1 armoured hull.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/genestealer-cults/Hippogriff-AFV"
+    },
+    {
         "id": "000000373",
         "name": "Kaldor Draigo",
         "faction_id": "GK",
@@ -17200,6 +17344,22 @@
         "link": "https://wahapedia.ru/wh40k10ed/factions/orks/Da-Red-Gobbo-s-Tinboy"
     },
     {
+        "id": "000004221",
+        "name": "Wazdakka Gutsmek",
+        "faction_id": "ORK",
+        "source_id": "000000046",
+        "legend": "Wazdakka Gutsmek thunders to battle aboard his kustom warbike, Big Revva. Using its throttlerokkit shokka, he reaches incredible speeds or even tellyports across the battlefield, spewing rounds from his psyko-gatler, tearing foes to bloody tatters with his grabba dragga, and wreaking high-speed havoc.",
+        "role": "Characters",
+        "loadout": "<b>This model is equipped with:</b> 1 grabba dragga; 1 psyko-gatler; 1 Fixit's wrench; 1 speeding bulk and flaming exhaust.",
+        "transport": "",
+        "virtual": "false",
+        "leader_head": "",
+        "leader_footer": "",
+        "damaged_w": "",
+        "damaged_description": "",
+        "link": "https://wahapedia.ru/wh40k10ed/factions/orks/Wazdakka-Gutsmek"
+    },
+    {
         "id": "000000855",
         "name": "Knight Paladin",
         "faction_id": "QI",
@@ -19953,7 +20113,7 @@
     },
     {
         "id": "000000310",
-        "name": "Wolf Scouts",
+        "name": "Wolf Scouts (Legendary)",
         "faction_id": "SM",
         "source_id": "000000360",
         "legend": "Wolf Scouts are brooding stalkers and taciturn killers, at ease prowling behind enemy lines or at a battle's edges. Commonly experienced battle-brothers rather than neophytes, Wolf Scouts employ patience and guile in their roles as reconnaissance experts and forward hunters, sniffing out isolated foes and falling upon them with fury.",
@@ -19965,7 +20125,7 @@
         "leader_footer": "",
         "damaged_w": "",
         "damaged_description": "",
-        "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Wolf-Scouts"
+        "link": "https://wahapedia.ru/wh40k10ed/factions/space-marines/Wolf-Scouts-Legendary-"
     },
     {
         "id": "000000311",

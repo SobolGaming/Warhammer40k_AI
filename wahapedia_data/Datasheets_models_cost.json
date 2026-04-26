@@ -10616,7 +10616,7 @@
     {
         "datasheet_id": "000003919",
         "line": "2",
-        "description": "3 models",
+        "description": "6 models",
         "cost": "120"
     },
     {
@@ -12718,5 +12718,83 @@
         "line": "1",
         "description": "1 model",
         "cost": "250"
+    },
+    {
+        "datasheet_id": "000004214",
+        "line": "1",
+        "description": "1 model (<ky>AGENTS OF THE IMPERIUM</ky> Detachment)",
+        "cost": "100"
+    },
+    {
+        "datasheet_id": "000004214",
+        "line": "2",
+        "description": "1 model (Assigned Agent)",
+        "cost": "100"
+    },
+    {
+        "datasheet_id": "000004215",
+        "line": "1",
+        "description": "1 model",
+        "cost": "150"
+    },
+    {
+        "datasheet_id": "000004216",
+        "line": "1",
+        "description": "1 model",
+        "cost": "150"
+    },
+    {
+        "datasheet_id": "000004217",
+        "line": "1",
+        "description": "1 model",
+        "cost": "110"
+    },
+    {
+        "datasheet_id": "000004218",
+        "line": "1",
+        "description": "1 model",
+        "cost": "65"
+    },
+    {
+        "datasheet_id": "000004219",
+        "line": "1",
+        "description": "1 model",
+        "cost": "70"
+    },
+    {
+        "datasheet_id": "000004219",
+        "line": "2",
+        "description": "2 models",
+        "cost": "140"
+    },
+    {
+        "datasheet_id": "000004220",
+        "line": "1",
+        "description": "1 model",
+        "cost": "85"
+    },
+    {
+        "datasheet_id": "000004221",
+        "line": "1",
+        "description": "1 model",
+        "cost": "175"
+    },
+    {
+        "datasheet_id": "000004222",
+        "line": "1",
+        "description": "1 model",
+        "cost": "85"
+    },
+    {
+        "datasheet_id": "000004223",
+        "line": "1",
+        "description": "1 model",
+        "cost": "70"
+    },
+    {
+        "datasheet_id": "000004223",
+        "line": "2",
+        "description": "2 models",
+        "cost": "140"
     }
 ]

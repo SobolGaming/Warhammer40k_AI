@@ -301,6 +301,20 @@
         "type": ""
     },
     {
+        "id": "000001149",
+        "faction_id": "AM",
+        "name": "Steel Hammer",
+        "legend": "<p class=\"ShowFluff legend\">Whilst infantry forms the backbone of many Astra Militarum forces, heavy armour often serves as the mailed fist. Venerable battle tanks thunder across the battlefield, propelled by promethium-hungry engines, their steel tracks grinding a path across all but the most formidable obstacles. The largest mechanical monstrosities - commanded by veteran tank officers and aces - are true war behemoths: super-heavy vehicles shielded by reinforced armour and bristling with enough weapons to reduce enemy armies to smouldering ruin. With these ironclad giants at the fore, an Astra Militarum armoured spearhead crashes over trench lines under heavy fire, crushing infantry to bloody pulp beneath its tracks and reducing any armoured opposition to fragments of twisted scrap metal with roaring cannonades. Before such a tide of heavy metal fury, enemies are struck dumb with terror, their cover toppled or blasted to atoms, exposing them to the full wrath of the Emperor's steel hammer.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001150",
+        "faction_id": "AM",
+        "name": "Armoured Infantry",
+        "legend": "<p class=\"ShowFluff legend\">The rattle of tracks and the hammering of gunfire heralds the advance of armoured infantry. These forces are ideally suited to aggressively seizing strategic objectives, reinforcing buckling Imperial lines, responding to enemy attacks or capitalising on strategic gains. The combination of well-trained and equipped infantry with armoured transports is tried and tested. Transport vehicles lend their passengers speed and operational range far in excess of infantry operating on foot, provide protection on the way into battle, and offer fire support once the infantry have disembarked. In return, the troops can dig in, hold ground, and protect their transports from the enemy. Most often, the Astra Militarum deploys its armoured infantry elements at company strength. They either work hand in mailed gauntlet with tank formations or as massed assault elements which - when properly supported - can grind even the most elite foes into the dirt and secure the field for the armies of Mankind.</p>",
+        "type": ""
+    },
+    {
         "id": "000000892",
         "faction_id": "AoI",
         "name": "Ordo Xenos Alien Hunters",
@@ -1141,6 +1155,20 @@
         "type": ""
     },
     {
+        "id": "000001151",
+        "faction_id": "ORK",
+        "name": "Speedwaaagh!",
+        "legend": "<p class=\"ShowFluff legend\">When a Speedwaaagh! is unleashed, entire planets become Ork speedways. The aliens tear across battlefields and weave through no man's land at breakneck pace, blazing away at anything in their path. So fast-moving are these Orkoid formations that they often punch clean through the enemy lines before their foes truly realise they are in battle. The Orks then haul their jostling vehicles and turbo-boosted Trukks around, charging back for another pass and then another. As they roar, they fill the air with deafening hails of firepower and choking clouds of dust and fume. Half-blinded, deafened by engines and bellowing, the enemy reels as swarms of light vehicles hit them from every direction. Ordered battle descends into high-octane anarchy as the Orks compete in contests of speed and violence in which their enemies are an unwilling audience and participants. Soon enough, the once-proud ranks of the foe are reduced to mangled ruin and the Orks race onward towards the next battle.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001152",
+        "faction_id": "ORK",
+        "name": "Blitz Brigade",
+        "legend": "<p class=\"ShowFluff legend\">Blitz Brigades consist of as many Battlewagons, Trukks and other wheeled and tracked monstrosities as a Tankboss can cobble together. Hulking constructions festooned with barbaric trophies and vomiting acrid clouds of choking exhaust fumes, these ramshackle vehicles bristle with rokkit batteries, pintle-mounted shootas and massive cannons as crude as they are destructive. Varying widely in size and shape, all drive to war laden with battle-hungry Orks. Thundering forward in a roaring avalanche of jagged scrap metal and burning rubber, Blitz Brigades plough directly into the enemy, tracks, wheels and pulverising rollers throwing up clots of mud and gore. Crude speakers spit out discordant Goffik roars and booming war cries that are in turn drowned out by the thunderous reports of oversized cannons and the jubilant bellows of Boyz as they leap from their transports and hurl themselves into the thick of the fight.</p>",
+        "type": ""
+    },
+    {
         "id": "000000988",
         "faction_id": "QI",
         "name": "Questor Forgepact",
@@ -1516,6 +1544,20 @@
         "faction_id": "SM",
         "name": "Ceramite Sentinels",
         "legend": "<p class=\"ShowFluff legend\">Some Space Marines - most notably the gene-sons of Dorn - are as lethal when defending a fortified position as they are when attacking suddenly from orbit. These specialists in both offensive and defensive siegecraft can turn even the most bullet-riddled and crumbling ruin into a veritable fortress. Equally, they are expertly trained in picking off foes dug-in behind barricades and ramparts, and in rapidly clearing out garrison forces who believed themselves safe behind their walls. Typically, Space Marines operating in this fashion establish temporary battlefield strongpoints where they can meet and halt the advance of some powerful foe before switching to the offensive the moment the enemy's momentum stalls. Equally, though, on those rare occasions that the Adeptus Astartes are called upon to garrison a true fortress, these forces are as immovable as they are brutal. Shrugging off incoming fire, raining down their own furious volleys in return and launching punishing counterassaults, they destroy all who assail them.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001147",
+        "faction_id": "SM",
+        "name": "Armoured Speartip",
+        "legend": "<p class=\"ShowFluff legend\">The largest and most powerful vehicles in the armouries of Adeptus Astartes Chapters combine the firepower of a true battle tank with the carrying capacity of an armoured transport to bear Space Marines into the heart of battle. Land Raiders slam through walls, toppling buildings and scattering cowering infantry before dropping their assault ramps and deploying battle-brothers into the midst of stunned foes. Repulsors obliterate bunker lines and screening units with their suite of heavy weapons before unloading their complements of warriors. Meanwhile, Stormraven Gunships descend from the heavens, strafing enemies and dropping further reinforcements onto crucial objectives. When subjected to such a frightening display of combined arms warfare, most foes find their battle lines disordered and broken. By the time a response is mustered, the Space Marines are loading up in their heavy transports once more, destined for the next battle and leaving only ruin in their wake.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001148",
+        "faction_id": "SM",
+        "name": "Headhunter Task Force",
+        "legend": "<p class=\"ShowFluff legend\">Veteran tank crews pilot their vehicles as though they were extensions of their bodies and wills. The crews lend their multi-spectral auto-senses, transhuman reactions, heightened strategic and tactical awareness, and fearless martial focus. The tanks, meanwhile, contribute bellicose machine spirits, potent weaponry, advanced systems and durable armour. When such crews and their war engines are fielded en masse, the result is an elite armoured formation capable of prosecuting the most complex or high-risk operations whilst eliminating dangerous targets. Be it stalking and felling enemy super-heavy war engines, smashing a path through fortifications or destroying the foes' armour, Space Marine tank crews excel. Under covering fire from Vindicators, squadrons of Predators and Gladiators drive home armoured assaults that overwhelm the foe amidst storms of laser blasts and bolt rounds, leaving only shell-shocked remnants for the infantry to mop up.</p>",
         "type": ""
     },
     {

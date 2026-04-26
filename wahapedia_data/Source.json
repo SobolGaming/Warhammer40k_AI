@@ -22,27 +22,27 @@
         "name": "Munitorum Field Manual",
         "type": "Expansion",
         "edition": "10",
-        "version": "4.1",
-        "errata_date": "01.04.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_core&key_munitorum_field_manual-edzlo0khea-wiubxfn3nw.pdf"
+        "version": "4.2",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_core&key_munitorum_field_manual-pz8ducvfz8-rsapu3xmc9.pdf"
     },
     {
         "id": "000000259",
         "name": "Imperial Agents",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "12.11.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_12-11_wh40k_faction_pack_imperial_agents-knrarjdsgi-w9pj7gfqly.pdf"
+        "version": "1.3",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_faction-pack_imperial_agents-c7eul3sg1w-bebpeeqrtv.pdf"
     },
     {
         "id": "000000016",
         "name": "Astra Militarum",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.4",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_astra_militarum-xrrzknaxfo-cig0l0cgh3.pdf"
+        "version": "1.5",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_faction-pack_astra_militarum-cxwqvop96a-jaxwq7qiy9.pdf"
     },
     {
         "id": "000000053",
@@ -85,9 +85,9 @@
         "name": "Orks",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "01.04.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_01-04_wh40k_faction_pack_orks-5uazfdv6ks-70hwghaajr.pdf"
+        "version": "1.3",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_faction-pack_orks-hkgrrrimae-j5rdbqknu5.pdf"
     },
     {
         "id": "000000271",
@@ -211,9 +211,9 @@
         "name": "Space Marines",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.5",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_space_marines-t7ypi7ib36-b5jouxnw7u.pdf"
+        "version": "1.7",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_faction-pack_space_marines-zppopfaqrv-asmlu7vbjq.pdf"
     },
     {
         "id": "000000020",
@@ -238,9 +238,9 @@
         "name": "Adepta Sororitas",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_adepta_sororitas-qsfjrcbqnt-eaa1ivx3ml.pdf"
+        "version": "1.3",
+        "errata_date": "22.04.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_22-04_wh40k_faction-pack_adepta_sororitas-mpqm32we8r-ogeo0gu7sj.pdf"
     },
     {
         "id": "000000012",

@@ -16882,5 +16882,71 @@
         "line": "3",
         "button": "*",
         "description": "* A model cannot be equipped with more than one bellatus reaper chainsword or more than one thundershock spear."
+    },
+    {
+        "datasheet_id": "000004214",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004215",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004216",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004217",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None."
+    },
+    {
+        "datasheet_id": "000004218",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None."
+    },
+    {
+        "datasheet_id": "000004219",
+        "line": "1",
+        "button": "\u2022",
+        "description": "Any number of models can each have their heavy stubber replaced with 1 meltagun."
+    },
+    {
+        "datasheet_id": "000004219",
+        "line": "2",
+        "button": "\u2022",
+        "description": "Any number of models can each have their vigilator cannon replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 chiron gatling cannon</li><li>1 melta cannon</li><li>1 heavy lascannon</li></ul>"
+    },
+    {
+        "datasheet_id": "000004220",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None."
+    },
+    {
+        "datasheet_id": "000004222",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None."
+    },
+    {
+        "datasheet_id": "000004223",
+        "line": "1",
+        "button": "\u2022",
+        "description": "Any number of models can each have their heavy stubber replaced with 1 meltagun."
+    },
+    {
+        "datasheet_id": "000004223",
+        "line": "2",
+        "button": "\u2022",
+        "description": "Any number of models can each have their vigilator cannon replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 chiron gatling cannon</li><li>1 melta cannon</li><li>1 heavy lascannon</li></ul>"
     }
 ]

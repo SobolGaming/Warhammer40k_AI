@@ -10768,5 +10768,55 @@
         "datasheet_id": "000004213",
         "line": "1",
         "description": "1 Knight Defender"
+    },
+    {
+        "datasheet_id": "000004214",
+        "line": "1",
+        "description": "1 Inquisitor Kroyle - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004215",
+        "line": "1",
+        "description": "1 Intranzia Fraye - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004216",
+        "line": "1",
+        "description": "1 Commissar Yarrick - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004217",
+        "line": "1",
+        "description": "1 Commissar Graves - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004218",
+        "line": "1",
+        "description": "1 Commissar Graves on Foot - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004219",
+        "line": "1",
+        "description": "1-2 Hippogriff AFV"
+    },
+    {
+        "datasheet_id": "000004220",
+        "line": "1",
+        "description": "1 Centaur RSV"
+    },
+    {
+        "datasheet_id": "000004221",
+        "line": "1",
+        "description": "1 Wazdakka Gutsmek - <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004222",
+        "line": "1",
+        "description": "1 Centaur RSV"
+    },
+    {
+        "datasheet_id": "000004223",
+        "line": "1",
+        "description": "1-2 Hippogriff AFV"
     }
 ]
