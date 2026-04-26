@@ -255,6 +255,13 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
             "winner_army_label": "chaos_test",
             "winner_score_line": "<SCORE: 45 vs 32>",
             "scoreboard": {"chaos_test": 45, "aeldari_test": 32},
+            "llm_agent_traces": [
+                {
+                    "component_name": "shooting_ranker",
+                    "decision_id": "d1",
+                    "legal": True,
+                }
+            ],
             "replay_session_id": "selfplay:000000",
             "replay_path": "/tmp/replays/selfplay:000000/replay.sqlite3",
             "snapshot_path": "/tmp/replays/selfplay:000000/snapshot.json",
@@ -284,6 +291,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
     assert result["replay_session_id"] == "selfplay:000000"
     assert result["replay_path"] == "/tmp/replays/selfplay:000000/replay.sqlite3"
     assert result["snapshot_path"] == "/tmp/replays/selfplay:000000/snapshot.json"
+    assert result["llm_agent_traces"][0]["component_name"] == "shooting_ranker"
 
 
 def test_run_single_game_job_writes_profile_artifacts(monkeypatch, tmp_path) -> None:

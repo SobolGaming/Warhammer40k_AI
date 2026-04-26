@@ -366,6 +366,31 @@ class AIControllerRouter:
         fallback = list(fallback_order or legal_candidates(request))
         return fallback
 
+    def component_implementations(self) -> dict[str, object]:
+        return dict(self._components)
+
+    def collect_component_traces(self) -> list[dict[str, Any]]:
+        traces: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        implementations: list[object] = list(self._components.values())
+        for fallback_entries in self._fallbacks.values():
+            implementations.extend(list(fallback_entries or ()))
+        for implementation in implementations:
+            identity = id(implementation)
+            if identity in seen_ids:
+                continue
+            seen_ids.add(identity)
+            get_traces = getattr(implementation, "traces", None)
+            if not callable(get_traces):
+                continue
+            for trace in list(get_traces() or []):
+                to_dict = getattr(trace, "to_dict", None)
+                if callable(to_dict):
+                    traces.append(dict(to_dict()))
+                elif isinstance(trace, dict):
+                    traces.append(dict(trace))
+        return traces
+
     def _component_chain(self, component_name: str) -> tuple[tuple[str, object], ...]:
         chain: list[tuple[str, object]] = []
         primary = self._components.get(component_name)
@@ -381,4 +406,3 @@ class AIControllerRouter:
             return True
         ctx = dict(getattr(request, "context", {}) or {})
         return bool(ctx.get("optional", False) or ctx.get("allow_skip", False))
-

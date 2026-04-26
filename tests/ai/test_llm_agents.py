@@ -88,6 +88,10 @@ def test_llm_router_uses_static_transport_for_configured_components() -> None:
 
     assert router.choose_action(request).action_id == "b"
     assert transport.calls[0]["component_name"] == COMPONENT_MOVEMENT_RANKER
+    traces = router.collect_component_traces()
+    assert len(traces) == 1
+    assert traces[0]["component_name"] == COMPONENT_MOVEMENT_RANKER
+    assert traces[0]["selected_action_id"] == "b"
 
 
 def test_llm_config_requires_endpoint_and_model(monkeypatch) -> None:

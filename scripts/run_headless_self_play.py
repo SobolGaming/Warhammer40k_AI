@@ -663,6 +663,8 @@ def _run_single_game(
     reserve_arrival_diagnostics = _collect_reserve_arrival_diagnostics(game)
     get_reserves_metrics = getattr(controller, "get_reserves_arrival_search_metrics", None)
     reserves_arrival_search_metrics = list(get_reserves_metrics() or []) if callable(get_reserves_metrics) else []
+    collect_llm_traces = getattr(ai_router, "collect_component_traces", None)
+    llm_agent_traces = list(collect_llm_traces() or []) if callable(collect_llm_traces) else []
     return {
         "game_id": stable_game_id,
         "records": records,
@@ -674,6 +676,7 @@ def _run_single_game(
         "tool_action_probe_diagnostics": tool_action_probe_diagnostics,
         "reserve_arrival_diagnostics": reserve_arrival_diagnostics,
         "reserves_arrival_search_metrics": reserves_arrival_search_metrics,
+        "llm_agent_traces": llm_agent_traces,
         "replay_session_id": replay_session_id if replay_path is not None else "",
         "replay_path": str(replay_path) if replay_path is not None else "",
         "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
@@ -759,6 +762,7 @@ def _run_single_game_job(
         "tool_action_probe_diagnostics": _json_safe(list(result.get("tool_action_probe_diagnostics", []) or [])),
         "reserve_arrival_diagnostics": _json_safe(list(result.get("reserve_arrival_diagnostics", []) or [])),
         "reserves_arrival_search_metrics": _json_safe(list(result.get("reserves_arrival_search_metrics", []) or [])),
+        "llm_agent_traces": _json_safe(list(result.get("llm_agent_traces", []) or [])),
         "replay_session_id": str(result.get("replay_session_id", "") or ""),
         "replay_path": str(result.get("replay_path", "") or ""),
         "snapshot_path": str(result.get("snapshot_path", "") or ""),
@@ -807,6 +811,7 @@ def run_headless_self_play(
     decision_type_counts: Counter[str] = Counter()
     tool_probe_diagnostic_counts: Counter[str] = Counter()
     reserve_arrival_diagnostic_counts: Counter[str] = Counter()
+    llm_agent_trace_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
 
@@ -922,6 +927,13 @@ def run_headless_self_play(
             code = str(item.get("code", "") or "<unknown>")
             severity = str(item.get("severity", "") or "WARNING")
             reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
+        for trace in list(result.get("llm_agent_traces", []) or []):
+            item = dict(trace or {})
+            component = str(item.get("component_name", "") or "<unknown>")
+            legal = bool(item.get("legal", False))
+            error = str(item.get("error", "") or "")
+            status = "legal" if legal else ("error" if error else "illegal")
+            llm_agent_trace_counts[f"{component}:{status}"] += 1
 
     exported_records = merge_decision_records_by_id(all_records)
     if not bool(no_reward_annotation):
@@ -958,6 +970,8 @@ def run_headless_self_play(
         print(f"Tool probe diagnostics: {dict(tool_probe_diagnostic_counts.most_common(20))}")
     if reserve_arrival_diagnostic_counts:
         print(f"Reserve arrival diagnostics: {dict(reserve_arrival_diagnostic_counts.most_common(20))}")
+    if llm_agent_trace_counts:
+        print(f"LLM agent traces: {dict(llm_agent_trace_counts.most_common(20))}")
     print(f"Wrote: {output_path}")
     replay_root = _resolved_replay_base_dir(str(replay_dir))
     if replay_root is not None:
@@ -1001,6 +1015,7 @@ def run_headless_self_play(
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
+        "llm_agent_trace_counts": dict(llm_agent_trace_counts),
         "game_outcomes": game_outcomes,
         "records_output_path": str(output_path.resolve()),
         "replay_dir": "" if replay_root is None else str(replay_root),

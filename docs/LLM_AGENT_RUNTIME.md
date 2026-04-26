@@ -35,6 +35,8 @@ Implemented surfaces:
 6. Invalid/missing/failed LLM output falls back to the deterministic domain ranker for that component.
 7. The existing controller submits the normal `RESOLVE_DECISION` command; the engine validates and records `DecisionRecord` telemetry.
 
+When `--report-output` is enabled for headless self-play, per-game report entries include `llm_agent_traces` and the top-level report includes `llm_agent_trace_counts`. These traces are audit/debug data for prompts and provider responses; supervised learning should still use authoritative `DecisionRecord` examples because those records reflect the engine-validated outcome.
+
 ## Config
 
 Example config:
@@ -98,6 +100,8 @@ python scripts/build_llm_agent_dataset.py \
 
 This works for headless self-play, replay captures, and human-vs-AI games because all of them resolve the same Decision API and write the same candidate/mask/chosen-action telemetry.
 
+LLM traces can explain why a provider chose or failed to choose an action, while `DecisionRecord` examples remain the canonical training source.
+
 ## Safety and Determinism
 
 - LLM agents never see masked candidates.
@@ -105,4 +109,3 @@ This works for headless self-play, replay captures, and human-vs-AI games becaus
 - The engine still validates every resolved action.
 - Invalid LLM output is recorded in the agent trace and falls back to deterministic rankers.
 - Provider configuration lives outside the repository; API keys are read from environment variables by default.
-
