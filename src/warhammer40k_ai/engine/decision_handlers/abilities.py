@@ -84,6 +84,18 @@ from ..decision_kinds import (
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ...utility.entity_ids import get_entity_id
+from ...utility.ability_usage import (
+    START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+    START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+    alive_model_count,
+    current_player_turn_key,
+    current_turn_key,
+    mark_unit_phase_usage,
+    mark_unit_turn_usage,
+    unit_has_phase_usage,
+    unit_has_turn_usage,
+    unit_visible_to_model,
+)
 from ...utility.aura_utils import unit_within_range_of_unit as aura_unit_within_range_of_unit
 from ._helpers import (
     get_objective,
@@ -3791,6 +3803,36 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "shokk_attack_engine_strategic_reserves":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action != "enter_strategic_reserves":
+            return ("Shokk Attack Engine requires the enter_strategic_reserves action.",)
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        current_phase = current_phase.replace(" ", "_")
+        if current_phase and current_phase != "COMMAND_PHASE":
+            return ("Shokk Attack Engine can only be used in your Command phase.",)
+        current_player_fn = getattr(game, "get_current_player", None)
+        current_player = current_player_fn() if callable(current_player_fn) else None
+        if current_player is not None and request.player_id is not None:
+            if str(getattr(current_player, "id", "") or "") != str(request.player_id):
+                return ("Shokk Attack Engine can only be used in its owner's Command phase.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Shokk Attack Engine source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        eligible, reason = _shokk_attack_engine_strategic_reserves_eligible(game, source_root)
+        if not eligible:
+            return (reason,)
+        return ()
     if ability == "corrupt_realspace":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -12740,6 +12782,56 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "shokk_attack_engine_strategic_reserves":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"Shokk Attack Engine: {getattr(source_root, 'name', 'Unit')} remains on the battlefield.",
+            )
+            return {
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "entered_strategic_reserves": False,
+                "action": "skip",
+            }
+        eligible, reason = _shokk_attack_engine_strategic_reserves_eligible(game, source_root)
+        if not eligible:
+            raise RuntimeError(reason)
+        enter_reserves = getattr(source_root, "enter_strategic_reserves_midgame", None)
+        if not callable(enter_reserves):
+            raise RuntimeError("Shokk Attack Engine source unit cannot enter Strategic Reserves.")
+        moved = bool(
+            enter_reserves(
+                game=game,
+                game_map=getattr(game, "map", None),
+                reason="Shokk Attack Engine",
+            )
+        )
+        if moved:
+            _log_action_for_players(
+                game,
+                player,
+                f"Shokk Attack Engine: {getattr(source_root, 'name', 'Unit')} placed into Strategic Reserves.",
+            )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "entered_strategic_reserves": bool(moved),
+            "action": "enter_strategic_reserves",
+        }
     if ability == "corrupt_realspace":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -22984,6 +23076,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if source_root is None:
             return None
         from ...rules.selectable_section_abilities import (
+            KEY_SHOKK_ATTACK_ENGINE,
             SECTION_OPTIONS_BY_KEY,
             clear_active_section_ability,
             set_active_section_ability,
@@ -23046,6 +23139,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             player,
             f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {choice_name}.",
         )
+        if choice_key == KEY_SHOKK_ATTACK_ENGINE:
+            _queue_shokk_attack_engine_strategic_reserves_decision(
+                game,
+                player,
+                source_root,
+                battle_round=int(battle_round or 0),
+            )
         return {
             "source_unit_id": str(get_entity_id(source_root) or ""),
             "choice_key": str(choice_key),
@@ -32313,6 +32413,141 @@ def _unit_is_on_battlefield(unit) -> bool:
     return not in_reserves and not is_embarked
 
 
+def _shokk_attack_engine_battle_round(game: object) -> int:
+    try:
+        return int(getattr(game, "turn", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _shokk_attack_engine_unit_is_engaged(game: object, source_root) -> bool:
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return False
+    get_enemy_units = getattr(game_map, "get_enemy_units", None)
+    is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
+    if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+        return False
+    for enemy in list(get_enemy_units(source_root) or []):
+        enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+        if enemy_root is None:
+            continue
+        is_alive_fn = getattr(enemy_root, "is_alive", None)
+        enemy_alive = bool(is_alive_fn()) if callable(is_alive_fn) else bool(getattr(enemy_root, "is_alive", True))
+        if not enemy_alive:
+            continue
+        if bool(is_within_engagement_range(source_root, enemy_root)):
+            return True
+    return False
+
+
+def _shokk_attack_engine_strategic_reserves_eligible(
+    game: object,
+    source_root,
+    *,
+    require_active: bool = True,
+) -> tuple[bool, str]:
+    if source_root is None:
+        return False, "Shokk Attack Engine source unit was not found."
+    if not _unit_is_on_battlefield(source_root):
+        return False, "Shokk Attack Engine source unit must be on the battlefield."
+    if require_active:
+        from ...rules.selectable_section_abilities import (
+            KEY_SHOKK_ATTACK_ENGINE,
+            unit_has_active_section_ability,
+        )
+
+        if not unit_has_active_section_ability(
+            source_root,
+            KEY_SHOKK_ATTACK_ENGINE,
+            battle_round=_shokk_attack_engine_battle_round(game),
+        ):
+            return False, "Shokk Attack Engine must be the selected Throttlerokkit Shokka Engine ability."
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return False, "Shokk Attack Engine requires a battlefield map."
+    if not callable(getattr(game_map, "get_enemy_units", None)) or not callable(
+        getattr(game_map, "is_within_engagement_range", None)
+    ):
+        return False, "Shokk Attack Engine requires an engagement-range capable battlefield map."
+    if _shokk_attack_engine_unit_is_engaged(game, source_root):
+        return False, "Shokk Attack Engine cannot be used while the unit is within Engagement Range."
+    return True, ""
+
+
+def _queue_shokk_attack_engine_strategic_reserves_decision(
+    game: object,
+    player,
+    source_root,
+    *,
+    battle_round: int,
+) -> bool:
+    eligible, _reason = _shokk_attack_engine_strategic_reserves_eligible(game, source_root)
+    if not eligible:
+        return False
+    source_id = str(get_entity_id(source_root) or "")
+    if not source_id:
+        return False
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "shokk_attack_engine_strategic_reserves":
+                continue
+            if str(ctx.get("source_unit_id", "") or "") == source_id:
+                return False
+
+    from ...rules.selectable_section_abilities import (
+        KEY_SHOKK_ATTACK_ENGINE,
+        KEY_THROTTLEROKKIT_SHOKKA_ENGINE,
+    )
+    from ..decisions import DecisionOption, DecisionRequest
+
+    player_id = str(getattr(player, "id", "") or "")
+    options = [
+        DecisionOption.create(
+            "Enter Strategic Reserves",
+            payload={
+                "action": "enter_strategic_reserves",
+                "source_unit_id": source_id,
+                "unit_id": source_id,
+            },
+        ),
+        DecisionOption.create(
+            "None",
+            payload={"skip": True, "action": "skip", "source_unit_id": source_id, "unit_id": source_id},
+        ),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        f"Shokk Attack Engine: place {getattr(source_root, 'name', 'Unit')} into Strategic Reserves?",
+        player_id=player_id or getattr(player, "id", None),
+        options=options,
+        context={
+            "ability": "shokk_attack_engine_strategic_reserves",
+            "ability_name": "Shokk Attack Engine",
+            "phase": "Command phase",
+            "source_unit_id": source_id,
+            "unit_id": source_id,
+            "section_parent_key": KEY_THROTTLEROKKIT_SHOKKA_ENGINE,
+            "selected_choice_key": KEY_SHOKK_ATTACK_ENGINE,
+            "battle_round": int(battle_round or 0),
+            "player_id": player_id,
+            "optional": True,
+        },
+    )
+    request_decision = getattr(game, "request_decision", None)
+    if callable(request_decision):
+        request_decision(request)
+        return True
+    if queue is not None and hasattr(queue, "add"):
+        queue.add(request)
+        return True
+    return False
+
+
 def _model_is_alive(model) -> bool:
     if model is None:
         return False
@@ -32465,6 +32700,53 @@ def _apply_supa_glowy_fing_roll_table(
     )
 
 
+def _mark_battleshock_clear_usage(
+    game: object,
+    *,
+    ctx: dict,
+    ability_name: str,
+    ability_key: str,
+    source_root: object,
+    source_model: object,
+    source: str,
+) -> None:
+    current_turn = current_turn_key(game)
+    phase_name = str(ctx.get("phase_name", "") or getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    if bool(ctx.get("once_per_phase", False)) and source_root is not None:
+        mark_unit_phase_usage(
+            source_root,
+            ability_key,
+            turn=int(current_turn or 0),
+            phase_name=phase_name,
+            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+        )
+        return
+    if bool(ctx.get("once_per_turn", False)) and source_root is not None:
+        mark_unit_turn_usage(
+            source_root,
+            ability_key,
+            turn_key=current_player_turn_key(game),
+            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+        )
+        return
+    if bool(ctx.get("once_per_battle_round", False)):
+        if source_model is None or current_turn <= 0:
+            return
+        mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
+        if callable(mark_used_round):
+            mark_used_round(
+                ability_key,
+                battle_round=int(current_turn),
+                ability_name=ability_name,
+                source=source,
+            )
+        return
+    if bool(ctx.get("once_per_battle", True)) and source_root is not None:
+        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used(ability_key, ability_name=ability_name)
+
+
 def _validate_battleshock_clear_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -32503,10 +32785,31 @@ def _validate_battleshock_clear_target(game: object, request: DecisionRequest, r
         current_turn = 0
     if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
         return (f"{ability_name} decision is no longer valid this turn.",)
+    queued_turn_key = str(ctx.get("turn_key", "") or "").strip()
+    current_player_turn = current_player_turn_key(game)
+    if queued_turn_key and current_player_turn and queued_turn_key != current_player_turn:
+        return (f"{ability_name} decision is no longer valid this turn.",)
     if bool(ctx.get("once_per_battle", True)) and bool(
         getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key)
     ):
         return (f"{ability_name} has already been used this battle.",)
+    if bool(ctx.get("once_per_phase", False)) and current_turn > 0:
+        if unit_has_phase_usage(
+            source_root,
+            ability_key,
+            turn=int(current_turn),
+            phase_name=phase_name or current_phase,
+            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+        ):
+            return (f"{ability_name} has already been used this phase.",)
+    if bool(ctx.get("once_per_turn", False)) and current_turn > 0:
+        if unit_has_turn_usage(
+            source_root,
+            ability_key,
+            turn_key=current_player_turn,
+            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+        ):
+            return (f"{ability_name} has already been used this turn.",)
     if bool(ctx.get("once_per_battle_round", False)) and current_turn > 0:
         has_used_round = getattr(source_model, "has_used_once_per_battle_round", None)
         if callable(has_used_round) and bool(has_used_round(ability_key, battle_round=int(current_turn))):
@@ -32533,6 +32836,8 @@ def _validate_battleshock_clear_target(game: object, request: DecisionRequest, r
         is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
         if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
             return (f"{ability_name} target must be Battle-shocked.",)
+    if bool(ctx.get("exclude_single_model_units", False)) and alive_model_count(target_root) <= 1:
+        return (f"{ability_name} target must contain more than one model.",)
     try:
         range_value = float(ctx.get("range", 0) or 0)
     except (TypeError, ValueError):
@@ -32543,6 +32848,9 @@ def _validate_battleshock_clear_target(game: object, request: DecisionRequest, r
     if callable(in_range_fn):
         if not bool(in_range_fn(source_model, target_root, range_value=float(range_value))):
             return (f"{ability_name} target is out of range.",)
+    if bool(ctx.get("requires_visibility", False)):
+        if not unit_visible_to_model(source_model, target_root, getattr(game, "map", None)):
+            return (f"{ability_name} target is not visible to the source model.",)
     return ()
 
 
@@ -32602,24 +32910,15 @@ def _apply_battleshock_clear_target(game: object, request: DecisionRequest, resu
             clear_battle_shock = getattr(target_root, "clear_battle_shock", None)
             if _unit_is_on_battlefield(target_root) and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
                 cleared = bool(clear_battle_shock())
-            if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
-                mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
-                if callable(mark_used_round):
-                    try:
-                        current_turn = int(getattr(game, "turn", 0) or 0)
-                    except (TypeError, ValueError):
-                        current_turn = 0
-                    if current_turn > 0:
-                        mark_used_round(
-                            ability_key,
-                            battle_round=int(current_turn),
-                            ability_name=ability_name,
-                            source="datasheet",
-                        )
-            elif source_root is not None:
-                mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
-                if callable(mark_used):
-                    mark_used(ability_key, ability_name=ability_name)
+            _mark_battleshock_clear_usage(
+                game,
+                ctx=ctx,
+                ability_name=ability_name,
+                ability_key=ability_key,
+                source_root=source_root,
+                source_model=source_model,
+                source="datasheet",
+            )
             target_name = getattr(target_root, "name", "Unit")
             destroyed_name = getattr(models[0], "name", "a model")
             if player is not None:
@@ -32670,6 +32969,11 @@ def _apply_battleshock_clear_target(game: object, request: DecisionRequest, resu
             "ability_key": ability_key,
             "once_per_battle": bool(ctx.get("once_per_battle", True)),
             "once_per_battle_round": bool(ctx.get("once_per_battle_round", False)),
+            "once_per_phase": bool(ctx.get("once_per_phase", False)),
+            "once_per_turn": bool(ctx.get("once_per_turn", False)),
+            "phase_name": str(ctx.get("phase_name", "") or "").strip().upper(),
+            "turn": int(ctx.get("turn", current_turn_key(game)) or 0),
+            "turn_key": str(ctx.get("turn_key", "") or current_player_turn_key(game)).strip(),
         }
         req = DecisionRequest.create(
             DECISION_SELECT_TARGET_MODEL,
@@ -32687,24 +32991,16 @@ def _apply_battleshock_clear_target(game: object, request: DecisionRequest, resu
     target_alive = _unit_is_on_battlefield(target_root)
     if target_alive and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
         cleared = bool(clear_battle_shock())
-    if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
-        mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
-        if callable(mark_used_round):
-            try:
-                current_turn = int(getattr(game, "turn", 0) or 0)
-            except (TypeError, ValueError):
-                current_turn = 0
-            if current_turn > 0:
-                mark_used_round(
-                    ability_key,
-                    battle_round=int(current_turn),
-                    ability_name=ability_name,
-                    source="enhancement",
-                )
-    elif cleared and source_root is not None:
-        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
-        if callable(mark_used):
-            mark_used(ability_key, ability_name=ability_name)
+    if cleared:
+        _mark_battleshock_clear_usage(
+            game,
+            ctx=ctx,
+            ability_name=ability_name,
+            ability_key=ability_key,
+            source_root=source_root,
+            source_model=source_model,
+            source="enhancement",
+        )
     target_name = getattr(target_root, "name", "Unit")
     if mortal_wounds_roll:
         if cleared:
@@ -33684,6 +33980,9 @@ def _validate_issue_order(game: object, request: DecisionRequest, result: Decisi
             return ("Voice of Command order selection requires officer_unit_id and order_key.",)
         if resolve_unit(game, officer_val) is None:
             return ("Voice of Command officer was not found.",)
+        fixed_target_val = payload.get("fixed_target_unit_id") or ctx.get("fixed_target_unit_id")
+        if fixed_target_val and resolve_unit(game, fixed_target_val) is None:
+            return ("Voice of Command fixed target was not found.",)
         army = _resolve_army(game, request, payload)
         if army is None or getattr(army, "voice_of_command", None) is None:
             return ("Voice of Command manager not found.",)
@@ -33706,7 +34005,7 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
     ctx = dict(getattr(request, "context", {}) or {})
     if is_skip_choice(request, result):
         trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "").strip().lower()
-        if trigger in {"reactive_command_setup", "inspired_command"}:
+        if trigger in {"reactive_command_setup", "inspired_command", "mechanised_spearhead"}:
             army = _resolve_army(game, request, payload)
             mgr = getattr(army, "voice_of_command", None) if army is not None else None
             officer = resolve_unit(
@@ -33717,10 +34016,24 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
                 consume_fn = getattr(mgr, "consume_reactive_command_skip", None) if mgr is not None else None
                 if callable(consume_fn):
                     consume_fn(officer, game=game)
-            else:
+            elif trigger == "inspired_command":
                 consume_fn = getattr(mgr, "consume_inspired_command_skip", None) if mgr is not None else None
                 if callable(consume_fn):
                     consume_fn(officer, game=game)
+            else:
+                consume_fn = getattr(mgr, "consume_mechanised_spearhead_skip", None) if mgr is not None else None
+                target = resolve_unit(
+                    game,
+                    payload.get("fixed_target_unit_id")
+                    or payload.get("target_unit_id")
+                    or request.context.get("fixed_target_unit_id"),
+                )
+                if callable(consume_fn):
+                    consume_fn(
+                        officer,
+                        target,
+                        pending_token=str(payload.get("pending_token", "") or request.context.get("pending_token", "") or ""),
+                    )
         return None
     army = _resolve_army(game, request, payload)
     if army is None:
@@ -33733,6 +34046,25 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
     trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
     if str(ctx.get("ability", "") or "") == "voice_of_command_order":
+        fixed_target = resolve_unit(
+            game,
+            payload.get("fixed_target_unit_id")
+            or payload.get("target_unit_id")
+            or request.context.get("fixed_target_unit_id"),
+        )
+        if fixed_target is not None:
+            pending_token = str(payload.get("pending_token", "") or request.context.get("pending_token", "") or "")
+            return bool(
+                mgr.issue_order(
+                    game,
+                    officer,
+                    fixed_target,
+                    str(order_key),
+                    phase_name=phase_name,
+                    trigger=trigger,
+                    pending_token=pending_token,
+                )
+            )
         player = _resolve_player(game, request, payload)
         queue_next = getattr(mgr, "queue_order_sequence_target_request", None)
         if player is None or officer is None or not callable(queue_next):
@@ -34145,6 +34477,9 @@ def _validate_select_setup_reactive_target(game: object, request: DecisionReques
         return ("Setup reactive target requires unit_id.",)
     if resolve_unit(game, target_val) is None:
         return ("Setup reactive target unit not found.",)
+    reactive_val = payload.get("reactive_unit_id")
+    if reactive_val is not None and resolve_unit(game, reactive_val) is None:
+        return ("Setup reactive response unit not found.",)
     return ()
 
 
@@ -34163,8 +34498,8 @@ def _validate_choose_setup_reactive_action(game: object, request: DecisionReques
         return ()
     payload = _option_payload(request, result)
     action = str(payload.get("action", "") or payload.get("choice", "") or payload.get("value", ""))
-    if action not in ("shoot", "charge"):
-        return ("Setup reactive action requires 'shoot' or 'charge'.",)
+    if action not in ("move", "shoot", "charge"):
+        return ("Setup reactive action requires 'move', 'shoot' or 'charge'.",)
     return ()
 
 

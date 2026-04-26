@@ -6355,17 +6355,63 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                counter_match = self._COUNTERSTRATEGIST_RE.search(text)
+                if counter_match:
+                    try:
+                        rng = int(counter_match.group("range") or 0)
+                    except (TypeError, ValueError):
+                        rng = 0
+                    try:
+                        friendly_range = int(counter_match.group("friendly_range") or 0)
+                    except (TypeError, ValueError):
+                        friendly_range = 0
+                    try:
+                        charge_range = int(counter_match.group("charge_range") or 0)
+                    except (TypeError, ValueError):
+                        charge_range = 0
+                    if rng <= 0:
+                        rng = 12
+                    if friendly_range <= 0:
+                        friendly_range = 6
+                    if charge_range <= 0:
+                        charge_range = 12
+                    source = str(name or "Counterstrategist").strip() or "Counterstrategist"
+                    friendly_keyword = str(counter_match.group("friendly_keyword") or "REGIMENT").strip()
+                    source_unit_id = str(get_entity_id(u) or "")
+                    source_model_ids = [
+                        str(get_entity_id(model) or "")
+                        for model in list(getattr(u, "models", []) or [])
+                        if str(get_entity_id(model) or "")
+                    ]
+                    rule = {
+                        "range": int(rng),
+                        "source": source,
+                        "counterstrategist": True,
+                        "trigger_set_up": True,
+                        "trigger_move": True,
+                        "friendly_keyword": friendly_keyword or "REGIMENT",
+                        "friendly_range": int(friendly_range),
+                        "requires_friendly_visible_to_source_model": True,
+                        "move_distance_roll": str(counter_match.group("move_roll") or "D6").upper(),
+                        "charge_range": int(charge_range),
+                        "charge_count_as_charged": False,
+                    }
+                    if source_unit_id:
+                        rule["source_unit_id"] = source_unit_id
+                    if source_model_ids:
+                        rule["source_model_ids"] = source_model_ids
+                    break
                 m = self._SETUP_REACTIVE_SHOOT_CHARGE_RE.search(text)
                 if not m:
                     continue
                 try:
                     rng = int(m.group("range") or 0)
-                except Exception:
+                except (TypeError, ValueError):
                     rng = 0
                 if rng <= 0:
                     rng = 12
                 source = str(name or "Reactive Response").strip() or "Reactive Response"
-                rule = {"range": int(rng), "source": source}
+                rule = {"range": int(rng), "source": source, "trigger_set_up": True, "trigger_move": False}
                 break
             if rule is not None:
                 break

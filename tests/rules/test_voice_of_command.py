@@ -172,6 +172,25 @@ class _MapStub:
         return float(self._distance)
 
 
+class _PairDistanceMap:
+    def __init__(self, friendlies=None, *, default_distance=99.0):
+        self._friendlies = list(friendlies or [])
+        self._distance_by_pair = {}
+        self._default_distance = float(default_distance)
+        self.units = list(friendlies or [])
+
+    def set_distance(self, unit1, unit2, distance: float) -> None:
+        key = frozenset((str(get_entity_id(unit1) or ""), str(get_entity_id(unit2) or "")))
+        self._distance_by_pair[key] = float(distance)
+
+    def get_friendly_units(self, _unit):
+        return list(self._friendlies)
+
+    def get_distance_between_units(self, unit1, unit2):
+        key = frozenset((str(get_entity_id(unit1) or ""), str(get_entity_id(unit2) or "")))
+        return float(self._distance_by_pair.get(key, self._default_distance))
+
+
 class _ModelStub:
     def __init__(self, name: str, parent_unit: _UnitStub, *, distance=10.0):
         self.name = name
@@ -818,6 +837,282 @@ class TestVoiceOfCommand(unittest.TestCase):
 
         self.assertEqual(mgr.get_order_range(officer), 12.0)
         self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_decisive_command_extends_next_order_and_splashes_first_order_this_phase(self):
+        from warhammer40k_ai.rules.selectable_section_abilities import KEY_DECISIVE_COMMAND, set_active_section_ability
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This Officer can issue up to 2 Orders to Regiment, Squadron or Titanic units."
+        decisive_text = (
+            "The next Order issued by this model can be issued to one eligible friendly unit within 12\" of this model; "
+            "if this is the first Order issued by a unit from your army this phase, that Order affects not only that "
+            "eligible unit, but every other eligible friendly unit within 6\" of that eligible unit."
+        )
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Commissar Yarrick",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Hero of Hades Hive"),
+                _Ability("Decisive Command", decisive_text),
+            ],
+            army=army,
+        )
+        primary = _UnitStub("Primary Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        splash_regiment = _UnitStub("Nearby Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        splash_squadron = _UnitStub("Nearby Squadron", keywords=["SQUADRON", "ASTRA MILITARUM"], army=army)
+        far_regiment = _UnitStub("Far Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        ogryn = _UnitStub("Nearby Ogryn", keywords=["OGRYN", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, primary, splash_regiment, splash_squadron, far_regiment, ogryn]
+
+        game_map = _PairDistanceMap(army.units)
+        game_map.set_distance(officer, primary, 10.0)
+        game_map.set_distance(primary, splash_regiment, 5.0)
+        game_map.set_distance(primary, splash_squadron, 5.0)
+        game_map.set_distance(primary, far_regiment, 7.0)
+        game_map.set_distance(primary, ogryn, 5.0)
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+            map=game_map,
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        self.assertTrue(set_active_section_ability(officer, KEY_DECISIVE_COMMAND, start_round=1, expires_round=2))
+        self.assertEqual(mgr.get_order_range(officer), 12.0)
+
+        eligible_names = {
+            unit.name for unit in mgr.get_eligible_targets(officer, game=game, order_key=ORDER_MOVE.key)
+        }
+        self.assertIn("Primary Regiment", eligible_names)
+
+        self.assertTrue(mgr.issue_order(game, officer, primary, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertIn(ORDER_MOVE.key, mgr.get_active_order_keys(primary))
+        self.assertIn(ORDER_MOVE.key, mgr.get_active_order_keys(splash_regiment))
+        self.assertIn(ORDER_MOVE.key, mgr.get_active_order_keys(splash_squadron))
+        self.assertNotIn(ORDER_MOVE.key, mgr.get_active_order_keys(far_regiment))
+        self.assertNotIn(ORDER_MOVE.key, mgr.get_active_order_keys(ogryn))
+        self.assertFalse(mgr._officer_has_decisive_command_pending(officer, 1))
+
+    def test_decisive_command_splash_only_if_army_first_order_this_phase(self):
+        from warhammer40k_ai.rules.selectable_section_abilities import KEY_DECISIVE_COMMAND, set_active_section_ability
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This Officer can issue up to 2 Orders to Regiment, Squadron or Titanic units."
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        other_officer = _UnitStub(
+            "Other Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        other_target = _UnitStub("Other Target", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        officer = _UnitStub(
+            "Commissar Yarrick",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Hero of Hades Hive"),
+                _Ability("Decisive Command"),
+            ],
+            army=army,
+        )
+        primary = _UnitStub("Primary Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        splash = _UnitStub("Nearby Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [other_officer, other_target, officer, primary, splash]
+
+        game_map = _PairDistanceMap(army.units)
+        game_map.set_distance(other_officer, other_target, 3.0)
+        game_map.set_distance(officer, primary, 10.0)
+        game_map.set_distance(primary, splash, 5.0)
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+            map=game_map,
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        self.assertTrue(set_active_section_ability(officer, KEY_DECISIVE_COMMAND, start_round=1, expires_round=2))
+        self.assertTrue(mgr.issue_order(game, other_officer, other_target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertTrue(mgr.issue_order(game, officer, primary, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertIn(ORDER_MOVE.key, mgr.get_active_order_keys(primary))
+        self.assertNotIn(ORDER_MOVE.key, mgr.get_active_order_keys(splash))
+        self.assertFalse(mgr._officer_has_decisive_command_pending(officer, 1))
+
+    def test_decisive_command_requires_active_section_choice_for_extended_order_range(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This Officer can issue up to 2 Orders to Regiment, Squadron or Titanic units."
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Commissar Yarrick",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Hero of Hades Hive"),
+                _Ability("Decisive Command"),
+            ],
+            army=army,
+        )
+        target = _UnitStub("Primary Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, target]
+
+        game = SimpleNamespace(turn=1, map=_MapStub(army.units, distance=10.0))
+        army.player.game = game
+
+        self.assertEqual(mgr.get_order_range(officer), 6.0)
+        self.assertFalse(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_mechanised_spearhead_queues_fixed_target_extra_order_after_disembark(self):
+        from warhammer40k_ai.engine.decision_handlers.abilities import _apply_issue_order
+        from warhammer40k_ai.engine.decision_kinds import DECISION_ISSUE_ORDER
+        from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
+        from warhammer40k_ai.rules.voice_of_command import ORDER_TAKE_AIM, VoiceOfCommandManager
+
+        orders_text = "This Officer can issue up to 1 Order to Regiment units."
+        spearhead_text = (
+            "In your Movement phase, each time a friendly Astra Militarum Regiment unit disembarks from a Transport "
+            "that is within 6\" of this model, after that unit has been set up, this model can issue 1 Order to that "
+            "Regiment unit, regardless of how many Orders this model has already issued this turn."
+        )
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        graves = _UnitStub(
+            "Commissar Graves",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Mechanised Spearhead", spearhead_text),
+            ],
+            army=army,
+        )
+        transport = _UnitStub("Chimera", keywords=["TRANSPORT", "ASTRA MILITARUM"], army=army)
+        regiment = _UnitStub("Disembarked Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [graves, transport, regiment]
+
+        game_map = _PairDistanceMap(army.units)
+        game_map.set_distance(graves, transport, 5.0)
+        game_map.set_distance(graves, regiment, 18.0)
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            map=game_map,
+            players=[army.player],
+            decision_queue=DecisionQueue(),
+            get_current_player=lambda: army.player,
+        )
+        game.request_decision = lambda request: game.decision_queue.add(request)
+        army.player.game = game
+        mgr._set_orders_issued(graves, 1, 1)
+
+        requests = mgr.queue_mechanised_spearhead_order_requests(
+            game,
+            regiment,
+            transport,
+            phase_name="MOVEMENT_PHASE",
+        )
+
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        self.assertEqual(str(request.decision_type), DECISION_ISSUE_ORDER)
+        self.assertEqual(str((request.context or {}).get("trigger", "") or ""), "mechanised_spearhead")
+        self.assertEqual(
+            str((request.context or {}).get("fixed_target_unit_id", "") or ""),
+            str(get_entity_id(regiment) or ""),
+        )
+        order_option = next(
+            opt for opt in list(request.options or [])
+            if str((opt.payload or {}).get("order_key", "") or "") == ORDER_TAKE_AIM.key
+        )
+
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=army.player.id,
+            option_id=order_option.option_id,
+            payload={},
+        )
+        self.assertTrue(_apply_issue_order(game, request, result))
+        self.assertEqual(str(regiment.special_rules.get("voice_of_command_order_key", "") or ""), ORDER_TAKE_AIM.key)
+        self.assertEqual(mgr._order_issued_state(graves, 1), 1)
+        self.assertEqual(mgr._mechanised_spearhead_pending_entries(graves), [])
+
+    def test_mechanised_spearhead_requires_regiment_target_and_transport_within_six(self):
+        from warhammer40k_ai.rules.voice_of_command import ORDER_TAKE_AIM, VoiceOfCommandManager
+
+        orders_text = "This Officer can issue up to 1 Order to Regiment units."
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        graves = _UnitStub(
+            "Commissar Graves",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Mechanised Spearhead"),
+            ],
+            army=army,
+        )
+        transport = _UnitStub("Chimera", keywords=["TRANSPORT", "ASTRA MILITARUM"], army=army)
+        squadron = _UnitStub("Disembarked Squadron", keywords=["SQUADRON", "ASTRA MILITARUM"], army=army)
+        regiment = _UnitStub("Disembarked Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [graves, transport, squadron, regiment]
+
+        game_map = _PairDistanceMap(army.units)
+        game_map.set_distance(graves, transport, 7.0)
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            map=game_map,
+            players=[army.player],
+            decision_queue=SimpleNamespace(add=lambda _request: None),
+            get_current_player=lambda: army.player,
+        )
+        game.request_decision = lambda request: game.decision_queue.add(request)
+        army.player.game = game
+
+        self.assertEqual(
+            mgr.queue_mechanised_spearhead_order_requests(game, squadron, transport, phase_name="MOVEMENT_PHASE"),
+            [],
+        )
+        self.assertEqual(
+            mgr.queue_mechanised_spearhead_order_requests(game, regiment, transport, phase_name="MOVEMENT_PHASE"),
+            [],
+        )
+        self.assertFalse(
+            mgr.issue_order(
+                game,
+                graves,
+                regiment,
+                ORDER_TAKE_AIM.key,
+                phase_name="MOVEMENT_PHASE",
+                trigger="mechanised_spearhead",
+            )
+        )
 
     def test_target_weak_spot_improves_ap_within_12(self):
         from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_TARGET_WEAK_SPOT

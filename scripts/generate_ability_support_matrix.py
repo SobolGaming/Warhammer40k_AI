@@ -4475,12 +4475,16 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Command phase: queues a deterministic selection of one Hero of Hades Hive section ability, or None, and gates section sub-abilities until the next Command phase.",
         ),
         ("AM", "Counterstrategist"): (
-            "Partial",
-            "Only selectable-mode gating is implemented; the opponent Movement phase reactive move/shoot/charge effect is not yet implemented.",
+            "Supported",
+            "Only active when selected through Hero of Hades Hive; at the end of the opponent's Movement phase it decision-routes one enemy set up or moved within 12\" and one friendly REGIMENT unit within 6\" and visible to the model, then queues that unit's D6 Normal move, eligible shooting, or charge declaration without Charge Bonus.",
         ),
         ("AM", "Decisive Command"): (
-            "Partial",
-            "Only selectable-mode gating is implemented; the extended/splash Order effect is not yet implemented.",
+            "Supported",
+            "Only active when selected through Hero of Hades Hive; the next Order issued by that model can target one eligible friendly unit within 12\", and if it is the army's first Order this phase, the same Order also affects every other eligible friendly unit within 6\" of that target.",
+        ),
+        ("AM", "Mechanised Spearhead"): (
+            "Supported",
+            "Movement phase disembark trigger: when a friendly ASTRA MILITARUM REGIMENT unit disembarks from a TRANSPORT within 6\" of this model, queues an optional fixed-target Voice of Command Order for that unit, ignoring the issuing model's normal Order capacity.",
         ),
         ("AM", "Inspiring Hero (Aura)"): (
             "Supported",
@@ -4490,9 +4494,13 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Army validation enforces that only one total Commissar Graves or Commissar Graves on Foot unit can be included.",
         ),
+        ("AM", "Brutal Disciplinarian"): (
+            "Supported",
+            "Start-of-any-phase Battle-shock clear is decision-routed for friendly ASTRA MILITARUM INFANTRY units with more than one model: one model is destroyed and Battle-shock is cleared. The on-foot variant is once per phase within 12\"; the mounted variant is once per turn within 24\" and requires visibility.",
+        ),
         ("AM", "Rapid Strike Vehicle"): (
             "Supported",
-            "While not Battle-shocked, the transport gains +1 Objective Control for each full 3 embarked models.",
+            "While not Battle-shocked, the model/transport gains +1 Objective Control for each full 3 embarked models.",
         ),
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
         ("GK", "Attuned Onslaught (Psychic)"): ("Supported", "After charging, PALADIN SQUAD melee weapons gain +1 Damage until end of turn."),
@@ -5383,16 +5391,16 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Soulless Reaper"): ("Supported", "Enemy units within Engagement Range selected to Fall Back roll D6; on 3+ they cannot Fall Back and must remain stationary."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
         ("ORK", "Throttlerokkit Shokka Engine"): (
-            "Partial",
-            "Command phase selectable-mode gating is implemented; Turbo Engine and Pulse Jet are supported, but Shokk Attack Engine's Strategic Reserves redeploy remains partial.",
+            "Supported",
+            "Command phase selectable-mode gating is decision-routed; Turbo Engine, Shokk Attack Engine, and Pulse Jet are supported only while selected.",
         ),
         ("ORK", "Turbo Engine"): (
             "Supported",
             "Only active when selected through Throttlerokkit Shokka Engine; the unit can declare charges after Advancing or Falling Back.",
         ),
         ("ORK", "Shokk Attack Engine"): (
-            "Partial",
-            "Only selectable-mode gating is implemented; the Command phase Strategic Reserves removal effect is not yet implemented.",
+            "Supported",
+            "Only active when selected through Throttlerokkit Shokka Engine; the optional Command phase decision places the unit into Strategic Reserves while it is not within Engagement Range.",
         ),
         ("ORK", "Pulse Jet"): (
             "Supported",
@@ -11435,6 +11443,7 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    optional_target = "you can select one enemy unit" in norm
 
     reroll_prefix = r"(?:(?:you can )?reroll charge rolls made for this unit and )?"
     battleshock_clause = (
@@ -11443,7 +11452,7 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     )
     per_model = (
         rf"{reroll_prefix}"
-        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move (?:you can )?select one enemy unit"
         r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
         r"(?: that is within engagement range of that (?:enemy )?unit)? "
@@ -11452,7 +11461,7 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     )
     per_model_flat = (
         rf"{reroll_prefix}"
-        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move (?:you can )?select one enemy unit"
         r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
         r"(?: that is within engagement range of that (?:enemy )?unit)?"
@@ -11462,26 +11471,26 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     )
     table = (
         rf"{reroll_prefix}"
-        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move select one enemy unit"
+        r"each time (?:this models unit|this unit) (?:ends|makes) a charge move (?:you can )?select one enemy unit"
         r"(?: within engagement range of (?:this unit|this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
     )
     table_2_5 = (
         rf"{reroll_prefix}"
-        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"each time this model (?:ends|makes) a charge move (?:you can )?select one enemy unit"
         r"(?: within engagement range of (?:this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
     table_2_5_flat3 = (
         rf"{reroll_prefix}"
-        r"each time this model (?:ends|makes) a charge move select one enemy unit"
+        r"each time this model (?:ends|makes) a charge move (?:you can )?select one enemy unit"
         r"(?: within engagement range of (?:this model|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers 3 mortal wounds?"
     )
     table_d3_flat3 = (
         rf"{reroll_prefix}"
-        r"each time this model (?:ends|makes) a charge move select one enemy unit"
-        r"(?: within engagement range of (?:this model|it))? "
+        r"each time (?:this model|this unit|this models unit) (?:ends|makes) a charge move (?:you can )?select one enemy unit"
+        r"(?: within engagement range of (?:this model|this unit|it))? "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that (?:enemy )?unit suffers d3 mortal wounds? "
         r"on a 4 5 that (?:enemy )?unit suffers 3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
@@ -11496,6 +11505,8 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append(
             "Charge end: select a target enemy unit; roll D6 per model in this unit that is within Engagement Range of that target, each 4+ inflicts D3 mortal wounds."
         )
@@ -11507,6 +11518,8 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
             note_parts.append("If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test.")
         bonus = str(m_flat.group("bonus") or "").strip()
@@ -11524,30 +11537,40 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).")
         return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_2_5, norm):
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-5=D3, 6=D3+3).")
         return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_2_5_flat3, norm):
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-5=D3, 6=3).")
         return ("Supported", " ".join(note_parts))
     if re.fullmatch(table_d3_flat3, norm):
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append("Charge end: select a target enemy unit; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).")
         return ("Supported", " ".join(note_parts))
     if re.fullmatch(remaining_wounds, norm):
         note_parts = []
         if "reroll charge rolls made for this unit" in norm:
             note_parts.append("Re-roll Charge rolls.")
+        if optional_target:
+            note_parts.append("Optional target selection includes a Skip choice.")
         note_parts.append("Charge end: select a target enemy unit; D6 per remaining wound, each 4+ inflicts 1 mortal wound (max 6).")
         return ("Supported", " ".join(note_parts))
     return None
@@ -16738,7 +16761,7 @@ def _fight_phase_range_battleshock_support(description: str) -> Optional[Tuple[s
         return None
     pattern = (
         r"(?:at the )?start of the fight phase each enemy (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model "
-        r"must take a battle shock test(?: subtracting (?P<penalty>\d+) from that test when they do)?"
+        r"must take a battle shock test(?: subtracting (?P<penalty>\d+) from (?:that test|the result)(?: when they do)?)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -17077,6 +17100,7 @@ def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[st
     pattern = (
         r"at the start of the fight phase (?:each|every) enemy unit"
         r"(?: excluding (?P<exclude>[a-z0-9 ]+?))? within (?P<range>\d+) of this model must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result)(?: when they do)?)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -17088,6 +17112,12 @@ def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[st
     if rng <= 0:
         return None
     note = f"Start of Fight phase: enemy units within {rng}\" take a Battle-shock test."
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
+    if penalty > 0:
+        note = f"Start of Fight phase: enemy units within {rng}\" take a Battle-shock test at -{penalty}."
     exclude_raw = str(m.group("exclude") or "").strip()
     if exclude_raw:
         tokens = []
@@ -17096,7 +17126,8 @@ def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[st
             if t:
                 tokens.append(t)
         if tokens:
-            note = f"Start of Fight phase: enemy units within {rng}\" (excluding {', '.join(tokens)}) take a Battle-shock test."
+            suffix = f" at -{penalty}" if penalty > 0 else ""
+            note = f"Start of Fight phase: enemy units within {rng}\" (excluding {', '.join(tokens)}) take a Battle-shock test{suffix}."
     return ("Supported", note)
 
 
@@ -17936,7 +17967,7 @@ def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
+        r"the first time (?:this model|the bearer) is destroyed(?: remove it from play(?: without resolving its deadly demise ability)?)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
         r"set (?:this model|the bearer) back up on the battlefield(?: as close as possible to where it was destroyed)? "
         r"and not within engagement range of (?:one or more|any) enemy (?:units|models) with "

@@ -2700,6 +2700,8 @@ class GameReactiveDecisionsMixin:
             current_turn = int(getattr(self, "turn", 0) or 0)
         except (TypeError, ValueError):
             current_turn = 0
+        from ...utility.ability_usage import current_player_turn_key
+
         ctx = {
             "ability": "start_any_phase_clear_battleshock",
             "ability_name": ability_name,
@@ -2713,11 +2715,16 @@ class GameReactiveDecisionsMixin:
             "model_id": model_id,
             "range": int(range_value),
             "turn": int(current_turn or 0),
+            "turn_key": current_player_turn_key(self),
             "candidate_unit_ids": list(candidate_ids),
             "once_per_battle": bool(spec.get("once_per_battle", True)),
             "once_per_battle_round": bool(spec.get("once_per_battle_round", False)),
+            "once_per_phase": bool(spec.get("once_per_phase", False)),
+            "once_per_turn": bool(spec.get("once_per_turn", False)),
             "requires_bearer_alive": bool(spec.get("requires_bearer_alive", False)),
             "requires_target_battle_shocked": bool(spec.get("requires_target_battle_shocked", True)),
+            "exclude_single_model_units": bool(spec.get("exclude_single_model_units", False)),
+            "requires_visibility": bool(spec.get("requires_visibility", False)),
             "mortal_wounds_roll": str(spec.get("mortal_wounds_roll", "") or "").strip().upper(),
             "destroy_target_model_count": int(spec.get("destroy_target_model_count", 0) or 0),
             "source_model_id": str(spec.get("source_model_id", "") or "").strip(),
@@ -3868,6 +3875,9 @@ class GameReactiveDecisionsMixin:
             "spec": dict(spec or {}),
             "candidate_ids": list(candidate_ids),
         }
+        if allow_skip:
+            ctx["allow_skip"] = True
+            ctx["optional"] = True
         if model is not None:
             model_id = maybe_entity_id(model)
             if model_id:
@@ -10389,6 +10399,166 @@ class GameReactiveDecisionsMixin:
             actions.append("charge")
         return actions
 
+    @staticmethod
+    def _setup_reactive_unit_is_available(unit) -> bool:
+        if unit is None:
+            return False
+        alive_attr = getattr(unit, "is_alive", None)
+        if callable(alive_attr):
+            if not bool(alive_attr()):
+                return False
+        elif alive_attr is not None and not bool(alive_attr):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        is_in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return False
+        if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+            return False
+        return True
+
+    @staticmethod
+    def _setup_reactive_matches_keyword(unit, keyword: str) -> bool:
+        if unit is None:
+            return False
+        phrase = str(keyword or "").strip()
+        if not phrase:
+            return True
+        matcher = getattr(unit, "_unit_matches_keyword_phrase", None)
+        if callable(matcher) and bool(matcher(unit, phrase, use_effective=True)):
+            return True
+        all_keywords = list(getattr(unit, "keywords", []) or []) + list(getattr(unit, "faction_keywords", []) or [])
+        return any(str(value or "").strip().upper() == phrase.upper() for value in all_keywords)
+
+    def _counterstrategist_source_models(self, source_root, rule: dict | None) -> list:
+        rule = dict(rule or {})
+        models = []
+        for model_id in list(rule.get("source_model_ids", []) or []):
+            model = self._resolve_model_by_id(str(model_id or ""))
+            if model is not None:
+                models.append(model)
+        if not models:
+            source_unit = None
+            source_unit_id = str(rule.get("source_unit_id", "") or "")
+            if source_unit_id:
+                source_unit = self._resolve_unit_by_id(source_unit_id)
+            if source_unit is None and source_root is not None:
+                source_unit = source_root
+            models = list(getattr(source_unit, "models", []) or []) if source_unit is not None else []
+        alive = []
+        for model in models:
+            alive_attr = getattr(model, "is_alive", True)
+            model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if model_alive:
+                alive.append(model)
+        alive.sort(key=lambda model: str(maybe_entity_id(model) or ""))
+        return alive
+
+    def _counterstrategist_friendly_candidates(self, source_root, enemy_unit, rule: dict | None) -> list:
+        if source_root is None or enemy_unit is None:
+            return []
+        army = getattr(source_root, "get_parent_army", lambda: None)()
+        if army is None:
+            return []
+        try:
+            friendly_range = float((rule or {}).get("friendly_range", 6) or 6)
+        except (TypeError, ValueError):
+            friendly_range = 6.0
+        required_keyword = str((rule or {}).get("friendly_keyword", "REGIMENT") or "REGIMENT").strip() or "REGIMENT"
+        source_models = self._counterstrategist_source_models(source_root, rule)
+        if not source_models:
+            return []
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return []
+        visible_fn = getattr(self, "_model_can_see_unit", None)
+        candidates = []
+        seen = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root()
+            if root is None:
+                continue
+            rid = str(maybe_entity_id(root) or "")
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            if not self._setup_reactive_unit_is_available(root):
+                continue
+            if not self._setup_reactive_matches_keyword(root, required_keyword):
+                continue
+            in_range = any(
+                bool(model_within_range_of_unit(model, root, friendly_range, use_attached_aggregate=True))
+                for model in source_models
+            )
+            if not in_range:
+                continue
+            if callable(visible_fn):
+                game_map = getattr(self, "map", None)
+                visible = any(bool(visible_fn(model, root, game_map=game_map)) for model in source_models)
+                if not visible:
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda candidate: str(maybe_entity_id(candidate) or ""))
+        return candidates
+
+    def _counterstrategist_available_actions(self, unit, target_unit, rule: dict | None) -> list[str]:
+        actions: list[str] = []
+        if unit is None or target_unit is None:
+            return actions
+        if self._setup_reactive_unit_is_available(unit):
+            actions.append("move")
+        if self._setup_reactive_can_shoot_target(unit, target_unit):
+            actions.append("shoot")
+        try:
+            charge_range = float((rule or {}).get("charge_range", 12) or 12)
+        except (TypeError, ValueError):
+            charge_range = 12.0
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            unit_within_range_of_unit = None
+        can_charge = False
+        if callable(unit_within_range_of_unit):
+            can_charge = bool(unit_within_range_of_unit(unit, target_unit, charge_range, use_attached_aggregate=True))
+        charge_fn = getattr(unit, "can_declare_charge_against", None)
+        if can_charge and callable(charge_fn) and bool(charge_fn(target_unit, self, out_of_turn=True)):
+            actions.append("charge")
+        return actions
+
+    def _counterstrategist_candidate_bindings(self, source_root, enemies: list, rule: dict | None) -> list[dict]:
+        bindings: list[dict] = []
+        for enemy in list(enemies or []):
+            friendly_candidates = self._counterstrategist_friendly_candidates(source_root, enemy, rule)
+            for friendly in friendly_candidates:
+                actions = self._counterstrategist_available_actions(friendly, enemy, rule)
+                if not actions:
+                    continue
+                enemy_id = maybe_entity_id(enemy)
+                friendly_id = maybe_entity_id(friendly)
+                if not enemy_id or not friendly_id:
+                    continue
+                bindings.append(
+                    {
+                        "enemy_unit": enemy,
+                        "friendly_unit": friendly,
+                        "enemy_unit_id": enemy_id,
+                        "reactive_unit_id": friendly_id,
+                        "actions": list(actions),
+                    }
+                )
+        bindings.sort(
+            key=lambda binding: (
+                str(binding.get("enemy_unit_id", "")),
+                str(binding.get("reactive_unit_id", "")),
+            )
+        )
+        return bindings
+
     def _queue_setup_reactive_target_decision(
         self,
         *,
@@ -10396,6 +10566,7 @@ class GameReactiveDecisionsMixin:
         unit,
         candidates: list,
         rule: dict | None,
+        candidate_bindings: list[dict] | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -10410,18 +10581,51 @@ class GameReactiveDecisionsMixin:
         rng = int((rule or {}).get("range", 12) or 12)
         options = [DecisionOption.create("None", payload={"action": "skip"})]
         used_labels = set()
-        for enemy in sorted_candidates:
-            enemy_id = maybe_entity_id(enemy)
-            if not enemy_id:
-                continue
-            label = str(getattr(enemy, "name", "") or "Enemy unit")
-            base = label
-            idx = 2
-            while label in used_labels:
-                label = f"{base} ({idx})"
-                idx += 1
-            used_labels.add(label)
-            options.append(DecisionOption.create(label, payload={"unit_id": enemy_id}))
+        bindings = list(candidate_bindings or [])
+        if bindings:
+            for binding in bindings:
+                enemy = binding.get("enemy_unit")
+                friendly = binding.get("friendly_unit")
+                enemy_id = str(binding.get("enemy_unit_id") or maybe_entity_id(enemy) or "")
+                friendly_id = str(binding.get("reactive_unit_id") or maybe_entity_id(friendly) or "")
+                if not enemy_id or not friendly_id:
+                    continue
+                label = (
+                    f"{str(getattr(enemy, 'name', '') or 'Enemy unit')} -> "
+                    f"{str(getattr(friendly, 'name', '') or 'REGIMENT unit')}"
+                )
+                base = label
+                idx = 2
+                while label in used_labels:
+                    label = f"{base} ({idx})"
+                    idx += 1
+                used_labels.add(label)
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "unit_id": enemy_id,
+                            "target_unit_id": enemy_id,
+                            "reactive_unit_id": friendly_id,
+                            "actions": list(binding.get("actions", []) or []),
+                        },
+                    )
+                )
+        else:
+            for enemy in sorted_candidates:
+                enemy_id = maybe_entity_id(enemy)
+                if not enemy_id:
+                    continue
+                label = str(getattr(enemy, "name", "") or "Enemy unit")
+                base = label
+                idx = 2
+                while label in used_labels:
+                    label = f"{base} ({idx})"
+                    idx += 1
+                used_labels.add(label)
+                options.append(DecisionOption.create(label, payload={"unit_id": enemy_id}))
+        if len(options) <= 1:
+            return None
         ctx = {
             "setup_reactive_flow": True,
             "setup_reactive_source": source,
@@ -10430,6 +10634,20 @@ class GameReactiveDecisionsMixin:
             "unit_id": unit_id,
             "setup_reactive_candidate_ids": [maybe_entity_id(c) for c in sorted_candidates if maybe_entity_id(c)],
         }
+        if bindings:
+            ctx["setup_reactive_counterstrategist"] = True
+            ctx["setup_reactive_source_unit_id"] = unit_id
+            ctx["setup_reactive_move_distance_roll"] = str((rule or {}).get("move_distance_roll", "D6") or "D6")
+            ctx["setup_reactive_charge_range"] = int((rule or {}).get("charge_range", 12) or 12)
+            ctx["setup_reactive_charge_count_as_charged"] = bool((rule or {}).get("charge_count_as_charged", False))
+            ctx["setup_reactive_candidate_bindings"] = [
+                {
+                    "enemy_unit_id": str(binding.get("enemy_unit_id") or ""),
+                    "reactive_unit_id": str(binding.get("reactive_unit_id") or ""),
+                    "actions": list(binding.get("actions", []) or []),
+                }
+                for binding in bindings
+            ]
         request = DecisionRequest.create(
             DECISION_SELECT_SETUP_REACTIVE_TARGET,
             f"{source}: Select enemy unit",
@@ -10448,6 +10666,7 @@ class GameReactiveDecisionsMixin:
         target_unit,
         actions: list[str],
         source: str | None,
+        extra_context: dict | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None or target_unit is None:
             return None
@@ -10458,6 +10677,8 @@ class GameReactiveDecisionsMixin:
         if not unit_id or not target_id:
             return None
         opts = []
+        if "move" in actions:
+            opts.append(DecisionOption.create("Move", payload={"action": "move"}))
         if "shoot" in actions:
             opts.append(DecisionOption.create("Shoot", payload={"action": "shoot"}))
         if "charge" in actions:
@@ -10472,6 +10693,8 @@ class GameReactiveDecisionsMixin:
             "unit_id": unit_id,
             "target_unit_id": target_id,
         }
+        if isinstance(extra_context, dict):
+            ctx.update(dict(extra_context))
         request = DecisionRequest.create(
             DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
             f"{source}: Choose action",
@@ -10586,23 +10809,69 @@ class GameReactiveDecisionsMixin:
         if decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET:
             payload = _get_payload()
             if _is_skip(payload):
-                unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+                unit_id = str(
+                    ctx.get("setup_reactive_source_unit_id")
+                    or ctx.get("setup_reactive_unit_id")
+                    or ctx.get("unit_id")
+                    or ""
+                )
                 unit = self._resolve_unit_by_id(unit_id)
                 if unit is not None:
                     unit.clear_setup_reactive_shoot_or_charge_candidates(self)
                 return
             target_id = str(payload.get("unit_id") or payload.get("target_unit_id") or "")
-            unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
-            unit = self._resolve_unit_by_id(unit_id)
             target_unit = self._resolve_unit_by_id(target_id)
             player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
-            if unit is None or target_unit is None or player is None:
+            if target_unit is None or player is None:
+                return
+            source = str(ctx.get("setup_reactive_source", "") or "Reactive Response").strip() or "Reactive Response"
+            if bool(ctx.get("setup_reactive_counterstrategist", False)):
+                source_unit_id = str(ctx.get("setup_reactive_source_unit_id") or ctx.get("setup_reactive_unit_id") or "")
+                source_unit = self._resolve_unit_by_id(source_unit_id)
+                reactive_unit_id = str(payload.get("reactive_unit_id") or "")
+                unit = self._resolve_unit_by_id(reactive_unit_id)
+                if source_unit is None or unit is None:
+                    return
+                rule = {
+                    "source": source,
+                    "range": ctx.get("setup_reactive_range", 12),
+                    "counterstrategist": True,
+                    "move_distance_roll": ctx.get("setup_reactive_move_distance_roll", "D6"),
+                    "charge_range": ctx.get("setup_reactive_charge_range", 12),
+                    "charge_count_as_charged": ctx.get("setup_reactive_charge_count_as_charged", False),
+                }
+                available = self._counterstrategist_available_actions(unit, target_unit, rule)
+                requested_actions = [str(value or "") for value in list(payload.get("actions", []) or [])]
+                actions = [action for action in requested_actions if action in available] if requested_actions else available
+                if not actions:
+                    source_unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+                    return
+                self._queue_setup_reactive_action_decision(
+                    player=player,
+                    unit=unit,
+                    target_unit=target_unit,
+                    actions=actions,
+                    source=source,
+                    extra_context={
+                        "setup_reactive_counterstrategist": True,
+                        "setup_reactive_source_unit_id": source_unit_id,
+                        "setup_reactive_range": int(ctx.get("setup_reactive_range", 12) or 12),
+                        "setup_reactive_move_distance_roll": str(ctx.get("setup_reactive_move_distance_roll", "D6") or "D6"),
+                        "setup_reactive_charge_range": int(ctx.get("setup_reactive_charge_range", 12) or 12),
+                        "setup_reactive_charge_count_as_charged": bool(
+                            ctx.get("setup_reactive_charge_count_as_charged", False)
+                        ),
+                    },
+                )
+                return
+            unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
                 return
             actions = self._setup_reactive_available_actions(unit, target_unit)
             if not actions:
                 unit.clear_setup_reactive_shoot_or_charge_candidates(self)
                 return
-            source = str(ctx.get("setup_reactive_source", "") or "Reactive Response").strip() or "Reactive Response"
             self._queue_setup_reactive_action_decision(
                 player=player,
                 unit=unit,
@@ -10615,13 +10884,18 @@ class GameReactiveDecisionsMixin:
         if decision_type == DECISION_CHOOSE_SETUP_REACTIVE_ACTION:
             payload = _get_payload()
             if _is_skip(payload):
-                unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+                unit_id = str(
+                    ctx.get("setup_reactive_source_unit_id")
+                    or ctx.get("setup_reactive_unit_id")
+                    or ctx.get("unit_id")
+                    or ""
+                )
                 unit = self._resolve_unit_by_id(unit_id)
                 if unit is not None:
                     unit.clear_setup_reactive_shoot_or_charge_candidates(self)
                 return
             action = str(payload.get("action", "") or "")
-            if action not in ("shoot", "charge"):
+            if action not in ("move", "shoot", "charge"):
                 return
             unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
             target_id = str(ctx.get("target_unit_id") or "")
@@ -10629,13 +10903,44 @@ class GameReactiveDecisionsMixin:
             target_unit = self._resolve_unit_by_id(target_id)
             if unit is None or target_unit is None:
                 return
-            unit.mark_setup_reactive_shoot_or_charge_used(self)
-            unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+            source_unit_id = str(ctx.get("setup_reactive_source_unit_id") or unit_id)
+            source_unit = self._resolve_unit_by_id(source_unit_id) or unit
+            source_unit.mark_setup_reactive_shoot_or_charge_used(self)
+            source_unit.clear_setup_reactive_shoot_or_charge_candidates(self)
             source = str(ctx.get("setup_reactive_source", "") or "Reactive Response").strip() or "Reactive Response"
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if action == "move":
+                if not bool(ctx.get("setup_reactive_counterstrategist", False)):
+                    return
+                if player is None:
+                    return
+                roll_spec = str(ctx.get("setup_reactive_move_distance_roll", "D6") or "D6").strip().upper() or "D6"
+                try:
+                    max_distance = int(get_roll(roll_spec))
+                except (TypeError, ValueError):
+                    return
+                if max_distance <= 0:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    max_distance=max_distance,
+                    kind="counterstrategist",
+                    movement_type="move",
+                    reactive_movement_type="counterstrategist",
+                    source=source,
+                    moving_unit=target_unit,
+                    range_value=int(ctx.get("setup_reactive_range", 12) or 12),
+                    extra_context={
+                        "setup_reactive_counterstrategist": True,
+                        "setup_reactive_source_unit_id": source_unit_id,
+                        "target_unit_id": target_id,
+                    },
+                )
+                return
             if action == "shoot":
                 if not self._setup_reactive_can_shoot_target(unit, target_unit):
                     return
-                player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
                 if player is None:
                     return
                 self._queue_setup_reactive_shooting_decision(
@@ -10647,6 +10952,19 @@ class GameReactiveDecisionsMixin:
                 return
             if action == "charge":
                 if not unit.can_declare_charge_against(target_unit, self, out_of_turn=True):
+                    return
+                if bool(ctx.get("setup_reactive_counterstrategist", False)):
+                    if player is None:
+                        return
+                    self._queue_charge_retarget_decision(
+                        player=player,
+                        charging_unit=unit,
+                        candidates=[target_unit],
+                        out_of_turn=True,
+                        count_as_charged=bool(ctx.get("setup_reactive_charge_count_as_charged", False)),
+                        prompt=f"{source}: Declare charge for {getattr(unit, 'name', 'Unit')}",
+                        reason="counterstrategist",
+                    )
                     return
                 # Charge declaration/roll/move should be handled via decision flow (UI/headless).
                 return
@@ -11646,11 +11964,12 @@ class GameReactiveDecisionsMixin:
             requests.append(request)
         return requests
 
-    def _record_setup_reactive_shoot_or_charge_candidate(self, enemy_unit) -> None:
+    def _record_setup_reactive_shoot_or_charge_candidate(self, enemy_unit, *, trigger: str = "set_up") -> None:
         if enemy_unit is None:
             return
         if not self.is_movement_phase():
             return
+        trigger_key = str(trigger or "set_up").strip().lower()
         enemy_army = enemy_unit.get_parent_army()
         enemy_player = getattr(enemy_army, "player", None) if enemy_army is not None else None
         if enemy_player is None:
@@ -11682,6 +12001,11 @@ class GameReactiveDecisionsMixin:
                 seen.add(rid)
                 rule = root.get_setup_reactive_shoot_or_charge_rule()
                 if not rule:
+                    continue
+                if trigger_key in ("move", "normal_move", "advance", "fall_back"):
+                    if not bool(rule.get("trigger_move", False)):
+                        continue
+                elif not bool(rule.get("trigger_set_up", True)):
                     continue
                 rng = int(rule.get("range", 12) or 12)
                 if not root.can_setup_reactive_shoot_or_charge(

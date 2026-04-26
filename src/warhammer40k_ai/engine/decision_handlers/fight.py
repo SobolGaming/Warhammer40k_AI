@@ -16,6 +16,14 @@ from ..decision_kinds import (
     DECISION_SPLIT_ATTACKS,
 )
 from ..decisions import DecisionRequest, DecisionResult
+from ...utility.ability_usage import (
+    START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+    START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+    current_player_turn_key,
+    current_turn_key,
+    mark_unit_phase_usage,
+    mark_unit_turn_usage,
+)
 from ...utility.entity_ids import get_entity_id
 from ._helpers import find_option, is_skip_choice, resolve_model, resolve_unit, resolve_wargear, validate_option_choice
 
@@ -368,13 +376,31 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
                     target_alive = True
                 if target_alive and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
                     cleared = bool(clear_battle_shock())
-            if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
+            if source_unit is not None:
+                try:
+                    if hasattr(source_unit, "get_attached_unit_root"):
+                        source_unit = source_unit.get_attached_unit_root()
+                except Exception:
+                    pass
+            if bool(ctx.get("once_per_phase", False)) and source_unit is not None:
+                mark_unit_phase_usage(
+                    source_unit,
+                    ability_key,
+                    turn=current_turn_key(game),
+                    phase_name=str(ctx.get("phase_name", "") or getattr(getattr(game, "phase", None), "name", "") or "").strip().upper(),
+                    bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+                )
+            elif bool(ctx.get("once_per_turn", False)) and source_unit is not None:
+                mark_unit_turn_usage(
+                    source_unit,
+                    ability_key,
+                    turn_key=current_player_turn_key(game),
+                    bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+                )
+            elif bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
                 mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
                 if callable(mark_used_round):
-                    try:
-                        battle_round = int(getattr(game, "turn", 0) or 0)
-                    except Exception:
-                        battle_round = 0
+                    battle_round = current_turn_key(game)
                     if battle_round > 0:
                         mark_used_round(
                             ability_key,
@@ -383,11 +409,6 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
                             source="datasheet",
                         )
             elif source_unit is not None:
-                try:
-                    if hasattr(source_unit, "get_attached_unit_root"):
-                        source_unit = source_unit.get_attached_unit_root()
-                except Exception:
-                    pass
                 mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
                 if callable(mark_used):
                     mark_used(ability_key, ability_name=ability_name)

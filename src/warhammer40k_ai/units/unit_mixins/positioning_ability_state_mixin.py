@@ -460,8 +460,28 @@ class PositioningAbilityStateMixin:
             total += sum(1 for m in list(models or []) if getattr(m, "is_alive", False))
         return int(total)
 
+    @staticmethod
+    def _matches_embarked_models_objective_control_bonus_text(normalized: str) -> bool:
+        text = str(normalized or "").strip()
+        if not text:
+            return False
+        if not re.search(
+            r"\bwhile one or more units (?:are )?embarked within this (?:model|transport)\b",
+            text,
+        ):
+            return False
+        if not re.search(r"\bunless this (?:model|unit|transport) is battle shocked\b", text):
+            return False
+        return bool(
+            re.search(
+                r"\badd 1 to (?:this (?:model|unit|transport) s|its) objective control characteristic "
+                r"for every (?:3|three) models(?: rounding down)? embarked within it\b",
+                text,
+            )
+        )
+
     def rapid_strike_vehicle_objective_control_bonus(self) -> tuple[int, str]:
-        """Centaur RSV: +1 OC for every three embarked models while not Battle-shocked."""
+        """+1 OC for every three embarked models while not Battle-shocked."""
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self
         if root is None:
@@ -485,11 +505,7 @@ class PositioningAbilityStateMixin:
                     normalized = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
                     normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                     normalized = re.sub(r"\s+", " ", normalized).strip()
-                    if (
-                        "while one or more units are embarked within this transport" in normalized
-                        and "unless this unit is battle shocked" in normalized
-                        and "add 1 to its objective control characteristic for every 3 models embarked within it" in normalized
-                    ):
+                    if self._matches_embarked_models_objective_control_bonus_text(normalized):
                         found = str(name or "Rapid Strike Vehicle").strip() or "Rapid Strike Vehicle"
                         break
                 if found:

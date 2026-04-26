@@ -2521,21 +2521,51 @@ class GamePhaseHandlersMixin:
                                                     )
                                                     self.request_decision(request)
 
-                    # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
+                    # Unit-level: start-of-any-phase Battle-shock clear.
                     get_clear_specs = getattr(root, "unit_start_any_phase_clear_battleshock_specs", None)
                     specs = list(get_clear_specs() or []) if callable(get_clear_specs) else []
                     for spec in specs:
+                        from ...utility.ability_usage import (
+                            START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+                            START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+                            alive_model_count,
+                            current_player_turn_key,
+                            unit_has_phase_usage,
+                            unit_has_turn_usage,
+                            unit_visible_to_model,
+                        )
+
                         ability_key = str(spec.get("ability_key") or "start_any_phase_clear_battleshock").strip().lower()
                         if not ability_key:
                             ability_key = "start_any_phase_clear_battleshock"
                         once_per_battle_round = bool(spec.get("once_per_battle_round", False))
-                        once_per_battle = bool(spec.get("once_per_battle", not once_per_battle_round))
+                        once_per_phase = bool(spec.get("once_per_phase", False))
+                        once_per_turn = bool(spec.get("once_per_turn", False))
+                        once_per_battle = bool(
+                            spec.get("once_per_battle", not (once_per_battle_round or once_per_phase or once_per_turn))
+                        )
                         if once_per_battle and root.has_used_unit_once_per_battle(ability_key):
                             continue
                         try:
                             current_turn = int(getattr(self, "turn", 0) or 0)
                         except (TypeError, ValueError):
                             current_turn = 0
+                        player_turn_key = current_player_turn_key(self)
+                        if once_per_phase and unit_has_phase_usage(
+                            root,
+                            ability_key,
+                            turn=int(current_turn or 0),
+                            phase_name=pname,
+                            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_PHASE_USAGE,
+                        ):
+                            continue
+                        if once_per_turn and unit_has_turn_usage(
+                            root,
+                            ability_key,
+                            turn_key=player_turn_key,
+                            bucket=START_ANY_PHASE_BATTLESHOCK_CLEAR_TURN_USAGE,
+                        ):
+                            continue
                         model_name = str(spec.get("model_name", "") or "").strip()
                         source_model_id = str(spec.get("source_model_id", "") or "").strip()
                         anchor_model = None
@@ -2568,7 +2598,6 @@ class GamePhaseHandlersMixin:
                             has_used_round = getattr(anchor_model, "has_used_once_per_battle_round", None)
                             if callable(has_used_round) and bool(has_used_round(ability_key, battle_round=int(current_turn))):
                                 continue
-
                         keyword = str(spec.get("keyword", "") or "").strip()
                         try:
                             range_value = int(spec.get("range", 0) or 0)
@@ -2577,6 +2606,8 @@ class GamePhaseHandlersMixin:
                         if range_value <= 0 or not keyword:
                             continue
                         requires_target_battle_shocked = bool(spec.get("requires_target_battle_shocked", True))
+                        exclude_single_model_units = bool(spec.get("exclude_single_model_units", False))
+                        requires_visibility = bool(spec.get("requires_visibility", False))
                         candidates = []
                         seen_candidates: set[str] = set()
                         for other in list(getattr(army, "units", []) or []):
@@ -2612,8 +2643,12 @@ class GamePhaseHandlersMixin:
                             matches_keyword = getattr(root, "_unit_matches_keyword_phrase", None)
                             if not callable(matches_keyword) or not matches_keyword(other_root, keyword):
                                 continue
+                            if exclude_single_model_units and alive_model_count(other_root) <= 1:
+                                continue
                             in_range = getattr(root, "_model_within_range_of_unit", None)
                             if not callable(in_range) or not in_range(anchor_model, other_root, float(range_value)):
+                                continue
+                            if requires_visibility and not unit_visible_to_model(anchor_model, other_root, getattr(self, "map", None)):
                                 continue
                             candidates.append(other_root)
 
@@ -25925,6 +25960,26 @@ class GamePhaseHandlersMixin:
                         continue
                     candidates.append(enemy)
                 if not candidates:
+                    root.clear_setup_reactive_shoot_or_charge_candidates(self)
+                    continue
+                if bool(rule.get("counterstrategist", False)):
+                    bindings = self._counterstrategist_candidate_bindings(root, candidates, rule)
+                    if not bindings:
+                        root.clear_setup_reactive_shoot_or_charge_candidates(self)
+                        continue
+                    actionable_by_id = {}
+                    for binding in bindings:
+                        enemy = binding.get("enemy_unit")
+                        enemy_id = str(binding.get("enemy_unit_id") or "")
+                        if enemy is not None and enemy_id:
+                            actionable_by_id[enemy_id] = enemy
+                    self._queue_setup_reactive_target_decision(
+                        player=p,
+                        unit=root,
+                        candidates=list(actionable_by_id.values()),
+                        rule=rule,
+                        candidate_bindings=bindings,
+                    )
                     root.clear_setup_reactive_shoot_or_charge_candidates(self)
                     continue
                 actionable = []

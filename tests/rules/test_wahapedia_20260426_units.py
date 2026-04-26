@@ -2,11 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
+from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.selectable_section_abilities import (
     KEY_COUNTERSTRATEGIST,
     KEY_HERO_OF_HADES_HIVE,
     KEY_PULSE_JET,
+    KEY_SHOKK_ATTACK_ENGINE,
     KEY_THROTTLEROKKIT_SHOKKA_ENGINE,
     KEY_TURBO_ENGINE,
     clear_active_section_ability,
@@ -14,6 +19,7 @@ from warhammer40k_ai.rules.selectable_section_abilities import (
 )
 from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 
 
@@ -41,6 +47,138 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=Non
     unit.embarked_in = None
     unit.reserve_status = "deployed"
     return unit
+
+
+class _InitializedMockDatasheet:
+    def __init__(
+        self,
+        name: str,
+        *,
+        faction_name: str = "Orks",
+        keywords=None,
+        faction_keywords=None,
+        abilities=None,
+    ):
+        self.id = f"ds-{name.lower().replace(' ', '-')}"
+        self.name = name
+        self.faction_data = {"name": faction_name}
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [str(faction_name or "").upper()])
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "name": "Test Model",
+                "M": "12",
+                "T": "6",
+                "Sv": "3",
+                "W": "7",
+                "Ld": "6",
+                "OC": "2",
+                "base_size": "32mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "none",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = [
+            {
+                "name": getattr(ability, "name", ""),
+                "description": getattr(ability, "description", ""),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+            for ability in list(abilities or [])
+        ]
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+        self.attached_to = []
+        self.attached_to_names = []
+
+
+def _make_initialized_unit(
+    name: str,
+    *,
+    faction_name: str = "Orks",
+    keywords=None,
+    faction_keywords=None,
+    abilities=None,
+) -> Unit:
+    unit = Unit(
+        _InitializedMockDatasheet(
+            name,
+            faction_name=faction_name,
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+            abilities=abilities,
+        )
+    )
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    return unit
+
+
+def _wazdakka_abilities():
+    return [
+        _ability(
+            "Throttlerokkit Shokka Engine",
+            "In your Command phase, select one of the abilities in the Throttlerokkit Shokka Engine section.",
+        ),
+        _ability(
+            "Turbo Engine",
+            "This unit is eligible to declare a charge in a turn in which it Advanced or Fell Back.",
+        ),
+        _ability(
+            "Shokk Attack Engine",
+            "In your Command phase, if this unit is not within Engagement Range of one or more enemy units, you can remove it from the battlefield and place it into Strategic Reserves.",
+        ),
+        _ability(
+            "Pulse Jet",
+            "Each time this unit Advances, do not make an Advance roll for it. Instead, until the end of the phase: Add 6\" to the Move characteristic of models in this unit. Models in this unit can move through models and terrain features.",
+        ),
+    ]
+
+
+def _build_orks_game():
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.turn = 1
+    ork_army = Army.with_detachment("Orks", detachment_type="War Horde")
+    ork_army.faction_id = "ORK"
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+    enemy_army.faction_id = "EN"
+    ork_player = Player("Orks", control=PlayerControl.REMOTE, army=ork_army)
+    enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
+    game.add_player(ork_player)
+    game.add_player(enemy_player)
+    game.current_player_index = 0
+    return game, ork_player, enemy_player, ork_army, enemy_army
+
+
+def _place_unit(game: Game, unit: Unit, x: float, y: float) -> None:
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    unit.embarked_in = None
+    for model in list(getattr(unit, "models", []) or []):
+        model.set_location(float(x), float(y), 0.0, 0.0)
+    if unit not in game.map.units:
+        game.map.units.append(unit)
+
+
+def _pending_decision_by_ability(game: Game, ability: str):
+    for request in list(game.decision_queue.list() or []):
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("ability", "") or "") == str(ability):
+            return request
+    return None
+
+
+def _option_by_payload(request: DecisionRequest, key: str, value):
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if payload.get(key) == value:
+            return option
+    return None
 
 
 def test_yarrick_section_sub_abilities_are_gated_by_command_choice():
@@ -72,27 +210,18 @@ def test_wazdakka_section_sub_abilities_are_gated_by_command_choice():
         "Wazdakka Gutsmek",
         keywords=["MOUNTED", "CHARACTER"],
         faction_keywords=["ORKS"],
-        abilities=[
-            _ability(
-                "Throttlerokkit Shokka Engine",
-                "In your Command phase, select one of the abilities in the Throttlerokkit Shokka Engine section.",
-            ),
-            _ability(
-                "Turbo Engine",
-                "This unit is eligible to declare a charge in a turn in which it Advanced or Fell Back.",
-            ),
-            _ability(
-                "Pulse Jet",
-                "Each time this unit Advances, do not make an Advance roll for it. Instead, until the end of the phase: Add 6\" to the Move characteristic of models in this unit. Models in this unit can move through models and terrain features.",
-            ),
-        ],
+        abilities=_wazdakka_abilities(),
     )
 
     assert not unit.has_advance_and_charge()
     assert unit._get_advance_no_roll_effect() is None
+    assert not unit._ability_is_active("Shokk Attack Engine")
 
     assert set_active_section_ability(unit, KEY_TURBO_ENGINE, start_round=1, expires_round=2)
     assert unit.has_advance_and_charge()
+
+    assert set_active_section_ability(unit, KEY_SHOKK_ATTACK_ENGINE, start_round=1, expires_round=2)
+    assert unit._ability_is_active("Shokk Attack Engine")
 
     assert set_active_section_ability(unit, KEY_PULSE_JET, start_round=1, expires_round=2)
     effect = unit._get_advance_no_roll_effect()
@@ -102,6 +231,163 @@ def test_wazdakka_section_sub_abilities_are_gated_by_command_choice():
 
     clear_active_section_ability(unit, KEY_THROTTLEROKKIT_SHOKKA_ENGINE)
     assert "advance" not in unit.special_rules.get("bearer_unit_phase_move_types", [])
+
+
+def test_wazdakka_shokk_attack_engine_choice_queues_and_enters_strategic_reserves():
+    game, ork_player, _enemy_player, ork_army, enemy_army = _build_orks_game()
+    wazdakka = _make_initialized_unit(
+        "Wazdakka Gutsmek",
+        keywords=["MOUNTED", "VEHICLE", "CHARACTER"],
+        faction_keywords=["ORKS"],
+        abilities=_wazdakka_abilities(),
+    )
+    enemy = _make_initialized_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    ork_army.add_unit(wazdakka)
+    enemy_army.add_unit(enemy)
+    _place_unit(game, wazdakka, 10.0, 10.0)
+    _place_unit(game, enemy, 25.0, 10.0)
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="COMMAND_PHASE")
+    game.phase = phase
+    game.event_system.publish("phase_start", player=ork_player, phase=phase)
+    selection_request = _pending_decision_by_ability(game, "selectable_section_ability")
+    assert selection_request is not None
+    option = _option_by_payload(selection_request, "choice_key", KEY_SHOKK_ATTACK_ENGINE)
+    assert option is not None
+
+    selected = resolve_decision_command(game, selection_request, option.option_id, player_id=ork_player.id)
+    assert bool(getattr(selected, "ok", False))
+
+    shokk_request = _pending_decision_by_ability(game, "shokk_attack_engine_strategic_reserves")
+    assert shokk_request is not None
+    use_option = _option_by_payload(shokk_request, "action", "enter_strategic_reserves")
+    assert use_option is not None
+
+    applied = resolve_decision_command(game, shokk_request, use_option.option_id, player_id=ork_player.id)
+    assert bool(getattr(applied, "ok", False))
+    assert str(getattr(wazdakka, "reserve_status", "") or "").strip().lower() == "strategic_reserves"
+    assert wazdakka not in game.map.units
+
+
+def test_wazdakka_shokk_attack_engine_skip_leaves_unit_on_battlefield():
+    game, ork_player, _enemy_player, ork_army, enemy_army = _build_orks_game()
+    wazdakka = _make_initialized_unit(
+        "Wazdakka Gutsmek",
+        keywords=["MOUNTED", "VEHICLE", "CHARACTER"],
+        faction_keywords=["ORKS"],
+        abilities=_wazdakka_abilities(),
+    )
+    enemy = _make_initialized_unit("Enemy Unit", faction_name="Enemy", faction_keywords=["ENEMY"])
+    ork_army.add_unit(wazdakka)
+    enemy_army.add_unit(enemy)
+    _place_unit(game, wazdakka, 10.0, 10.0)
+    _place_unit(game, enemy, 25.0, 10.0)
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="COMMAND_PHASE")
+    game.phase = phase
+    game.event_system.publish("phase_start", player=ork_player, phase=phase)
+    selection_request = _pending_decision_by_ability(game, "selectable_section_ability")
+    option = _option_by_payload(selection_request, "choice_key", KEY_SHOKK_ATTACK_ENGINE)
+    selected = resolve_decision_command(game, selection_request, option.option_id, player_id=ork_player.id)
+    assert bool(getattr(selected, "ok", False))
+
+    shokk_request = _pending_decision_by_ability(game, "shokk_attack_engine_strategic_reserves")
+    skip_option = _option_by_payload(shokk_request, "action", "skip")
+    assert skip_option is not None
+    skipped = resolve_decision_command(game, shokk_request, skip_option.option_id, player_id=ork_player.id)
+    assert bool(getattr(skipped, "ok", False))
+    assert str(getattr(wazdakka, "reserve_status", "") or "").strip().lower() == "deployed"
+    assert wazdakka in game.map.units
+
+
+def test_wazdakka_shokk_attack_engine_is_blocked_while_engaged():
+    game, ork_player, _enemy_player, ork_army, enemy_army = _build_orks_game()
+    wazdakka = _make_initialized_unit(
+        "Wazdakka Gutsmek",
+        keywords=["MOUNTED", "VEHICLE", "CHARACTER"],
+        faction_keywords=["ORKS"],
+        abilities=_wazdakka_abilities(),
+    )
+    enemy = _make_initialized_unit("Enemy Unit", faction_name="Enemy", faction_keywords=["ENEMY"])
+    ork_army.add_unit(wazdakka)
+    enemy_army.add_unit(enemy)
+    _place_unit(game, wazdakka, 10.0, 10.0)
+    _place_unit(game, enemy, 10.5, 10.0)
+    game.rebuild_entity_registry()
+    assert game.map.is_within_engagement_range(wazdakka, enemy)
+
+    phase = SimpleNamespace(name="COMMAND_PHASE")
+    game.phase = phase
+    game.event_system.publish("phase_start", player=ork_player, phase=phase)
+    selection_request = _pending_decision_by_ability(game, "selectable_section_ability")
+    option = _option_by_payload(selection_request, "choice_key", KEY_SHOKK_ATTACK_ENGINE)
+    selected = resolve_decision_command(game, selection_request, option.option_id, player_id=ork_player.id)
+    assert bool(getattr(selected, "ok", False))
+    assert _pending_decision_by_ability(game, "shokk_attack_engine_strategic_reserves") is None
+
+    manual_request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        "Shokk Attack Engine: place Wazdakka Gutsmek into Strategic Reserves?",
+        player_id=ork_player.id,
+        options=[
+            DecisionOption.create(
+                "Enter Strategic Reserves",
+                payload={
+                    "action": "enter_strategic_reserves",
+                    "source_unit_id": wazdakka.id,
+                    "unit_id": wazdakka.id,
+                },
+            ),
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "action": "skip", "source_unit_id": wazdakka.id, "unit_id": wazdakka.id},
+            ),
+        ],
+        context={
+            "ability": "shokk_attack_engine_strategic_reserves",
+            "ability_name": "Shokk Attack Engine",
+            "source_unit_id": wazdakka.id,
+            "unit_id": wazdakka.id,
+            "battle_round": 1,
+            "phase": "Command phase",
+            "optional": True,
+        },
+    )
+    game.request_decision(manual_request)
+    use_option = _option_by_payload(manual_request, "action", "enter_strategic_reserves")
+    rejected = resolve_decision_command(game, manual_request, use_option.option_id, player_id=ork_player.id)
+    assert not bool(getattr(rejected, "ok", False))
+    assert "Engagement Range" in " ".join(str(error) for error in getattr(rejected, "errors", ()) or ())
+    assert str(getattr(wazdakka, "reserve_status", "") or "").strip().lower() == "deployed"
+
+
+def test_support_matrix_classifies_wazdakka_shokk_attack_engine_as_supported():
+    from scripts.generate_ability_support_matrix import _classify_ability
+
+    shokk_status, shokk_notes = _classify_ability(
+        "Shokk Attack Engine",
+        "In your Command phase, if this unit is not within Engagement Range of one or more enemy units, you can remove it from the battlefield and place it into Strategic Reserves.",
+        faction_id="ORK",
+        datasheet_id="000004221",
+    )
+    throttlerokkit_status, throttlerokkit_notes = _classify_ability(
+        "Throttlerokkit Shokka Engine",
+        "In your Command phase, select one of the abilities in the Throttlerokkit Shokka Engine section (see below). Until the start of your next Command phase, this model has that ability.",
+        faction_id="ORK",
+        datasheet_id="000004221",
+    )
+
+    assert shokk_status == "Supported"
+    assert throttlerokkit_status == "Supported"
+    assert "Strategic Reserves" in str(shokk_notes)
+    assert "decision-routed" in str(throttlerokkit_notes)
 
 
 def test_kroyle_on_my_signal_fire_parses_full_hit_reroll_for_two_keywords():
@@ -215,6 +501,50 @@ def test_intranzia_judged_for_execution_parses_and_applies_attacker_keyword_gate
     ).get("lethal_hits", False)) is False
 
 
+def test_intranzia_righteous_denunciation_parses_fight_phase_aura_battleshock():
+    model = SimpleNamespace(_id="intranzia-model", name="Intranzia Fraye", abilities={}, is_alive=True)
+    source = _make_unit(
+        "Intranzia Fraye",
+        faction_keywords=["ADEPTA SORORITAS"],
+        abilities=[
+            _ability(
+                "Righteous Denunciation",
+                "At the start of the Fight phase, each enemy unit within 6\" of this model must take a Battle-shock test, subtracting 1 from that test.",
+            )
+        ],
+    )
+    source.models = [model]
+    model.parent_unit = source
+
+    specs = source.model_start_fight_phase_aura_battleshock_specs(model)
+    assert specs == [
+        {
+            "source": "Righteous Denunciation",
+            "range": 6,
+            "required_keywords": [],
+            "required_keyword_mode": "all",
+            "exclude_keywords": [],
+            "penalty": 1,
+        }
+    ]
+
+
+def test_support_matrix_classifies_righteous_denunciation_as_supported():
+    from scripts.generate_ability_support_matrix import _classify_ability
+
+    status, notes = _classify_ability(
+        "Righteous Denunciation",
+        "At the start of the Fight phase, each enemy unit within 6\" of this model must take a Battle-shock test, subtracting 1 from that test.",
+        faction_id="AS",
+        datasheet_id="000004215",
+    )
+
+    assert status == "Supported"
+    notes_l = str(notes or "").lower()
+    assert "enemy units within 6" in notes_l
+    assert "battle-shock test at -1" in notes_l
+
+
 def test_commissar_graves_variants_are_mutually_exclusive():
     army = Army.with_detachment("Astra Militarum", detachment_type="Combined Arms")
     army.units = [
@@ -232,20 +562,42 @@ def test_centaur_rsv_objective_control_scales_with_embarked_model_count():
         abilities=[
             _ability(
                 "Rapid Strike Vehicle",
-                "While one or more units are embarked within this transport, unless this unit is Battle-shocked, add 1 to its Objective Control characteristic for every 3 models embarked within it.",
+                "While one or more units are embarked within this model, unless this model is Battle-shocked, add 1 to this model's Objective Control characteristic for every 3 models (rounding down) embarked within it.",
             )
         ],
     )
     transport.keywords.append("Transport")
+    transport.models = [SimpleNamespace(objective_control=1, is_alive=True)]
     passenger = _make_unit("Infantry Squad")
     passenger.models = [SimpleNamespace(is_alive=True) for _ in range(7)]
     transport.transport_passengers = [passenger]
     transport.is_battle_shocked = lambda: False
 
     assert transport.rapid_strike_vehicle_objective_control_bonus() == (2, "Rapid Strike Vehicle")
+    assert transport.objective_control == 3
 
     transport.is_battle_shocked = lambda: True
     assert transport.rapid_strike_vehicle_objective_control_bonus() == (0, "")
+    assert transport.objective_control == 1
+
+
+def test_embarked_model_objective_control_bonus_supports_legacy_transport_wording():
+    transport = _make_unit(
+        "Transport",
+        abilities=[
+            _ability(
+                "Rapid Strike Vehicle",
+                "While one or more units are embarked within this transport, unless this unit is Battle-shocked, add 1 to its Objective Control characteristic for every 3 models embarked within it.",
+            )
+        ],
+    )
+    transport.keywords.append("Transport")
+    passenger = _make_unit("Infantry Squad")
+    passenger.models = [SimpleNamespace(is_alive=True) for _ in range(6)]
+    transport.transport_passengers = [passenger]
+    transport.is_battle_shocked = lambda: False
+
+    assert transport.rapid_strike_vehicle_objective_control_bonus() == (2, "Rapid Strike Vehicle")
 
 
 def test_wazdakka_warlord_grants_warbikers_battleline():

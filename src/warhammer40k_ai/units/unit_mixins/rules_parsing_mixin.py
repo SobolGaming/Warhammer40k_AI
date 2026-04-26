@@ -2893,6 +2893,13 @@ class RulesParsingMixin:
                     kind = "table_d6_2_3_d3_4_5_3_6_d3_3"
                 if not kind:
                     continue
+                optional = bool(
+                    re.search(
+                        r"\byou\s+can\s+(?:select|choose)\s+one\s+enemy\s+unit\b",
+                        low,
+                        flags=re.IGNORECASE,
+                    )
+                )
                 battle_shock_on_models_destroyed = bool(
                     "if one or more enemy models are destroyed as a result of these mortal wounds "
                     "that enemy unit must take a battle shock test"
@@ -2939,6 +2946,8 @@ class RulesParsingMixin:
                     "name": source,
                     "description": str(desc or ""),
                 }
+                if optional:
+                    spec["optional"] = True
                 if engagement_only:
                     spec["engagement_only"] = True
                 if battle_shock_on_models_destroyed:

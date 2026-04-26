@@ -3469,6 +3469,19 @@ class Unit(
         r"declare\s+a\s+charge\s+against\s+that\s+unit.*?does\s+not\s+receive\s+any\s+charge\s+bonus",
         re.IGNORECASE,
     )
+    _COUNTERSTRATEGIST_RE = re.compile(
+        r"at\s+the\s+end\s+of\s+your\s+opponent'?s?\s+movement\s+phase.*?"
+        r"select\s+one\s+enemy\s+unit\s+that\s+was\s+set\s+up\s+or\s+ended\s+a\s+move\s+within\s+(?P<range>\d+).*?"
+        r"of\s+this\s+model'?s?\s+unit.*?"
+        r"one\s+friendly\s+(?P<friendly_keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<friendly_range>\d+).*?"
+        r"visible\s+to\s+this\s+model.*?"
+        r"that\s+(?:regiment|[a-z0-9 ]+?)\s+unit\s+can\s+then\s+either.*?"
+        r"make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move_roll>d\d+).*?"
+        r"shoot\s+at\s+that\s+enemy\s+unit.*?eligible\s+target.*?"
+        r"declare\s+a\s+charge\s+against\s+that\s+enemy\s+unit.*?within\s+(?P<charge_range>\d+).*?"
+        r"does\s+not\s+receive\s+any\s+charge\s+bonus",
+        re.IGNORECASE,
+    )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
         r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
@@ -4445,8 +4458,10 @@ class Unit(
         re.IGNORECASE,
     )
     _START_ANY_PHASE_CLEAR_BATTLESHOCK_RE = re.compile(
-        r"once per battle(?P<per_round>\s+round)? at the start of any phase you can select one friendly "
-        r"(?P<keyword>[a-z0-9 ]+?) unit that is battle shocked and within (?P<range>\d+)\s*\"?\s*of "
+        r"once per (?P<cadence>battle(?:\s+round)?|phase|turn) at the start of any phase you can select one friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) (?:(?P<exclude_pre>excluding units that only contain one model) )?"
+        r"unit(?: (?P<exclude_post>excluding units that only contain one model))? that is battle shocked "
+        r"and within (?P<range>\d+)\s*\"?\s*of (?P<visible>and visible to )?"
         r"(?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) "
         r"(?:if you do )?(?:(?P<destroy_one>one)\s+model\s+in\s+that\s+unit\s+is\s+destroyed\s+and\s+)?"
         r"that unit is (?:then )?no longer battle shocked",
@@ -5009,7 +5024,7 @@ class Unit(
     )
     _RETURN_ON_DEATH_RE = re.compile(
         r"the first time (?:(?:this model|the bearer) is destroyed|a model with this ability is destroyed in a battle round)"
-        r"(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
+        r"(?: remove it from play(?: without resolving its deadly demise ability)?)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
         r"set (?:this model|the bearer|that model) back up on the battlefield(?: as close as possible to where it was destroyed)? "
         r"and not within engagement range of (?:one or more|any) enemy (?:units|models)(?: with)? "

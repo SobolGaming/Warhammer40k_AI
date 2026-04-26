@@ -237,6 +237,8 @@ Command phase:
 - author_of_the_codex_dialog: CHOOSE_QUARRY {choice_keys[2]} (context `ability="author_of_the_codex"`, `ability_name="Author of the Codex"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices=2`, `optional=false`)
 - primarch_of_the_first_legion_dialog: CHOOSE_QUARRY {choice_keys[2]} (context `ability="primarch_of_the_first_legion"`, `ability_name="Primarch of the First Legion"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices=2`, `optional=false`)
 - selectable_section_ability_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="selectable_section_ability"`, `ability_name`, `source_unit_id`, `section_parent_key`, `allowed_choice_keys[]`, `battle_round`, `expires_round`, `player_id`, `optional=true`; used by Hero of Hades Hive and Throttlerokkit Shokka Engine)
+- mechanised_spearhead_order_dialog: ISSUE_ORDER {order_key | skip} (context `ability="voice_of_command_order"`, `trigger="mechanised_spearhead"`, `officer_unit_id`, `fixed_target_unit_id`, `transport_unit_id`, `pending_token`, `army_id`, `phase_name="MOVEMENT_PHASE"`, `optional=true`; resolves directly to the fixed disembarked REGIMENT target)
+- shokk_attack_engine_strategic_reserves_dialog: CHOOSE_QUARRY {action="enter_strategic_reserves" | skip} (context `ability="shokk_attack_engine_strategic_reserves"`, `ability_name="Shokk Attack Engine"`, `source_unit_id`, `unit_id`, `section_parent_key="THROTTLEROKKIT_SHOKKA_ENGINE"`, `selected_choice_key="SHOKK_ATTACK_ENGINE"`, `battle_round`, `phase="Command phase"`, `player_id`, `optional=true`)
 - mist_wreathed_shadow_realms_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="mist_wreathed_shadow_realms"`, `ability_name="Mist-wreathed Shadow Realms"`, `source_unit_id`, `unit_id`, `battle_round`, `phase="COMMAND_PHASE"`)
 - embodied_prophecy_dialog: CHOOSE_QUARRY {choice_key} (context `ability="embodied_prophecy"`, `ability_name`, `phase="Fight phase"`, `unit_id`, `source_unit_id`, `battle_round`, `turn_owner_id`, `candidate_choices[]`, `optional=false`)
 - suffer_not_the_unfaithful_dialog: CHOOSE_QUARRY {choice_key} (context `ability="champions_of_faith_suffer_not_the_unfaithful_choice"`, `ability_name="SUFFER NOT THE UNFAITHFUL"`, `phase_name`, `unit_id`, `attack_type`, `turn`, `turn_owner_id`, `candidate_choice_keys[]`, `optional=false`)
@@ -359,6 +361,8 @@ Movement:
 - battle_focus_maneuver_dialog: CHOOSE_BATTLE_FOCUS_MANEUVER {choice_key | skip} (context `unit_id`, `trigger="move"`, `action`)
 - setup_reactive_target_dialog: SELECT_SETUP_REACTIVE_TARGET {unit_id, target_unit_id | skip}
 - setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
+- counterstrategist_target_dialog: SELECT_SETUP_REACTIVE_TARGET {target_unit_id, reactive_unit_id | skip} (context `setup_reactive_counterstrategist=true`, `setup_reactive_source_unit_id`, `setup_reactive_candidate_bindings[]`)
+- counterstrategist_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action="move"|"shoot"|"charge"} (context `setup_reactive_counterstrategist=true`; queues `MOVE_UNIT`, `DECLARE_SHOTS`, or `DECLARE_CHARGE` with `count_as_charged=false`)
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - fleet_commander_first_marker_dialog: PICK_POINT {point | skip} (context `ability="fleet_commander_marker_1"`, `ability_name="Fleet Commander"`, `unit_id`, `source_member_unit_id`, `ability_key`, `marker_range`, `roll_min`, `mortal_wounds_roll`, `optional=true`)
 - fleet_commander_second_marker_dialog: PICK_POINT {point} (context `ability="fleet_commander_marker_2"`, `ability_name="Fleet Commander"`, `unit_id`, `source_member_unit_id`, `first_marker_point`, `marker_range`, `roll_min`, `mortal_wounds_roll`, `optional=false`)
@@ -446,8 +450,8 @@ Shooting:
 - post_shoot_battleshock_target_dialog: CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)
 - start_shooting_battleshock_target_dialog: CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET {target_unit_id} (context `source_unit_id`, `model_id`, `ability_name`, `range`, optional `use_leadership_test`, `leadership_test_modifier_if_battle_shocked`, `fail_mortal_wounds`; used by abilities including `Pledge of Mortal Pain`)
 - pyresoul_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="grey_knights_banishers_pyresoul"`, `ability_name="Pyresoul"`, `phase_name="SHOOTING_PHASE"`, `phase="Shooting phase"`, `source_unit_id`, `unit_id`, `model_id`, `range=24`, `requires_visibility=true`, `mortal_wounds_roll="D3"`, `candidate_unit_ids[]`, `turn_owner_id`, `turn`, `optional=true`)
-- battleshock_clear_target_dialog: CHOOSE_BATTLESHOCK_CLEAR_TARGET {unit_id | skip} (context `source_unit_id`, `model_id`, `ability_name`, `ability_key`, `range`, `phase`, optional `destroy_target_model_count`)
-- battleshock_clear_destroy_model_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="battleshock_clear_destroy_model"`, `target_unit_id`, `source_unit_id`, `source_model_id`, `ability_name`, `ability_key`, optional `once_per_battle`, optional `once_per_battle_round`)
+- battleshock_clear_target_dialog: CHOOSE_BATTLESHOCK_CLEAR_TARGET {unit_id | skip} (context `source_unit_id`, `model_id`, `ability_name`, `ability_key`, `range`, `phase`, optional `turn_key`, optional `destroy_target_model_count`, optional `once_per_battle`, optional `once_per_battle_round`, optional `once_per_phase`, optional `once_per_turn`, optional `exclude_single_model_units`, optional `requires_visibility`)
+- battleshock_clear_destroy_model_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="battleshock_clear_destroy_model"`, `target_unit_id`, `source_unit_id`, `source_model_id`, `ability_name`, `ability_key`, optional `phase_name`, optional `turn`, optional `turn_key`, optional `once_per_battle`, optional `once_per_battle_round`, optional `once_per_phase`, optional `once_per_turn`)
 - post_shoot_mortal_wounds_target_dialog: CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `dice`, `threshold`, `mortal_per_success`)
 - post_shoot_wracked_agonies_target_dialog: CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `move_penalty`, `charge_penalty`)
 - post_shoot_aflame_target_dialog: CHOOSE_POST_SHOOT_AFLAME_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `move_penalty`, `advance_penalty`, `charge_penalty`, `roll_threshold`)
@@ -477,7 +481,7 @@ Notes:
 Charge:
 - charge_activation_dialog: SELECT_UNIT {unit_id | action="pass"} (context `phase_name="CHARGE_PHASE"`, `phase_step="DECLARE_CHARGES"`, `selection_purpose="ACTIVATE_CHARGING_UNIT"`)
 - charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_ids[]}
-- charge_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `mortal_wounds_kind="charge_end"`, `unit_id`, `ability_name`, `spec`)
+- charge_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip when optional} (context `mortal_wounds_kind="charge_end"`, `unit_id`, `ability_name`, `spec`, optional `allow_skip=true`, optional `optional=true`)
 - charge_phase_bodyguard_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="bodyguard_loss"`, `leader_unit_id`, `bodyguard_unit_id`, `ability_name`)
 
 Fight:

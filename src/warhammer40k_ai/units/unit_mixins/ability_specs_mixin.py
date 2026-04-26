@@ -7671,14 +7671,20 @@ class AbilitySpecsMixin:
 
     def unit_start_any_phase_clear_battleshock_specs(self) -> List[dict]:
         """
-        Unit-specific rule: once per battle, at the start of any phase, clear Battle-shock on a friendly unit in range.
+        Unit-specific rule: at the start of any phase, clear Battle-shock on a friendly unit in range.
 
         Returns a list of specs with keys:
             - source: ability name
             - range: int
             - keyword: str (raw keyword phrase)
             - model_name: Optional[str]
-            - ability_key: str (once-per-battle tracking key)
+            - ability_key: str (usage tracking key)
+            - once_per_battle: bool
+            - once_per_battle_round: bool
+            - once_per_phase: bool
+            - once_per_turn: bool
+            - requires_visibility: bool
+            - exclude_single_model_units: bool
         """
         try:
             root = self.get_attached_unit_root()
@@ -7724,11 +7730,25 @@ class AbilitySpecsMixin:
                 source = str(name or "Start of phase Battle-shock clear").strip() or "Start of phase Battle-shock clear"
                 key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_clear_battleshock"
                 ability_key = f"start_any_phase_clear_battleshock:{key_seed}"
-                key = (source.lower(), int(range_value), keyword_raw.lower(), model_name.lower())
+                cadence = re.sub(r"\s+", " ", str(m.group("cadence") or "battle").strip().lower())
+                once_per_battle = cadence == "battle"
+                once_per_battle_round = cadence == "battle round"
+                once_per_phase = cadence == "phase"
+                once_per_turn = cadence == "turn"
+                requires_visibility = bool(str(m.group("visible") or "").strip())
+                exclude_single_model_units = bool(str(m.group("exclude_pre") or m.group("exclude_post") or "").strip())
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    keyword_raw.lower(),
+                    model_name.lower(),
+                    cadence,
+                    requires_visibility,
+                    exclude_single_model_units,
+                )
                 if key in seen:
                     continue
                 seen.add(key)
-                once_per_battle_round = bool(m.group("per_round"))
                 destroy_target_model_count = 1 if str(m.group("destroy_one") or "").strip() else 0
                 specs.append(
                     {
@@ -7737,8 +7757,12 @@ class AbilitySpecsMixin:
                         "keyword": keyword_raw,
                         "model_name": model_name,
                         "ability_key": ability_key,
-                        "once_per_battle": not once_per_battle_round,
-                        "once_per_battle_round": once_per_battle_round,
+                        "once_per_battle": bool(once_per_battle),
+                        "once_per_battle_round": bool(once_per_battle_round),
+                        "once_per_phase": bool(once_per_phase),
+                        "once_per_turn": bool(once_per_turn),
+                        "requires_visibility": bool(requires_visibility),
+                        "exclude_single_model_units": bool(exclude_single_model_units),
                         "destroy_target_model_count": int(destroy_target_model_count),
                     }
                 )

@@ -2662,14 +2662,104 @@ class GameRuleEventService(GameServiceBase):
             models.append(model)
 
     @staticmethod
-    def _phoenix_gem_restore_model_position(model, position) -> None:
+    def _phoenix_gem_restore_model_position_at(model, position) -> None:
         if position is None:
             return
         set_location = getattr(model, "set_location", None)
         if not callable(set_location):
             return
         if isinstance(position, (tuple, list)) and len(position) >= 3:
-            set_location(*position[:4] if len(position) >= 4 else position[:3])
+            x, y, z = position[:3]
+            facing = position[3] if len(position) >= 4 else 0.0
+            set_location(float(x), float(y), float(z), float(facing))
+
+    @staticmethod
+    def _phoenix_gem_enemy_units_for_placement(game_map, unit) -> list:
+        if game_map is None or unit is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if callable(get_enemy_units):
+            return list(get_enemy_units(unit) or [])
+        return []
+
+    @staticmethod
+    def _phoenix_gem_unit_in_enemy_engagement(game_map, unit) -> bool:
+        if game_map is None or unit is None:
+            return False
+        within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(within_engagement):
+            return False
+        for enemy in GameRuleEventService._phoenix_gem_enemy_units_for_placement(game_map, unit):
+            if enemy is None:
+                continue
+            is_alive = getattr(enemy, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if bool(within_engagement(unit, enemy)):
+                return True
+        return False
+
+    @staticmethod
+    def _phoenix_gem_position_is_placeable(model, unit, game_map) -> bool:
+        if game_map is None:
+            return True
+        is_within_boundary = getattr(game_map, "is_within_boundary", None)
+        if callable(is_within_boundary) and not bool(is_within_boundary(model)):
+            return False
+        terrain_collision = getattr(game_map, "check_collision_with_terrain", None)
+        if callable(terrain_collision) and bool(terrain_collision(model)):
+            return False
+        friendly_collision = getattr(game_map, "check_collision_with_other_friendly_units", None)
+        if callable(friendly_collision) and bool(friendly_collision(model)):
+            return False
+        enemy_collision = getattr(game_map, "check_collision_with_other_enemy_units", None)
+        if callable(enemy_collision) and bool(enemy_collision(model)):
+            return False
+        return not GameRuleEventService._phoenix_gem_unit_in_enemy_engagement(game_map, unit)
+
+    @staticmethod
+    def _phoenix_gem_candidate_positions(position) -> list[tuple[float, float, float, float]]:
+        if not isinstance(position, (tuple, list)) or len(position) < 3:
+            return []
+        x, y, z = (float(position[0]), float(position[1]), float(position[2]))
+        facing = float(position[3]) if len(position) >= 4 else 0.0
+        candidates = [(x, y, z, facing)]
+        directions = (
+            0.0,
+            math.pi / 2.0,
+            math.pi,
+            (3.0 * math.pi) / 2.0,
+            math.pi / 4.0,
+            (3.0 * math.pi) / 4.0,
+            (5.0 * math.pi) / 4.0,
+            (7.0 * math.pi) / 4.0,
+            math.pi / 8.0,
+            (3.0 * math.pi) / 8.0,
+            (5.0 * math.pi) / 8.0,
+            (7.0 * math.pi) / 8.0,
+            (9.0 * math.pi) / 8.0,
+            (11.0 * math.pi) / 8.0,
+            (13.0 * math.pi) / 8.0,
+            (15.0 * math.pi) / 8.0,
+        )
+        for step in range(1, 49):
+            radius = step * 0.25
+            for angle in directions:
+                candidates.append((
+                    x + math.cos(angle) * radius,
+                    y + math.sin(angle) * radius,
+                    z,
+                    facing,
+                ))
+        return candidates
+
+    @staticmethod
+    def _phoenix_gem_restore_model_position(model, position, *, unit=None, game_map=None) -> None:
+        for candidate in GameRuleEventService._phoenix_gem_candidate_positions(position):
+            GameRuleEventService._phoenix_gem_restore_model_position_at(model, candidate)
+            if GameRuleEventService._phoenix_gem_position_is_placeable(model, unit, game_map):
+                return
+        GameRuleEventService._phoenix_gem_restore_model_position_at(model, position)
 
     @staticmethod
     def _phoenix_gem_refresh_unit_state(unit) -> None:
@@ -2759,12 +2849,17 @@ class GameRuleEventService(GameServiceBase):
                     return
 
         wounds = self._resolve_phoenix_gem_wounds(model, spec)
+        game_map = payload.get("game_map") or getattr(self, "map", None)
         self._phoenix_gem_attach_model_to_unit(model, unit)
         self._phoenix_gem_set_model_wounds(model, wounds)
         self._phoenix_gem_restore_model_membership(unit, model)
-        self._phoenix_gem_restore_model_position(model, payload.get("position"))
+        self._phoenix_gem_restore_model_position(
+            model,
+            payload.get("position"),
+            unit=unit,
+            game_map=game_map,
+        )
         self._phoenix_gem_refresh_unit_state(unit)
-        game_map = payload.get("game_map") or getattr(self, "map", None)
         self._phoenix_gem_add_unit_to_map(game_map, unit)
 
     def _on_unit_move_started_battle_focus(self, unit=None, action: str | None = None, **_kwargs) -> None:
@@ -5710,7 +5805,8 @@ class GameRuleEventService(GameServiceBase):
                 candidates = filtered
             if not candidates:
                 continue
-            if len(candidates) == 1:
+            optional = bool(spec.get("optional", False))
+            if len(candidates) == 1 and not optional:
                 self.resolve_charge_end_mortal_wounds(root, candidates[0], spec)
                 continue
             self._queue_mortal_wounds_target_decision(
@@ -5719,7 +5815,7 @@ class GameRuleEventService(GameServiceBase):
                 candidates=list(candidates),
                 spec=spec,
                 kind="charge_end",
-                allow_skip=False,
+                allow_skip=optional,
                 phase="Charge phase",
             )
 
@@ -8485,7 +8581,7 @@ class GameRuleEventService(GameServiceBase):
     def _on_unit_set_up_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
-        self._record_setup_reactive_shoot_or_charge_candidate(unit)
+        self._record_setup_reactive_shoot_or_charge_candidate(unit, trigger="set_up")
 
     def _on_unit_set_up_hyperspace_hunters(
         self,
@@ -8571,7 +8667,37 @@ class GameRuleEventService(GameServiceBase):
     def _on_unit_disembarked_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
-        self._record_setup_reactive_shoot_or_charge_candidate(unit)
+        self._record_setup_reactive_shoot_or_charge_candidate(unit, trigger="set_up")
+
+    def _on_unit_disembarked_mechanised_spearhead(self, unit=None, transport_unit=None, **_kwargs) -> None:
+        if unit is None or transport_unit is None:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except (AttributeError, TypeError):
+            root = unit
+        if root is None:
+            return
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        queue_fn = getattr(mgr, "queue_mechanised_spearhead_order_requests", None) if mgr is not None else None
+        if not callable(queue_fn):
+            return
+        queue_fn(self, root, transport_unit, phase_name=phase_name)
+
+    def _on_unit_move_ended_setup_reactive_shoot_or_charge(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "normal_move", "advance", "fall_back"):
+            return
+        self._record_setup_reactive_shoot_or_charge_candidate(unit, trigger=action_key)
 
     def _kill_reward_spec_is_active_for_phase(self, spec: dict) -> bool:
         """Return True when a kill-reward spec is active in the current phase context."""

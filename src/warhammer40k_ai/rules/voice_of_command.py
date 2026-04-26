@@ -8,6 +8,7 @@ from typing import Optional
 from ..utility.ability_support import ABILITY_VOICE_OF_COMMAND, army_has_ability_id
 from ..utility.entity_ids import get_entity_id
 from ..utility.modifiers import Modifier, ModifierOp
+from .selectable_section_abilities import KEY_DECISIVE_COMMAND, unit_has_active_section_ability
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,8 @@ ORDER_LIST: tuple[Order, ...] = (
     ORDER_DUTY_HONOUR,
 )
 ORDER_BY_KEY = {o.key: o for o in (ORDER_LIST + (ORDER_TARGET_WEAK_SPOT, ORDER_MOVE_TO_SHADOWS))}
+
+TRIGGER_MECHANISED_SPEARHEAD = "mechanised_spearhead"
 
 
 class VoiceOfCommandManager:
@@ -512,6 +515,39 @@ class VoiceOfCommandManager:
             return False
         return True
 
+    def _order_target_keywords_for_officer(self, officer_unit, *, game=None) -> list[str]:
+        _, keywords, _ = self._parse_orders_profile(officer_unit)
+        keywords = [k for k in (keywords or []) if k]
+        if self._officer_has_abhuman_detail(officer_unit):
+            sr = getattr(officer_unit, "special_rules", None)
+            extra_keywords = []
+            if isinstance(sr, dict):
+                for kw in list(sr.get("enhancement_abhuman_detail_order_target_keywords", ()) or ()):
+                    text = str(kw or "").strip().upper()
+                    if text:
+                        extra_keywords.append(text)
+            if not extra_keywords:
+                extra_keywords = ["OGRYN"]
+            keywords.extend(extra_keywords)
+        army = self.army
+        if army is None:
+            get_parent_army = getattr(officer_unit, "get_parent_army", None) if officer_unit is not None else None
+            if callable(get_parent_army):
+                army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        extra_target_keywords_fn = getattr(mgr, "combined_arms_flexible_command_target_keywords", None) if mgr is not None else None
+        if callable(extra_target_keywords_fn):
+            keywords.extend(list(extra_target_keywords_fn(officer_unit, game=game) or ()))
+        seen_keywords = set()
+        deduped_keywords: list[str] = []
+        for kw in keywords:
+            key = str(kw or "").strip().upper()
+            if not key or key in seen_keywords:
+                continue
+            seen_keywords.add(key)
+            deduped_keywords.append(key)
+        return deduped_keywords
+
     def _calm_under_fire_order_target_keyword(self, officer_unit) -> str:
         sr = getattr(officer_unit, "special_rules", None)
         if isinstance(sr, dict):
@@ -846,6 +882,253 @@ class VoiceOfCommandManager:
     @staticmethod
     def _phase_key(phase_name: str) -> str:
         return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _battle_round(self, game=None) -> int:
+        game_obj = game if game is not None else self._current_game()
+        try:
+            return int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    def _phase_order_tracking_key(self, game=None, phase_name: str = "") -> str:
+        game_obj = game if game is not None else self._current_game()
+        battle_round = self._battle_round(game_obj)
+        phase_key = self._phase_key(phase_name)
+        if not phase_key and game_obj is not None:
+            phase_key = self._phase_key(str(getattr(getattr(game_obj, "phase", None), "name", "") or ""))
+        owner_id = self._active_player_id(game_obj)
+        return f"{int(battle_round or 0)}:{phase_key}:{owner_id}"
+
+    def _army_orders_issued_this_phase(self, game=None, phase_name: str = "") -> int:
+        if self.army is None:
+            return 0
+        key = self._phase_order_tracking_key(game, phase_name)
+        sr = getattr(self.army, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if str(sr.get("voice_of_command_phase_order_key", "") or "") != key:
+            sr["voice_of_command_phase_order_key"] = key
+            sr["voice_of_command_phase_orders_issued"] = 0
+            self.army.special_rules = sr
+            return 0
+        try:
+            return max(0, int(sr.get("voice_of_command_phase_orders_issued", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _mark_army_order_issued_this_phase(self, game=None, phase_name: str = "") -> None:
+        if self.army is None:
+            return
+        current = self._army_orders_issued_this_phase(game, phase_name)
+        sr = getattr(self.army, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["voice_of_command_phase_order_key"] = self._phase_order_tracking_key(game, phase_name)
+        sr["voice_of_command_phase_orders_issued"] = int(current) + 1
+        self.army.special_rules = sr
+
+    def _decisive_command_token(self, officer_unit, battle_round: int) -> str:
+        if officer_unit is None:
+            return ""
+        if not unit_has_active_section_ability(
+            officer_unit,
+            KEY_DECISIVE_COMMAND,
+            battle_round=int(battle_round or 0) if battle_round else None,
+        ):
+            return ""
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        start = str(sr.get("section_ability_hero_of_hades_hive_start_round", "") or "")
+        until = str(sr.get("section_ability_hero_of_hades_hive_until_round", "") or "")
+        owner = str(sr.get("section_ability_hero_of_hades_hive_owner_id", "") or "")
+        active = str(sr.get("section_ability_hero_of_hades_hive_active_key", "") or "")
+        return f"{active}:{start}:{until}:{owner}"
+
+    def _officer_has_decisive_command_pending(self, officer_unit, battle_round: int) -> bool:
+        token = self._decisive_command_token(officer_unit, battle_round)
+        if not token:
+            return False
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return str(sr.get("voice_of_command_decisive_command_consumed_token", "") or "") != token
+
+    def _mark_decisive_command_consumed(self, officer_unit, battle_round: int) -> None:
+        token = self._decisive_command_token(officer_unit, battle_round)
+        if not token or officer_unit is None:
+            return
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["voice_of_command_decisive_command_consumed_token"] = token
+        officer_unit.special_rules = sr
+
+    @staticmethod
+    def _ability_name_key(text: str) -> str:
+        return str(text or "").replace("\u2019", "'").strip().lower()
+
+    def _unit_has_possible_ability_named(self, unit, ability_name: str) -> bool:
+        wanted = self._ability_name_key(ability_name)
+        if not wanted or unit is None:
+            return False
+        for ability in list(getattr(unit, "possible_abilities", []) or []):
+            if self._ability_name_key(getattr(ability, "name", "")) == wanted:
+                return True
+        return False
+
+    def _officer_has_mechanised_spearhead(self, officer_unit) -> bool:
+        return self._unit_has_possible_ability_named(officer_unit, "Mechanised Spearhead")
+
+    def _mechanised_spearhead_pending_entries(self, officer_unit) -> list[dict]:
+        if officer_unit is None:
+            return []
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        entries = []
+        for entry in list(sr.get("voice_of_command_mechanised_spearhead_pending", []) or []):
+            if isinstance(entry, dict):
+                entries.append(dict(entry))
+        return entries
+
+    def _set_mechanised_spearhead_pending_entries(self, officer_unit, entries: list[dict]) -> None:
+        if officer_unit is None:
+            return
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        normalized = [dict(entry) for entry in list(entries or []) if isinstance(entry, dict)]
+        if normalized:
+            sr["voice_of_command_mechanised_spearhead_pending"] = normalized
+        else:
+            sr.pop("voice_of_command_mechanised_spearhead_pending", None)
+        officer_unit.special_rules = sr
+
+    def _mechanised_spearhead_token(
+        self,
+        *,
+        battle_round: int,
+        phase_name: str,
+        officer_unit,
+        target_unit,
+        transport_unit,
+    ) -> str:
+        officer_id = str(get_entity_id(officer_unit) or "").strip()
+        target_id = str(get_entity_id(target_unit) or "").strip()
+        transport_id = str(get_entity_id(transport_unit) or "").strip()
+        return f"{int(battle_round or 0)}:{self._phase_key(phase_name)}:{officer_id}:{target_id}:{transport_id}"
+
+    def _register_mechanised_spearhead_pending(
+        self,
+        officer_unit,
+        target_unit,
+        transport_unit,
+        *,
+        game=None,
+        phase_name: str = "",
+    ) -> str:
+        battle_round = self._battle_round(game)
+        token = self._mechanised_spearhead_token(
+            battle_round=battle_round,
+            phase_name=phase_name,
+            officer_unit=officer_unit,
+            target_unit=target_unit,
+            transport_unit=transport_unit,
+        )
+        if not token:
+            return ""
+        entries = self._mechanised_spearhead_pending_entries(officer_unit)
+        if any(str(entry.get("token", "") or "") == token for entry in entries):
+            return token
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        entry = {
+            "token": token,
+            "battle_round": int(battle_round or 0),
+            "phase_name": self._phase_key(phase_name),
+            "owner_id": str(getattr(current_player, "id", "") or ""),
+            "target_unit_id": str(get_entity_id(target_unit) or ""),
+            "transport_unit_id": str(get_entity_id(transport_unit) or ""),
+        }
+        entries.append(entry)
+        entries.sort(key=lambda item: str(item.get("token", "") or ""))
+        self._set_mechanised_spearhead_pending_entries(officer_unit, entries)
+        return token
+
+    def _mechanised_spearhead_pending_state(
+        self,
+        officer_unit,
+        target_unit=None,
+        *,
+        pending_token: str = "",
+        game=None,
+        phase_name: str = "",
+    ) -> dict:
+        token = str(pending_token or "").strip()
+        target_id = str(get_entity_id(target_unit) or "").strip() if target_unit is not None else ""
+        current_round = self._battle_round(game)
+        current_phase = self._phase_key(phase_name)
+        if not current_phase and game is not None:
+            current_phase = self._phase_key(str(getattr(getattr(game, "phase", None), "name", "") or ""))
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        for entry in self._mechanised_spearhead_pending_entries(officer_unit):
+            if token and str(entry.get("token", "") or "") != token:
+                continue
+            if target_id and str(entry.get("target_unit_id", "") or "").strip() != target_id:
+                continue
+            try:
+                entry_round = int(entry.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                entry_round = 0
+            if current_round > 0 and entry_round > 0 and entry_round != current_round:
+                continue
+            entry_phase = self._phase_key(str(entry.get("phase_name", "") or ""))
+            if current_phase and entry_phase and entry_phase != current_phase:
+                continue
+            entry_owner = str(entry.get("owner_id", "") or "").strip()
+            if current_owner and entry_owner and entry_owner != current_owner:
+                continue
+            return dict(entry)
+        return {}
+
+    def _consume_mechanised_spearhead_pending(
+        self,
+        officer_unit,
+        target_unit=None,
+        *,
+        pending_token: str = "",
+    ) -> bool:
+        token = str(pending_token or "").strip()
+        target_id = str(get_entity_id(target_unit) or "").strip() if target_unit is not None else ""
+        entries = self._mechanised_spearhead_pending_entries(officer_unit)
+        kept = []
+        consumed = False
+        for entry in entries:
+            entry_token = str(entry.get("token", "") or "").strip()
+            entry_target = str(entry.get("target_unit_id", "") or "").strip()
+            token_matches = bool(token and entry_token == token)
+            target_matches = bool(not token and target_id and entry_target == target_id)
+            if token_matches or target_matches:
+                consumed = True
+                continue
+            kept.append(entry)
+        if consumed:
+            self._set_mechanised_spearhead_pending_entries(officer_unit, kept)
+        return bool(consumed)
+
+    def consume_mechanised_spearhead_skip(
+        self,
+        officer_unit,
+        target_unit=None,
+        *,
+        pending_token: str = "",
+    ) -> bool:
+        return self._consume_mechanised_spearhead_pending(
+            officer_unit,
+            target_unit,
+            pending_token=pending_token,
+        )
 
     def _clear_inspired_command_pending_for_officer(self, officer_unit) -> None:
         sr = getattr(officer_unit, "special_rules", None)
@@ -1666,6 +1949,9 @@ class VoiceOfCommandManager:
 
     def _officer_order_range(self, officer_unit, *, order_key: str = "") -> float:
         max_range = 6.0
+        battle_round = self._battle_round()
+        if self._officer_has_decisive_command_pending(officer_unit, battle_round):
+            max_range = 12.0
         ability_range = self._officer_order_range_from_abilities(officer_unit)
         if ability_range > max_range:
             max_range = ability_range
@@ -1726,6 +2012,8 @@ class VoiceOfCommandManager:
             return self._reactive_command_pending_state(unit, battle_round)
         if trigger_key == "inspired_command":
             return self._inspired_command_pending_state(unit, battle_round)
+        if trigger_key == TRIGGER_MECHANISED_SPEARHEAD:
+            return len(self._mechanised_spearhead_pending_entries(unit))
         return self.orders_remaining(unit, battle_round)
 
     def officer_has_order_capacity(self, unit, battle_round: int, *, trigger: str = "") -> bool:
@@ -1839,38 +2127,7 @@ class VoiceOfCommandManager:
         if order_anchor is None and not self._unit_is_available(officer_unit):
             return []
 
-        _, keywords, _ = self._parse_orders_profile(officer_unit)
-        keywords = [k for k in (keywords or []) if k]
-        if self._officer_has_abhuman_detail(officer_unit):
-            sr = getattr(officer_unit, "special_rules", None)
-            extra_keywords = []
-            if isinstance(sr, dict):
-                for kw in list(sr.get("enhancement_abhuman_detail_order_target_keywords", ()) or ()):
-                    text = str(kw or "").strip().upper()
-                    if text:
-                        extra_keywords.append(text)
-            if not extra_keywords:
-                extra_keywords = ["OGRYN"]
-            keywords.extend(extra_keywords)
-        army = self.army
-        if army is None:
-            try:
-                army = officer_unit.get_parent_army()
-            except Exception:
-                army = None
-        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
-        extra_target_keywords_fn = getattr(mgr, "combined_arms_flexible_command_target_keywords", None) if mgr is not None else None
-        if callable(extra_target_keywords_fn):
-            keywords.extend(list(extra_target_keywords_fn(officer_unit, game=game) or ()))
-        seen_keywords = set()
-        deduped_keywords: list[str] = []
-        for kw in keywords:
-            k = str(kw or "").strip().upper()
-            if not k or k in seen_keywords:
-                continue
-            seen_keywords.add(k)
-            deduped_keywords.append(k)
-        keywords = deduped_keywords
+        keywords = self._order_target_keywords_for_officer(officer_unit, game=game)
         max_range = self.get_order_range(officer_unit, order_key=order_key)
         pending_siege = self._siege_over_the_top_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         if pending_siege:
@@ -1985,6 +2242,154 @@ class VoiceOfCommandManager:
                 filtered.append(target)
             out = filtered
         return out
+
+    def _mechanised_spearhead_target_is_eligible(
+        self,
+        officer_unit,
+        target_unit,
+        *,
+        game=None,
+        order_key: str = "",
+        pending_token: str = "",
+    ) -> bool:
+        if officer_unit is None or target_unit is None:
+            return False
+        if not self._mechanised_spearhead_pending_state(
+            officer_unit,
+            target_unit,
+            pending_token=pending_token,
+            game=game,
+        ):
+            return False
+        if not self._unit_is_available(officer_unit):
+            return False
+        if self._unit_is_battleshocked(officer_unit):
+            return False
+        if not self._unit_is_available(target_unit):
+            return False
+        if self._unit_is_battleshocked(target_unit):
+            return False
+        if not self._unit_is_astra_militarum(target_unit):
+            return False
+        if not self._target_has_keyword(target_unit, "REGIMENT"):
+            return False
+        keywords = self._order_target_keywords_for_officer(officer_unit, game=game)
+        if keywords:
+            try:
+                if not any(target_unit.has_any_keyword(keyword) for keyword in keywords):
+                    return False
+            except (AttributeError, TypeError):
+                return False
+        normalized_order = str(order_key or "").strip().upper()
+        if normalized_order == ORDER_MOVE.key and self._officer_has_siege_over_the_top_active(
+            officer_unit,
+            self._battle_round(game),
+            game=game,
+        ):
+            return self._target_matches_siege_over_the_top_keyword(target_unit)
+        return True
+
+    def _mechanised_spearhead_disembark_eligible_officers(
+        self,
+        target_unit,
+        transport_unit,
+        *,
+        game=None,
+        phase_name: str = "",
+    ) -> list:
+        if target_unit is None or transport_unit is None or self.army is None:
+            return []
+        pname = self._phase_key(phase_name)
+        if not pname and game is not None:
+            pname = self._phase_key(str(getattr(getattr(game, "phase", None), "name", "") or ""))
+        if pname != "MOVEMENT_PHASE":
+            return []
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        army_player = getattr(self.army, "player", None)
+        if current_player is not None and army_player is not None and current_player is not army_player:
+            return []
+        try:
+            root = target_unit.get_attached_unit_root()
+        except (AttributeError, TypeError):
+            root = target_unit
+        if root is None:
+            return []
+        if not self._unit_is_astra_militarum(root):
+            return []
+        if not self._target_has_keyword(root, "REGIMENT"):
+            return []
+        if not self._unit_is_available(root):
+            return []
+        if self._unit_is_battleshocked(root):
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        out = []
+        for officer in list(getattr(self.army, "units", []) or []):
+            if officer is None:
+                continue
+            if not self._officer_has_mechanised_spearhead(officer):
+                continue
+            if not self._unit_has_voice(officer):
+                continue
+            if not self._unit_is_officer(officer):
+                continue
+            if not self._unit_is_available(officer):
+                continue
+            if self._unit_is_battleshocked(officer):
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(officer, transport_unit))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if dist > 6.0:
+                continue
+            out.append(officer)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return out
+
+    def queue_mechanised_spearhead_order_requests(self, game, target_unit, transport_unit, *, phase_name: str = "") -> list:
+        if game is None or target_unit is None or transport_unit is None:
+            return []
+        if self.army is None:
+            return []
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        pname = self._phase_key(phase_name)
+        if not pname:
+            pname = self._phase_key(str(getattr(getattr(game, "phase", None), "name", "") or ""))
+        officers = self._mechanised_spearhead_disembark_eligible_officers(
+            target_unit,
+            transport_unit,
+            game=game,
+            phase_name=pname,
+        )
+        requests = []
+        for officer in officers:
+            token = self._register_mechanised_spearhead_pending(
+                officer,
+                target_unit,
+                transport_unit,
+                game=game,
+                phase_name=pname,
+            )
+            request = self.queue_order_sequence_order_request(
+                game,
+                player,
+                officer,
+                phase_name=pname,
+                trigger=TRIGGER_MECHANISED_SPEARHEAD,
+                fixed_target_unit=target_unit,
+                transport_unit=transport_unit,
+                pending_token=token,
+            )
+            if request is not None:
+                requests.append(request)
+            else:
+                self._consume_mechanised_spearhead_pending(officer, target_unit, pending_token=token)
+        return requests
 
     def clear_order(self, unit) -> None:
         if unit is None:
@@ -2144,7 +2549,111 @@ class VoiceOfCommandManager:
             member.special_rules = sr
         self._refresh_order_state_for_unit_and_attached(unit)
 
-    def issue_order(self, game, officer_unit, target_unit, order_key: str, *, phase_name: str = "", trigger: str = "") -> bool:
+    def _order_keys_after_receiving_order(self, target_unit, order_key: str) -> list[str]:
+        key = str(order_key or "").strip().upper()
+        if key not in ORDER_BY_KEY:
+            return []
+        max_orders = max(1, int(self._attached_unit_command_rod_order_capacity(target_unit)))
+        current_order_keys = self._attached_unit_permanent_order_keys(target_unit)
+        if max_orders <= 1 or not current_order_keys:
+            return [key]
+        if key in current_order_keys:
+            return list(current_order_keys)
+        if len(current_order_keys) < max_orders:
+            return list(current_order_keys) + [key]
+        retained_keys = [existing_key for existing_key in list(current_order_keys) if existing_key != key]
+        return retained_keys[-(max_orders - 1) :] + [key]
+
+    def _decisive_command_splash_targets(self, officer_unit, target_unit, order_key: str, *, game=None) -> list:
+        if officer_unit is None or target_unit is None:
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        keywords = self._order_target_keywords_for_officer(officer_unit, game=game)
+        try:
+            friendlies = list(game_map.get_friendly_units(target_unit))
+        except (AttributeError, TypeError):
+            friendlies = []
+        target_root = self._attached_unit_root(target_unit)
+        target_id = str(get_entity_id(target_root) or "").strip() if target_root is not None else ""
+        out = []
+        seen: set[str] = set()
+        for unit in friendlies:
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id == target_id:
+                continue
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._unit_is_available(root):
+                continue
+            if self._unit_is_battleshocked(root):
+                continue
+            if keywords:
+                try:
+                    if not any(root.has_any_keyword(keyword) for keyword in keywords):
+                        continue
+                except (AttributeError, TypeError):
+                    continue
+            if (
+                order_key == ORDER_MOVE.key
+                and self._officer_has_siege_over_the_top_active(officer_unit, self._battle_round(game), game=game)
+                and not self._target_matches_siege_over_the_top_keyword(root)
+            ):
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(target_root, root))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if dist > 6.0:
+                continue
+            out.append(root)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return out
+
+    def _apply_decisive_command_splash(
+        self,
+        officer_unit,
+        target_unit,
+        order_key: str,
+        *,
+        game=None,
+        phase_name: str = "",
+        owner_id: str = "",
+        source_id: str = "",
+    ) -> list:
+        applied = []
+        for extra_target in self._decisive_command_splash_targets(officer_unit, target_unit, order_key, game=game):
+            keys = self._order_keys_after_receiving_order(extra_target, order_key)
+            if not keys:
+                continue
+            self._set_orders_on_unit_and_attached(extra_target, keys, owner_id, source_id)
+            self._sync_coordinated_action_pair(
+                extra_target,
+                game=game,
+                battle_round=self._battle_round(game),
+                phase_name=phase_name,
+                owner_id=self._active_player_id(game),
+            )
+            applied.append(extra_target)
+        return applied
+
+    def issue_order(
+        self,
+        game,
+        officer_unit,
+        target_unit,
+        order_key: str,
+        *,
+        phase_name: str = "",
+        trigger: str = "",
+        pending_token: str = "",
+    ) -> bool:
         if officer_unit is None or target_unit is None:
             return False
         if not self._army_has_voice():
@@ -2187,6 +2696,7 @@ class VoiceOfCommandManager:
         trigger_key = str(trigger or "").strip().lower()
         reactive_trigger = trigger_key == "reactive_command_setup"
         inspired_trigger = trigger_key == "inspired_command"
+        mechanised_spearhead_trigger = trigger_key == TRIGGER_MECHANISED_SPEARHEAD
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         pending_calm = self._calm_under_fire_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         pending_siege = self._siege_over_the_top_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
@@ -2240,6 +2750,15 @@ class VoiceOfCommandManager:
         elif not continuation_issue and inspired_trigger:
             if inspired_pending_available <= 0:
                 return False
+        elif not continuation_issue and mechanised_spearhead_trigger:
+            if not self._mechanised_spearhead_pending_state(
+                officer_unit,
+                target_unit,
+                pending_token=pending_token,
+                game=game,
+                phase_name=phase_name,
+            ):
+                return False
         elif not continuation_issue and self.orders_remaining(officer_unit, battle_round) <= 0:
             return False
 
@@ -2248,9 +2767,20 @@ class VoiceOfCommandManager:
             return False
         if not self._unit_is_available(target_unit):
             return False
-        eligible_targets = self.get_eligible_targets(officer_unit, game=game, order_key=order_key)
-        if target_unit not in eligible_targets:
-            return False
+        if mechanised_spearhead_trigger:
+            if not self._mechanised_spearhead_target_is_eligible(
+                officer_unit,
+                target_unit,
+                game=game,
+                order_key=order_key,
+                pending_token=pending_token,
+            ):
+                return False
+            eligible_targets = [target_unit]
+        else:
+            eligible_targets = self.get_eligible_targets(officer_unit, game=game, order_key=order_key)
+            if target_unit not in eligible_targets:
+                return False
         target_unit_id = str(get_entity_id(target_unit) or "").strip()
         if continuation_kind == "bombast":
             if not self._target_matches_bombast_keyword(officer_unit, target_unit):
@@ -2294,39 +2824,58 @@ class VoiceOfCommandManager:
         except Exception:
             source_id = ""
 
-        max_orders = max(1, int(self._attached_unit_command_rod_order_capacity(target_unit)))
-        current_order_keys = self._attached_unit_permanent_order_keys(target_unit)
-        target_order_keys = [order_key]
-        if max_orders > 1 and current_order_keys:
-            if order_key in current_order_keys:
-                target_order_keys = list(current_order_keys)
-            elif len(current_order_keys) < max_orders:
-                target_order_keys = list(current_order_keys) + [order_key]
-            else:
-                retained_keys = [key for key in list(current_order_keys) if key != order_key]
-                target_order_keys = retained_keys[-(max_orders - 1) :] + [order_key]
+        decisive_pending = self._officer_has_decisive_command_pending(officer_unit, battle_round)
+        army_phase_orders_before = self._army_orders_issued_this_phase(game, phase_name)
+        decisive_splash_applies = bool(decisive_pending and army_phase_orders_before == 0 and not continuation_issue)
 
+        target_order_keys = self._order_keys_after_receiving_order(target_unit, order_key)
         self._set_orders_on_unit_and_attached(target_unit, target_order_keys, owner_id, source_id)
+        if decisive_splash_applies:
+            self._apply_decisive_command_splash(
+                officer_unit,
+                target_unit,
+                order_key,
+                game=game,
+                phase_name=phase_name,
+                owner_id=owner_id,
+                source_id=source_id,
+            )
         if mobile_command_transport is not None:
             self._mark_mobile_command_vehicle_selected_officer(mobile_command_transport, battle_round, officer_unit)
         additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
         if additional_order_key and additional_order_key not in target_order_keys:
             self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)
+        consumed_non_continuation_order = False
         if not continuation_issue:
             if reactive_trigger and reactive_pending_available > 0:
                 self._consume_reactive_command_pending_order(officer_unit, battle_round)
+                consumed_non_continuation_order = True
             elif inspired_trigger:
                 if not self._consume_inspired_command_pending_order(officer_unit, battle_round):
                     return False
+                consumed_non_continuation_order = True
+            elif mechanised_spearhead_trigger:
+                if not self._consume_mechanised_spearhead_pending(
+                    officer_unit,
+                    target_unit,
+                    pending_token=pending_token,
+                ):
+                    return False
+                consumed_non_continuation_order = True
             else:
                 issued = self._order_issued_state(officer_unit, battle_round)
                 issued_after = int(issued) + 1
                 self._set_orders_issued(officer_unit, battle_round, issued_after)
+                consumed_non_continuation_order = True
                 recurring_capacity = self._orders_recurring_capacity(officer_unit)
                 if issued_after > int(recurring_capacity):
                     mark_extra = getattr(officer_unit, "mark_servo_scribes_additional_order_used", None)
                     if callable(mark_extra):
                         mark_extra()
+        if consumed_non_continuation_order:
+            self._mark_army_order_issued_this_phase(game, phase_name)
+            if decisive_pending:
+                self._mark_decisive_command_consumed(officer_unit, battle_round)
         self._sync_coordinated_action_pair(
             target_unit,
             game=game,
@@ -2483,14 +3032,38 @@ class VoiceOfCommandManager:
                 return request
         return None
 
-    def _available_orders_with_targets(self, officer_unit, *, game) -> list[Order]:
+    def _available_orders_with_targets(
+        self,
+        officer_unit,
+        *,
+        game,
+        trigger: str = "",
+        fixed_target_unit=None,
+        pending_token: str = "",
+    ) -> list[Order]:
         orders = list(self.get_available_orders(officer_unit) or [])
         available: list[Order] = []
         for order in list(orders or []):
             order_key = str(getattr(order, "key", "") or "").strip().upper()
             if not order_key:
                 continue
-            targets = list(self.get_eligible_targets(officer_unit, game=game, order_key=order_key) or [])
+            if (
+                str(trigger or "").strip().lower() == TRIGGER_MECHANISED_SPEARHEAD
+                and fixed_target_unit is not None
+            ):
+                targets = (
+                    [fixed_target_unit]
+                    if self._mechanised_spearhead_target_is_eligible(
+                        officer_unit,
+                        fixed_target_unit,
+                        game=game,
+                        order_key=order_key,
+                        pending_token=pending_token,
+                    )
+                    else []
+                )
+            else:
+                targets = list(self.get_eligible_targets(officer_unit, game=game, order_key=order_key) or [])
             if targets:
                 available.append(order)
         return available
@@ -2507,7 +3080,7 @@ class VoiceOfCommandManager:
         officers = list(self.get_eligible_officers(game=game, player=player, phase_name=phase_name, trigger=trigger) or [])
         filtered_officers = [
             officer for officer in list(officers or [])
-            if officer is not None and self._available_orders_with_targets(officer, game=game)
+            if officer is not None and self._available_orders_with_targets(officer, game=game, trigger=trigger)
         ]
         if not filtered_officers:
             return None
@@ -2569,6 +3142,9 @@ class VoiceOfCommandManager:
         *,
         phase_name: str = "",
         trigger: str = "",
+        fixed_target_unit=None,
+        transport_unit=None,
+        pending_token: str = "",
     ):
         request_fn = getattr(game, "request_decision", None) if game is not None else None
         if player is None or officer_unit is None or not callable(request_fn):
@@ -2580,7 +3156,13 @@ class VoiceOfCommandManager:
         officer_id = str(get_entity_id(officer_unit) or "")
         if not officer_id:
             return None
-        orders = self._available_orders_with_targets(officer_unit, game=game)
+        orders = self._available_orders_with_targets(
+            officer_unit,
+            game=game,
+            trigger=trigger,
+            fixed_target_unit=fixed_target_unit,
+            pending_token=pending_token,
+        )
         if not orders:
             return None
 
@@ -2591,6 +3173,12 @@ class VoiceOfCommandManager:
             "trigger": str(trigger or ""),
             "army_id": str(get_entity_id(self.army) or "") if self.army is not None else "",
         }
+        if fixed_target_unit is not None:
+            context["fixed_target_unit_id"] = str(get_entity_id(fixed_target_unit) or "")
+        if transport_unit is not None:
+            context["transport_unit_id"] = str(get_entity_id(transport_unit) or "")
+        if pending_token:
+            context["pending_token"] = str(pending_token or "")
         existing = self._pending_order_sequence_request(
             game,
             DECISION_ISSUE_ORDER,
@@ -2603,7 +3191,16 @@ class VoiceOfCommandManager:
         options = [
             DecisionOption.create(
                 "Skip orders",
-                payload={"action": "skip", "officer_unit_id": officer_id, "army_id": context["army_id"]},
+                payload={
+                    "action": "skip",
+                    "officer_unit_id": officer_id,
+                    "army_id": context["army_id"],
+                    "phase_name": str(phase_name or ""),
+                    "trigger": str(trigger or ""),
+                    "fixed_target_unit_id": context.get("fixed_target_unit_id", ""),
+                    "transport_unit_id": context.get("transport_unit_id", ""),
+                    "pending_token": context.get("pending_token", ""),
+                },
             )
         ]
         for order in list(orders or []):
@@ -2617,13 +3214,22 @@ class VoiceOfCommandManager:
                         "army_id": context["army_id"],
                         "phase_name": str(phase_name or ""),
                         "trigger": str(trigger or ""),
+                        "fixed_target_unit_id": context.get("fixed_target_unit_id", ""),
+                        "transport_unit_id": context.get("transport_unit_id", ""),
+                        "pending_token": context.get("pending_token", ""),
                     },
                 )
             )
 
+        prompt = f"Select order for {getattr(officer_unit, 'name', 'Officer')}"
+        if fixed_target_unit is not None:
+            prompt = (
+                f"Select order for {getattr(officer_unit, 'name', 'Officer')} "
+                f"to issue to {getattr(fixed_target_unit, 'name', 'Unit')}"
+            )
         request = DecisionRequest.create(
             DECISION_ISSUE_ORDER,
-            f"Select order for {getattr(officer_unit, 'name', 'Officer')}",
+            prompt,
             player_id=getattr(player, "id", None),
             options=options,
             context=context,

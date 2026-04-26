@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.roster.army import Army
@@ -8,8 +9,11 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_DECLARE_SHOTS,
+    DECISION_DECLARE_CHARGE,
+    DECISION_MOVE_UNIT,
 )
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.selectable_section_abilities import KEY_COUNTERSTRATEGIST, set_active_section_ability
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -24,9 +28,27 @@ SETUP_REACTIVE_TEXT = (
     "Charge bonus this turn)."
 )
 
+COUNTERSTRATEGIST_TEXT = (
+    "At the end of your opponent's Movement phase, you can select one enemy unit that was set up or ended a move "
+    "within 12\" of this model's unit, and one friendly Regiment unit within 6\" of and visible to this model. "
+    "That REGIMENT unit can then either: - Make a Normal move of up to D6\". - Shoot at that enemy unit, but only "
+    "if it is an eligible target. - Declare a charge against that enemy unit, but only if it is within 12\" of that "
+    "REGIMENT unit (note that even if this charge is successful, the charging unit does not receive any Charge Bonus "
+    "this turn)."
+)
+
 
 class TestSetupReactiveShootCharge(unittest.TestCase):
-    def _make_unit(self, name, army, *, ability_text=None):
+    def _make_unit(
+        self,
+        name,
+        army,
+        *,
+        ability_text=None,
+        ability_name="Unleash Wrath",
+        keywords=None,
+        faction_keywords=None,
+    ):
         unit = Unit.__new__(Unit)
         unit.name = name
         unit._id = name
@@ -35,8 +57,8 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
         unit.deployed = True
         unit.reserve_status = "deployed"
         unit.models = []
-        unit.keywords = []
-        unit.faction_keywords = []
+        unit.keywords = list(keywords or [])
+        unit.faction_keywords = list(faction_keywords or [])
         unit.possible_abilities = []
         unit.status_effects = []
         unit.special_rules = {}
@@ -59,7 +81,7 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
         unit._ability_cache = {}
         if ability_text:
             unit.possible_abilities = [
-                Ability("Unleash Wrath", unit.faction, ability_text, "")
+                Ability(ability_name, unit.faction, ability_text, "")
             ]
         return unit
 
@@ -109,6 +131,52 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
 
     def _trigger_setup_reactive_prompt(self, game, moving_player, moving_unit):
         game.event_system.publish("unit_set_up", unit=moving_unit)
+        game.event_system.publish("phase_end", player=moving_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+    def _arrange_counterstrategist_units(self, *, active=True):
+        game, moving_player, reacting_player, army_move, army_react = self._build_game()
+
+        moving_unit = self._make_unit("Enemy", army_move)
+        yarrick = self._make_unit(
+            "Commissar Yarrick",
+            army_react,
+            ability_text=COUNTERSTRATEGIST_TEXT,
+            ability_name="Counterstrategist",
+        )
+        yarrick.possible_abilities.append(
+            Ability(
+                "Hero of Hades Hive",
+                yarrick.faction,
+                "In your Command phase, select one of the abilities in the Hero of Hades Hive section.",
+                "",
+            )
+        )
+        regiment = self._make_unit(
+            "Cadian Shock Troops",
+            army_react,
+            keywords=["INFANTRY"],
+            faction_keywords=["ASTRA MILITARUM", "REGIMENT"],
+        )
+        moving_unit.models = [self._make_model("Enemy Model", moving_unit, 0.0, 0.0)]
+        yarrick.models = [self._make_model("Yarrick", yarrick, 6.0, 0.0)]
+        regiment.models = [self._make_model("Cadian", regiment, 8.0, 0.0)]
+        regiment.can_declare_charge_against = lambda _target, _game, out_of_turn=False: True
+
+        army_move.units = [moving_unit]
+        army_react.units = [yarrick, regiment]
+        game.map.units = [moving_unit, yarrick, regiment]
+        game.rebuild_entity_registry()
+        if active:
+            set_active_section_ability(yarrick, KEY_COUNTERSTRATEGIST, start_round=1, expires_round=2)
+        game._model_can_see_unit = lambda _model, _unit, game_map=None: True
+        game._setup_reactive_can_shoot_target = lambda unit, target: unit is regiment and target is moving_unit
+        return game, moving_player, reacting_player, moving_unit, yarrick, regiment
+
+    def _trigger_counterstrategist_prompt(self, game, moving_player, moving_unit, *, trigger="move"):
+        if trigger == "set_up":
+            game.event_system.publish("unit_set_up", unit=moving_unit)
+        else:
+            game.event_system.publish("unit_move_ended", unit=moving_unit, action=trigger)
         game.event_system.publish("phase_end", player=moving_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
 
     def test_setup_reactive_phase_end_queues_target_decision_remote(self):
@@ -191,6 +259,82 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
         ctx = pending[0].context or {}
         self.assertTrue(bool(ctx.get("out_of_phase")))
         self.assertEqual(ctx.get("force_target_unit_id"), get_entity_id(moving_unit))
+
+    def test_counterstrategist_queues_enemy_and_regiment_pair_after_enemy_move(self):
+        game, moving_player, reacting_player, moving_unit, _yarrick, regiment = self._arrange_counterstrategist_units()
+
+        self._trigger_counterstrategist_prompt(game, moving_player, moving_unit, trigger="move")
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.player_id, reacting_player.id)
+        ctx = request.context or {}
+        self.assertTrue(bool(ctx.get("setup_reactive_counterstrategist")))
+        option = next(
+            opt
+            for opt in request.options
+            if (opt.payload or {}).get("target_unit_id") == get_entity_id(moving_unit)
+        )
+        self.assertEqual((option.payload or {}).get("reactive_unit_id"), get_entity_id(regiment))
+        self.assertEqual((option.payload or {}).get("actions"), ["move", "shoot", "charge"])
+
+    def test_counterstrategist_inactive_section_does_not_queue(self):
+        game, moving_player, _reacting_player, moving_unit, _yarrick, _regiment = self._arrange_counterstrategist_units(
+            active=False
+        )
+
+        self._trigger_counterstrategist_prompt(game, moving_player, moving_unit, trigger="move")
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET]
+        self.assertEqual(pending, [])
+
+    def test_counterstrategist_move_choice_queues_d6_normal_move_for_regiment(self):
+        game, moving_player, reacting_player, moving_unit, yarrick, regiment = self._arrange_counterstrategist_units()
+
+        self._trigger_counterstrategist_prompt(game, moving_player, moving_unit, trigger="move")
+        target_req = next(req for req in game.decision_queue.list() if req.decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET)
+        target_option = next(
+            opt
+            for opt in target_req.options
+            if (opt.payload or {}).get("target_unit_id") == get_entity_id(moving_unit)
+        )
+        resolve_decision_command(game, target_req, target_option.option_id, player_id=reacting_player.id)
+        action_req = next(req for req in game.decision_queue.list() if req.decision_type == DECISION_CHOOSE_SETUP_REACTIVE_ACTION)
+        move_option = next(opt for opt in action_req.options if (opt.payload or {}).get("action") == "move")
+
+        with patch("warhammer40k_ai.engine.game_mixins.reactive_decisions_mixin.get_roll", return_value=4):
+            resolve_decision_command(game, action_req, move_option.option_id, player_id=reacting_player.id)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_MOVE_UNIT]
+        self.assertEqual(len(pending), 1)
+        ctx = pending[0].context or {}
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(regiment))
+        self.assertEqual(ctx.get("max_distance"), 4)
+        self.assertEqual(ctx.get("reactive_move_kind"), "counterstrategist")
+        self.assertTrue(yarrick.setup_reactive_shoot_or_charge_used_this_phase(game))
+
+    def test_counterstrategist_charge_choice_queues_no_bonus_charge_declaration(self):
+        game, moving_player, reacting_player, moving_unit, _yarrick, _regiment = self._arrange_counterstrategist_units()
+
+        self._trigger_counterstrategist_prompt(game, moving_player, moving_unit, trigger="set_up")
+        target_req = next(req for req in game.decision_queue.list() if req.decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET)
+        target_option = next(
+            opt
+            for opt in target_req.options
+            if (opt.payload or {}).get("target_unit_id") == get_entity_id(moving_unit)
+        )
+        resolve_decision_command(game, target_req, target_option.option_id, player_id=reacting_player.id)
+        action_req = next(req for req in game.decision_queue.list() if req.decision_type == DECISION_CHOOSE_SETUP_REACTIVE_ACTION)
+        charge_option = next(opt for opt in action_req.options if (opt.payload or {}).get("action") == "charge")
+        resolve_decision_command(game, action_req, charge_option.option_id, player_id=reacting_player.id)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_DECLARE_CHARGE]
+        self.assertEqual(len(pending), 1)
+        ctx = pending[0].context or {}
+        self.assertTrue(bool(ctx.get("out_of_turn")))
+        self.assertFalse(bool(ctx.get("count_as_charged")))
+        self.assertEqual(ctx.get("charge_retarget_reason"), "counterstrategist")
 
 
 if __name__ == "__main__":
