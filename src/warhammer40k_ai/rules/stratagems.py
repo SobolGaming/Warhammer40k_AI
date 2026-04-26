@@ -7172,6 +7172,23 @@ class StratagemManager(
                     result["reason"] = "Target cannot be selected"
                     return result
 
+        tau_tool_action = self._tau_can_use_kauyon_tool_action(name_u, context)
+        if tau_tool_action is not None:
+            if bool(tau_tool_action):
+                result["available"] = True
+                result["reason"] = None
+            else:
+                result["reason"] = "Requires valid target"
+            return result
+        ia_tool_action = self._ia_can_use_veiled_blade_tool_action(name_u, context)
+        if ia_tool_action is not None:
+            if bool(ia_tool_action):
+                result["available"] = True
+                result["reason"] = None
+            else:
+                result["reason"] = "Requires valid target"
+            return result
+
         if name_u in {"SENSORY ASSAULT", "ASSAIL", "PRESCIENT PRECISION", "IRON ARM"}:
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -22873,6 +22890,12 @@ class StratagemManager(
         cult_result = self._cult_can_use_tool_action(name_u, kwargs)
         if cult_result is not None and not cult_result:
             return False
+        tau_result = self._tau_can_use_kauyon_tool_action(name_u, kwargs)
+        if tau_result is not None and not tau_result:
+            return False
+        ia_result = self._ia_can_use_veiled_blade_tool_action(name_u, kwargs)
+        if ia_result is not None and not ia_result:
+            return False
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
             necron_result = self._awakened_dynasty_can_use_undying_legions_tool_action(s, kwargs)
             if necron_result is not None:
@@ -31645,6 +31668,20 @@ class StratagemManager(
         if not phase_label:
             return {}
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        tau_context = self._tau_kauyon_tool_action_context(
+            name_u,
+            phase_name=phase_label,
+            is_active_turn=is_active_turn,
+        )
+        if tau_context is not None:
+            return dict(tau_context)
+        ia_context = self._ia_veiled_blade_tool_action_context(
+            name_u,
+            phase_name=phase_label,
+            is_active_turn=is_active_turn,
+        )
+        if ia_context is not None:
+            return dict(ia_context)
         if name_u == "SENSORY ASSAULT":
             if phase_label.lower() != "command phase":
                 return {"candidates": []}

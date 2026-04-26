@@ -321,6 +321,8 @@ class TauEmpireStratagemMixin:
     def _tau_point_blank_ambush_candidates(self) -> list[Any]:
         if not self._is_tau_kauyon_detachment():
             return []
+        if self._tau_current_battle_round() <= 2:
+            return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         if army is None:
@@ -346,6 +348,76 @@ class TauEmpireStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
+
+    def _tau_kauyon_tool_action_context(
+        self,
+        stratagem_name: str,
+        *,
+        phase_name: str,
+        is_active_turn: bool,
+    ) -> Optional[dict[str, Any]]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"POINT-BLANK AMBUSH", "WALL OF MIRRORS"}:
+            return None
+        if not self._is_tau_kauyon_detachment():
+            return {"candidates": []}
+        phase_key = self._tau_normalized_phase_name(phase_name)
+        if name_u == "POINT-BLANK AMBUSH":
+            if phase_key != "shooting phase" or not bool(is_active_turn):
+                return {"candidates": []}
+            return {"candidates": self._tau_point_blank_ambush_candidates()}
+        if phase_key != "fight phase" or bool(is_active_turn):
+            return {"candidates": []}
+        # Wall of Mirrors is a phase-end reaction. Pending reaction payloads
+        # carry candidates; phase-wide generic prompts must remain unavailable.
+        return {"candidates": []}
+
+    def _tau_can_use_kauyon_tool_action(self, stratagem_name: str, kwargs: dict[str, Any]) -> Optional[bool]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"POINT-BLANK AMBUSH", "WALL OF MIRRORS"}:
+            return None
+        if not self._is_tau_kauyon_detachment():
+            return False
+        context = dict(kwargs or {})
+        phase_key = self._tau_normalized_phase_name(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._tau_root(target_unit) if target_unit is not None else None
+
+        if name_u == "POINT-BLANK AMBUSH":
+            if phase_key != "shooting phase" or active_player is not self.player:
+                return False
+            if self._tau_current_battle_round() <= 2:
+                return False
+            candidates = list(context.get("candidates") or self._tau_point_blank_ambush_candidates())
+            if target_root is None:
+                return bool(candidates)
+            if not self._tau_owned_by_player(target_root, self.player):
+                return False
+            if not self._tau_on_battlefield(target_root, require_targetable=True):
+                return False
+            if not self._is_tau_empire_unit(target_root):
+                return False
+            if self._tau_has_shot_this_phase(target_root):
+                return False
+            return self._tau_unit_in_candidates(target_root, candidates)
+
+        if phase_key != "fight phase" or active_player is self.player:
+            return False
+        candidates = list(context.get("candidates") or [])
+        if not candidates and str(context.get("event", "") or "").strip().lower() == "phase_end":
+            candidates = self._tau_wall_of_mirrors_candidates()
+        if target_root is None:
+            return bool(candidates)
+        if not self._tau_owned_by_player(target_root, self.player):
+            return False
+        if not self._tau_on_battlefield(target_root, require_targetable=True):
+            return False
+        if not self._tau_wall_of_mirrors_unit_eligible(target_root):
+            return False
+        if self._tau_has_enemy_within_engagement_range(target_root):
+            return False
+        return self._tau_unit_in_candidates(target_root, candidates)
 
     def _tau_auxiliary_cadre_interlocking_candidates(self) -> list[Any]:
         if not self._is_tau_auxiliary_cadre_detachment():

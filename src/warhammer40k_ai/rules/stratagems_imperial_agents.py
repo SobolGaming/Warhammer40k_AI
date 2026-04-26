@@ -608,6 +608,61 @@ class ImperialAgentsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ia_sort_key)
 
+    def _ia_veiled_blade_tool_action_context(
+        self,
+        stratagem_name: str,
+        *,
+        phase_name: str,
+        is_active_turn: bool,
+    ) -> Optional[dict[str, Any]]:
+        name_u = self._ia_norm_stratagem_name(stratagem_name)
+        if name_u != "PRIME TARGET":
+            return None
+        if not self._is_veiled_blade_elimination_force():
+            return {"candidates": []}
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key == "shooting phase":
+            if not bool(is_active_turn):
+                return {"candidates": []}
+            return {"candidates": self._ia_prime_target_candidates(phase_name=phase_key)}
+        if phase_key == "fight phase":
+            return {"candidates": self._ia_prime_target_candidates(phase_name=phase_key)}
+        return {"candidates": []}
+
+    def _ia_can_use_veiled_blade_tool_action(self, stratagem_name: str, kwargs: dict[str, Any]) -> Optional[bool]:
+        name_u = self._ia_norm_stratagem_name(stratagem_name)
+        if name_u != "PRIME TARGET":
+            return None
+        if not self._is_veiled_blade_elimination_force():
+            return False
+        context = dict(kwargs or {})
+        phase_key = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "shooting phase" and active_player is not self.player:
+            return False
+        candidates = list(context.get("candidates") or self._ia_prime_target_candidates(phase_name=phase_key))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            return bool(candidates)
+        if not self._ia_owned_by_player(target_root, self.player):
+            return False
+        if not self._ia_is_on_battlefield(target_root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(target_root)):
+            return False
+        if not self._ia_is_agents_unit(target_root):
+            return False
+        if phase_key == "shooting phase" and self._ia_selected_to_shoot_this_phase(target_root):
+            return False
+        if phase_key == "fight phase" and self._ia_selected_to_fight_this_phase(target_root):
+            return False
+        target_id = self._ia_sort_key(target_root)
+        candidate_ids = {self._ia_sort_key(candidate) for candidate in list(candidates or [])}
+        return bool(target_id and target_id in candidate_ids)
+
     def _ia_hyperstimms_candidates(self, target_units: list[Any]) -> list[Any]:
         if not self._is_veiled_blade_elimination_force():
             return []

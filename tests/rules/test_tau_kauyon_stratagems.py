@@ -534,6 +534,45 @@ def test_wall_of_mirrors_queues_at_opponent_fight_phase_end_and_enters_strategic
     assert stealth not in list(getattr(game.map, "units", []) or [])
 
 
+def test_wall_of_mirrors_tool_action_preflight_rejects_non_stealth_targets():
+    game, p1, p2, army_tau, army_enemy = _build_game()
+    riptide = _make_unit(
+        "Riptide Battlesuit",
+        keywords=["BATTLESUIT", "VEHICLE"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    stealth = _make_unit(
+        "Stealth Battlesuits",
+        keywords=["INFANTRY", "STEALTH"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army_tau.add_unit(riptide)
+    army_tau.add_unit(stealth)
+    army_enemy.add_unit(enemy)
+    _deploy_unit(game, riptide, 10.0, 10.0)
+    _deploy_unit(game, stealth, 14.0, 10.0)
+    _deploy_unit(game, enemy, 24.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, p2, "FIGHT_PHASE", 1)
+
+    assert not p1.stratagems.can_use(
+        "WALL OF MIRRORS",
+        unit=riptide,
+        phase_name="Fight phase",
+        event="phase_end",
+        candidates=[stealth],
+    )
+    assert p1.stratagems.can_use(
+        "WALL OF MIRRORS",
+        unit=stealth,
+        phase_name="Fight phase",
+        event="phase_end",
+        candidates=[stealth],
+    )
+
+
 def test_point_blank_ambush_grants_ap_within_9_in_battle_round_3():
     from warhammer40k_ai.units.wargear import WargearProfile
 
@@ -617,3 +656,25 @@ def test_point_blank_ambush_rejected_in_battle_round_2():
     ok = p1.stratagems.use("POINT-BLANK AMBUSH", unit=breachers, phase_name="Shooting phase")
     assert not ok
     assert int(p1.command_points or 0) == before_cp
+
+
+def test_point_blank_ambush_tool_action_preflight_requires_battle_round_3():
+    game, p1, _p2, army_tau, army_enemy = _build_game()
+    breachers = _make_unit(
+        "Breacher Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army_tau.add_unit(breachers)
+    army_enemy.add_unit(enemy)
+    _deploy_unit(game, breachers, 10.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, p1, "SHOOTING_PHASE", 0)
+    game.turn = 2
+    assert not p1.stratagems.can_use("POINT-BLANK AMBUSH", unit=breachers, phase_name="Shooting phase")
+
+    game.turn = 3
+    assert p1.stratagems.can_use("POINT-BLANK AMBUSH", unit=breachers, phase_name="Shooting phase")

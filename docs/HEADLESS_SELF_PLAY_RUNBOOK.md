@@ -84,6 +84,7 @@ Default shooting policy:
 - Hazardous profiles are eligible during default shooting.
 - For weapons with multiple legal targetable profiles, the controller chooses the profile/target pair with the best hit-probability x wound-probability, using expected damage only as a tie-breaker.
 - Genestealer Cults Outlander Claw `CLOSE-RANGE SHOOT-OUT` derives eligible Mounted/Vehicle units that have not been selected to shoot before exposing the generic stratagem tool action, so target-required options are not emitted without a bound unit.
+- T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.
 
 Pending-placement policy:
 - Headless `MOVE_UNIT` confirmations that represent pending model placement (for example Reanimation Protocols or other confirm-only deploy-style follow-up placements) now synthesize explicit `model_positions` before resolution.

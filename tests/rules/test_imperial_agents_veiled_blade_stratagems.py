@@ -294,6 +294,32 @@ class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
         self.assertTrue(bool(wound_mods.get("reroll_wound_full")))
         self.assertTrue(any("PRIME TARGET" in str(r) for r in list(wound_mods.get("reroll_wound_full_reasons", ()) or ())))
 
+    def test_prime_target_tool_action_preflight_respects_shooting_turn_and_fight_phase(self):
+        game, ia_player, enemy_player, ia_army, enemy_army = _build_game()
+        agents = _make_unit(
+            "Agents Operatives",
+            keywords=["INFANTRY"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        ia_army.add_unit(agents)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, agents, 10.0, 10.0)
+        _place_unit(game, enemy, 14.0, 10.0)
+        game.rebuild_entity_registry()
+        ia_player.stratagems.refresh_available()
+
+        _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+        self.assertFalse(ia_player.stratagems.can_use("PRIME TARGET", unit=agents, phase_name="Shooting phase"))
+
+        _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
+        self.assertTrue(ia_player.stratagems.can_use("PRIME TARGET", unit=agents, phase_name="Fight phase"))
+
     def test_blind_grenades_queues_applies_penalty_and_cleans_up(self):
         game, ia_player, enemy_player, ia_army, enemy_army = _build_game()
         grenadier = _make_unit(
