@@ -29,6 +29,7 @@ from warhammer40k_ai.engine.session_store import (
 )
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.ml.llm_agents import build_llm_router_from_config_file
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
 
 logger = logging.getLogger(__name__)
@@ -356,6 +357,14 @@ def _parse_args() -> argparse.Namespace:
             "When provided, zone/next-unit deployment choices are ranked from candidate metadata."
         ),
     )
+    parser.add_argument(
+        "--llm-agent-config",
+        default="",
+        help=(
+            "Optional JSON config for LLM-backed hierarchical AI agents. "
+            "LLM choices are validated against legal candidates and fall back to deterministic rankers."
+        ),
+    )
     parser.add_argument("--max-phase-steps", type=int, default=80)
     parser.add_argument(
         "--output",
@@ -484,6 +493,7 @@ def _run_single_game(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
+    llm_agent_config: str | None = None,
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
@@ -519,11 +529,16 @@ def _run_single_game(
         seed_fn = getattr(random_source, "seed", None)
         if callable(seed_fn):
             seed_fn(int(game_seed))
+    ai_router = None
+    llm_config_text = str(llm_agent_config or "").strip()
+    if llm_config_text:
+        ai_router = build_llm_router_from_config_file(llm_config_text)
     controller = HeadlessPolicyDecisionController(
         game=game,
         auto_attach=True,
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         reserve_policy=str(reserve_policy or "forced_only"),
+        ai_router=ai_router,
     )
     runtime = LocalAuthoritativeRuntime(
         game,
@@ -675,6 +690,7 @@ def _run_single_game_job(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
+    llm_agent_config: str | None = None,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
@@ -712,6 +728,7 @@ def _run_single_game_job(
             reserve_policy=str(reserve_policy or "forced_only"),
             max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
             deployment_ranker_model=str(deployment_ranker_model or ""),
+            llm_agent_config=str(llm_agent_config or ""),
             log_phase_transitions=bool(log_phase_transitions),
             replay_dir=str(replay_dir or ""),
             replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
@@ -768,6 +785,7 @@ def run_headless_self_play(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str = "",
+    llm_agent_config: str = "",
     output: str = "data/headless_self_play_decision_records.json",
     reward_profile: str = "dense_vp_delta_v1",
     no_reward_annotation: bool = False,
@@ -803,6 +821,7 @@ def run_headless_self_play(
                 reserve_policy=str(reserve_policy),
                 max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                 deployment_ranker_model=str(deployment_ranker_model),
+                llm_agent_config=str(llm_agent_config),
                 log_level=str(log_level),
                 log_phase_transitions=bool(log_phase_transitions),
                 replay_dir=str(replay_dir),
@@ -841,6 +860,7 @@ def run_headless_self_play(
                     reserve_policy=str(reserve_policy),
                     max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                     deployment_ranker_model=str(deployment_ranker_model),
+                    llm_agent_config=str(llm_agent_config),
                     log_level=str(log_level),
                     log_phase_transitions=bool(log_phase_transitions),
                     replay_dir=str(replay_dir),
@@ -1012,6 +1032,7 @@ def main() -> int:
         reserve_policy=str(args.reserve_policy),
         max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
         deployment_ranker_model=str(args.deployment_ranker_model),
+        llm_agent_config=str(args.llm_agent_config),
         output=str(args.output),
         reward_profile=str(args.reward_profile),
         no_reward_annotation=bool(args.no_reward_annotation),

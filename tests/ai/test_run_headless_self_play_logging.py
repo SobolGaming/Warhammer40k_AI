@@ -270,6 +270,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
         reserve_policy="forced_only",
         max_reserves_arrival_seconds=10.0,
         deployment_ranker_model="",
+        llm_agent_config="data/llm_agent_config.json",
         log_level="WARNING",
         log_phase_transitions=False,
         replay_dir="data/headless_self_play_replays",
@@ -278,6 +279,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
 
     assert captured_kwargs["replay_dir"] == "data/headless_self_play_replays"
     assert captured_kwargs["replay_keyframe_interval"] == 7
+    assert captured_kwargs["llm_agent_config"] == "data/llm_agent_config.json"
     result = dict(payload.get("result", {}) or {})
     assert result["replay_session_id"] == "selfplay:000000"
     assert result["replay_path"] == "/tmp/replays/selfplay:000000/replay.sqlite3"

@@ -23,6 +23,10 @@ python -m pip install -e ".[ml]"
 python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
 ```
 
+Optional LLM-backed domain agents do not require an SDK dependency. Provide a JSON config with an
+OpenAI-compatible chat endpoint and API-key environment variable, then pass
+`--llm-agent-config <path>` to self-play. See `docs/LLM_AGENT_RUNTIME.md`.
+
 ## 1) Generate headless AI-vs-AI games from army lists
 
 `run_headless_self_play.py` runs full setup (including deployment) and battle phases in headless mode, then exports DecisionRecords.
@@ -38,6 +42,17 @@ python scripts/run_headless_self_play.py \
   --player2-army army_lists/aeldari_test.txt \
   --max-phase-steps 80 \
   --output data/headless_self_play_decision_records.json
+```
+
+LLM-backed self-play example:
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 10 \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt \
+  --llm-agent-config data/llm_agent_config.json \
+  --output data/llm_self_play_decision_records.json
 ```
 
 Optional replay capture for UI playback:
