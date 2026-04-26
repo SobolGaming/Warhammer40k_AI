@@ -27,6 +27,7 @@ from .interfaces import (
     PolicyBundleLoader,
 )
 from .llm_agents import (
+    ChatCompletionsTransport,
     LLMActionChoice,
     LLMConfigurationError,
     LLMDecisionAgent,
@@ -35,7 +36,6 @@ from .llm_agents import (
     LLMResponseError,
     LLMTransport,
     LLMTransportError,
-    OpenAICompatibleChatTransport,
     StaticLLMTransport,
     build_llm_router,
     build_llm_router_from_config_file,
@@ -71,6 +71,7 @@ __all__ = [
     "ArtifactResolver",
     "BundleSource",
     "CapabilityMatchupHeuristic",
+    "ChatCompletionsTransport",
     "CandidateRanker",
     "ComponentResolverRecord",
     "FORBIDDEN_CORE_DEPENDENCIES",
@@ -92,7 +93,6 @@ __all__ = [
     "LLMTransportError",
     "ManifestArtifactResolver",
     "MatchupEvaluator",
-    "OpenAICompatibleChatTransport",
     "PlaybookSelector",
     "PolicyBundleHandle",
     "PolicyBundleLoader",

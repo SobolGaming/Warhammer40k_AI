@@ -39,14 +39,18 @@ When `--report-output` is enabled for headless self-play, per-game report entrie
 
 ## Config
 
-Example config:
+LLM agent runtime is local-first. The built-in transport speaks the common Chat Completions HTTP
+request/response shape so it can target local servers such as llama.cpp, vLLM, LM Studio, or Ollama
+Chat Completions endpoints. It does not require the OpenAI SDK and does not contact any external
+service unless `endpoint_url` is explicitly set to one.
+
+Local endpoint example:
 
 ```json
 {
-  "provider": "openai_compatible_chat",
-  "endpoint_url": "https://api.example.com/v1/chat/completions",
-  "model": "configured-model-id",
-  "api_key_env": "OPENAI_API_KEY",
+  "provider": "chat_completions",
+  "endpoint_url": "http://127.0.0.1:8080/v1/chat/completions",
+  "model": "configured-local-model-id",
   "timeout_seconds": 30,
   "temperature": 0,
   "max_prompt_chars": 20000,
@@ -65,6 +69,9 @@ Example config:
 ```
 
 No model id is hardcoded in the repository. The config must provide `model` or set `WARHAMMER40K_AI_LLM_MODEL`.
+No API key is required by default. When an endpoint requires bearer auth, set either `api_key` in the
+external config file or `api_key_env` to the name of an environment variable. The transport sends an
+`Authorization` header only when a key resolves from those fields.
 
 ## Headless Self-Play
 

@@ -36,7 +36,7 @@ class LLMProviderConfig:
     provider: str
     endpoint_url: str
     model: str
-    api_key_env: str = "OPENAI_API_KEY"
+    api_key_env: str = ""
     api_key: str = ""
     timeout_seconds: float = 30.0
     temperature: float = 0.0
@@ -47,7 +47,7 @@ class LLMProviderConfig:
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "LLMProviderConfig":
         data = dict(payload or {})
-        provider = str(data.get("provider", "openai_compatible_chat") or "openai_compatible_chat").strip()
+        provider = str(data.get("provider", "chat_completions") or "chat_completions").strip()
         endpoint_url = str(data.get("endpoint_url", "") or "").strip()
         if not endpoint_url:
             raise LLMConfigurationError("LLM config requires endpoint_url.")
@@ -72,7 +72,7 @@ class LLMProviderConfig:
             provider=provider,
             endpoint_url=endpoint_url,
             model=model,
-            api_key_env=str(data.get("api_key_env", "OPENAI_API_KEY") or "OPENAI_API_KEY").strip(),
+            api_key_env=str(data.get("api_key_env", "") or "").strip(),
             api_key=str(data.get("api_key", "") or ""),
             timeout_seconds=max(0.1, float(data.get("timeout_seconds", 30.0) or 30.0)),
             temperature=float(data.get("temperature", 0.0) or 0.0),
@@ -203,22 +203,18 @@ def parse_llm_action_choice(raw_payload: Mapping[str, Any]) -> LLMActionChoice:
     return LLMActionChoice(action_id=action_id, rationale=rationale)
 
 
-class OpenAICompatibleChatTransport:
-    """Minimal OpenAI-compatible chat transport using only the standard library."""
+class ChatCompletionsTransport:
+    """Minimal Chat Completions compatible transport using only the standard library."""
 
     def __init__(self, config: LLMProviderConfig) -> None:
-        if str(config.provider) != "openai_compatible_chat":
+        if str(config.provider) != "chat_completions":
             raise LLMConfigurationError(
-                f"Unsupported LLM provider {config.provider!r}; expected 'openai_compatible_chat'."
+                f"Unsupported LLM provider {config.provider!r}; expected 'chat_completions'."
             )
         self._config = config
 
     def choose_action(self, *, component_name: str, payload: Mapping[str, Any]) -> LLMActionChoice:
         api_key = self._config.resolved_api_key()
-        if not api_key:
-            raise LLMConfigurationError(
-                f"LLM API key is required via api_key or {self._config.api_key_env}."
-            )
         request_payload = {
             "model": self._config.model,
             "temperature": float(self._config.temperature),
@@ -243,14 +239,14 @@ class OpenAICompatibleChatTransport:
             "response_format": {"type": "json_object"},
         }
         body = json.dumps(request_payload, sort_keys=True, ensure_ascii=True).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         http_request = urllib_request.Request(
             self._config.endpoint_url,
             data=body,
             method="POST",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
         try:
             with urllib_request.urlopen(http_request, timeout=float(self._config.timeout_seconds)) as response:
@@ -381,7 +377,7 @@ def build_llm_router(
     transport: LLMTransport | None = None,
 ) -> AIControllerRouter:
     fallback_rankers = default_ai_domain_rankers()
-    resolved_transport = transport if transport is not None else OpenAICompatibleChatTransport(config)
+    resolved_transport = transport if transport is not None else ChatCompletionsTransport(config)
     components: dict[str, object] = {}
     fallbacks: dict[str, tuple[object, ...]] = {}
     for component_name in AI_POLICY_COMPONENTS:
@@ -432,4 +428,3 @@ def llm_training_examples_from_records(records: Sequence[Mapping[str, Any]]) -> 
             continue
         examples.append(llm_training_example_from_decision_record(data))
     return examples
-

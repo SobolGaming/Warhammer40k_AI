@@ -23,8 +23,8 @@ python -m pip install -e ".[ml]"
 python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
 ```
 
-Optional LLM-backed domain agents do not require an SDK dependency. Provide a JSON config with an
-OpenAI-compatible chat endpoint and API-key environment variable, then pass
+Optional LLM-backed domain agents do not require an SDK dependency. Provide a JSON config with a
+local or remote Chat Completions compatible endpoint, then pass
 `--llm-agent-config <path>` to self-play. See `docs/LLM_AGENT_RUNTIME.md`.
 
 ## 1) Generate headless AI-vs-AI games from army lists
