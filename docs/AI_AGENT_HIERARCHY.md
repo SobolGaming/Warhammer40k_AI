@@ -75,3 +75,16 @@ Routing is deterministic:
 `HeadlessPolicyDecisionController` accepts an optional `AIControllerRouter`. When provided, the router preselects the first candidate tried by the existing headless resolver. The resolver still uses the normal command path, payload normalization, reserves-arrival safeguards, and authoritative validation.
 
 LLM-backed domain agents are documented in `docs/LLM_AGENT_RUNTIME.md`. They implement the same component contract and fall back to the deterministic rankers described here when the provider is unavailable or returns an illegal action id.
+
+## Human Training Mode
+
+`scripts/run_training_mode.py` provides one-step human imitation drills for this same component/action-id
+hierarchy. The first implemented stages are `shooting_phase` (`DECLARE_SHOTS` -> `shooting_ranker`) and
+`deployment_reserves` (`DECLARE_RESERVES` -> `deployment_ranker`). The Pygame training UI shows a generated
+situation, asks the user to choose one legal candidate, evaluates that single decision, writes a JSONL
+observation, and updates a framework-free preference model.
+
+These observations are scoped training records rather than full-game `DecisionRecord`s. They preserve the
+serialized `DecisionRequest`, candidate masks, chosen action id, component name, reward, and supervised-example
+payload so later LLM or learned ranker pipelines can consume human selections without changing the authoritative
+engine boundary. See `docs/TRAINING_MODE.md`.

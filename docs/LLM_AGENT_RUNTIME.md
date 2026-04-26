@@ -109,6 +109,11 @@ This works for headless self-play, replay captures, and human-vs-AI games becaus
 
 LLM traces can explain why a provider chose or failed to choose an action, while `DecisionRecord` examples remain the canonical training source.
 
+Human training-mode observations from `scripts/run_training_mode.py` are separate one-step imitation records.
+They already include a `supervised_example` block with the serialized decision payload and chosen action id for
+LLM or ranker training experiments; full-game policy training should still prefer authoritative `DecisionRecord`
+exports when available.
+
 ## Safety and Determinism
 
 - LLM agents never see masked candidates.
