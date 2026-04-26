@@ -399,6 +399,122 @@ def test_execute_alternating_deployment_skips_unplaceable_unit_without_crashing(
     assert bool(doomed.models[0].is_alive) is False
 
 
+def test_execute_alternating_deployment_does_not_place_embarked_or_reserved_units(monkeypatch) -> None:
+    game, defender, attacker = _build_game()
+    manager = DeploymentManager(game)
+    manager.defender = defender
+    manager.attacker = attacker
+
+    transport = _DeployingUnit("unit:transport", "Transport")
+    passenger = _DeployingUnit("unit:passenger", "Embarked Passenger")
+    passenger.deployed = True
+    passenger.is_embarked = True
+    passenger.embarked_in = transport
+    passenger.reserve_status = "reserves"
+    reserve_unit = _DeployingUnit("unit:reserve", "Reserve Unit")
+    reserve_unit.reserve_status = "strategic_reserves"
+    deployed_unit = _DeployingUnit("unit:deployed", "Already Deployed")
+    deployed_unit.deployed = True
+    attached_leader = _DeployingUnit("unit:attached_leader", "Attached Leader")
+    attached_leader.is_leader = True
+    attached_leader.attached_to = deployed_unit
+    attacker_unit = _DeployingUnit("unit:attacker", "Attacker Unit")
+    defender.army = _DeploymentArmy([passenger, reserve_unit, deployed_unit, attached_leader])
+    attacker.army = _DeploymentArmy([attacker_unit])
+
+    class _DecisionMaker(_ScriptedDecisionMaker):
+        def build_deployment_intent(self, **kwargs):
+            del kwargs
+            return {}
+
+        def build_deployment_decision_context(self, **kwargs):
+            del kwargs
+            return {}
+
+    defender_maker = _DecisionMaker(zone_name="Zone A", next_unit_id=passenger.id)
+    attacker_maker = _DecisionMaker(zone_name="Zone B", next_unit_id=attacker_unit.id)
+    monkeypatch.setattr(
+        manager,
+        "_resolve_next_deploy_unit_choice",
+        lambda player, decision_maker, deployable_units, deployment_zone, already_deployed: deployable_units[0],
+    )
+
+    candidate_calls: list[str] = []
+
+    def _fake_candidates(unit, *, decision_maker, deployment_zone, already_deployed, max_candidates=8):
+        del decision_maker, deployment_zone, already_deployed, max_candidates
+        candidate_calls.append(str(unit.id))
+        return [
+            {
+                "anchor": [4.0, 8.0],
+                "model_positions": [
+                    {
+                        "model_id": f"{unit.id}:model:0",
+                        "position": [4.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "test",
+            }
+        ]
+
+    monkeypatch.setattr(manager, "_build_deployment_move_candidates", _fake_candidates)
+    monkeypatch.setattr(manager, "_build_deployment_move_request", lambda unit, *args, **kwargs: DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy",
+        player_id=attacker.id,
+        options=[
+            DecisionOption.create(
+                "Place",
+                payload={
+                    "deployment_anchor": [4.0, 8.0],
+                    "model_positions": [
+                        {
+                            "model_id": f"{unit.id}:model:0",
+                            "position": [4.0, 8.0, 0.0],
+                            "facing": 0.0,
+                        }
+                    ],
+                },
+            )
+        ],
+    ))
+    monkeypatch.setattr(manager, "_select_deployment_move_option", lambda **kwargs: kwargs["request"].options[0])
+    monkeypatch.setattr(game, "request_decision", lambda request: game.decision_queue.add(request))
+    monkeypatch.setattr(
+        game,
+        "apply_command",
+        lambda command: type("Result", (), {"ok": True, "value": type("Apply", (), {"ok": True})()})(),
+    )
+
+    deployment_results = {
+        "deployment_zones": {
+            defender.id: {"name": "Zone A", "zone_type": "defender"},
+            attacker.id: {"name": "Zone B", "zone_type": "attacker"},
+        },
+        "reserves": {
+            defender.id: {
+                passenger.id: "deploy",
+                reserve_unit.id: "deploy",
+                deployed_unit.id: "deploy",
+                attached_leader.id: "deploy",
+            },
+            attacker.id: {attacker_unit.id: "deploy"},
+        },
+    }
+
+    manager.execute_alternating_deployment(
+        deployment_results,
+        {defender.id: defender_maker, attacker.id: attacker_maker},
+    )
+
+    assert candidate_calls == [attacker_unit.id]
+    assert deployment_results["deployment_order"] == [(attacker.id, attacker_unit.id, (4.0, 8.0))]
+    assert not bool(getattr(passenger, "_deployment_skipped_no_position", False))
+    assert not bool(getattr(reserve_unit, "_deployment_skipped_no_position", False))
+    assert not bool(getattr(attached_leader, "_deployment_skipped_no_position", False))
+
+
 def test_execute_deployment_sequence_reuses_setup_roles_and_reserves(monkeypatch) -> None:
     game, defender, attacker = _build_game()
     defender_unit = _DeployingUnit("unit:defender", "Guardian Defenders")

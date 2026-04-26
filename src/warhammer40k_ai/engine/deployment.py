@@ -983,7 +983,44 @@ class DeploymentManager:
             elif hasattr(leader, "reserve_status"):
                 leader.reserve_status = "deployed"
             leader.deployed = True
-    
+
+    @staticmethod
+    def _reserve_decision_for_unit(unit: 'Unit', reserves_decisions: Dict[str, str]) -> str:
+        unit_id = str(maybe_entity_id(unit) or "")
+        decision = dict(reserves_decisions or {}).get(unit_id)
+        if decision is None:
+            legacy_id = str(getattr(unit, "id", "") or "")
+            decision = dict(reserves_decisions or {}).get(legacy_id)
+        return str(decision or "deploy").strip().lower()
+
+    def _unit_can_deploy_in_alternating_sequence(
+        self,
+        unit: 'Unit',
+        *,
+        reserves_decisions: Dict[str, str],
+    ) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "deployed", False)):
+            return False
+        if bool(getattr(unit, "is_attached_leader", False)):
+            return False
+        if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
+            return False
+        if bool(getattr(unit, "is_joined_support", False)):
+            return False
+        if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+            return False
+        reserve_status = str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status in ("reserves", "strategic_reserves"):
+            return False
+        if self._reserve_decision_for_unit(unit, reserves_decisions) != "deploy":
+            return False
+        must_start = getattr(unit, "must_start_in_reserves", None)
+        if callable(must_start) and bool(must_start()):
+            return False
+        return True
+
     def setup_mission_objectives(self) -> None:
         """Set up objectives based on the selected mission."""
         # Create objectives from mission markers
@@ -1004,29 +1041,20 @@ class DeploymentManager:
         defender_zone = deployment_results['deployment_zones'][self.defender.id]
         attacker_zone = deployment_results['deployment_zones'][self.attacker.id]
         
-        def _is_attached_leader(u) -> bool:
-            try:
-                return bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is not None
-            except Exception:
-                return False
-        def _is_joined_support(u) -> bool:
-            try:
-                return bool(getattr(u, "is_joined_support", False))
-            except Exception:
-                return False
-
         # Get units to deploy (not in reserves). Attached Leaders deploy as part of their Bodyguard.
         defender_units = [
             unit for unit in self.defender.get_army().units
-            if (not _is_attached_leader(unit)) and (not _is_joined_support(unit))
-            and deployment_results['reserves'][self.defender.id].get(unit.id, 'deploy') == 'deploy'
-            and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
+            if self._unit_can_deploy_in_alternating_sequence(
+                unit,
+                reserves_decisions=deployment_results['reserves'][self.defender.id],
+            )
         ]
         attacker_units = [
             unit for unit in self.attacker.get_army().units
-            if (not _is_attached_leader(unit)) and (not _is_joined_support(unit))
-            and deployment_results['reserves'][self.attacker.id].get(unit.id, 'deploy') == 'deploy'
-            and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
+            if self._unit_can_deploy_in_alternating_sequence(
+                unit,
+                reserves_decisions=deployment_results['reserves'][self.attacker.id],
+            )
         ]
         
         logger.info(f"Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
@@ -1161,7 +1189,7 @@ class DeploymentManager:
                         "decision was consumed by another controller but unit is not deployed."
                     )
                 current_deployed.append(unit)
-                deployment_order.append((current_player.id, unit.id, selected_position))
+                deployment_order.append((current_player.id, str(maybe_entity_id(unit) or ""), selected_position))
                 
                 logger.info(
                     f"{current_player.name} deploys {unit.name} at "
@@ -1254,7 +1282,7 @@ class DeploymentManager:
                         continue
                 except Exception:
                     pass
-                reserve_decision = reserves_decisions.get(unit.id, 'deploy')
+                reserve_decision = self._reserve_decision_for_unit(unit, reserves_decisions)
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
                         if reserve_decision != "reserves":

@@ -37,6 +37,10 @@ This document describes deterministic headless placement behavior for deployment
 - Deployment-manager-owned setup requests (`CHOOSE_DEPLOYMENT_ZONE`, `DECLARE_RESERVES`,
   `SELECT_NEXT_DEPLOY_UNIT`, and deployment `MOVE_UNIT`) are resolved by `DeploymentManager`/
   `DeploymentDecisionMaker`, not by the generic `HeadlessPolicyDecisionController`.
+- Alternating deployment filters out units that are already deployed, embarked in transports, currently
+  in reserves/strategic reserves, attached leaders, joined support units, or forced to start in reserves
+  before placement candidate generation. This keeps transport passengers and reserve-start units from
+  consuming battlefield placement searches or being destroyed as skipped deployments.
 - Teacher decision context now includes optional rollout settings under `deployment_lookahead`
   (enabled, depth, branch count, discount, blend, candidate kinds) for bounded pregame lookahead.
 - Standard units:

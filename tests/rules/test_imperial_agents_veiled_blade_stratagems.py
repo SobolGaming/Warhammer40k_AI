@@ -318,7 +318,17 @@ class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
         self.assertFalse(ia_player.stratagems.can_use("PRIME TARGET", unit=agents, phase_name="Shooting phase"))
 
         _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
-        self.assertTrue(ia_player.stratagems.can_use("PRIME TARGET", unit=agents, phase_name="Fight phase"))
+        self.assertFalse(ia_player.stratagems.can_use("PRIME TARGET", unit=agents, phase_name="Fight phase"))
+
+        game.event_system.publish("fight_unit_selected", unit=agents, selecting_player=ia_player)
+        pending = _pending_by_name(ia_player.stratagems, "PRIME TARGET")
+        self.assertIsNotNone(pending)
+        self.assertTrue(
+            ia_player.stratagems.can_use(
+                "PRIME TARGET",
+                **dict(pending),
+            )
+        )
 
     def test_blind_grenades_queues_applies_penalty_and_cleans_up(self):
         game, ia_player, enemy_player, ia_army, enemy_army = _build_game()
@@ -732,6 +742,54 @@ class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
         rejected = ia_player.stratagems.use(will_sapping_name, unit=culexus, phase_name="Shooting phase")
         self.assertFalse(rejected)
         self.assertEqual(int(ia_player.command_points or 0), 10)
+
+    def test_will_sapping_salvo_tool_action_preflight_requires_unshot_agents_infantry(self):
+        game, ia_player, _enemy_player, ia_army, enemy_army = _build_game()
+        already_shot = _make_unit(
+            "Agents Shooters",
+            keywords=["INFANTRY"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        vehicle = _make_unit(
+            "Agents Vehicle",
+            keywords=["VEHICLE"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        eligible = _make_unit(
+            "Agents Breachers",
+            keywords=["INFANTRY"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        ia_army.add_unit(already_shot)
+        ia_army.add_unit(vehicle)
+        ia_army.add_unit(eligible)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, already_shot, 10.0, 10.0)
+        _place_unit(game, vehicle, 13.0, 10.0)
+        _place_unit(game, eligible, 16.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+        already_shot.round_state.shot_this_round = True
+
+        _set_phase(game, ia_player, "SHOOTING_PHASE", 0)
+        will_sapping_name = _available_stratagem_name(ia_player.stratagems, "WILL-SAPPING SALVO")
+        self.assertFalse(ia_player.stratagems.can_use(will_sapping_name, unit=already_shot, phase_name="Shooting phase"))
+        self.assertFalse(ia_player.stratagems.can_use(will_sapping_name, unit=vehicle, phase_name="Shooting phase"))
+        self.assertTrue(ia_player.stratagems.can_use(will_sapping_name, unit=eligible, phase_name="Shooting phase"))
+
+        stratagem = ia_player.stratagems.get_by_name(will_sapping_name)
+        context = ia_player.stratagems._phase_available_stratagem_context(
+            stratagem,
+            phase_name="Shooting phase",
+            is_active_turn=True,
+        )
+        candidate_ids = {get_entity_id(unit) for unit in list(context.get("candidates") or [])}
+        self.assertEqual(candidate_ids, {get_entity_id(eligible)})
 
 
 if __name__ == "__main__":

@@ -18857,6 +18857,10 @@ class StratagemManager(
             )
         except Exception:
             raise
+        self._queue_imperial_agents_prime_target_fight_unit_selected_reaction(
+            unit=unit,
+            selecting_player=selecting_player,
+        )
         # Offer only to the player selecting the unit
         if selecting_player is not self.player:
             return
