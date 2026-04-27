@@ -2534,6 +2534,7 @@ class PositioningAttackBonusesMixin:
                     attack_type=attack_kind,
                     target=target,
                     model=model,
+                    weapon_profile=weapon_profile,
                     game_map=game_map,
                 )
                 or []

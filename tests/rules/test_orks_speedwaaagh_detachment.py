@@ -61,7 +61,7 @@ def _place(game: Game, unit: Unit, x: float, y: float, facing: float = 0.0) -> N
         game.map.units.append(unit)
 
 
-def _ranged_profile() -> WargearProfile:
+def _ranged_profile(*, description: str = "") -> WargearProfile:
     parent = SimpleNamespace(name="Dakkagun", is_melee=lambda: False, is_ranged=lambda: True)
     return WargearProfile(
         "Profile",
@@ -72,7 +72,7 @@ def _ranged_profile() -> WargearProfile:
             "S": "5",
             "AP": "0",
             "D": "1",
-            "description": "",
+            "description": str(description or ""),
         },
         parent_wargear=parent,
     )
@@ -640,4 +640,73 @@ def test_on_da_move_rejects_already_moved_or_turbo_units():
         player=ork_player,
     )
     assert not ork_player.stratagems.use("ON DA MOVE", unit=trukk, phase_name="Movement phase")
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_speshul_ammo_grants_anti_monster_and_vehicle_to_non_torrent_ranged_weapons():
+    game, ork_player, army, enemy_army = _build_game()
+    shoota_boyz = _unit("Shoota Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy_tank = _unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"])
+    enemy_monster = _unit("Enemy Monster", keywords=["MONSTER"], faction_keywords=["ENEMY"])
+    army.add_unit(shoota_boyz)
+    enemy_army.add_unit(enemy_tank)
+    enemy_army.add_unit(enemy_monster)
+    _place(game, shoota_boyz, 0.0, 0.0)
+    _place(game, enemy_tank, 10.0, 0.0)
+    _place(game, enemy_monster, 14.0, 0.0)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use("SPESHUL AMMO", unit=shoota_boyz, phase_name="Shooting phase")
+    assert int(ork_player.command_points or 0) == 9
+
+    normal_profile = _ranged_profile()
+    tank_bonus = shoota_boyz.get_attack_keyword_bonuses(
+        target=enemy_tank,
+        attack_type="ranged",
+        model=shoota_boyz.models[0],
+        weapon_profile=normal_profile,
+        game_map=game.map,
+    )
+    monster_bonus = shoota_boyz.get_attack_keyword_bonuses(
+        target=enemy_monster,
+        attack_type="ranged",
+        model=shoota_boyz.models[0],
+        weapon_profile=normal_profile,
+        game_map=game.map,
+    )
+    assert ("VEHICLE", 4) in list(tank_bonus.get("anti_specs") or [])
+    assert ("MONSTER", 4) in list(monster_bonus.get("anti_specs") or [])
+
+    torrent_profile = _ranged_profile(description="[TORRENT]")
+    torrent_bonus = shoota_boyz.get_attack_keyword_bonuses(
+        target=enemy_tank,
+        attack_type="ranged",
+        model=shoota_boyz.models[0],
+        weapon_profile=torrent_profile,
+        game_map=game.map,
+    )
+    assert ("VEHICLE", 4) not in list(torrent_bonus.get("anti_specs") or [])
+    assert ("MONSTER", 4) not in list(torrent_bonus.get("anti_specs") or [])
+
+
+def test_speshul_ammo_rejects_already_shot_units():
+    game, ork_player, army, enemy_army = _build_game()
+    shoota_boyz = _unit("Shoota Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(shoota_boyz)
+    enemy_army.add_unit(enemy)
+    _place(game, shoota_boyz, 0.0, 0.0)
+    _place(game, enemy, 10.0, 0.0)
+    shoota_boyz.round_state.shot_this_round = True
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert not ork_player.stratagems.use("SPESHUL AMMO", unit=shoota_boyz, phase_name="Shooting phase")
     assert int(ork_player.command_points or 0) == 10

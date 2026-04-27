@@ -466,6 +466,14 @@ class OrksStratagemMixin:
         kept.sort(key=self._orks_sort_key)
         return kept
 
+    def _orks_speshul_ammo_candidates(self) -> list[Any]:
+        if not self._is_speedwaaagh_detachment():
+            return []
+        return self._orks_offensive_candidates(
+            require_targetable=True,
+            require_not_selected_phase="Shooting phase",
+        )
+
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -4304,6 +4312,8 @@ class OrksStratagemMixin:
             return self._use_orks_ded_killy_construction(stratagem, **kwargs)
         if name_u == "ON DA MOVE":
             return self._use_orks_on_da_move(stratagem, **kwargs)
+        if name_u == "SPESHUL AMMO":
+            return self._use_orks_speshul_ammo(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6354,6 +6364,68 @@ class OrksStratagemMixin:
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: ON DA MOVE: %s can shoot and charge after Advancing or Falling Back until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_speshul_ammo(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_speedwaaagh_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Shooting phase",),
+            require_your_turn=True,
+            error_prefix="SPESHUL AMMO",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("SPESHUL AMMO", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: SPESHUL AMMO: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_speshul_ammo_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="SPESHUL AMMO",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Shooting phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: SPESHUL AMMO: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SPESHUL AMMO").strip() or "SPESHUL AMMO"
+        self._orks_apply_temp_effects(
+            root,
+            detachment="speedwaaagh",
+            effects=[
+                {
+                    "id": "speshul_ammo:anti_monster_4",
+                    "source": source_name,
+                    "effect": "keyword",
+                    "attack_type": "ranged",
+                    "keyword": "ANTI-MONSTER 4+",
+                    "weapon_exclude_keywords_any": ["TORRENT"],
+                    "expires_mode": "phase",
+                },
+                {
+                    "id": "speshul_ammo:anti_vehicle_4",
+                    "source": source_name,
+                    "effect": "keyword",
+                    "attack_type": "ranged",
+                    "keyword": "ANTI-VEHICLE 4+",
+                    "weapon_exclude_keywords_any": ["TORRENT"],
+                    "expires_mode": "phase",
+                },
+            ],
+        )
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SPESHUL AMMO: %s gains [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] on non-Torrent ranged weapons until end of phase.",
             getattr(root, "name", "Unit"),
         )
         return True

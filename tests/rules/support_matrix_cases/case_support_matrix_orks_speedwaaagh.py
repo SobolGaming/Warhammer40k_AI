@@ -157,3 +157,27 @@ def test_speedwaaagh_on_da_move_stratagem_is_supported():
     assert "advancing" in notes_l or "advanced" in notes_l
     assert "falling back" in notes_l or "fell back" in notes_l
     assert "turbo" in notes_l
+
+
+def test_speedwaaagh_speshul_ammo_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010796004"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Speedwaaagh!",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "SPESHUL AMMO"
+    notes_l = str(notes or "").lower()
+    assert "anti-monster" in notes_l
+    assert "anti-vehicle" in notes_l
+    assert "non-torrent" in notes_l

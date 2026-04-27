@@ -2429,6 +2429,20 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "excludes_speedwaaagh_turbo_boostas_active": True,
         },
     ),
+    "000010796004": StratagemToolDescriptor(
+        stratagem_id="000010796004",
+        name="SPESHUL AMMO",
+        timing="shooting_phase",
+        target="orks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="non_torrent_ranged_anti_monster_4_and_anti_vehicle_4",
+        cp_cost=1,
+        effect_params={
+            "grant_keywords": ["ANTI-MONSTER 4+", "ANTI-VEHICLE 4+"],
+            "attack_type": "ranged",
+            "exclude_weapon_keywords_any": ["TORRENT"],
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

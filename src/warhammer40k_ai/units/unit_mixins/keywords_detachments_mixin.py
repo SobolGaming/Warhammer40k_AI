@@ -14194,6 +14194,54 @@ class KeywordsDetachmentsMixin:
     ) -> bool:
         target_root = self._orks_temp_effect_unit_root(target)
 
+        def _weapon_profile_has_keyword(keyword: str) -> bool:
+            key = str(keyword or "").strip().upper()
+            if not key or weapon_profile is None:
+                return False
+            is_torrent = getattr(weapon_profile, "is_torrent", None)
+            if key == "TORRENT" and callable(is_torrent) and bool(is_torrent()):
+                return True
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            parent_is_torrent = getattr(parent, "is_torrent", None) if parent is not None else None
+            if key == "TORRENT" and callable(parent_is_torrent) and bool(parent_is_torrent()):
+                return True
+            raw_bits: list[str] = []
+            for attr_name in ("_raw_description", "description"):
+                value = getattr(weapon_profile, attr_name, "")
+                if value:
+                    raw_bits.append(str(value))
+            raw_bits.extend(str(value) for value in list(getattr(weapon_profile, "keywords", []) or []))
+            if parent is not None:
+                for attr_name in ("_raw_description", "description"):
+                    value = getattr(parent, attr_name, "")
+                    if value:
+                        raw_bits.append(str(value))
+                raw_bits.extend(str(value) for value in list(getattr(parent, "keywords", []) or []))
+            normalized = " ".join(raw_bits).upper()
+            return bool(key and key in normalized)
+
+        required_weapon_keywords = tuple(
+            str(token or "").strip().upper()
+            for token in list(entry.get("weapon_keywords_any", []) or entry.get("required_weapon_keywords_any", []) or [])
+            if str(token or "").strip()
+        )
+        if required_weapon_keywords:
+            if weapon_profile is None:
+                return False
+            if not any(_weapon_profile_has_keyword(keyword) for keyword in required_weapon_keywords):
+                return False
+
+        excluded_weapon_keywords = tuple(
+            str(token or "").strip().upper()
+            for token in list(entry.get("weapon_exclude_keywords_any", []) or entry.get("exclude_weapon_keywords_any", []) or [])
+            if str(token or "").strip()
+        )
+        if excluded_weapon_keywords:
+            if weapon_profile is None:
+                return False
+            if any(_weapon_profile_has_keyword(keyword) for keyword in excluded_weapon_keywords):
+                return False
+
         if bool(entry.get("target_is_prey")):
             if target_root is None:
                 return False
