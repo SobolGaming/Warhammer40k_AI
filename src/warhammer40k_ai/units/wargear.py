@@ -27453,6 +27453,52 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Bearer ranged attacks: re-roll Damage roll (optional).
+        try:
+            if rerolls_allowed and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
+                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+                unit = getattr(attacker, "parent_unit", None)
+                rule = None
+                if is_ranged and unit is not None and getattr(unit, "get_bearer_ranged_damage_reroll_rule", None):
+                    rule = unit.get_bearer_ranged_damage_reroll_rule(attacker)
+                if rule and bool(rule.get("reroll_damage")):
+                    do_reroll = False
+                    try:
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        provider = get_decision_provider(game, "roll_reroll_provider")
+                    except Exception:
+                        provider = None
+                        player = None
+                    reason = str(rule.get("source", "") or "").strip() or "Bearer ranged damage reroll"
+                    average_reroll = self._should_reroll_below_average(damage_value, self.damage)
+                    if callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="damage",
+                                value=damage_value,
+                                dice=damage_result.get("damage_dice_rolls", None),
+                                reason=reason,
+                                fallback_choice=average_reroll,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = average_reroll
+                    if do_reroll:
+                        new_val, new_rolls = _reroll_damage()
+                        damage_value = new_val
+                        damage_result['damage_dice_rolls'] = new_rolls
+                        damage_result['damage_rolled'] = new_val
+                        damage_result.setdefault('special_effects', []).append(
+                            f"{reason}: re-roll Damage roll"
+                        )
+                        damage_result['reroll'] = new_val
+        except Exception:
+            pass
+
         # Selected to shoot: re-roll one Damage roll (one per selection).
         try:
             if rerolls_allowed and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:

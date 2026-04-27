@@ -7,6 +7,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, VoiceOfCommandManager
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class _Datasheet:
@@ -122,13 +123,47 @@ def _battalion_commander() -> Enhancement:
     )
 
 
-def test_battalion_commander_descriptor_exists():
-    desc = get_enhancement_tool_descriptor(enhancement_id="000010787002")
+def _titan_killer() -> Enhancement:
+    return Enhancement(
+        id="000010787003",
+        name="Titan Killer",
+        faction_id="AM",
+        detachment="Steel Hammer",
+        points=25,
+        description=(
+            "Astra Militarum Titanic Character model only. Each time the bearer makes a ranged attack, "
+            "you can re-roll the Damage roll."
+        ),
+    )
 
-    assert desc is not None
-    assert desc.name == "Battalion Commander"
-    assert desc.effect == "grant_voice_of_command_and_officer"
-    assert desc.effect_params["order_count"] == 2
+
+def _damage_profile(*, weapon_type: str = "Ranged"):
+    return Wargear(
+        {
+            "name": "Test Cannon",
+            "type": weapon_type,
+            "range": "36" if weapon_type == "Ranged" else "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "12",
+            "AP": "-3",
+            "D": "D3",
+            "description": "",
+        }
+    ).profiles["default"]
+
+
+def test_steel_hammer_enhancement_descriptors_exist():
+    battalion = get_enhancement_tool_descriptor(enhancement_id="000010787002")
+    titan_killer = get_enhancement_tool_descriptor(enhancement_id="000010787003")
+
+    assert battalion is not None
+    assert battalion.name == "Battalion Commander"
+    assert battalion.effect == "grant_voice_of_command_and_officer"
+    assert battalion.effect_params["order_count"] == 2
+    assert titan_killer is not None
+    assert titan_killer.name == "Titan Killer"
+    assert titan_killer.effect == "bearer_ranged_damage_reroll"
 
 
 def test_battalion_commander_grants_voice_and_two_titanic_or_squadron_orders():
@@ -202,3 +237,65 @@ def test_battalion_commander_is_detachment_and_character_gated():
 
     assert non_character.has_any_keyword("OFFICER")
     assert non_character not in steel_manager.get_eligible_officers(game=steel_game, player=steel_army.player)
+
+
+def test_titan_killer_rerolls_bearer_ranged_damage_roll(monkeypatch):
+    from warhammer40k_ai.utility import dice as dice_mod
+
+    game, army, enemy_army = _build_game()
+    commander = _make_unit("Baneblade Commander", keywords=["VEHICLE", "TITANIC", "CHARACTER"], wounds=24)
+    target = _make_unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"], wounds=12)
+    army.add_unit(commander)
+    enemy_army.add_unit(target)
+    _titan_killer().apply_to_unit(commander)
+    _place_unit(game, commander, 10.0, 10.0)
+    _place_unit(game, target, 14.0, 10.0)
+    game.rebuild_entity_registry()
+
+    profile = _damage_profile()
+    calls = []
+    game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
+    rolls = iter([1, 3])
+    monkeypatch.setattr(dice_mod, "get_dice_roll", lambda _size=6: next(rolls))
+
+    damage = profile._damage_target_with_tracking(target.models[0], commander.models[0], {}, game.map)
+
+    assert int(damage.get("damage_rolled", 0) or 0) == 3
+    assert damage.get("reroll") == 3
+    assert any("Titan Killer" in str(effect) for effect in damage.get("special_effects", []))
+    assert any(call.get("roll_type") == "damage" and call.get("reason") == "Titan Killer" for call in calls)
+
+
+def test_titan_killer_is_ranged_and_character_gated(monkeypatch):
+    from warhammer40k_ai.utility import dice as dice_mod
+
+    game, army, enemy_army = _build_game()
+    commander = _make_unit("Baneblade Commander", keywords=["VEHICLE", "TITANIC", "CHARACTER"], wounds=24)
+    non_character = _make_unit("Baneblade", keywords=["VEHICLE", "TITANIC"], wounds=24)
+    target = _make_unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"], wounds=12)
+    for unit in (commander, non_character):
+        army.add_unit(unit)
+    enemy_army.add_unit(target)
+    _titan_killer().apply_to_unit(commander)
+    _titan_killer().apply_to_unit(non_character)
+    _place_unit(game, commander, 10.0, 10.0)
+    _place_unit(game, non_character, 11.0, 10.0)
+    _place_unit(game, target, 14.0, 10.0)
+    game.rebuild_entity_registry()
+
+    ranged = _damage_profile()
+    melee = _damage_profile(weapon_type="Melee")
+    calls = []
+    game.install_decision_providers(roll_reroll_provider=lambda **kwargs: calls.append(kwargs) or True)
+
+    rolls = iter([1, 3, 1, 3])
+    monkeypatch.setattr(dice_mod, "get_dice_roll", lambda _size=6: next(rolls))
+
+    melee_damage = melee._damage_target_with_tracking(target.models[0], commander.models[0], {}, game.map)
+    non_character_damage = ranged._damage_target_with_tracking(target.models[0], non_character.models[0], {}, game.map)
+
+    assert int(melee_damage.get("damage_rolled", 0) or 0) == 1
+    assert "reroll" not in melee_damage
+    assert int(non_character_damage.get("damage_rolled", 0) or 0) == 3
+    assert "reroll" not in non_character_damage
+    assert calls == []

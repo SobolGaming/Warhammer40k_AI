@@ -5297,6 +5297,16 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_battalion_commander_bearer_model_id"] = bearer_id
 
+        if name == "titan killer" or enh_id == "000010787003":
+            if not is_steel_hammer:
+                return
+            unit.special_rules["enhancement_titan_killer"] = True
+            unit.special_rules["enhancement_titan_killer_ranged_damage_reroll"] = True
+            unit.special_rules["enhancement_titan_killer_source"] = "Titan Killer"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_titan_killer_bearer_model_id"] = bearer_id
+
         if name in ("bombast-class vox-array", "bombast class vox array") or enh_id == "000009801002":
             if not is_bridgehead_strike:
                 return

@@ -15233,6 +15233,32 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_bearer_ranged_damage_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Return enhancement rules that let the bearer re-roll ranged Damage rolls."""
+        if model is None:
+            return None
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_titan_killer_ranged_damage_reroll", False)):
+            return None
+        try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        except Exception:
+            army = None
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        active_fn = getattr(mgr, "steel_hammer_titan_killer_active", None) if mgr is not None else None
+        if callable(active_fn) and not bool(active_fn(self, model=model)):
+            return None
+        if not callable(active_fn):
+            bearer_id = str(sr.get("enhancement_titan_killer_bearer_model_id", "") or "").strip()
+            if bearer_id and str(get_entity_id(model) or "").strip() != bearer_id:
+                return None
+        source = str(sr.get("enhancement_titan_killer_source", "") or "Titan Killer").strip() or "Titan Killer"
+        return {
+            "source": source,
+            "attack_type": "ranged",
+            "reroll_damage": True,
+        }
+
     def get_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

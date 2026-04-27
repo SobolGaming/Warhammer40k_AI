@@ -1734,6 +1734,29 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             bearer_key="enhancement_battalion_commander_bearer_model_id",
         )
 
+    def steel_hammer_titan_killer_active(self, unit, model=None) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        if not self._unit_is_titanic(root):
+            return False
+        if not self._unit_has_keyword(root, "CHARACTER"):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_titan_killer", False)):
+            return False
+        bearer_key = "enhancement_titan_killer_bearer_model_id"
+        bearer_id = str(sr.get(bearer_key, "") or "").strip()
+        if model is not None and bearer_id and self._entity_id(model) != bearer_id:
+            return False
+        return self._enhancement_bearer_alive(root, sr, bearer_key=bearer_key)
+
     def combined_arms_reactive_command_trigger_spec(self, unit) -> dict | None:
         if not self.is_combined_arms():
             return None

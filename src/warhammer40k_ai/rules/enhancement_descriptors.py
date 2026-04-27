@@ -515,6 +515,15 @@ _STEEL_HAMMER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "requires_astra_militarum_target": True,
         },
     ),
+    "000010787003": EnhancementToolDescriptor(
+        enhancement_id="000010787003",
+        name="Titan Killer",
+        timing="ranged_attack_damage_roll",
+        target="bearer",
+        duration="constant",
+        effect="bearer_ranged_damage_reroll",
+        effect_params={"attack_type": "ranged", "reroll_damage": True},
+    ),
 }
 
 _STEEL_HAMMER_BY_NAME = {
