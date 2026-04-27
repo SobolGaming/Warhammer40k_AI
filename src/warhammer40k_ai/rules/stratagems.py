@@ -853,6 +853,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPESHUL AMMO",
     "ARMOURED DUELLISTS",
     "IMPERVIOUS",
+    "MEKANISED BRUTALITY",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1122,6 +1123,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "SPESHUL AMMO": {"000010796004"},
     "ARMOURED DUELLISTS": {"000010800005"},
     "IMPERVIOUS": {"000010800006"},
+    "MEKANISED BRUTALITY": {"000010800003"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -11318,6 +11320,24 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a targeted Battlewagon, Kill Rig or Hunta Rig unit"
             return result
+        if name_u == "MEKANISED BRUTALITY":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "movement phase":
+                result["reason"] = "Requires your Movement phase and a Battlewagon, Kill Rig or Hunta Rig unit that has not moved this phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Movement phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_blitz_brigade_wagon_or_rig_not_moved_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a Battlewagon, Kill Rig or Hunta Rig unit that has not moved this phase"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12217,6 +12237,7 @@ class StratagemManager(
             "SPESHUL AMMO": "Target: ORKS unit that has not shot; non-Torrent ranged weapons gain [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] until end of phase",
             "ARMOURED DUELLISTS": "Target: ORKS VEHICLE unit that has not shot; ranged attacks gain +1 to hit and +1 to wound against MONSTER or VEHICLE targets this phase",
             "IMPERVIOUS": "Target: Battlewagon, Kill Rig or Hunta Rig unit selected by the enemy shooter's targets; incoming ranged attacks suffer -1 to wound while Strength is greater than target Toughness this phase",
+            "MEKANISED BRUTALITY": "Target: Battlewagon, Kill Rig or Hunta Rig unit that has not moved; units disembarking from it after it makes a Normal move remain eligible to charge this turn",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",

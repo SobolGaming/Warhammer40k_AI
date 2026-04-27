@@ -2473,6 +2473,20 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "target_names_any": ["Battlewagon", "Kill Rig", "Hunta Rig"],
         },
     ),
+    "000010800003": StratagemToolDescriptor(
+        stratagem_id="000010800003",
+        name="MEKANISED BRUTALITY",
+        timing="movement_phase",
+        target="battlewagon_kill_rig_or_hunta_rig_unit_not_yet_moved",
+        duration="until_end_of_turn",
+        effect="transport_normal_move_disembark_allows_charge",
+        cp_cost=1,
+        effect_params={
+            "target_names_any": ["Battlewagon", "Kill Rig", "Hunta Rig"],
+            "requires_transport_normal_move": True,
+            "allow_charge_after_normal_move_disembark": True,
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

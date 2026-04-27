@@ -5090,6 +5090,31 @@ class ShootingMixin:
                 if turn and current_turn and turn != current_turn:
                     return overrides
             overrides["allow_charge_after_normal_move"] = True
+        if isinstance(tsr, dict) and tsr.get("blitz_brigade_mekanised_brutality_active"):
+            mekanised_active = True
+            owner = str(tsr.get("blitz_brigade_mekanised_brutality_turn_owner", "") or "")
+            try:
+                turn = int(tsr.get("blitz_brigade_mekanised_brutality_turn", 0) or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if game is not None:
+                current_getter = getattr(game, "get_current_player", None)
+                current_player = current_getter() if callable(current_getter) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    mekanised_active = False
+                if turn and current_turn and turn != current_turn:
+                    mekanised_active = False
+            transport_round_state = getattr(transport_unit, "round_state", None)
+            moved_normally = bool(getattr(transport_round_state, "moved_this_round", False))
+            moved_normally = moved_normally and not bool(getattr(transport_round_state, "advanced_this_round", False))
+            moved_normally = moved_normally and not bool(getattr(transport_round_state, "fell_back_this_round", False))
+            if mekanised_active and moved_normally:
+                overrides["allow_charge_after_normal_move"] = True
         if isinstance(tsr, dict) and tsr.get("haloscreed_aggressive_impulse_active"):
             impulse_active = True
             exp = str(tsr.get("haloscreed_aggressive_impulse_expires_phase", "") or "").strip().upper()

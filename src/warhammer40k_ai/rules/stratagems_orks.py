@@ -488,6 +488,17 @@ class OrksStratagemMixin:
             require_not_selected_phase="Shooting phase",
         )
 
+    def _orks_blitz_brigade_wagon_or_rig_not_moved_candidates(self) -> list[Any]:
+        if not self._is_blitz_brigade_detachment():
+            return []
+        candidates = self._orks_offensive_candidates(
+            require_targetable=True,
+            require_not_selected_phase="Movement phase",
+        )
+        kept = [unit for unit in list(candidates or []) if self._orks_is_battlewagon_kill_rig_or_hunta_rig(unit)]
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -4364,6 +4375,8 @@ class OrksStratagemMixin:
             return self._use_orks_armoured_duellists(stratagem, **kwargs)
         if name_u == "IMPERVIOUS":
             return self._use_orks_impervious(stratagem, **kwargs)
+        if name_u == "MEKANISED BRUTALITY":
+            return self._use_orks_mekanised_brutality(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6553,6 +6566,57 @@ class OrksStratagemMixin:
             ),
             **kwargs,
         )
+
+    def _use_orks_mekanised_brutality(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blitz_brigade_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Movement phase",),
+            require_your_turn=True,
+            error_prefix="MEKANISED BRUTALITY",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("MEKANISED BRUTALITY", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: MEKANISED BRUTALITY: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_blitz_brigade_wagon_or_rig_not_moved_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="MEKANISED BRUTALITY",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Movement phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_is_battlewagon_kill_rig_or_hunta_rig(root):
+            logger.error("ERROR: MEKANISED BRUTALITY: target must be a Battlewagon, Kill Rig or Hunta Rig unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: MEKANISED BRUTALITY: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        source_name = str(getattr(stratagem, "name", "") or "MEKANISED BRUTALITY").strip() or "MEKANISED BRUTALITY"
+        sr["blitz_brigade_mekanised_brutality_active"] = True
+        sr["blitz_brigade_mekanised_brutality_source"] = source_name
+        sr["blitz_brigade_mekanised_brutality_turn"] = int(self._orks_current_turn() or 0)
+        sr["blitz_brigade_mekanised_brutality_turn_owner"] = self._orks_turn_owner_id()
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MEKANISED BRUTALITY: units disembarking from %s after its Normal move can charge this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_orks_where_dya_fink_youre_going(self, stratagem: Any, **kwargs) -> bool:
         return self._use_orks_reactive_reposition_stratagem(

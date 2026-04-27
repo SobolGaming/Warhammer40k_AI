@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -11,7 +12,7 @@ from warhammer40k_ai.units.unit import Unit
 
 
 class _MockDatasheet:
-    def __init__(self, name: str, *, keywords=None, faction_keywords=None):
+    def __init__(self, name: str, *, keywords=None, faction_keywords=None, transport: str = ""):
         slug = str(name or "unit").lower().replace(" ", "-")
         self.id = f"mock-{slug}"
         self.name = name
@@ -37,10 +38,11 @@ class _MockDatasheet:
         self.datasheets_options = [{"description": "none"}]
         self.datasheets_abilities = []
         self.loadout = "This model is equipped with: nothing"
+        self.transport = str(transport or "")
 
 
-def _unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
-    unit = Unit(_MockDatasheet(name, keywords=keywords, faction_keywords=faction_keywords))
+def _unit(name: str, *, keywords=None, faction_keywords=None, transport: str = "") -> Unit:
+    unit = Unit(_MockDatasheet(name, keywords=keywords, faction_keywords=faction_keywords, transport=transport))
     unit.deployed = True
     unit.reserve_status = "deployed"
     return unit
@@ -77,6 +79,18 @@ def _build_game(*, detachment: str = "Blitz Brigade"):
     game.add_player(enemy_player)
     game.current_player_index = 0
     return game, ork_army, enemy_army
+
+
+def _place_unit(game: Game, unit: Unit, x: float, y: float) -> None:
+    for model in list(getattr(unit, "models", []) or []):
+        model.set_location(float(x), float(y), 0.0, 0.0)
+    game.map.place_unit(unit)
+
+
+def _embark(transport: Unit, passenger: Unit) -> None:
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
 
 
 def test_eager_for_the_fight_grants_turn_long_advance_and_charge_rerolls_on_disembark():
@@ -358,3 +372,90 @@ def test_blitz_brigade_stratagem_tool_descriptors_include_impervious():
     assert descriptor.name == "IMPERVIOUS"
     assert descriptor.effect == "defensive_wound_penalty_if_strength_gt_toughness"
     assert descriptor.effect_params.get("requires_strength_gt_toughness") is True
+
+
+def test_mekanised_brutality_allows_charge_after_normal_move_disembark():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(battlewagon)
+    army.add_unit(boyz)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.current_player_index = 0
+    game.current_player_idx = 0
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use("MEKANISED BRUTALITY", unit=battlewagon, phase_name="Movement phase")
+    assert int(ork_player.command_points or 0) == 9
+    assert bool(battlewagon.special_rules.get("blitz_brigade_mekanised_brutality_active")) is True
+
+    battlewagon.round_state.moved_this_round = True
+    battlewagon.round_state.remained_stationary_this_round = False
+    _embark(battlewagon, boyz)
+    with patch.object(boyz, "_find_disembark_positions", return_value=[(12.0, 10.0, 0.0, 0.0)]), patch.object(
+        game.map,
+        "place_unit",
+        return_value=True,
+    ):
+        disembarked = boyz.disembark(game_map=game.map, transport_unit=battlewagon, current_turn=game.turn)
+
+    assert disembarked is True
+    if boyz not in game.map.units:
+        game.map.units.append(boyz)
+    assert bool(boyz.round_state.disembarked_from_moved_transport) is True
+    assert bool(boyz.round_state.disembarked_cannot_charge) is False
+    assert boyz.can_declare_charge_against(enemy, game) is True
+
+
+def test_mekanised_brutality_rejects_invalid_or_already_moved_targets():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    trukk = _unit(
+        "Trukk",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 12",
+    )
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(battlewagon)
+    army.add_unit(trukk)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.current_player_index = 0
+    game.current_player_idx = 0
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, trukk, 15.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    battlewagon.round_state.moved_this_round = True
+    assert not ork_player.stratagems.use("MEKANISED BRUTALITY", unit=battlewagon, phase_name="Movement phase")
+    assert not ork_player.stratagems.use("MEKANISED BRUTALITY", unit=trukk, phase_name="Movement phase")
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_blitz_brigade_stratagem_tool_descriptors_include_mekanised_brutality():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010800003", name="MEKANISED BRUTALITY")
+
+    assert descriptor is not None
+    assert descriptor.name == "MEKANISED BRUTALITY"
+    assert descriptor.effect == "transport_normal_move_disembark_allows_charge"
+    assert descriptor.effect_params.get("allow_charge_after_normal_move_disembark") is True
