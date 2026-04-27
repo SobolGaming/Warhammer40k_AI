@@ -6118,6 +6118,36 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_omnissian_unguents_bearer_model_id"] = bearer_id
 
+        if enh_id == "000010791005" or (name == "grand strategist" and is_armoured_infantry):
+            if not is_armoured_infantry:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Grand Strategist").strip() or "Grand Strategist"
+            unit.special_rules["enhancement_armoured_infantry_grand_strategist"] = True
+            unit.special_rules["enhancement_armoured_infantry_grand_strategist_source"] = source
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                max_units=_coerce_int(params.get("max_units", 2) or 2, default=2),
+                can_place_in_reserves=bool(params.get("allow_strategic_reserves", True)),
+                filter_any_groups=list(params.get("filter_any_groups", (("REGIMENT",), ("SQUADRON",))) or ()),
+                requires_source_on_battlefield=bool(params.get("requires_source_on_battlefield", True)),
+                allow_embarked_transport_on_battlefield=bool(
+                    params.get("allow_embarked_transport_on_battlefield", True)
+                ),
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", True)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armoured_infantry_grand_strategist_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
         if name == "death mask of ollanius" or enh_id == "000008380002":
             if not is_combined_arms:
                 return

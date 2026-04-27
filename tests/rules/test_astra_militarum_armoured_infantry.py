@@ -9,6 +9,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, ORDER_ON_MY_SIGNAL
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -182,6 +183,22 @@ def _omnissian_unguents() -> Enhancement:
     )
 
 
+def _grand_strategist() -> Enhancement:
+    return Enhancement(
+        id="000010791005",
+        name="Grand Strategist",
+        faction_id="AM",
+        detachment="Armoured Infantry",
+        points=15,
+        description=(
+            "Officer model only. After both players have deployed their armies, if the bearer's unit "
+            "(or any Transport it is embarked within) is on the battlefield, select up to two units with "
+            "the Regiment or Squadron keywords from your army and redeploy them. When doing so, you can "
+            "set those units up in Strategic Reserves, regardless of how many units are already in Strategic Reserves."
+        ),
+    )
+
+
 def _find_quarry_request(game: Game, *, ability: str):
     for request in list(game.decision_queue.list() or []):
         if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
@@ -192,12 +209,37 @@ def _find_quarry_request(game: Game, *, ability: str):
     return None
 
 
+def _find_redeploy_request(game: Game, *, ability_name: str):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("ability", "") or "") != "aeldari_guileful_strategist":
+            continue
+        if str(context.get("ability_name", "") or "") == str(ability_name):
+            return request
+    return None
+
+
 def _option_with_selected_units(request, selected_units):
     selected_ids = [str(get_entity_id(unit) or "") for unit in selected_units]
     for option in list(getattr(request, "options", []) or []):
         payload = dict(getattr(option, "payload", {}) or {})
         if list(payload.get("selected_unit_ids", []) or []) == selected_ids:
             return option
+    return None
+
+
+def _redeploy_option(request, *, target_unit: Unit, action: str):
+    target_id = str(get_entity_id(target_unit) or "")
+    action_key = str(action or "").strip().lower()
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("target_unit_id", "") or "") != target_id:
+            continue
+        if str(payload.get("redeploy_action", "") or "").strip().lower() != action_key:
+            continue
+        return option
     return None
 
 
@@ -516,3 +558,96 @@ def test_omnissian_unguents_fnp_stops_when_bearer_is_not_alive():
 
     enginseer.models[0].wounds = 0
     assert (5, None) not in list(sentinel.has_feel_no_pain(target_model=sentinel.models[0]) or [])
+
+
+def test_armoured_infantry_grand_strategist_redeploys_regiment_or_squadron_only():
+    game, am_player, enemy_player, army, _enemy_army = _build_game()
+    game.attacker_index = game.players.index(am_player)
+    game.defender_index = game.players.index(enemy_player)
+    officer = _officer("Armoured Infantry Commander")
+    regiment = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    squadron = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    ineligible = _make_unit("Munitorum Servitors", keywords=["INFANTRY"], wounds=1)
+    for unit in (officer, regiment, squadron, ineligible):
+        army.add_unit(unit)
+    _grand_strategist().apply_to_unit(officer)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, regiment, 12.0, 10.0)
+    _place_unit(game, squadron, 14.0, 10.0)
+    _place_unit(game, ineligible, 16.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert officer.has_redeploy() == (True, 2, True)
+    cache = dict(getattr(officer, "_ability_cache", {}) or {})
+    assert cache.get("redeploy_filter_any_groups") == [["REGIMENT"], ["SQUADRON"]]
+    assert bool(cache.get("redeploy_requires_source_on_battlefield", False))
+    assert bool(cache.get("redeploy_allow_embarked_transport_on_battlefield", False))
+    assert bool(cache.get("redeploy_strategic_reserves_ignore_current_unit_count_limit", False))
+
+    game.execute_redeploy_units_phase()
+    request = _find_redeploy_request(game, ability_name="Grand Strategist")
+    assert request is not None
+    target_ids = {
+        str((dict(getattr(option, "payload", {}) or {}).get("target_unit_id", "") or ""))
+        for option in list(getattr(request, "options", []) or [])
+        if str((dict(getattr(option, "payload", {}) or {}).get("target_unit_id", "") or ""))
+    }
+    assert get_entity_id(regiment) in target_ids
+    assert get_entity_id(squadron) in target_ids
+    assert get_entity_id(ineligible) not in target_ids
+
+    option = _redeploy_option(request, target_unit=regiment, action="strategic_reserves")
+    assert option is not None
+    resolve_decision_command(game, request, option.option_id, player_id=am_player.id)
+    assert str(getattr(regiment, "reserve_status", "") or "") == "strategic_reserves"
+    assert regiment not in list(getattr(game.map, "units", []) or [])
+
+
+def test_armoured_infantry_grand_strategist_requires_bearer_or_transport_on_battlefield():
+    game, am_player, enemy_player, army, _enemy_army = _build_game()
+    game.attacker_index = game.players.index(am_player)
+    game.defender_index = game.players.index(enemy_player)
+    officer = _officer("Embarked Commander")
+    transport = _make_unit(
+        "Chimera",
+        keywords=["TRANSPORT", "VEHICLE"],
+        wounds=11,
+        transport="Transport Capacity: 12 Astra Militarum Infantry models",
+    )
+    regiment = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (officer, transport, regiment):
+        army.add_unit(unit)
+    _grand_strategist().apply_to_unit(officer)
+    officer.embarked_in = transport
+    transport.transport_passengers.append(officer)
+    _place_unit(game, transport, 10.0, 10.0)
+    _place_unit(game, regiment, 12.0, 10.0)
+    game.rebuild_entity_registry()
+
+    game.execute_redeploy_units_phase()
+    assert _find_redeploy_request(game, ability_name="Grand Strategist") is not None
+
+    while game.decision_queue.pop() is not None:
+        pass
+    game._redeploy_state = None
+    transport.reserve_status = "strategic_reserves"
+    game.execute_redeploy_units_phase()
+    assert _find_redeploy_request(game, ability_name="Grand Strategist") is None
+
+
+def test_armoured_infantry_grand_strategist_is_distinct_from_combined_arms_grand_strategist():
+    _game, _am_player, _enemy_player, army, _enemy_army = _build_game(detachment_type="Combined Arms")
+    officer = _officer("Combined Arms Commander")
+    army.add_unit(officer)
+    Enhancement(
+        id="000008380004",
+        name="Grand Strategist",
+        faction_id="AM",
+        detachment="Combined Arms",
+        points=15,
+        description="Officer model only. In your Command phase, the bearer can issue one additional Order.",
+    ).apply_to_unit(officer)
+
+    assert bool(officer.special_rules.get("enhancement_grand_strategist"))
+    assert not bool(officer.special_rules.get("enhancement_armoured_infantry_grand_strategist"))
+    assert officer.has_redeploy() == (False, 0, False)

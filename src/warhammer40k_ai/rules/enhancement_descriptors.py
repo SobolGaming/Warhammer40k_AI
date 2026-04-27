@@ -367,6 +367,22 @@ _ARMOURED_INFANTRY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "requires_bearer_alive": True,
         },
     ),
+    "000010791005": EnhancementToolDescriptor(
+        enhancement_id="000010791005",
+        name="Grand Strategist",
+        timing="after_deployment",
+        target="friendly_regiment_or_squadron_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 2,
+            "allow_strategic_reserves": True,
+            "filter_any_groups": (("REGIMENT",), ("SQUADRON",)),
+            "requires_source_on_battlefield": True,
+            "allow_embarked_transport_on_battlefield": True,
+            "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_BY_NAME = {
