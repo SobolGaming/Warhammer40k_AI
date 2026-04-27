@@ -56,3 +56,28 @@ def test_burst_of_speed_stratagem_is_supported():
     assert "d6" in notes_l
     assert "remain stationary" in notes_l
     assert "reserves" in notes_l
+
+
+def test_combined_fire_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010792006"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Armoured Infantry",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "COMBINED FIRE"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "armoured skirmisher" in notes_l
+    assert "benefit of cover" in notes_l
+    assert "+2 strength" in notes_l

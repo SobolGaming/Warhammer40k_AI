@@ -1112,6 +1112,124 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return ()
         return ("SQUADRON",)
 
+    def mark_armoured_infantry_combined_fire_target(
+        self,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_armoured_infantry():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        game_obj = game if game is not None else self._current_game()
+        owner = player if player is not None else getattr(self.army, "player", None)
+        owner_id = self._player_id(owner)
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        source_name = str(source or "COMBINED FIRE").strip() or "COMBINED FIRE"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_no_cover_active"] = True
+        sr["post_shoot_no_cover_expires_phase"] = "SHOOTING_PHASE"
+        sr.pop("post_shoot_no_cover_expires_timing", None)
+        sr["post_shoot_no_cover_source"] = source_name
+        sr["post_shoot_no_cover_owner"] = owner_id
+        sr["post_shoot_no_cover_turn"] = int(round_now)
+        sr["armoured_infantry_combined_fire_active"] = True
+        sr["armoured_infantry_combined_fire_round"] = int(round_now)
+        sr["armoured_infantry_combined_fire_phase"] = phase_key
+        sr["armoured_infantry_combined_fire_owner"] = owner_id
+        sr["armoured_infantry_combined_fire_strength_bonus"] = 2
+        sr["armoured_infantry_combined_fire_source"] = source_name
+        target_root.special_rules = sr
+        return True
+
+    def armoured_infantry_combined_fire_strength_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_armoured_infantry():
+            return 0, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not (self._unit_has_keyword(attacker_root, "ARMOURED") and self._unit_has_keyword(attacker_root, "SKIRMISHER")):
+            return 0, ""
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("armoured_infantry_combined_fire_active", False)):
+            return 0, ""
+        game_obj = game if game is not None else self._current_game()
+        current_round = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_round = self._safe_int(sr.get("armoured_infantry_combined_fire_round", 0) or 0, 0)
+        if marked_round and current_round and marked_round != current_round:
+            return 0, ""
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get("armoured_infantry_combined_fire_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return 0, ""
+        owner_id = str(sr.get("armoured_infantry_combined_fire_owner", "") or "")
+        attacker_player = getattr(self.army, "player", None) if self.army is not None else None
+        attacker_player_id = self._player_id(attacker_player)
+        if owner_id and attacker_player_id and owner_id != attacker_player_id:
+            return 0, ""
+        bonus = self._safe_int(sr.get("armoured_infantry_combined_fire_strength_bonus", 0) or 0, 0)
+        if bonus <= 0:
+            return 0, ""
+        source_name = str(sr.get("armoured_infantry_combined_fire_source", "") or "COMBINED FIRE").strip()
+        return int(bonus), source_name or "COMBINED FIRE"
+
+    def cleanup_armoured_infantry_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_armoured_infantry():
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+        for root in self._iter_game_unit_roots(game=game_obj):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            prefix = "armoured_infantry_combined_fire"
+            if not bool(sr.get(f"{prefix}_active", False)):
+                continue
+            marked_round = self._safe_int(sr.get(f"{prefix}_round", 0) or 0, 0)
+            marked_phase = self._phase_key(sr.get(f"{prefix}_phase", "") or "")
+            marked_owner = str(sr.get(f"{prefix}_owner", "") or "")
+            if marked_round and round_now and marked_round != round_now:
+                continue
+            if phase_key and marked_phase and marked_phase != phase_key:
+                continue
+            if owner_id and marked_owner and marked_owner != owner_id:
+                continue
+            self._clear_prefixed_special_rules(sr, prefix)
+            root.special_rules = sr
+
     def _steel_hammer_titanic_character_candidates(self) -> list:
         if not self.is_steel_hammer():
             return []

@@ -936,6 +936,55 @@ class AstraMilitarumStratagemMixin:
             return True
         return False
 
+    def _queue_armoured_infantry_combined_fire_target_decision(
+        self,
+        *,
+        stratagem: Any,
+        source_unit: Any,
+        candidates: list[Any],
+    ) -> bool:
+        if self.game is None:
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        source_root = self._am_root(source_unit)
+        if source_root is None:
+            return False
+        candidate_units = [
+            candidate
+            for candidate in list(candidates or [])
+            if candidate is not None and self._am_root(candidate) is not None
+        ]
+        if not candidate_units:
+            return False
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": maybe_entity_id(candidate)},
+            )
+            for candidate in candidate_units
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "COMBINED FIRE: select an enemy unit hit by that unit.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "armoured_infantry_combined_fire",
+                "ability_name": str(getattr(stratagem, "name", "") or "COMBINED FIRE"),
+                "attacker_unit_id": maybe_entity_id(source_root),
+                "candidate_unit_ids": [maybe_entity_id(candidate) for candidate in candidate_units],
+                "expires_phase": "SHOOTING_PHASE",
+                "expires_timing": "PHASE_END",
+            },
+        )
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        return False
+
     def _queue_combined_arms_choose_quarry_request(
         self,
         *,
@@ -3059,6 +3108,96 @@ class AstraMilitarumStratagemMixin:
             use_timer=False,
         )
 
+    def _armoured_infantry_combined_fire_hit_candidates(
+        self,
+        source_unit: Any,
+        hits_by_target: Any,
+    ) -> list[Any]:
+        source_root = self._am_root(source_unit)
+        if source_root is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            target_root = self._am_root(target_unit)
+            if target_root is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            if not self._am_is_alive(target_root):
+                continue
+            if self._am_owned_by_player(target_root, self.player):
+                continue
+            uid = self._am_sort_key(target_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            candidates.append(target_root)
+        return sorted(candidates, key=self._am_sort_key)
+
+    def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self._is_armoured_infantry():
+            return
+        current_phase = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != "SHOOTING_PHASE":
+            return
+        source_root = self._am_root(attacker_unit)
+        if source_root is None:
+            return
+        attacker_army = getattr(source_root, "get_parent_army", lambda: None)()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is not self.player:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        if not self._am_on_battlefield(source_root):
+            return
+        if not self._is_astra_militarum_unit(source_root):
+            return
+        if not (self._am_has_keyword(source_root, "ARMOURED") and self._am_has_keyword(source_root, "SKIRMISHER")):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("COMBINED FIRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._armoured_infantry_combined_fire_hit_candidates(source_root, hits_by_target)
+        if not candidates:
+            return
+        if self._bridgehead_reaction_exists("unit_shooting_resolved", stratagem.name):
+            return
+        if not bool(stratagem.can_use(self.player, self.game, unit=source_root, candidates=candidates, phase_name="Shooting phase")):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_shooting_resolved",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": source_root,
+                "target_unit": source_root,
+                "candidates": candidates,
+            },
+            use_timer=False,
+        )
+
     def _queue_bridgehead_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_bridgehead_strike():
             return
@@ -3245,6 +3384,11 @@ class AstraMilitarumStratagemMixin:
             return False
         candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
         candidates = [self._am_root(candidate) for candidate in candidates if self._am_root(candidate) is not None]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if self._am_is_alive(candidate) and not self._am_owned_by_player(candidate, self.player)
+        ]
         candidates = sorted(candidates, key=self._am_sort_key)
         if not candidates:
             logger.error("ERROR: SERVO-DESIGNATORS: no eligible enemy units were hit and visible")
@@ -4249,6 +4393,97 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_armoured_infantry_combined_fire(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COMBINED FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: COMBINED FIRE: not your Shooting phase")
+            return False
+        source_unit = kwargs.get("unit") or kwargs.get("source_unit") or kwargs.get("target_unit")
+        pending = None
+        if source_unit is None or not list(kwargs.get("candidates") or []):
+            pending = self._am_pending_reaction_by_names("COMBINED FIRE")
+        if source_unit is None and pending is not None:
+            source_unit = pending.get("unit") or pending.get("target_unit")
+        source_root = self._am_root(source_unit)
+        if source_root is None:
+            logger.error("ERROR: COMBINED FIRE: no source unit provided")
+            return False
+        if not self._am_on_battlefield(source_root):
+            logger.error("ERROR: COMBINED FIRE: source unit must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(source_root):
+            logger.error("ERROR: COMBINED FIRE: source unit must be ASTRA MILITARUM")
+            return False
+        if not (self._am_has_keyword(source_root, "ARMOURED") and self._am_has_keyword(source_root, "SKIRMISHER")):
+            logger.error("ERROR: COMBINED FIRE: source unit must be ARMOURED SKIRMISHER")
+            return False
+        if pending is None and not bool(getattr(getattr(source_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: COMBINED FIRE: source unit has not shot")
+            return False
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if not candidates:
+            candidates = self._armoured_infantry_combined_fire_hit_candidates(
+                source_root,
+                kwargs.get("hits_by_target") or {},
+            )
+        candidates = [self._am_root(candidate) for candidate in candidates if self._am_root(candidate) is not None]
+        candidates = sorted(candidates, key=self._am_sort_key)
+        if not candidates:
+            logger.error("ERROR: COMBINED FIRE: no eligible enemy units were hit")
+            return False
+        direct_target = kwargs.get("enemy_unit") or kwargs.get("quarry") or kwargs.get("selected_unit")
+        if direct_target is not None:
+            target_root = self._am_root(direct_target)
+            if target_root not in candidates:
+                logger.error("ERROR: COMBINED FIRE: selected enemy unit is not eligible")
+                return False
+            mgr = self._get_astra_militarum_mgr()
+            marker = getattr(mgr, "mark_armoured_infantry_combined_fire_target", None) if mgr is not None else None
+            if not callable(marker):
+                logger.error("ERROR: COMBINED FIRE: detachment manager unavailable")
+                return False
+            if not self._am_spend_cp(stratagem, target_unit=source_root):
+                return False
+            if not bool(
+                marker(
+                    target_root,
+                    game=self.game,
+                    player=self.player,
+                    phase_name=phase_name,
+                    source=str(getattr(stratagem, "name", "") or "COMBINED FIRE"),
+                )
+            ):
+                logger.error("ERROR: COMBINED FIRE: failed to mark target")
+                return False
+            self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: COMBINED FIRE: %s loses cover and is vulnerable to ARMOURED SKIRMISHER fire.",
+                getattr(target_root, "name", "Unit"),
+            )
+            return True
+        request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+        if self.game is None or not callable(request_decision):
+            logger.error("ERROR: COMBINED FIRE: no decision queue available")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=source_root):
+            return False
+        if not self._queue_armoured_infantry_combined_fire_target_decision(
+            stratagem=stratagem,
+            source_unit=source_root,
+            candidates=candidates,
+        ):
+            logger.error("ERROR: COMBINED FIRE: failed to queue target selection")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: COMBINED FIRE: choose a hit enemy unit to mark.")
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5140,6 +5375,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_hammer_blazing_advance(stratagem, **kwargs)
         if name_u == "BURST OF SPEED":
             return self._use_armoured_infantry_burst_of_speed(stratagem, **kwargs)
+        if name_u == "COMBINED FIRE":
+            return self._use_armoured_infantry_combined_fire(stratagem, **kwargs)
         if name_u == "CLEAR AND SECURE":
             return self._use_mechanised_clear_and_secure(stratagem, **kwargs)
         if name_u == "COORDINATED ACTION":

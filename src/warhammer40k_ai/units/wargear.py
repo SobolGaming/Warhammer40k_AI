@@ -19651,6 +19651,23 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        bonus_fn = getattr(am_mgr, "armoured_infantry_combined_fire_strength_bonus", None) if am_mgr is not None else None
+        if callable(bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            s_bonus, source = bonus_fn(
+                attacker,
+                target,
+                attack_type="ranged",
+                game=game,
+            )
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                source_name = str(source or "COMBINED FIRE").strip() or "COMBINED FIRE"
+                wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         try:
             s_bonus, _profile_ap_bonus, _profile_damage_bonus, source = self._model_target_keywords_profile_bonus(
                 attacker,

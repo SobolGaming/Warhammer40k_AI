@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry, _validate_choose_quarry
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
-from warhammer40k_ai.engine.decisions import DecisionResult
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionResult
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -11,6 +11,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, ORDER_ON_MY_SIGNAL
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -300,6 +301,17 @@ def test_armoured_infantry_burst_of_speed_descriptor_registered():
     assert by_id.effect_params["requires_not_arrived_from_reserves_this_phase"] is True
 
 
+def test_armoured_infantry_combined_fire_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792006")
+
+    assert by_id is not None
+    assert by_id.name == "Combined Fire"
+    assert by_id.effect == "post_shoot_no_cover_and_armoured_skirmisher_strength_bonus"
+    assert by_id.effect_params["target_cannot_have_benefit_of_cover"] is True
+    assert by_id.effect_params["attack_type"] == "ranged"
+    assert by_id.effect_params["strength_bonus"] == 2
+
+
 def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
     game, am_player, _enemy_player, army, enemy_army = _build_game()
     moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
@@ -363,6 +375,179 @@ def test_armoured_infantry_burst_of_speed_rejects_stationary_or_reserve_arrivals
     assert am_player.stratagems.use("BURST OF SPEED", unit=stationary_unit, phase_name="Movement phase") is False
     assert am_player.stratagems.use("BURST OF SPEED", unit=reserves_unit, phase_name="Movement phase") is False
     assert int(am_player.command_points or 0) == 10
+
+
+def test_armoured_infantry_combined_fire_queues_hit_enemy_and_marks_target():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    shooter = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    other_shooter = _make_unit("Second Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    infantry = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    enemy_not_hit = _make_unit("Enemy Not Hit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    for unit in (shooter, other_shooter, infantry):
+        army.add_unit(unit)
+    for unit in (enemy, enemy_not_hit):
+        enemy_army.add_unit(unit)
+    _place_unit(game, shooter, 10.0, 10.0)
+    _place_unit(game, other_shooter, 12.0, 10.0)
+    _place_unit(game, infantry, 14.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    _place_unit(game, enemy_not_hit, 22.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    shooter.round_state.shot_this_round = True
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=shooter, hits_by_target={enemy: 2, enemy_not_hit: 0})
+
+    pending = _pending_by_name(am_player.stratagems, "COMBINED FIRE")
+    assert pending is not None
+    assert pending.get("candidates") == [enemy]
+    assert am_player.stratagems.use("COMBINED FIRE", unit=shooter, phase_name="Shooting phase", dequeue=True) is True
+    assert int(am_player.command_points or 0) == 9
+
+    request = _find_quarry_request(game, ability="armoured_infantry_combined_fire")
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert context.get("attacker_unit_id") == get_entity_id(shooter)
+    assert context.get("candidate_unit_ids") == [get_entity_id(enemy)]
+    option = next(
+        opt for opt in request.options
+        if str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "")) == get_entity_id(enemy)
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=am_player.id,
+        option_id=option.option_id,
+        payload={},
+    )
+    assert _validate_choose_quarry(game, request, result) == ()
+    resolve_decision_command(game, request, option.option_id, player_id=am_player.id)
+
+    assert enemy.special_rules.get("post_shoot_no_cover_active") is True
+    assert enemy.special_rules.get("armoured_infantry_combined_fire_active") is True
+    mgr = army.astra_militarum_detachments
+    assert mgr.armoured_infantry_combined_fire_strength_bonus(
+        other_shooter.models[0],
+        enemy,
+        attack_type="ranged",
+        game=game,
+    ) == (2, "COMBINED FIRE")
+    assert mgr.armoured_infantry_combined_fire_strength_bonus(
+        infantry.models[0],
+        enemy,
+        attack_type="ranged",
+        game=game,
+    ) == (0, "")
+    assert mgr.armoured_infantry_combined_fire_strength_bonus(
+        other_shooter.models[0],
+        enemy_not_hit,
+        attack_type="ranged",
+        game=game,
+    ) == (0, "")
+
+    weapon = Wargear(
+        {
+            "name": "Multilaser",
+            "type": "Ranged",
+            "range": "36",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    wound = weapon.profiles["default"]._wound_target_with_tracking(
+        enemy,
+        other_shooter.models[0],
+        {"benefit_of_cover": True},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound.get("wound"))
+    assert any("COMBINED FIRE" in str(item).upper() for item in list(wound.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=am_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    assert not bool(enemy.special_rules.get("armoured_infantry_combined_fire_active"))
+    assert not bool(enemy.special_rules.get("post_shoot_no_cover_active"))
+    assert mgr.armoured_infantry_combined_fire_strength_bonus(
+        other_shooter.models[0],
+        enemy,
+        attack_type="ranged",
+        game=game,
+    ) == (0, "")
+
+
+def test_armoured_infantry_combined_fire_rejects_non_skirmisher_or_invalid_enemy_selection():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    shooter = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    infantry = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    unhit_enemy = _make_unit("Unhit Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    for unit in (shooter, infantry):
+        army.add_unit(unit)
+    for unit in (enemy, unhit_enemy):
+        enemy_army.add_unit(unit)
+    _place_unit(game, shooter, 10.0, 10.0)
+    _place_unit(game, infantry, 12.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    _place_unit(game, unhit_enemy, 22.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    infantry.round_state.shot_this_round = True
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=infantry, hits_by_target={enemy: 1})
+    assert _pending_by_name(am_player.stratagems, "COMBINED FIRE") is None
+
+    shooter.round_state.shot_this_round = True
+    assert am_player.stratagems.use(
+        "COMBINED FIRE",
+        unit=shooter,
+        candidates=[enemy],
+        enemy_unit=unhit_enemy,
+        phase_name="Shooting phase",
+    ) is False
+    assert int(am_player.command_points or 0) == 10
+
+    request = _find_quarry_request(game, ability="armoured_infantry_combined_fire")
+    assert request is None
+    fake_request = _find_request(game, DECISION_CHOOSE_QUARRY)
+    if fake_request is None:
+        from warhammer40k_ai.engine.decisions import DecisionRequest
+
+        fake_request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "COMBINED FIRE: select an enemy unit hit by that unit.",
+            player_id=am_player.id,
+            options=[
+                DecisionOption.create(
+                    "Unhit Enemy",
+                    payload={"target_unit_id": get_entity_id(unhit_enemy)},
+                )
+            ],
+            context={
+                "ability": "armoured_infantry_combined_fire",
+                "ability_name": "COMBINED FIRE",
+                "attacker_unit_id": get_entity_id(shooter),
+                "candidate_unit_ids": [get_entity_id(enemy)],
+            },
+        )
+    invalid = DecisionResult(
+        decision_id=fake_request.decision_id,
+        player_id=am_player.id,
+        option_id=fake_request.options[0].option_id,
+        payload={},
+    )
+    errors = _validate_choose_quarry(game, fake_request, invalid)
+    assert errors == ("Combined Fire target is not in this request's candidate list.",)
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

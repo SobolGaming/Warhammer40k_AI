@@ -20670,6 +20670,7 @@ def _stratagem_support(
         "000009862006": "Opponent Charge phase reaction after an enemy selects charge targets and before it makes a Charge move: the selected ASTRA MILITARUM INFANTRY charge target within 3\" of a friendly Transport can embark using a deterministic unit/Transport pair choice, then the original charge continues directly against any remaining original targets.",
         "000009862007": "End of your opponent's turn: the selected ASTRA MILITARUM unit within 3\" of a friendly Transport can embark using a deterministic unit/Transport pair choice, and existing passengers do not block that embark support.",
         "000010792004": "End of your Movement phase: the selected ASTRA MILITARUM unit that did not Remain Stationary or arrive from Reserves this phase makes a reactive Normal move of up to D6\".",
+        "000010792006": "Your Shooting phase after an ARMOURED SKIRMISHER unit shoots: select one enemy unit hit by those attacks; until end of phase it cannot have Benefit of Cover, and friendly ARMOURED SKIRMISHER ranged attacks against it gain +2 Strength.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21661,6 +21662,7 @@ def _stratagem_support(
 
     if stratagem_id in {
         "000010792004",
+        "000010792006",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

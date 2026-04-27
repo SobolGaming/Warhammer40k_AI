@@ -3638,6 +3638,21 @@ _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "requires_not_arrived_from_reserves_this_phase": True,
         },
     ),
+    "000010792006": StratagemToolDescriptor(
+        stratagem_id="000010792006",
+        name="Combined Fire",
+        timing="your_shooting_phase_after_armoured_skirmisher_unit_shoots",
+        target="armoured_skirmisher_unit_that_just_shot_and_enemy_unit_hit_by_those_attacks",
+        duration="until_end_of_phase",
+        effect="post_shoot_no_cover_and_armoured_skirmisher_strength_bonus",
+        cp_cost=1,
+        effect_params={
+            "target_cannot_have_benefit_of_cover": True,
+            "friendly_attacker_keywords_all": ["ARMOURED", "SKIRMISHER"],
+            "strength_bonus": 2,
+            "attack_type": "ranged",
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {

@@ -1095,6 +1095,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "RAPID EMBARKATION": {"000008483004"},
     # Armoured Infantry only. Challenger has a different BURST OF SPEED.
     "BURST OF SPEED": {"000010792004"},
+    "COMBINED FIRE": {"000010792006"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -1127,6 +1128,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ANGELIC GRACE",
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
+    "COMBINED FIRE",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
     "THE SMOTHERING SHADOW",
@@ -2885,6 +2887,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
         if "SERVO-DESIGNATORS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bridgehead_servo_designators)
+        if "COMBINED FIRE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_armoured_infantry_combined_fire)
         if "TO THE FAVOURED THE SPOILS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
         if "REAVERS' REACTION" in names or "REAVERSÃ¢â‚¬â„¢ REACTION" in names:
@@ -3157,6 +3161,7 @@ class StratagemManager(
             "DEATH ANSWERS DEATH",
             "AERIAL EXTRACTION",
             "BURST OF SPEED",
+            "COMBINED FIRE",
             "WRAITHLIKE RETREAT",
             "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
@@ -11816,6 +11821,7 @@ class StratagemManager(
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
+            "COMBINED FIRE": "Target: ARMOURED SKIRMISHER unit that just shot; choose one enemy unit it hit so that enemy loses cover and friendly ARMOURED SKIRMISHER attacks against it gain +2 Strength this phase",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
             "COURAGEOUS DIVERSION": "Target: one of your ASTRA MILITARUM INFANTRY or MOUNTED units at the start of your opponent's Shooting phase; it gains Feel No Pain 6+, and enemy attacks suffer -1 to hit if it is the closest eligible target until end of phase",
             "CRACK SHOTS": "Target: your PLATOON unit that has not been selected to shoot this phase; its ranged weapons gain [PRECISION] until end of phase",
@@ -13952,6 +13958,14 @@ class StratagemManager(
             cleanup_combined = getattr(am_mgr, "cleanup_combined_arms_phase_effects", None) if am_mgr is not None else None
             if callable(cleanup_combined):
                 cleanup_combined(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
+            cleanup_armoured = getattr(am_mgr, "cleanup_armoured_infantry_phase_effects", None) if am_mgr is not None else None
+            if callable(cleanup_armoured):
+                cleanup_armoured(
                     phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
                     player=self.player,
                     game=self.game,
