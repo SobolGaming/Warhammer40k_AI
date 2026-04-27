@@ -598,3 +598,108 @@ def test_blitz_brigade_stratagem_tool_descriptors_include_mount_up_ladz():
     assert descriptor.effect == "end_of_fight_embark"
     assert descriptor.effect_params.get("passenger_must_be_wholly_within_inches") == 6
     assert descriptor.effect_params.get("allow_existing_passengers") is True
+
+
+def test_run_em_down_grants_charge_after_advance_to_source_and_selected_nearby_units():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    trukk = _unit("Trukk", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    squiggoth = _unit("Squiggoth", keywords=["MONSTER"], faction_keywords=["ORKS"])
+    far_buggy = _unit("Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (battlewagon, trukk, squiggoth, far_buggy, boyz):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _set_phase(game, ork_player, "MOVEMENT_PHASE", 0)
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, trukk, 14.0, 10.0)
+    _place_unit(game, squiggoth, 10.0, 14.0)
+    _place_unit(game, far_buggy, 30.0, 10.0)
+    _place_unit(game, boyz, 13.0, 13.0)
+    _place_unit(game, enemy, 40.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use(
+        "RUN 'EM DOWN",
+        unit=battlewagon,
+        selected_units=[trukk, squiggoth],
+        phase_name="Movement phase",
+    )
+    assert int(ork_player.command_points or 0) == 9
+    assert battlewagon.can_charge_after_advance() is True
+    assert trukk.can_charge_after_advance() is True
+    assert squiggoth.can_charge_after_advance() is True
+    assert far_buggy.can_charge_after_advance() is False
+    assert boyz.can_charge_after_advance() is False
+
+    game.current_player_index = 1
+    game.current_player_idx = 1
+    assert battlewagon.can_charge_after_advance() is False
+
+
+def test_run_em_down_rejects_invalid_source_or_selected_units():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    trukk = _unit("Trukk", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    buggy = _unit("Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    squiggoth = _unit("Squiggoth", keywords=["MONSTER"], faction_keywords=["ORKS"])
+    far_buggy = _unit("Far Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (battlewagon, trukk, buggy, squiggoth, far_buggy):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _set_phase(game, ork_player, "MOVEMENT_PHASE", 0)
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, trukk, 14.0, 10.0)
+    _place_unit(game, buggy, 10.0, 14.0)
+    _place_unit(game, squiggoth, 14.0, 14.0)
+    _place_unit(game, far_buggy, 30.0, 10.0)
+    _place_unit(game, enemy, 40.0, 10.0)
+    game.rebuild_entity_registry()
+
+    battlewagon.round_state.moved_this_round = True
+    assert not ork_player.stratagems.use(
+        "RUN 'EM DOWN",
+        unit=battlewagon,
+        selected_units=[trukk],
+        phase_name="Movement phase",
+    )
+    battlewagon.round_state.moved_this_round = False
+    assert not ork_player.stratagems.use(
+        "RUN 'EM DOWN",
+        unit=battlewagon,
+        selected_units=[trukk, buggy, squiggoth],
+        phase_name="Movement phase",
+    )
+    assert not ork_player.stratagems.use(
+        "RUN 'EM DOWN",
+        unit=battlewagon,
+        selected_units=[far_buggy],
+        phase_name="Movement phase",
+    )
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_blitz_brigade_stratagem_tool_descriptors_include_run_em_down():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010800004", name="RUN 'EM DOWN")
+
+    assert descriptor is not None
+    assert descriptor.name == "RUN 'EM DOWN"
+    assert descriptor.effect == "source_and_selected_units_charge_after_advance"
+    assert descriptor.effect_params.get("max_other_units") == 2
+    assert descriptor.effect_params.get("charge_after_advance") is True

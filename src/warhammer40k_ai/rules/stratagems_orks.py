@@ -577,6 +577,56 @@ class OrksStratagemMixin:
         transport_candidates.sort(key=self._orks_sort_key)
         return (transport_candidates, passenger_map)
 
+    def _orks_run_em_down_other_candidates(self, source_unit: Any) -> list[Any]:
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        source_id = self._orks_sort_key(source_root)
+        for unit in self._orks_collect_owned_units():
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            unit_id = self._orks_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if root is source_root or (source_id and unit_id == source_id):
+                continue
+            if not self._orks_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if not self._orks_unit_contains_any_keyword(root, ("VEHICLE", "MONSTER")):
+                continue
+            distance = self._orks_distance_between_units(source_root, root)
+            if distance is None or float(distance) > 6.0 + 1e-6:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._orks_sort_key)
+        return candidates
+
+    def _orks_resolve_unit_list(self, raw_units: Any) -> list[Any]:
+        if raw_units is None:
+            return []
+        values = list(raw_units) if isinstance(raw_units, (list, tuple, set)) else [raw_units]
+        seen: set[str] = set()
+        resolved: list[Any] = []
+        for unit in values:
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            unit_id = self._orks_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            resolved.append(root)
+        resolved.sort(key=self._orks_sort_key)
+        return resolved
+
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -4496,6 +4546,8 @@ class OrksStratagemMixin:
             return self._use_orks_mekanised_brutality(stratagem, **kwargs)
         if name_u == "MOUNT UP, LADZ":
             return self._use_orks_mount_up_ladz(stratagem, **kwargs)
+        if name_u == "RUN 'EM DOWN":
+            return self._use_orks_run_em_down(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6896,6 +6948,92 @@ class OrksStratagemMixin:
         logger.info(
             "INFO: MEKANISED BRUTALITY: units disembarking from %s after its Normal move can charge this turn.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_run_em_down(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blitz_brigade_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Movement phase",),
+            require_your_turn=True,
+            error_prefix="RUN 'EM DOWN",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("RUN 'EM DOWN", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: RUN 'EM DOWN: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_blitz_brigade_wagon_or_rig_not_moved_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="RUN 'EM DOWN",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Movement phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_is_battlewagon_kill_rig_or_hunta_rig(root):
+            logger.error("ERROR: RUN 'EM DOWN: target must be a Battlewagon, Kill Rig or Hunta Rig unit")
+            return False
+
+        raw_selected = (
+            kwargs.get("selected_units")
+            or kwargs.get("other_units")
+            or kwargs.get("affected_units")
+            or kwargs.get("target_units")
+            or kwargs.get("units")
+        )
+        selected_units = self._orks_resolve_unit_list(raw_selected)
+        for extra_key in ("secondary_unit", "support_unit", "other_unit"):
+            extra_root = self._orks_root(kwargs.get(extra_key))
+            if extra_root is not None:
+                selected_units.extend(self._orks_resolve_unit_list([extra_root]))
+        source_id = self._orks_sort_key(root)
+        selected_units = [
+            unit
+            for unit in self._orks_resolve_unit_list(selected_units)
+            if unit is not root and (not source_id or self._orks_sort_key(unit) != source_id)
+        ]
+        if len(selected_units) > 2:
+            logger.error("ERROR: RUN 'EM DOWN: select no more than two other friendly ORKS VEHICLE or MONSTER units")
+            return False
+
+        eligible_others = self._orks_run_em_down_other_candidates(root)
+        for selected in selected_units:
+            if not self._orks_unit_in_candidates(selected, eligible_others):
+                logger.error("ERROR: RUN 'EM DOWN: selected other units must be friendly ORKS VEHICLE or MONSTER units within 6\"")
+                return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: RUN 'EM DOWN: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "RUN 'EM DOWN").strip() or "RUN 'EM DOWN"
+        source_key = re.sub(r"[^a-z0-9]+", "_", self._orks_sort_key(root).lower()).strip("_") or "source"
+        affected_units = [root] + selected_units
+        for index, affected in enumerate(affected_units):
+            self._orks_apply_temp_effects(
+                affected,
+                detachment="blitz_brigade",
+                effects=[
+                    {
+                        "id": f"run_em_down:{source_key}:{index}:charge_after_advance",
+                        "source": source_name,
+                        "effect": "charge_after_advance",
+                        "attack_type": "any",
+                        "expires_mode": "turn",
+                    }
+                ],
+            )
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RUN 'EM DOWN: %d Blitz Brigade unit(s) can declare a charge after Advancing this turn.",
+            len(affected_units),
         )
         return True
 
