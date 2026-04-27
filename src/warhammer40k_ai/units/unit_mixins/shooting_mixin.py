@@ -1579,6 +1579,22 @@ class ShootingMixin:
                 ignore_engagement_active = bool(self._ignore_engagement_for_ranged_targeting_active())
         except Exception:
             ignore_engagement_active = False
+        ceaseless_cannonade_targeting_active = False
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        if army is not None:
+            am_mgr = getattr(army, "astra_militarum_detachments", None)
+            ceaseless_fn = getattr(am_mgr, "ceaseless_cannonade_allows_ranged_target", None) if am_mgr is not None else None
+            if callable(ceaseless_fn):
+                game = getattr(getattr(army, "player", None), "game", None)
+                ceaseless_cannonade_targeting_active = bool(
+                    ceaseless_fn(
+                        self,
+                        target_unit,
+                        weapon_profile=weapon_profile,
+                        game=game,
+                        game_map=game_map,
+                    )
+                )
         all_is_rot_active = self._death_guard_all_is_rot_active()
         fortification_only = False
         if target_locked:
@@ -1635,6 +1651,8 @@ class ShootingMixin:
                     target_locked = False
             except Exception:
                 pass
+        if target_locked and ceaseless_cannonade_targeting_active:
+            target_locked = False
         if target_locked and acceptable_losses_target:
             target_locked = False
         if target_locked and not fortification_only:
@@ -1673,7 +1691,7 @@ class ShootingMixin:
                 if all_is_rot_active:
                     if shooter_root is not None and friendly_root is shooter_root:
                         continue
-                elif ignore_engagement_active:
+                elif ignore_engagement_active or ceaseless_cannonade_targeting_active:
                     if shooter_root is not None and friendly_root is shooter_root:
                         continue
                 else:
@@ -2342,6 +2360,14 @@ class ShootingMixin:
                 if parent is None or parent.is_ranged():
                     return True
             except Exception:
+                return True
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        ceaseless_fn = getattr(am_mgr, "ceaseless_cannonade_allows_ranged_target", None) if am_mgr is not None else None
+        if callable(ceaseless_fn):
+            game = getattr(getattr(army, "player", None), "game", None)
+            if bool(ceaseless_fn(self, target_unit, weapon_profile=weapon_profile, game=game, game_map=game_map)):
                 return True
             
         # If engaged, check weapon type and target

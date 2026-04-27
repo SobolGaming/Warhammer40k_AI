@@ -452,6 +452,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the maximum number of units that can be shaken by this rule in each battle round depends on the battle size as shown below",
             r"the maximum number of units you can select in this way depends on the battle size as shown below",
         ),
+        "Ceaseless Cannonade": (
+            r"each time an astra militarum titanic or astra militarum squadron unit from your army is selected to shoot models in that unit can target enemy units within engagement range of that unit including with blast weapons provided no other friendly units are also within engagement range of that enemy unit",
+            r"when doing so such models do not suffer the penalty to their hit rolls for being within engagement range of one or more enemy units excluding attacks made with indirect fire weapons",
+            r"in the muster armies step you can select one or more astra militarum titanic units from your army to gain the character keyword",
+            r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -6111,6 +6117,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000008820": (
             "Supported",
             "Kroot Hunting Pack: Kroot Carnivore units from your army gain the Battleline keyword.",
+        ),
+        "000010786": (
+            "Supported",
+            "Steel Hammer: ASTRA MILITARUM TITANIC/SQUADRON units can target enemy units within their own Engagement Range, including with Blast weapons, when no other friendly unit is also engaged with that enemy; non-Indirect attacks made this way ignore Big Guns Never Tire hit penalties, and muster selection can give CHARACTER to ASTRA MILITARUM TITANIC units.",
         ),
     }
 

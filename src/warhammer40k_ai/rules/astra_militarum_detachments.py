@@ -24,6 +24,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     _ARTILLERY_SUPPORT_INCENDIARY_ABILITY = "siege_regiment_incendiary_bombardment"
     _ARTILLERY_SUPPORT_SMOKE_ABILITY = "siege_regiment_smoke_shells"
     _ARTILLERY_SUPPORT_CREEPING_SELECTION_ABILITY = "siege_regiment_creeping_barrage_selection"
+    _STEEL_HAMMER_TITANIC_CHARACTER_SELECTION_ABILITY = "steel_hammer_titanic_character_selection"
     _ARTILLERY_SUPPORT_SHAKEN_TAG = "detachment:artillery_support_shaken"
     _ARTILLERY_SUPPORT_SHAKEN_MODIFIER_SOURCE = "ability:artillery_support_shaken"
     _ARTILLERY_SUPPORT_MODE_LABELS = {
@@ -77,6 +78,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Siege Regiment")
+
+    def is_steel_hammer(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Steel Hammer")
 
     @staticmethod
     def _entity_id(entity) -> str:
@@ -994,6 +1000,277 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             if parent is not None:
                 return parent is army
         return root in list(getattr(army, "units", []) or [])
+
+    @staticmethod
+    def _add_keyword_once(entity, keyword: str) -> None:
+        if entity is None:
+            return
+        kw = str(keyword or "").strip()
+        if not kw:
+            return
+        keywords = getattr(entity, "keywords", None)
+        if not isinstance(keywords, list):
+            return
+        existing = {str(value or "").strip().lower() for value in keywords}
+        if kw.lower() not in existing:
+            keywords.append(kw)
+
+    def _iter_unique_army_roots(self) -> list:
+        if self.army is None:
+            return []
+        out = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or f"unit:{id(root)}"
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            out.append(root)
+        out.sort(key=lambda unit: self._entity_id(unit) or str(id(unit)))
+        return out
+
+    def _unit_is_astra_militarum(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "ASTRA MILITARUM")
+
+    def _unit_is_squadron(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "SQUADRON")
+
+    def _unit_is_titanic(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "TITANIC")
+
+    def _steel_hammer_titanic_character_candidates(self) -> list:
+        if not self.is_steel_hammer():
+            return []
+        candidates = []
+        for root in self._iter_unique_army_roots():
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_astra_militarum(root):
+                continue
+            if not self._unit_is_titanic(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: self._entity_id(unit))
+        return candidates
+
+    def _pending_steel_hammer_character_selection_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            ability = str(ctx.get("ability", "") or "").strip().lower()
+            if ability != self._STEEL_HAMMER_TITANIC_CHARACTER_SELECTION_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            return True
+        return False
+
+    def queue_steel_hammer_titanic_character_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_steel_hammer():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if bool(getattr(self, "_steel_hammer_titanic_character_selection_resolved", False)):
+            return
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        candidates = list(self._steel_hammer_titanic_character_candidates() or [])
+        if not candidates:
+            self._steel_hammer_titanic_character_selection_resolved = True
+            return
+
+        army_id = self._entity_id(self.army)
+        if self._pending_steel_hammer_character_selection_request(game, army_id=army_id):
+            return
+
+        candidate_ids = [self._entity_id(unit) for unit in candidates if self._entity_id(unit)]
+        if not candidate_ids:
+            self._steel_hammer_titanic_character_selection_resolved = True
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Ceaseless Cannonade: select ASTRA MILITARUM TITANIC units to gain CHARACTER.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": self._STEEL_HAMMER_TITANIC_CHARACTER_SELECTION_ABILITY,
+                "ability_name": "Ceaseless Cannonade",
+                "phase": "Muster Armies step",
+                "allowed_unit_ids": list(candidate_ids),
+                "title": "Ceaseless Cannonade",
+                "subtitle": "Select any ASTRA MILITARUM TITANIC units.",
+                "instruction": "Selected TITANIC units gain the CHARACTER keyword.",
+                "skip_label": "None (do not select TITANIC units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def steel_hammer_titanic_character_selection_is_valid(self, unit_ids, *, game=None) -> tuple[bool, str]:
+        del game
+        if not self.is_steel_hammer():
+            return False, "Ceaseless Cannonade is not active for this army."
+        if unit_ids is None:
+            return True, ""
+        if not isinstance(unit_ids, list):
+            return False, "Ceaseless Cannonade selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        candidates = {
+            self._entity_id(unit): unit
+            for unit in list(self._steel_hammer_titanic_character_candidates() or [])
+            if self._entity_id(unit)
+        }
+        for unit_id in selected:
+            if unit_id not in candidates:
+                return False, "Ceaseless Cannonade selection contains an ineligible unit."
+        return True, ""
+
+    def apply_steel_hammer_titanic_character_selection(self, unit_ids, *, game=None) -> list[str]:
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        valid, _reason = self.steel_hammer_titanic_character_selection_is_valid(selected, game=game)
+        if not valid:
+            return []
+        candidate_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self._steel_hammer_titanic_character_candidates() or [])
+            if self._entity_id(unit)
+        }
+        applied_ids: list[str] = []
+        for unit_id in selected:
+            root = candidate_by_id.get(unit_id)
+            if root is None:
+                continue
+            self._add_keyword_once(root, "Character")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_keyword_once(model, "Character")
+            applied_ids.append(unit_id)
+        self.steel_hammer_character_titanic_unit_ids = tuple(applied_ids)
+        if self.army is not None:
+            setattr(self.army, "steel_hammer_character_titanic_unit_ids", list(applied_ids))
+        self._steel_hammer_titanic_character_selection_resolved = True
+        return list(applied_ids)
+
+    def _steel_hammer_ceaseless_unit(self, unit):
+        if not self.is_steel_hammer():
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_astra_militarum(root):
+            return None
+        if not (self._unit_is_titanic(root) or self._unit_is_squadron(root)):
+            return None
+        return root
+
+    @staticmethod
+    def _weapon_profile_is_indirect_fire(weapon_profile) -> bool:
+        is_indirect = getattr(weapon_profile, "is_indirect_fire", None)
+        if callable(is_indirect):
+            return bool(is_indirect())
+        return False
+
+    def _is_controlling_players_shooting_phase_for_unit(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        game_obj = game
+        if game_obj is None:
+            army = getattr(root, "get_parent_army", lambda: None)()
+            game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if game_obj is None or player is None:
+            return False
+        is_shooting_phase = getattr(game_obj, "is_shooting_phase", None)
+        get_current_player = getattr(game_obj, "get_current_player", None)
+        return bool(
+            callable(is_shooting_phase)
+            and callable(get_current_player)
+            and is_shooting_phase()
+            and get_current_player() is player
+        )
+
+    def _target_engaged_by_other_friendly(self, shooter, target_unit, *, game_map) -> bool:
+        if shooter is None or target_unit is None or game_map is None:
+            return True
+        shooter_root = self._unit_root(shooter)
+        for friendly in list(game_map.get_friendly_units(shooter) or []):
+            friendly_root = self._unit_root(friendly)
+            if friendly_root is None or friendly_root is shooter_root:
+                continue
+            alive = getattr(friendly_root, "is_alive", None)
+            if callable(alive):
+                if not bool(alive()):
+                    continue
+            elif not bool(getattr(friendly_root, "is_alive", True)):
+                continue
+            if not bool(getattr(friendly_root, "deployed", True)):
+                continue
+            if game_map.is_within_engagement_range(friendly_root, target_unit):
+                return True
+        return False
+
+    def ceaseless_cannonade_allows_ranged_target(
+        self,
+        unit,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        del weapon_profile
+        root = self._steel_hammer_ceaseless_unit(unit)
+        if root is None or target_unit is None or game_map is None:
+            return False
+        if not self._is_controlling_players_shooting_phase_for_unit(root, game=game):
+            return False
+        if not game_map.is_within_engagement_range(root, target_unit):
+            return False
+        return not self._target_engaged_by_other_friendly(root, target_unit, game_map=game_map)
+
+    def ceaseless_cannonade_ignores_big_guns_hit_penalty(
+        self,
+        unit,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if self._weapon_profile_is_indirect_fire(weapon_profile):
+            return False
+        return self.ceaseless_cannonade_allows_ranged_target(
+            unit,
+            target_unit,
+            weapon_profile=weapon_profile,
+            game=game,
+            game_map=game_map,
+        )
 
     @staticmethod
     def _model_has_keyword(model, keyword: str) -> bool:

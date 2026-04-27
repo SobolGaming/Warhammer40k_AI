@@ -1,0 +1,269 @@
+from types import SimpleNamespace
+
+from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+
+class MockDatasheet:
+    def __init__(
+        self,
+        name: str,
+        *,
+        keywords=None,
+        faction_keywords=None,
+        movement: str = "8",
+        toughness: str = "8",
+        wounds: str = "8",
+        objective_control: str = "2",
+    ):
+        self.id = f"ds_{name.lower().replace(' ', '_')}"
+        self.name = name
+        self.faction_data = {"name": "Astra Militarum"}
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": str(movement),
+                "T": str(toughness),
+                "Sv": "3",
+                "W": str(wounds),
+                "Ld": "6",
+                "OC": str(objective_control),
+                "base_size": "80mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = []
+        self.loadout = "This model is equipped with: nothing"
+
+
+class _DummyProfile:
+    def __init__(self, *, blast: bool = False, indirect: bool = True):
+        self._blast = bool(blast)
+        self._indirect = bool(indirect)
+        self.name = "Dummy Weapon"
+        self.range = SimpleNamespace(max=999.0)
+
+    def is_pistol(self) -> bool:
+        return False
+
+    def is_blast(self) -> bool:
+        return self._blast
+
+    def is_indirect_fire(self) -> bool:
+        return self._indirect
+
+
+class _DummyMap:
+    def __init__(self, units, engaged_pairs):
+        self.units = list(units)
+        self._engaged = set(frozenset({id(a), id(b)}) for (a, b) in engaged_pairs)
+
+    def get_enemy_units(self, unit):
+        return [u for u in self.units if u.get_parent_army() != unit.get_parent_army()]
+
+    def get_friendly_units(self, unit):
+        return [u for u in self.units if u.get_parent_army() == unit.get_parent_army()]
+
+    def is_within_engagement_range(self, a, b) -> bool:
+        return frozenset({id(a), id(b)}) in self._engaged
+
+
+def create_unit(
+    name: str,
+    x: float,
+    y: float,
+    *,
+    keywords=None,
+    faction_keywords=None,
+    movement: str = "8",
+    toughness: str = "8",
+    wounds: str = "8",
+) -> Unit:
+    unit = Unit(
+        MockDatasheet(
+            name,
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+            movement=movement,
+            toughness=toughness,
+            wounds=wounds,
+        )
+    )
+    for model in list(unit.models or []):
+        model.set_location(x, y, 0.0, 0.0)
+    unit.deployed = True
+    return unit
+
+
+def _make_game():
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    guard_army = Army.with_detachment("Astra Militarum", detachment_type="Steel Hammer")
+    guard_army.faction_id = "AM"
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+    enemy_army.faction_id = "EN"
+    guard_player = Player("Guard", PlayerControl.REMOTE, army=guard_army)
+    enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+    game.add_player(guard_player)
+    game.add_player(enemy_player)
+    return game, guard_player, enemy_player
+
+
+def _make_hit_profile(*, indirect: bool = False):
+    profile = WargearProfile.__new__(WargearProfile)
+    profile.skill = 3
+    profile.parent_wargear = SimpleNamespace(is_ranged=lambda: True, is_melee=lambda: False)
+    profile.is_torrent = lambda: False
+    profile.is_heavy = lambda: False
+    profile.is_pistol = lambda: False
+    profile.is_indirect_fire = lambda: bool(indirect)
+    profile.is_lethal_hits = lambda: False
+    profile.is_sustained_hits = lambda: False
+    return profile
+
+
+def test_ceaseless_cannonade_muster_selection_applies_character_to_titanic_units():
+    game, player, _enemy = _make_game()
+    baneblade = create_unit(
+        "Baneblade",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    shadowsword = create_unit(
+        "Shadowsword",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    leman_russ = create_unit(
+        "Leman Russ",
+        14.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    player.army.add_unit(baneblade)
+    player.army.add_unit(shadowsword)
+    player.army.add_unit(leman_russ)
+    game.rebuild_entity_registry()
+
+    mgr = player.army.astra_militarum_detachments
+    mgr.queue_steel_hammer_titanic_character_selection_request(game=game, player=player)
+
+    requests = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        and str((getattr(req, "context", {}) or {}).get("ability", "") or "").strip().lower()
+        == "steel_hammer_titanic_character_selection"
+    ]
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(getattr(request, "context", {}).get("ability_name", "") or "") == "Ceaseless Cannonade"
+    allowed_ids = set(getattr(request, "context", {}).get("allowed_unit_ids", []) or [])
+    assert str(get_entity_id(baneblade) or "") in allowed_ids
+    assert str(get_entity_id(shadowsword) or "") in allowed_ids
+    assert str(get_entity_id(leman_russ) or "") not in allowed_ids
+
+    confirm_option = next(
+        option
+        for option in list(getattr(request, "options", []) or [])
+        if str((getattr(option, "payload", {}) or {}).get("action", "") or "").strip().lower() == "confirm"
+    )
+    cmd = resolve_decision_command(
+        game,
+        request,
+        confirm_option.option_id,
+        result_payload={"unit_ids": [str(get_entity_id(baneblade) or "")]},
+        player_id=player.id,
+    )
+    assert bool(getattr(cmd, "ok", False))
+    assert baneblade.has_any_keyword("CHARACTER")
+    assert baneblade.models[0].has_any_keyword("CHARACTER")
+    assert not shadowsword.has_any_keyword("CHARACTER")
+    assert not leman_russ.has_any_keyword("CHARACTER")
+
+
+def test_ceaseless_cannonade_allows_blast_into_own_engagement_only():
+    game, player, enemy_player = _make_game()
+    squadron = create_unit(
+        "Leman Russ",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    friendly = create_unit(
+        "Infantry Squad",
+        11.0,
+        10.0,
+        keywords=["INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    enemy = create_unit("Enemy", 10.0, 11.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(squadron)
+    player.army.add_unit(friendly)
+    enemy_player.army.add_unit(enemy)
+
+    game.get_current_player = lambda: player
+    game.is_shooting_phase = lambda: True
+    blast = _DummyProfile(blast=True, indirect=True)
+    own_combat_map = _DummyMap([squadron, friendly, enemy], [(squadron, enemy)])
+    game.map = own_combat_map
+
+    assert squadron._can_model_shoot_weapon_at_target(squadron.models[0], blast, enemy, own_combat_map)
+
+    shared_combat_map = _DummyMap([squadron, friendly, enemy], [(squadron, enemy), (friendly, enemy)])
+    game.map = shared_combat_map
+    assert not squadron._can_model_shoot_weapon_at_target(squadron.models[0], blast, enemy, shared_combat_map)
+
+
+def test_ceaseless_cannonade_suppresses_bgnt_hit_penalty_except_indirect_fire(monkeypatch):
+    from warhammer40k_ai.units import wargear as wargear_mod
+
+    game, player, enemy_player = _make_game()
+    squadron = create_unit(
+        "Leman Russ",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    enemy = create_unit("Enemy", 10.0, 11.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(squadron)
+    enemy_player.army.add_unit(enemy)
+    game.get_current_player = lambda: player
+    game.is_shooting_phase = lambda: True
+    game.map = _DummyMap([squadron, enemy], [(squadron, enemy)])
+    setattr(squadron, "_bgnt_locked_at_target_selection", True)
+
+    monkeypatch.setattr(wargear_mod, "get_roll", lambda _dice: 4)
+    non_indirect = _make_hit_profile(indirect=False)
+    hit = non_indirect._hit_target_with_tracking(enemy, squadron.models[0], {})
+    assert hit["final_needed"] == 3
+    assert not any("Big Guns Never Tire" in str(mod or "") for mod in list(hit.get("modifiers", []) or []))
+
+    indirect = _make_hit_profile(indirect=True)
+    indirect_hit = indirect._hit_target_with_tracking(enemy, squadron.models[0], {})
+    assert any("Big Guns Never Tire" in str(mod or "") for mod in list(indirect_hit.get("modifiers", []) or []))
+

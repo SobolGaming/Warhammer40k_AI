@@ -22296,6 +22296,15 @@ class ActionsMovementMixin:
         if self._ignore_engagement_for_ranged_targeting_active():
             return True
 
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        ceaseless_fn = getattr(am_mgr, "ceaseless_cannonade_allows_ranged_target", None) if am_mgr is not None else None
+        if callable(ceaseless_fn):
+            game = getattr(getattr(army, "player", None), "game", None)
+            for enemy in list(game_map.get_enemy_units(self) or []):
+                if bool(ceaseless_fn(self, enemy, weapon_profile=profile, game=game, game_map=game_map)):
+                    return True
+
         # If engaged and no profile provided, assume cannot shoot
         if profile is None:
             return False
@@ -22315,6 +22324,13 @@ class ActionsMovementMixin:
         """Check if this unit can shoot at a specific target while engaged with other units."""
         if self._ignore_engagement_for_ranged_targeting_active():
             return True
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        ceaseless_fn = getattr(am_mgr, "ceaseless_cannonade_allows_ranged_target", None) if am_mgr is not None else None
+        if callable(ceaseless_fn):
+            game = getattr(getattr(army, "player", None), "game", None)
+            if bool(ceaseless_fn(self, target, weapon_profile=profile, game=game, game_map=game_map)):
+                return True
         # If unit is not in engagement range, they can always shoot
         if not any(game_map.is_within_engagement_range(self, enemy)
                   for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):

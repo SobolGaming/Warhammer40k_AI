@@ -13240,6 +13240,24 @@ class WargearProfile:
                         skip_bgnt = bool(pu._ignore_engagement_for_ranged_targeting_active(game=game))
                 except Exception:
                     skip_bgnt = False
+                army = pu.get_parent_army() if hasattr(pu, "get_parent_army") else None
+                am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+                ceaseless_fn = (
+                    getattr(am_mgr, "ceaseless_cannonade_ignores_big_guns_hit_penalty", None)
+                    if am_mgr is not None
+                    else None
+                )
+                if callable(ceaseless_fn):
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    skip_bgnt = skip_bgnt or bool(
+                        ceaseless_fn(
+                            pu,
+                            target,
+                            weapon_profile=self,
+                            game=game,
+                            game_map=getattr(game, "map", None) if game is not None else None,
+                        )
+                    )
                 if self._is_siege_shield_demolisher_attack(attacker):
                     skip_bgnt = True
                 if callable(getattr(pu, "ignores_big_guns_never_tire_hit_penalty", None)):
@@ -13286,6 +13304,24 @@ class WargearProfile:
                     skip_target_penalty = self._is_siege_shield_demolisher_attack(attacker)
                     if callable(getattr(pu, "ignores_big_guns_never_tire_hit_penalty", None)):
                         skip_target_penalty = skip_target_penalty or bool(pu.ignores_big_guns_never_tire_hit_penalty())
+                    army = pu.get_parent_army() if hasattr(pu, "get_parent_army") else None
+                    am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+                    ceaseless_fn = (
+                        getattr(am_mgr, "ceaseless_cannonade_ignores_big_guns_hit_penalty", None)
+                        if am_mgr is not None
+                        else None
+                    )
+                    if callable(ceaseless_fn):
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        skip_target_penalty = skip_target_penalty or bool(
+                            ceaseless_fn(
+                                pu,
+                                target,
+                                weapon_profile=self,
+                                game=game,
+                                game_map=game_map,
+                            )
+                        )
                     if engaged_with_friendly and not skip_target_penalty:
                         _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
         except Exception:
