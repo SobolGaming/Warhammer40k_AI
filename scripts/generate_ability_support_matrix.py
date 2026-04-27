@@ -479,6 +479,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Eager for the Fight": (
             r"each time an orks unit from your army disembarks from a transport until the end of the turn you can re ?roll advance and charge rolls made for that orks unit",
         ),
+        "Rapid Deployment": (
+            r"each time an adeptus astartes unit from your army disembarks from a transport excluding aircraft that made a normal or advance move this phase that disembarked unit can make a normal move of up to d6 or a normal move of up to d3 3 instead if that transport is a heavy transport(?: see below)?",
+            r"adeptus astartes transport units from your army excluding aircraft that have a wounds characteristic of 14 have the heavy transport keyword",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -3102,6 +3106,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Eager for the Fight": (
             "Supported",
             "Blitz Brigade: when an ORKS unit disembarks from a friendly TRANSPORT, it gains turn-long re-rolls for Advance rolls and Charge rolls through the existing deterministic dice-reroll flow.",
+        ),
+        "Rapid Deployment": (
+            "Supported",
+            "Armoured Speartip: ADEPTUS ASTARTES TRANSPORT non-AIRCRAFT units with Wounds 14+ gain HEAVY TRANSPORT, and ADEPTUS ASTARTES units disembarking from a friendly TRANSPORT that made a Normal/Advance move in the Movement phase queue an optional MOVE_UNIT Normal move bounded by D6 or D3+3 for HEAVY TRANSPORT.",
         ),
         "Dakka! Dakka! Dakka!": (
             "Supported",

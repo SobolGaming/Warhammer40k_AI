@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .detachment_manager import DetachmentManagerBase
 from ..utility.calcs import measure_path_distance
+from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
 
@@ -23,6 +24,8 @@ CODEX_SPACE_MARINES_DETACHMENTS = {
     "librarius conclave",
     "bastion task force",
     "orbital assault force",
+    "armoured speartip",
+    "headhunter task force",
 }
 
 DIVERGENT_CHAPTER_KEYWORDS = {
@@ -337,6 +340,16 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Orbital Assault Force")
 
+    def is_armoured_speartip(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Armoured Speartip")
+
+    def is_headhunter_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Headhunter Task Force")
+
     def is_reclamation_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -629,6 +642,203 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if callable(is_alive_fn):
             return bool(is_alive_fn())
         return False
+
+    @staticmethod
+    def _add_ability_keyword(unit, keyword: str) -> None:
+        if unit is None:
+            return
+        clean = str(keyword or "").strip()
+        if not clean:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        keywords = [
+            str(value or "").strip()
+            for value in list(sr.get("ability_added_keywords", []) or [])
+            if str(value or "").strip()
+        ]
+        existing = {value.upper() for value in keywords}
+        if clean.upper() not in existing:
+            keywords.append(clean)
+        sr["ability_added_keywords"] = keywords
+        unit.special_rules = sr
+
+    @staticmethod
+    def _model_wounds_characteristic(model) -> int:
+        for attr in ("_base_wounds", "base_wounds", "max_wounds", "wounds"):
+            value = getattr(model, attr, None)
+            if callable(value):
+                value = value()
+            if value is None:
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        return 0
+
+    def _attached_unit_has_model_with_wounds_at_least(self, unit, threshold: int) -> bool:
+        try:
+            required = int(threshold)
+        except (TypeError, ValueError):
+            required = 0
+        if required <= 0:
+            return False
+        for model in self._attached_unit_models(unit):
+            if self._model_wounds_characteristic(model) >= required:
+                return True
+        return False
+
+    def _attached_unit_belongs_to_army(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None or self.army is None:
+            return False
+        get_parent = getattr(root, "get_parent_army", None)
+        army = get_parent() if callable(get_parent) else getattr(root, "parent_army", None)
+        return army is self.army
+
+    def armoured_speartip_heavy_transport_eligible(self, unit) -> bool:
+        if not self.is_armoured_speartip():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._attached_unit_belongs_to_army(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "TRANSPORT"):
+            return False
+        if self._attached_unit_has_keyword(root, "AIRCRAFT"):
+            return False
+        return self._attached_unit_has_model_with_wounds_at_least(root, 14)
+
+    def apply_armoured_speartip_heavy_transport_keywords(self, unit=None) -> None:
+        if not self.is_armoured_speartip():
+            return
+        if unit is None:
+            units = self._iter_unique_army_roots()
+        else:
+            root = self._attached_unit_root(unit)
+            units = [root] if root is not None else []
+        for candidate in units:
+            if self.armoured_speartip_heavy_transport_eligible(candidate):
+                self._add_ability_keyword(candidate, "Heavy Transport")
+
+    def _armoured_speartip_transport_moved_normally_or_advanced_this_phase(self, transport_unit, *, game=None) -> bool:
+        if transport_unit is None:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "MOVEMENT_PHASE":
+                return False
+        round_state = getattr(transport_unit, "round_state", None)
+        if round_state is None:
+            return False
+        advanced = bool(getattr(round_state, "advanced_this_round", False))
+        if advanced:
+            return True
+        moved = bool(getattr(round_state, "moved_this_round", False))
+        remained_stationary = bool(getattr(round_state, "remained_stationary_this_round", False))
+        fell_back = bool(getattr(round_state, "fell_back_this_round", False))
+        return moved and not remained_stationary and not fell_back
+
+    def armoured_speartip_rapid_deployment_eligible(self, unit, *, transport_unit=None, game=None) -> bool:
+        if not self.is_armoured_speartip():
+            return False
+        root = self._attached_unit_root(unit)
+        transport_root = self._attached_unit_root(transport_unit)
+        if root is None or transport_root is None:
+            return False
+        if not self._attached_unit_belongs_to_army(root) or not self._attached_unit_belongs_to_army(transport_root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_has_keyword(transport_root, "TRANSPORT"):
+            return False
+        if self._attached_unit_has_keyword(transport_root, "AIRCRAFT"):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            current_player = game_obj.get_current_player() if hasattr(game_obj, "get_current_player") else None
+            if player is not None and current_player is not player:
+                return False
+        return self._armoured_speartip_transport_moved_normally_or_advanced_this_phase(
+            transport_root,
+            game=game_obj,
+        )
+
+    def queue_armoured_speartip_rapid_deployment_move(
+        self,
+        unit,
+        *,
+        transport_unit=None,
+        game=None,
+        current_turn: int = 0,
+    ):
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return None
+        root = self._attached_unit_root(unit)
+        transport_root = self._attached_unit_root(transport_unit)
+        if not self.armoured_speartip_rapid_deployment_eligible(root, transport_unit=transport_root, game=game_obj):
+            return None
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return None
+        unit_id = str(get_entity_id(root) or "")
+        transport_id = str(get_entity_id(transport_root) or "")
+        if not unit_id or not transport_id:
+            return None
+        queue = getattr(game_obj, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != "MOVE_UNIT":
+                    continue
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("reactive_move_kind", "") or "") != "armoured_speartip_rapid_deployment":
+                    continue
+                if str(context.get("unit_id", "") or "") == unit_id and str(
+                    context.get("rapid_deployment_transport_unit_id", "") or ""
+                ) == transport_id:
+                    return request
+        heavy = self._attached_unit_has_keyword(transport_root, "HEAVY TRANSPORT")
+        distance_expr = "D3+3" if heavy else "D6"
+        max_distance = int(
+            get_roll(
+                distance_expr,
+                game=game_obj,
+                player=player,
+                reason="Rapid Deployment move distance",
+                roll_type="rapid_deployment_move_distance",
+            )
+        )
+        queue_move = getattr(game_obj, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            return None
+        return queue_move(
+            player=player,
+            unit=root,
+            max_distance=max_distance,
+            kind="armoured_speartip_rapid_deployment",
+            movement_type="move",
+            reactive_movement_type="move",
+            source="Rapid Deployment",
+            moving_unit=transport_root,
+            allow_skip=True,
+            extra_context={
+                "ability": "space_marines_armoured_speartip_rapid_deployment",
+                "ability_name": "Rapid Deployment",
+                "rapid_deployment_transport_unit_id": transport_id,
+                "rapid_deployment_heavy_transport": bool(heavy),
+                "rapid_deployment_distance_roll": distance_expr,
+                "rapid_deployment_turn": int(current_turn or getattr(game_obj, "turn", 0) or 0),
+                "enforce_max_distance": True,
+            },
+        )
 
     def grim_resolve_target_is_eligible(self, unit, *, game=None) -> bool:
         if not self.is_unforgiven_task_force():

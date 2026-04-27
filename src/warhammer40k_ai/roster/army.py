@@ -758,6 +758,9 @@ class Army:
         apply_fn = getattr(sm_mgr, "apply_the_lost_brethren_battleline_keywords", None) if sm_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(sm_mgr, "apply_armoured_speartip_heavy_transport_keywords", None) if sm_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         tau_mgr = getattr(self, "tau_empire_detachments", None)
         apply_fn = getattr(tau_mgr, "apply_kroot_hunting_pack_battleline_keywords", None) if tau_mgr is not None else None
         if callable(apply_fn):

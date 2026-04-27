@@ -357,6 +357,7 @@ Movement:
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
+- rapid_deployment_post_disembark_move_dialog: MOVE_UNIT {unit_id, model_positions | skip} (context `ability="space_marines_armoured_speartip_rapid_deployment"`, `ability_name="Rapid Deployment"`, `movement_type="move"`, `reactive_move_kind="armoured_speartip_rapid_deployment"`, `rapid_deployment_transport_unit_id`, `rapid_deployment_heavy_transport`, `rapid_deployment_distance_roll`, `max_distance`, `enforce_max_distance=true`, `allow_skip=true`)
 - battle_focus_opportunity_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="opportunity"`)
 - battle_focus_fade_back_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="fade_back"`)
 - battle_focus_lethal_surge_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="aeldari_strength_from_death_lethal_surge"`, `unit_id`, `attacker_unit_id`, `turn`, `turn_owner_id`)

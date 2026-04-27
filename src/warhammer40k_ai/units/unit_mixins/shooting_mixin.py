@@ -4806,6 +4806,25 @@ class ShootingMixin:
         if callable(apply_fn):
             apply_fn(self, transport_unit=transport_unit, game=game, current_turn=current_turn)
 
+    def _apply_armoured_speartip_rapid_deployment_disembark_effect(
+        self,
+        *,
+        transport_unit=None,
+        game=None,
+        current_turn: int = 0,
+    ) -> None:
+        army = self.get_parent_army()
+        if army is None:
+            return
+        mgr = getattr(army, "space_marines_detachments", None)
+        queue_fn = (
+            getattr(mgr, "queue_armoured_speartip_rapid_deployment_move", None)
+            if mgr is not None
+            else None
+        )
+        if callable(queue_fn):
+            queue_fn(self, transport_unit=transport_unit, game=game, current_turn=current_turn)
+
     def _disembark_override_rules(self, *, transport_unit: Optional['Unit'] = None, game: Optional['Game'] = None) -> dict:
         overrides: dict[str, object] = {}
         try:
@@ -5363,6 +5382,11 @@ class ShootingMixin:
                     game=game,
                     current_turn=current_turn,
                 )
+                self._apply_armoured_speartip_rapid_deployment_disembark_effect(
+                    transport_unit=transport_unit,
+                    game=game,
+                    current_turn=current_turn,
+                )
 
                 # Battle-shock until next Command phase
                 if not self.is_battle_shocked():
@@ -5445,6 +5469,11 @@ class ShootingMixin:
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
         self._apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+            transport_unit=transport_unit,
+            game=game,
+            current_turn=current_turn,
+        )
+        self._apply_armoured_speartip_rapid_deployment_disembark_effect(
             transport_unit=transport_unit,
             game=game,
             current_turn=current_turn,
@@ -5749,6 +5778,11 @@ class ShootingMixin:
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
         self._apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+            transport_unit=transport_unit,
+            game=game,
+            current_turn=current_turn,
+        )
+        self._apply_armoured_speartip_rapid_deployment_disembark_effect(
             transport_unit=transport_unit,
             game=game,
             current_turn=current_turn,

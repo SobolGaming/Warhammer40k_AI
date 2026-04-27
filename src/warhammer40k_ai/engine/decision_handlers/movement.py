@@ -1529,6 +1529,13 @@ def validate_move_unit_payload(
         )
         if turbo_errors:
             return turbo_errors
+    context_max_distance_errors = _validate_context_max_distance_positions(
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if context_max_distance_errors:
+        return context_max_distance_errors
     if validate_normal_move_sweep:
         start_positions = current_model_positions(unit)
         end_positions: list[dict] = []
@@ -2595,6 +2602,59 @@ def _validate_speedwaaagh_turbo_boostas_positions(
                         return ("Move unit: Turbo Boostas models cannot pivot.",)
                 elif kind:
                     return ("Move unit: Turbo Boostas requires one straight-line movement segment.",)
+    return ()
+
+
+def _validate_context_max_distance_positions(
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    if not bool(context.get("enforce_max_distance", False)):
+        return ()
+    if not isinstance(model_positions, list) or not model_positions:
+        return ("Move unit: bounded move requires model_positions.",)
+    try:
+        max_distance = float(context.get("max_distance", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    source = str(context.get("ability_name", "") or context.get("reactive_move_source", "") or "Bounded move").strip()
+    if not source:
+        source = "Bounded move"
+    if max_distance <= 0:
+        return (f"Move unit: {source} requires a positive max_distance.",)
+    starts = {
+        str(entry.get("model_id", "") or ""): entry
+        for entry in current_model_positions(unit)
+        if str(entry.get("model_id", "") or "")
+    }
+    for entry in list(model_positions or []):
+        if not isinstance(entry, dict):
+            return (f"Move unit: {source} model_positions entries must be objects.",)
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            return (f"Move unit: {source} model_positions missing model_id.",)
+        start = starts.get(model_id)
+        if start is None:
+            return (f"Move unit: {source} model_positions include a model that is not eligible to move.",)
+        start_pos = list(start.get("position", []) or [])
+        end_pos = list(entry.get("position", []) or [])
+        if len(start_pos) < 2 or len(end_pos) < 2:
+            return (f"Move unit: {source} positions require x/y coordinates.",)
+        while len(start_pos) < 3:
+            start_pos.append(0.0)
+        while len(end_pos) < 3:
+            end_pos.append(0.0)
+        try:
+            sx, sy, sz = float(start_pos[0]), float(start_pos[1]), float(start_pos[2])
+            ex, ey, ez = float(end_pos[0]), float(end_pos[1]), float(end_pos[2])
+        except (TypeError, ValueError):
+            return (f"Move unit: {source} positions must be numeric.",)
+        distance = math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2 + (ez - sz) ** 2)
+        if distance > max_distance + 1e-6:
+            return (f'Move unit: {source} move cannot exceed {max_distance:g}".',)
     return ()
 
 
