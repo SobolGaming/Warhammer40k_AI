@@ -5,6 +5,7 @@ import re
 from typing import Any, Optional
 
 from ..utility import dice as dice_module
+from ..utility.aura_utils import unit_wholly_within_range_of_unit
 from ..utility.event_bus import append_action, append_dice
 from ..utility.entity_ids import get_entity_id
 from ..utility.modifiers import Modifier, ModifierOp
@@ -498,6 +499,83 @@ class OrksStratagemMixin:
         kept = [unit for unit in list(candidates or []) if self._orks_is_battlewagon_kill_rig_or_hunta_rig(unit)]
         kept.sort(key=self._orks_sort_key)
         return kept
+
+    def _orks_is_transport_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        return bool(getattr(root, "is_transport", False)) or self._orks_unit_contains_keyword(root, "TRANSPORT")
+
+    def _orks_mount_up_transport_can_embark(self, *, transport: Any, passenger: Any) -> bool:
+        transport_root = self._orks_root(transport)
+        passenger_root = self._orks_root(passenger)
+        if transport_root is None or passenger_root is None or transport_root is passenger_root:
+            return False
+        if not self._orks_owned_by_player(transport_root, self.player):
+            return False
+        if not self._orks_owned_by_player(passenger_root, self.player):
+            return False
+        if not self._orks_on_battlefield(transport_root, require_targetable=True):
+            return False
+        if not self._orks_on_battlefield(passenger_root, require_targetable=True):
+            return False
+        if not self._is_orks_unit(passenger_root):
+            return False
+        if not self._orks_unit_contains_keyword(passenger_root, "INFANTRY"):
+            return False
+        if self._orks_is_unit_engaged(passenger_root):
+            return False
+        if not self._orks_is_transport_unit(transport_root):
+            return False
+        can_transport = getattr(transport_root, "can_transport", None)
+        if not callable(can_transport):
+            return False
+        try:
+            if not bool(can_transport(passenger_root)):
+                return False
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            return False
+        if not unit_wholly_within_range_of_unit(transport_root, passenger_root, 6.0):
+            return False
+        return True
+
+    def _orks_mount_up_ladz_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_blitz_brigade_detachment():
+            return ([], {})
+
+        owned_units = self._orks_collect_owned_units()
+        passengers = [
+            unit
+            for unit in owned_units
+            if self._is_orks_unit(unit)
+            and self._orks_unit_contains_keyword(unit, "INFANTRY")
+            and self._orks_on_battlefield(unit, require_targetable=True)
+            and not self._orks_is_unit_engaged(unit)
+        ]
+        transports = [
+            unit
+            for unit in owned_units
+            if self._orks_is_transport_unit(unit)
+            and self._orks_on_battlefield(unit, require_targetable=True)
+        ]
+        passengers.sort(key=self._orks_sort_key)
+        transports.sort(key=self._orks_sort_key)
+
+        transport_candidates: list[Any] = []
+        passenger_map: dict[str, list[Any]] = {}
+        for transport in transports:
+            embarkable = [
+                passenger
+                for passenger in passengers
+                if self._orks_mount_up_transport_can_embark(transport=transport, passenger=passenger)
+            ]
+            if not embarkable:
+                continue
+            embarkable.sort(key=self._orks_sort_key)
+            transport_candidates.append(transport)
+            passenger_map[self._orks_sort_key(transport)] = embarkable
+        transport_candidates.sort(key=self._orks_sort_key)
+        return (transport_candidates, passenger_map)
 
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
@@ -2681,9 +2759,48 @@ class OrksStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_orks_mount_up_ladz_phase_end_reaction(self) -> None:
+        if not self._is_blitz_brigade_detachment():
+            return
+        stratagem = self._orks_get_available_stratagem_by_names("MOUNT UP, LADZ")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._orks_phase_end_reaction_already_queued(stratagem_name=str(getattr(stratagem, "name", "") or "")):
+            return
+
+        candidates, passenger_map = self._orks_mount_up_ladz_candidates()
+        if not candidates:
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "MOUNT UP, LADZ"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "candidates": list(candidates),
+            "transport_candidates": list(candidates),
+            "embark_candidates_by_transport": passenger_map,
+            "passenger_candidates_by_transport": passenger_map,
+        }
+        if len(candidates) == 1:
+            transport = candidates[0]
+            payload["unit"] = transport
+            payload["target_unit"] = transport
+            payload["transport_unit"] = transport
+            passengers = list(passenger_map.get(self._orks_sort_key(transport)) or [])
+            if passengers:
+                payload["embark_candidates"] = passengers
+                payload["passenger_candidates"] = passengers
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_orks_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
             return
+        self._queue_orks_mount_up_ladz_phase_end_reaction()
         if player is self.player:
             return
         self._queue_single_orks_end_of_opponent_fight_phase_reserves_reaction(
@@ -4377,6 +4494,8 @@ class OrksStratagemMixin:
             return self._use_orks_impervious(stratagem, **kwargs)
         if name_u == "MEKANISED BRUTALITY":
             return self._use_orks_mekanised_brutality(stratagem, **kwargs)
+        if name_u == "MOUNT UP, LADZ":
+            return self._use_orks_mount_up_ladz(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6566,6 +6685,168 @@ class OrksStratagemMixin:
             ),
             **kwargs,
         )
+
+    def _orks_resolve_mount_up_ladz_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, Any, list[Any], dict[str, list[Any]] | None, str, bool]:
+        unit_arg = kwargs.get("unit") or kwargs.get("target_unit")
+        transport = (
+            kwargs.get("transport_unit")
+            or kwargs.get("transport")
+            or kwargs.get("target_transport")
+            or kwargs.get("target_transport_unit")
+        )
+        passenger = (
+            kwargs.get("passenger_unit")
+            or kwargs.get("embark_unit")
+            or kwargs.get("infantry_unit")
+        )
+        if unit_arg is not None:
+            unit_root = self._orks_root(unit_arg)
+            if transport is None and self._orks_is_transport_unit(unit_root):
+                transport = unit_root
+            elif passenger is None:
+                passenger = unit_root
+
+        candidates = list(kwargs.get("candidates") or kwargs.get("transport_candidates") or [])
+        embark_candidates = list(
+            kwargs.get("embark_candidates")
+            or kwargs.get("passenger_candidates")
+            or kwargs.get("infantry_candidates")
+            or []
+        )
+        passenger_map = (
+            kwargs.get("embark_candidates_by_transport")
+            or kwargs.get("passenger_candidates_by_transport")
+        )
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if transport is None:
+                transport = (
+                    reaction.get("transport_unit")
+                    or reaction.get("transport")
+                    or reaction.get("target_transport")
+                    or reaction.get("unit")
+                    or reaction.get("target_unit")
+                )
+            if passenger is None:
+                passenger = (
+                    reaction.get("passenger_unit")
+                    or reaction.get("embark_unit")
+                    or reaction.get("infantry_unit")
+                )
+            if not candidates:
+                candidates = list(reaction.get("transport_candidates") or reaction.get("candidates") or [])
+            if not embark_candidates:
+                embark_candidates = list(
+                    reaction.get("embark_candidates")
+                    or reaction.get("passenger_candidates")
+                    or reaction.get("infantry_candidates")
+                    or []
+                )
+            if passenger_map is None:
+                passenger_map = (
+                    reaction.get("embark_candidates_by_transport")
+                    or reaction.get("passenger_candidates_by_transport")
+                )
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            break
+
+        if transport is None and len(candidates) == 1:
+            transport = candidates[0]
+        transport_root = self._orks_root(transport)
+        if transport_root is not None and not embark_candidates and hasattr(passenger_map, "get"):
+            embark_candidates = list(passenger_map.get(self._orks_sort_key(transport_root)) or [])
+        if passenger is None and len(embark_candidates) == 1:
+            passenger = embark_candidates[0]
+        return (transport, passenger, embark_candidates, passenger_map, phase_name, from_pending)
+
+    def _use_orks_mount_up_ladz(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blitz_brigade_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MOUNT UP, LADZ: wrong phase")
+            return False
+
+        transport, passenger, embark_candidates, passenger_map, _phase_name, _from_pending = (
+            self._orks_resolve_mount_up_ladz_context("MOUNT UP, LADZ", **kwargs)
+        )
+        transport_root = self._orks_root(transport)
+        if transport_root is None:
+            logger.error("ERROR: MOUNT UP, LADZ: no target transport provided")
+            return False
+        if not self._orks_owned_by_player(transport_root, self.player):
+            logger.error("ERROR: MOUNT UP, LADZ: target transport is not yours")
+            return False
+        if not self._orks_on_battlefield(transport_root, require_targetable=True):
+            logger.error("ERROR: MOUNT UP, LADZ: target transport must be on the battlefield and targetable")
+            return False
+        if not self._orks_is_transport_unit(transport_root):
+            logger.error("ERROR: MOUNT UP, LADZ: target must be a friendly TRANSPORT")
+            return False
+
+        eligible_transports, eligible_map = self._orks_mount_up_ladz_candidates()
+        if not self._orks_unit_in_candidates(transport_root, eligible_transports):
+            logger.error("ERROR: MOUNT UP, LADZ: selected transport has no eligible ORKS INFANTRY passengers")
+            return False
+        if not embark_candidates:
+            candidate_map = passenger_map if passenger_map is not None else eligible_map
+            embark_candidates = list(candidate_map.get(self._orks_sort_key(transport_root)) or []) if hasattr(candidate_map, "get") else []
+        if passenger is None and len(embark_candidates) == 1:
+            passenger = embark_candidates[0]
+
+        if passenger is not None:
+            passenger_root = self._orks_root(passenger)
+            if passenger_root is None:
+                return False
+            if not self._orks_unit_in_candidates(passenger_root, embark_candidates):
+                logger.error("ERROR: MOUNT UP, LADZ: selected ORKS INFANTRY unit is not currently eligible")
+                return False
+            if not self._orks_mount_up_transport_can_embark(transport=transport_root, passenger=passenger_root):
+                logger.error("ERROR: MOUNT UP, LADZ: selected ORKS INFANTRY unit cannot embark in that transport")
+                return False
+            embark_candidates = [passenger_root]
+        if not embark_candidates:
+            logger.error("ERROR: MOUNT UP, LADZ: no eligible ORKS INFANTRY unit can embark")
+            return False
+
+        queue_fn = getattr(self.game, "_queue_end_of_fight_embark_decision", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: MOUNT UP, LADZ: end-of-fight embark decision queue unavailable")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=transport_root, unit=transport_root, phase_name="Fight phase"):
+            logger.error("ERROR: MOUNT UP, LADZ: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=transport_root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            transport=transport_root,
+            candidates=embark_candidates,
+            spec={
+                "source": str(getattr(stratagem, "name", "") or "MOUNT UP, LADZ"),
+                "range": 6,
+                "keyword": "ORKS",
+                "allow_existing_passengers": True,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: MOUNT UP, LADZ: no embark decision was queued")
+            return False
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: MOUNT UP, LADZ: queued embark decision for a nearby eligible ORKS INFANTRY unit.")
+        return True
 
     def _use_orks_mekanised_brutality(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_blitz_brigade_detachment():

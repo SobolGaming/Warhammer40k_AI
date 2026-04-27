@@ -111,3 +111,28 @@ def test_blitz_brigade_mekanised_brutality_stratagem_is_supported():
     assert "normal move" in notes_l
     assert "disembark" in notes_l
     assert "charge" in notes_l
+
+
+def test_blitz_brigade_mount_up_ladz_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010800002"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Blitz Brigade",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "MOUNT UP, LADZ"
+    notes_l = str(notes or "").lower()
+    assert "fight phase" in notes_l
+    assert "embark" in notes_l
+    assert "orks infantry" in notes_l
+    assert "6" in notes_l

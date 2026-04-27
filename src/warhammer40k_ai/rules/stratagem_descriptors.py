@@ -2487,6 +2487,23 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "allow_charge_after_normal_move_disembark": True,
         },
     ),
+    "000010800002": StratagemToolDescriptor(
+        stratagem_id="000010800002",
+        name="MOUNT UP, LADZ",
+        timing="fight_phase_end",
+        target="orks_infantry_unit_not_engaged_and_friendly_transport_it_can_embark_within",
+        duration="immediate_decision",
+        effect="end_of_fight_embark",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "passenger_required_keywords_all": ["ORKS", "INFANTRY"],
+            "transport_required_keywords_all": ["TRANSPORT"],
+            "passenger_must_not_be_within_engagement_range": True,
+            "passenger_must_be_wholly_within_inches": 6,
+            "allow_existing_passengers": True,
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

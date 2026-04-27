@@ -854,6 +854,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARMOURED DUELLISTS",
     "IMPERVIOUS",
     "MEKANISED BRUTALITY",
+    "MOUNT UP, LADZ",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1124,6 +1125,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "ARMOURED DUELLISTS": {"000010800005"},
     "IMPERVIOUS": {"000010800006"},
     "MEKANISED BRUTALITY": {"000010800003"},
+    "MOUNT UP, LADZ": {"000010800002"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -3244,6 +3246,7 @@ class StratagemManager(
             "MOVE OUT",
             "SCOUTING OUTRIDERS",
             "RAPID EMBARKATION",
+            "MOUNT UP, LADZ",
             "RETURN TO THE SHADOWS",
             "RESISTANCE TUNNELS",
             "COGITATED NEED",
@@ -11338,6 +11341,20 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase and a Battlewagon, Kill Rig or Hunta Rig unit that has not moved this phase"
             return result
+        if name_u == "MOUNT UP, LADZ":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires the end of the Fight phase and an eligible ORKS INFANTRY unit wholly within 6\" of a friendly TRANSPORT"
+                return result
+            candidates = list(context.get("candidates") or context.get("transport_candidates") or [])
+            if not candidates:
+                candidates, _passenger_map = self._orks_mount_up_ladz_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the end of the Fight phase and an eligible ORKS INFANTRY unit wholly within 6\" of a friendly TRANSPORT"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12238,6 +12255,7 @@ class StratagemManager(
             "ARMOURED DUELLISTS": "Target: ORKS VEHICLE unit that has not shot; ranged attacks gain +1 to hit and +1 to wound against MONSTER or VEHICLE targets this phase",
             "IMPERVIOUS": "Target: Battlewagon, Kill Rig or Hunta Rig unit selected by the enemy shooter's targets; incoming ranged attacks suffer -1 to wound while Strength is greater than target Toughness this phase",
             "MEKANISED BRUTALITY": "Target: Battlewagon, Kill Rig or Hunta Rig unit that has not moved; units disembarking from it after it makes a Normal move remain eligible to charge this turn",
+            "MOUNT UP, LADZ": "Target: friendly TRANSPORT with an eligible ORKS INFANTRY unit wholly within 6\" and not within Engagement Range; queues an end-of-Fight embark decision that allows existing passengers",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",

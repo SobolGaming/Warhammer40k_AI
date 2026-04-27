@@ -3,12 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -91,6 +94,43 @@ def _embark(transport: Unit, passenger: Unit) -> None:
     transport.transport_passengers = [passenger]
     passenger.embarked_in = transport
     passenger.reserve_status = "embarked"
+
+
+def _set_phase(game: Game, player: Player, phase_name: str, current_player_index: int) -> None:
+    phase = SimpleNamespace(name=phase_name)
+    game.phase = phase
+    game.current_player_index = int(current_player_index)
+    game.current_player_idx = int(current_player_index)
+    game.event_system.publish("phase_start", player=player, phase=phase)
+
+
+def _pending_by_name(stratagems, name: str):
+    target = str(name or "").strip().upper()
+    for reaction in list(stratagems.get_pending_reactions() or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == target:
+            return reaction
+    return None
+
+
+def _first_request(game: Game, decision_type: str, *, ability: str = ""):
+    ability_key = str(ability or "").strip()
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != str(decision_type):
+            continue
+        if ability_key:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != ability_key:
+                continue
+        return request
+    return None
+
+
+def _find_option_by_payload(request, *, key: str, value: str):
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get(key, "") or "") == str(value):
+            return option
+    return None
 
 
 def test_eager_for_the_fight_grants_turn_long_advance_and_charge_rerolls_on_disembark():
@@ -459,3 +499,102 @@ def test_blitz_brigade_stratagem_tool_descriptors_include_mekanised_brutality():
     assert descriptor.name == "MEKANISED BRUTALITY"
     assert descriptor.effect == "transport_normal_move_disembark_allows_charge"
     assert descriptor.effect_params.get("allow_charge_after_normal_move_disembark") is True
+
+
+def test_mount_up_ladz_queues_phase_end_reaction_and_resolves_embark():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    enemy_player = enemy_army.player
+    trukk = _unit(
+        "Trukk",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 12",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    trukk.transport_capacity = 12
+    trukk.transport_required_keywords = set()
+    trukk.transport_excluded_keywords = set()
+    army.add_unit(trukk)
+    army.add_unit(boyz)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _place_unit(game, trukk, 10.0, 10.0)
+    _place_unit(game, boyz, 13.0, 10.0)
+    _place_unit(game, enemy, 25.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
+    ork_player.stratagems.get_pending_reactions(clear=True)
+    game.event_system.publish("phase_end", player=enemy_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+
+    pending = _pending_by_name(ork_player.stratagems, "MOUNT UP, LADZ")
+    assert pending is not None
+    assert pending.get("transport_unit") is trukk
+    assert boyz in list(pending.get("embark_candidates") or [])
+
+    assert ork_player.stratagems.use("MOUNT UP, LADZ", transport_unit=trukk, phase_name="Fight phase", dequeue=True)
+    assert int(ork_player.command_points or 0) == 9
+    request = _first_request(game, DECISION_CHOOSE_QUARRY, ability="end_of_fight_embark")
+    assert request is not None
+    option = _find_option_by_payload(request, key="target_unit_id", value=str(get_entity_id(boyz)))
+    assert option is not None
+
+    result = resolve_decision_command(game, request, option.option_id, player_id=ork_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+    assert boyz.embarked_in is trukk
+    assert boyz in list(getattr(trukk, "transport_passengers", []) or [])
+
+
+def test_mount_up_ladz_rejects_engaged_or_non_infantry_passengers():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    enemy_player = enemy_army.player
+    trukk = _unit(
+        "Trukk",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 12",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    buggy = _unit("Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    trukk.transport_capacity = 12
+    trukk.transport_required_keywords = set()
+    trukk.transport_excluded_keywords = set()
+    army.add_unit(trukk)
+    army.add_unit(boyz)
+    army.add_unit(buggy)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _place_unit(game, trukk, 10.0, 10.0)
+    _place_unit(game, boyz, 13.0, 10.0)
+    _place_unit(game, buggy, 13.0, 13.0)
+    _place_unit(game, enemy, 13.5, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
+    assert not ork_player.stratagems.use(
+        "MOUNT UP, LADZ",
+        passenger_unit=boyz,
+        transport_unit=trukk,
+        phase_name="Fight phase",
+    )
+    assert not ork_player.stratagems.use(
+        "MOUNT UP, LADZ",
+        passenger_unit=buggy,
+        transport_unit=trukk,
+        phase_name="Fight phase",
+    )
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_blitz_brigade_stratagem_tool_descriptors_include_mount_up_ladz():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010800002", name="MOUNT UP, LADZ")
+
+    assert descriptor is not None
+    assert descriptor.name == "MOUNT UP, LADZ"
+    assert descriptor.effect == "end_of_fight_embark"
+    assert descriptor.effect_params.get("passenger_must_be_wholly_within_inches") == 6
+    assert descriptor.effect_params.get("allow_existing_passengers") is True
