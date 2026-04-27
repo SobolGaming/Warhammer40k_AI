@@ -262,6 +262,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.grim_resolve_selected_round: int = 0
         self.grim_resolve_selected_player_id: str = ""
         self.armoured_wrath_used_phase_key_by_unit_id: dict[str, str] = {}
+        self.headhunter_gunnery_honours_used_phase_key_by_model_kind: dict[str, str] = {}
         self.vowed_target_mode: str = ""
         self.vowed_objective_ids: tuple[str, ...] = ()
         self.vowed_target_selected_round: int = 0
@@ -939,6 +940,290 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             setattr(self.army, "headhunter_tank_ace_character_unit_ids", list(applied_ids))
         self._headhunter_tank_ace_character_selection_resolved = True
         return list(applied_ids)
+
+    def _headhunter_vehicle_enhancement_source_member(self, unit, flag_key: str):
+        if not self.is_headhunter_task_force():
+            return None, None, None
+        root, member, sr = self._company_of_hunters_enhancement_source_member(unit, flag_key)
+        if root is None or member is None or not isinstance(sr, dict):
+            return None, None, None
+        if not self._attached_unit_belongs_to_army(root):
+            return None, None, None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None, None, None
+        if not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return None, None, None
+        return root, member, sr
+
+    def _headhunter_bearer_vehicle_enhancement_state(self, model, flag_key: str):
+        if model is None:
+            return None, None, None
+        model_unit = getattr(model, "parent_unit", None)
+        root, member, sr = self._headhunter_vehicle_enhancement_source_member(model_unit, flag_key)
+        if root is None or member is None or not isinstance(sr, dict):
+            return None, None, None
+        model_root = self._attached_unit_root(model_unit)
+        if model_root is None:
+            return None, None, None
+        if str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+            return None, None, None
+        if not self._company_of_hunters_model_is_live_bearer(model, member, sr):
+            return None, None, None
+        return root, member, sr
+
+    def headhunter_redoubtable_machine_spirit_invulnerable_save(
+        self,
+        model,
+        *,
+        unit=None,
+    ) -> tuple[int, str]:
+        del unit
+        _root, _member, sr = self._headhunter_bearer_vehicle_enhancement_state(
+            model,
+            "enhancement_headhunter_redoubtable_machine_spirit",
+        )
+        if not isinstance(sr, dict):
+            return 0, ""
+        try:
+            invulnerable_save = int(
+                sr.get("enhancement_headhunter_redoubtable_machine_spirit_invulnerable_save", 5) or 5
+            )
+        except (TypeError, ValueError):
+            invulnerable_save = 5
+        source = str(
+            sr.get("enhancement_headhunter_redoubtable_machine_spirit_source", "")
+            or "Redoubtable Machine Spirit"
+        ).strip()
+        return int(max(2, min(7, invulnerable_save))), source or "Redoubtable Machine Spirit"
+
+    def heal_headhunter_redoubtable_machine_spirit_at_command_end(self, *, game=None, player=None) -> int:
+        if not self.is_headhunter_task_force():
+            return 0
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if player is not None and owner is not None and player is not owner:
+            return 0
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "COMMAND_PHASE":
+                return 0
+            if not self._is_army_turn(game=game_obj):
+                return 0
+        healed = 0
+        for root in list(self._iter_unique_army_roots() or []):
+            _source_root, member, sr = self._headhunter_vehicle_enhancement_source_member(
+                root,
+                "enhancement_headhunter_redoubtable_machine_spirit",
+            )
+            if member is None or not isinstance(sr, dict):
+                continue
+            if bool(sr.get("enhancement_headhunter_redoubtable_machine_spirit_requires_bearer_alive", True)):
+                if not self._company_of_hunters_member_has_live_bearer(member, sr):
+                    continue
+            bearer = self._company_of_hunters_resolve_bearer_model(member, sr)
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            try:
+                current_wounds = int(getattr(bearer, "wounds", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            max_wounds = self._model_wounds_characteristic(bearer)
+            if current_wounds <= 0 or max_wounds <= current_wounds:
+                continue
+            try:
+                heal_wounds = int(sr.get("enhancement_headhunter_redoubtable_machine_spirit_heal_wounds", 1) or 1)
+            except (TypeError, ValueError):
+                heal_wounds = 1
+            amount = int(min(max_wounds - current_wounds, max(0, heal_wounds)))
+            if amount <= 0:
+                continue
+            heal_fn = getattr(bearer, "heal", None)
+            if not callable(heal_fn):
+                continue
+            heal_fn(amount)
+            healed += int(amount)
+        return int(healed)
+
+    def _headhunter_gunnery_honours_phase_key(self, model, *, game=None) -> str:
+        unit = getattr(model, "parent_unit", None) if model is not None else None
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None and unit is not None:
+            game_obj = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+        if game_obj is None:
+            return ""
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if not phase_name:
+            return ""
+        return self._armoured_wrath_phase_key(game=game_obj, unit=unit)
+
+    def headhunter_gunnery_honours_reroll_is_available(self, model, kind: str, *, game=None) -> bool:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"hit", "wound", "damage"}:
+            return False
+        _root, _member, sr = self._headhunter_bearer_vehicle_enhancement_state(
+            model,
+            "enhancement_headhunter_gunnery_honours",
+        )
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get(f"enhancement_headhunter_gunnery_honours_reroll_{kind_key}", True)):
+            return False
+        phase_key = self._headhunter_gunnery_honours_phase_key(model, game=game)
+        if not phase_key:
+            return False
+        model_id = str(get_entity_id(model) or "")
+        if not model_id:
+            return False
+        usage_key = f"{model_id}:{kind_key}"
+        return str(self.headhunter_gunnery_honours_used_phase_key_by_model_kind.get(usage_key, "") or "") != phase_key
+
+    def consume_headhunter_gunnery_honours_reroll(self, model, kind: str, *, game=None) -> bool:
+        kind_key = str(kind or "").strip().lower()
+        if not self.headhunter_gunnery_honours_reroll_is_available(model, kind_key, game=game):
+            return False
+        phase_key = self._headhunter_gunnery_honours_phase_key(model, game=game)
+        model_id = str(get_entity_id(model) or "")
+        if not phase_key or not model_id:
+            return False
+        self.headhunter_gunnery_honours_used_phase_key_by_model_kind[f"{model_id}:{kind_key}"] = phase_key
+        return True
+
+    def headhunter_gunnery_honours_reroll_source(self, model) -> str:
+        _root, _member, sr = self._headhunter_bearer_vehicle_enhancement_state(
+            model,
+            "enhancement_headhunter_gunnery_honours",
+        )
+        if not isinstance(sr, dict):
+            return ""
+        source = str(sr.get("enhancement_headhunter_gunnery_honours_source", "") or "Gunnery Honours").strip()
+        return source or "Gunnery Honours"
+
+    def headhunter_firestorm_coordinators_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del game
+        _root, _member, sr = self._headhunter_bearer_vehicle_enhancement_state(
+            attacker_model,
+            "enhancement_headhunter_firestorm_coordinators",
+        )
+        if not isinstance(sr, dict):
+            return 0, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent_wargear is not None and not bool(getattr(parent_wargear, "is_ranged", lambda: False)()):
+            return 0, ""
+        try:
+            value = int(sr.get("enhancement_headhunter_firestorm_coordinators_sustained_hits_value", 1) or 1)
+        except (TypeError, ValueError):
+            value = 1
+        if value <= 0:
+            return 0, ""
+        source = str(
+            sr.get("enhancement_headhunter_firestorm_coordinators_source", "") or "Firestorm Coordinators"
+        ).strip()
+        return int(value), source or "Firestorm Coordinators"
+
+    def headhunter_astartes_tank_ace_assault_aura_source_applies(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if not self.is_headhunter_task_force():
+            return False, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        if not self._attached_unit_belongs_to_army(target_root):
+            return False, ""
+        source_root, source_member, source_sr = self._headhunter_vehicle_enhancement_source_member(
+            source_unit,
+            "enhancement_headhunter_astartes_tank_ace_aura",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return False, ""
+        if bool(source_sr.get("enhancement_headhunter_astartes_tank_ace_aura_requires_source_on_battlefield", True)):
+            if not self._unit_is_on_battlefield(source_root):
+                return False, ""
+        if bool(source_sr.get("enhancement_headhunter_astartes_tank_ace_aura_requires_bearer_alive", True)):
+            if not self._company_of_hunters_member_has_live_bearer(source_member, source_sr):
+                return False, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False, ""
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return False, ""
+        if not self._is_army_turn(game=game_obj):
+            return False, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent_wargear is not None and not bool(getattr(parent_wargear, "is_ranged", lambda: False)()):
+            return False, ""
+        target_keywords = [
+            str(value or "").strip().upper()
+            for value in list(
+                source_sr.get(
+                    "enhancement_headhunter_astartes_tank_ace_aura_target_keywords_all",
+                    ("ADEPTUS ASTARTES", "VEHICLE"),
+                )
+                or ()
+            )
+            if str(value or "").strip()
+        ]
+        if not target_keywords:
+            target_keywords = ["ADEPTUS ASTARTES", "VEHICLE"]
+        for keyword in target_keywords:
+            if not self._attached_unit_has_keyword(target_root, keyword):
+                return False, ""
+        keyword = str(source_sr.get("enhancement_headhunter_astartes_tank_ace_aura_keyword", "ASSAULT") or "").upper()
+        if keyword != "ASSAULT":
+            return False, ""
+        try:
+            aura_range = float(source_sr.get("enhancement_headhunter_astartes_tank_ace_aura_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return False, ""
+        if not unit_within_range_of_unit(source_root, target_root, float(max(0.0, aura_range)), use_attached_aggregate=True):
+            return False, ""
+        source = str(
+            source_sr.get("enhancement_headhunter_astartes_tank_ace_aura_source", "")
+            or "Astartes Tank Ace (Aura)"
+        ).strip()
+        return True, source or "Astartes Tank Ace (Aura)"
+
+    def headhunter_astartes_tank_ace_assault_aura_applies(
+        self,
+        unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if not self.is_headhunter_task_force():
+            return False
+        target_root = self._attached_unit_root(unit)
+        if target_root is None:
+            return False
+        for source_root in list(self._iter_unique_army_roots() or []):
+            applies, _source = self.headhunter_astartes_tank_ace_assault_aura_source_applies(
+                source_root,
+                target_root,
+                weapon_profile=weapon_profile,
+                game=game,
+            )
+            if applies:
+                return True
+        return False
 
     def _armoured_speartip_transport_moved_normally_or_advanced_this_phase(self, transport_unit, *, game=None) -> bool:
         if transport_unit is None:
@@ -3774,6 +4059,12 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def on_phase_end(self, phase, active_player=None, *, game=None) -> None:
         self.heroes_all_handle_phase_end(phase=phase, active_player=active_player, game=game)
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        if phase_name == "COMMAND_PHASE":
+            self.heal_headhunter_redoubtable_machine_spirit_at_command_end(
+                game=game,
+                player=active_player,
+            )
         self.clear_armoured_speartip_armoured_commander_effects_for_phase(
             phase,
             active_player=active_player,

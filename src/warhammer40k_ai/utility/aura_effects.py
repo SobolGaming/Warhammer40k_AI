@@ -3497,6 +3497,31 @@ def get_aura_weapon_keyword_bonuses(
                             or "Slaughterthirst (Aura)",
                         }
                     )
+        if is_ranged_attack:
+            try:
+                source_army = source.get_parent_army() if hasattr(source, "get_parent_army") else None
+                sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+                applies_fn = (
+                    getattr(sm_mgr, "headhunter_astartes_tank_ace_assault_aura_source_applies", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                game = getattr(getattr(source_army, "player", None), "game", None) if source_army is not None else None
+                if callable(applies_fn):
+                    applies, source_name = applies_fn(
+                        source,
+                        attacker_unit,
+                        weapon_profile=weapon_profile,
+                        game=game,
+                    )
+                    aura_name = str(source_name or "Astartes Tank Ace (Aura)").strip() or "Astartes Tank Ace (Aura)"
+                    aura_key = _norm_name(aura_name)
+                    if bool(applies) and (not aura_key or aura_key not in applied_aura_names):
+                        if aura_key:
+                            applied_aura_names.add(aura_key)
+                        rules.append({"attack_type": "ranged", "keyword": "ASSAULT", "source": aura_name})
+            except Exception:
+                pass
         for ab in _iter_possible_abilities(source):
             melee_keywords = _cached_parse_aura_spec(
                 "_parse_melee_weapon_keyword_aura",

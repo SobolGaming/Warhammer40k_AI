@@ -2141,6 +2141,7 @@ class ActionsMovementMixin:
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
         game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         refrain_dynamic = False
         try:
@@ -2157,6 +2158,20 @@ class ActionsMovementMixin:
             leader_sr = getattr(leader, "special_rules", None)
             if isinstance(leader_sr, dict) and bool(leader_sr.get("enhancement_refrain_of_enduring_faith", False)):
                 refrain_dynamic = True
+                break
+        headhunter_redoubtable_dynamic = False
+        try:
+            members_for_dynamic = list(root.get_attached_unit_members() or []) if root is not None else []
+        except Exception:
+            members_for_dynamic = []
+        if not members_for_dynamic and root is not None:
+            members_for_dynamic = [root]
+        for member in members_for_dynamic:
+            member_sr = getattr(member, "special_rules", None)
+            if isinstance(member_sr, dict) and bool(
+                member_sr.get("enhancement_headhunter_redoubtable_machine_spirit", False)
+            ):
+                headhunter_redoubtable_dynamic = True
                 break
         synaptic_dynamic = False
         active_synaptic_fn = getattr(tyr_mgr, "get_active_synaptic_imperative", None) if tyr_mgr is not None else None
@@ -2241,6 +2256,7 @@ class ActionsMovementMixin:
             and not archons_dynamic
             and not synaptic_dynamic
             and not refrain_dynamic
+            and not headhunter_redoubtable_dynamic
             and not warp_field_dynamic
             and cache_key in getattr(self, "_ability_cache", {})
         ):
@@ -2485,6 +2501,21 @@ class ActionsMovementMixin:
                 best_value = int(inv_value)
                 best_source = str(inv_source or "Soul Forge Boons").strip() or "Soul Forge Boons"
 
+        redoubtable_inv_fn = (
+            getattr(sm_mgr, "headhunter_redoubtable_machine_spirit_invulnerable_save", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(redoubtable_inv_fn):
+            inv_value, inv_source = redoubtable_inv_fn(model, unit=self)
+            inv_value = int(inv_value or 0)
+            if inv_value > 0 and (best_value is None or inv_value < best_value):
+                best_value = int(inv_value)
+                best_source = (
+                    str(inv_source or "Redoubtable Machine Spirit").strip()
+                    or "Redoubtable Machine Spirit"
+                )
+
         if warp_field_specs:
             try:
                 from ...utility.aura_utils import model_within_range_of_unit
@@ -2500,7 +2531,14 @@ class ActionsMovementMixin:
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not aegis_active and not archons_dynamic and not synaptic_dynamic and not refrain_dynamic and not warp_field_dynamic:
+        if (
+            not aegis_active
+            and not archons_dynamic
+            and not synaptic_dynamic
+            and not refrain_dynamic
+            and not headhunter_redoubtable_dynamic
+            and not warp_field_dynamic
+        ):
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 
@@ -20453,6 +20491,15 @@ class ActionsMovementMixin:
             if callable(spearpoint_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if spearpoint_fn(self, weapon_profile=profile, game=game):
+                    return True
+            headhunter_tank_ace_fn = (
+                getattr(mgr, "headhunter_astartes_tank_ace_assault_aura_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(headhunter_tank_ace_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if headhunter_tank_ace_fn(self, weapon_profile=profile, game=game):
                     return True
             tactical_mastery_fn = (
                 getattr(mgr, "wrath_of_the_rock_tactical_mastery_shoot_after_advance_applies", None)

@@ -1882,6 +1882,9 @@ class Enhancement:
         is_armoured_speartip = bool(
             sm_mgr and getattr(sm_mgr, "is_armoured_speartip", lambda: False)()
         )
+        is_headhunter_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_headhunter_task_force", lambda: False)()
+        )
         is_reclamation_force = bool(
             sm_mgr and getattr(sm_mgr, "is_reclamation_force", lambda: False)()
         )
@@ -7369,6 +7372,132 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_armoured_speartip_armoured_commander_bearer_model_id"] = bearer_id
+
+        if name == "redoubtable machine spirit" or enh_id == "000010783002":
+            if not is_headhunter_task_force:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if (
+                not callable(has_any_keyword)
+                or not bool(has_any_keyword("ADEPTUS ASTARTES"))
+                or not bool(has_any_keyword("VEHICLE"))
+            ):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Redoubtable Machine Spirit").strip()
+            source_name = source_name or "Redoubtable Machine Spirit"
+            invuln = int(max(2, min(7, _coerce_int(params.get("invulnerable_save", 5) or 5, default=5))))
+            heal_wounds = int(max(0, _coerce_int(params.get("heal_wounds", 1) or 1, default=1)))
+            unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit"] = True
+            unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit_invulnerable_save"] = invuln
+            unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit_heal_wounds"] = heal_wounds
+            unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_headhunter_redoubtable_machine_spirit_bearer_model_id"] = bearer_id
+
+        if name == "gunnery honours" or enh_id == "000010783003":
+            if not is_headhunter_task_force:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if (
+                not callable(has_any_keyword)
+                or not bool(has_any_keyword("ADEPTUS ASTARTES"))
+                or not bool(has_any_keyword("VEHICLE"))
+            ):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Gunnery Honours").strip() or "Gunnery Honours"
+            unit.special_rules["enhancement_headhunter_gunnery_honours"] = True
+            unit.special_rules["enhancement_headhunter_gunnery_honours_reroll_hit"] = bool(
+                params.get("reroll_hit", True)
+            )
+            unit.special_rules["enhancement_headhunter_gunnery_honours_reroll_wound"] = bool(
+                params.get("reroll_wound", True)
+            )
+            unit.special_rules["enhancement_headhunter_gunnery_honours_reroll_damage"] = bool(
+                params.get("reroll_damage", True)
+            )
+            unit.special_rules["enhancement_headhunter_gunnery_honours_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_headhunter_gunnery_honours_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_headhunter_gunnery_honours_bearer_model_id"] = bearer_id
+
+        if name == "firestorm coordinators" or enh_id == "000010783004":
+            if not is_headhunter_task_force:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if (
+                not callable(has_any_keyword)
+                or not bool(has_any_keyword("ADEPTUS ASTARTES"))
+                or not bool(has_any_keyword("VEHICLE"))
+            ):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Firestorm Coordinators").strip()
+            source_name = source_name or "Firestorm Coordinators"
+            sustained_hits = int(max(0, _coerce_int(params.get("sustained_hits_value", 1) or 1, default=1)))
+            unit.special_rules["enhancement_headhunter_firestorm_coordinators"] = True
+            unit.special_rules["enhancement_headhunter_firestorm_coordinators_sustained_hits_value"] = sustained_hits
+            unit.special_rules["enhancement_headhunter_firestorm_coordinators_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_headhunter_firestorm_coordinators_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_headhunter_firestorm_coordinators_bearer_model_id"] = bearer_id
+
+        if name == "astartes tank ace (aura)" or enh_id == "000010783005":
+            if not is_headhunter_task_force:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if (
+                not callable(has_any_keyword)
+                or not bool(has_any_keyword("ADEPTUS ASTARTES"))
+                or not bool(has_any_keyword("VEHICLE"))
+            ):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Astartes Tank Ace (Aura)").strip()
+            source_name = source_name or "Astartes Tank Ace (Aura)"
+            aura_range = float(getattr(desc, "range_in", 0.0) or 0.0)
+            if aura_range <= 0:
+                aura_range = _coerce_float(params.get("aura_range", 6.0) or 6.0, default=6.0)
+            target_keywords = [
+                str(value or "").strip().upper()
+                for value in list(params.get("target_keywords_all", ("ADEPTUS ASTARTES", "VEHICLE")) or ())
+                if str(value or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["ADEPTUS ASTARTES", "VEHICLE"]
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura"] = True
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_target_keywords_all"] = list(
+                target_keywords
+            )
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_keyword"] = (
+                str(params.get("keyword", "ASSAULT") or "ASSAULT").strip().upper()
+            )
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_requires_source_on_battlefield"] = bool(
+                params.get("requires_source_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_headhunter_astartes_tank_ace_aura_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

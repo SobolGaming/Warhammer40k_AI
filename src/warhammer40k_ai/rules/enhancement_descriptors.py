@@ -4834,6 +4834,73 @@ _SPACE_MARINES_ARMOURED_SPEARTIP_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ARMOURED_SPEARTIP_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_HEADHUNTER_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010783002": EnhancementToolDescriptor(
+        enhancement_id="000010783002",
+        name="Redoubtable Machine Spirit",
+        timing="passive_and_end_of_command_phase",
+        target="bearer",
+        duration="battle",
+        effect="bearer_invulnerable_save_and_command_phase_heal",
+        effect_params={
+            "invulnerable_save": 5,
+            "heal_wounds": 1,
+            "heal_timing": "end_of_command_phase",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010783003": EnhancementToolDescriptor(
+        enhancement_id="000010783003",
+        name="Gunnery Honours",
+        timing="attack_resolution_once_per_phase",
+        target="bearer",
+        duration="instant_once_each_roll_kind_per_phase",
+        effect="bearer_once_per_phase_hit_wound_damage_rerolls",
+        effect_params={
+            "reroll_hit": True,
+            "reroll_wound": True,
+            "reroll_damage": True,
+            "once_per_phase": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010783004": EnhancementToolDescriptor(
+        enhancement_id="000010783004",
+        name="Firestorm Coordinators",
+        timing="ranged_attack",
+        target="bearer_ranged_weapons",
+        duration="battle",
+        effect="bearer_ranged_weapons_gain_sustained_hits",
+        effect_params={
+            "sustained_hits_value": 1,
+            "attack_type": "ranged",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010783005": EnhancementToolDescriptor(
+        enhancement_id="000010783005",
+        name="Astartes Tank Ace (Aura)",
+        timing="your_shooting_phase",
+        target="friendly_adeptus_astartes_vehicle_unit_within_6",
+        duration="while_in_aura",
+        effect="friendly_vehicle_ranged_weapons_gain_assault_aura",
+        range_in=6.0,
+        effect_params={
+            "aura_range": 6.0,
+            "target_keywords_all": ("ADEPTUS ASTARTES", "VEHICLE"),
+            "keyword": "ASSAULT",
+            "attack_type": "ranged",
+            "phase": "SHOOTING_PHASE",
+            "requires_bearer_alive": True,
+            "requires_source_on_battlefield": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_HEADHUNTER_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_HEADHUNTER_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008376002": EnhancementToolDescriptor(
         enhancement_id="000008376002",
@@ -10329,6 +10396,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ARMOURED_SPEARTIP_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_HEADHUNTER_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10703,6 +10773,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_WRATHFUL_PROCESSION_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_ARMOURED_SPEARTIP_BY_NAME.get(key)
+        or _SPACE_MARINES_HEADHUNTER_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)

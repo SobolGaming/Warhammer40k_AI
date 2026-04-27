@@ -2196,6 +2196,22 @@ class PositioningAttackBonusesMixin:
                             "source": str(source or "Shock Deployment").strip() or "Shock Deployment",
                         }
                     )
+            firestorm_fn = (
+                getattr(sm_mgr, "headhunter_firestorm_coordinators_sustained_hits_value", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(firestorm_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sustained_value, source = firestorm_fn(model, weapon_profile=weapon_profile, game=game)
+                if int(sustained_value or 0) > 0:
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": str(source or "Firestorm Coordinators").strip() or "Firestorm Coordinators",
+                        }
+                    )
         if (
             is_melee_attack
             and model is not None
