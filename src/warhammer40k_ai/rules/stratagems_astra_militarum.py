@@ -3378,6 +3378,127 @@ class AstraMilitarumStratagemMixin:
             out.append(root)
         return sorted(out, key=self._am_sort_key)
 
+    def _steel_hammer_imposing_arrival_candidates(self) -> list[Any]:
+        if not self._is_steel_hammer():
+            return []
+        if str(self._current_phase_name or "").strip().lower() not in {"movement phase", ""}:
+            return []
+        if self.game is not None and not bool(getattr(self.game, "reinforcements_step_active", False)):
+            return []
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round and battle_round < 2:
+            return []
+        out: list[Any] = []
+        for root in list(self._am_army_roots() or []):
+            if root is None:
+                continue
+            if not self._am_owned_by_player(root, self.player):
+                continue
+            if not self._is_astra_militarum_unit(root) or not self._am_has_keyword(root, "TITANIC"):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves):
+                if not bool(in_reserves()):
+                    continue
+            else:
+                status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+                if status not in {"reserves", "strategic_reserves"}:
+                    continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _steel_hammer_imposing_arrival_model_positions(self, unit: Any, kwargs: dict[str, Any]) -> list[dict]:
+        positions = kwargs.get("model_positions")
+        if isinstance(positions, list) and positions:
+            return positions
+        position = kwargs.get("position") or kwargs.get("arrival_position") or kwargs.get("anchor_position")
+        if not isinstance(position, (list, tuple)) or len(position) < 2:
+            return []
+        try:
+            x = float(position[0])
+            y = float(position[1])
+        except (TypeError, ValueError):
+            return []
+        from ..engine.reserve_entry_geometry import build_model_positions_from_anchor
+
+        return list(
+            build_model_positions_from_anchor(
+                self.game,
+                unit,
+                x=x,
+                y=y,
+                avoid_friendly_units=True,
+            )
+            or []
+        )
+
+    def _steel_hammer_imposing_arrival_custom_errors(
+        self,
+        unit: Any,
+        model_positions: list[dict],
+    ) -> list[str]:
+        from ..engine.reserve_entry_geometry import (
+            battlefield_dimensions,
+            distance_to_battlefield_edge,
+            model_radius,
+            prospective_positions_from_model_payload,
+            strategic_reserves_edges,
+        )
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d
+
+        result = prospective_positions_from_model_payload(unit, model_positions)
+        error = str(result.get("error", "") or "")
+        if error:
+            return [error]
+        prospective = list(result.get("prospective") or [])
+        width, height = battlefield_dimensions(self.game)
+        if width is None or height is None:
+            return ["Imposing Arrival requires battlefield dimensions."]
+        edge_ok = False
+        for edge in strategic_reserves_edges():
+            ok_all = True
+            for model, (x, y, z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+                radius = float(model_radius(model))
+                max_center_distance = max(float(8.0 - radius), float(radius))
+                if (
+                    distance_to_battlefield_edge((x, y, z), edge, width=float(width), height=float(height))
+                    > max_center_distance + 1e-6
+                ):
+                    ok_all = False
+                    break
+            if ok_all:
+                edge_ok = True
+                break
+        if not edge_ok:
+            return ["Imposing Arrival setup must be wholly within 8\" of one battlefield edge."]
+
+        enemy_units = []
+        if self.game is not None:
+            enemy_units = list(getattr(self.game, "get_enemy_units", lambda _player: [])(self.player) or [])
+        for model, (x, y, z, facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+            create_base = getattr(unit, "_create_potential_base", None)
+            if not callable(create_base):
+                continue
+            base = create_base(x, y, z, facing, model=model)
+            for enemy in list(enemy_units or []):
+                enemy_root = self._am_root(enemy)
+                if enemy_root is None:
+                    continue
+                if not self._am_on_battlefield(enemy_root):
+                    continue
+                for enemy_model in list(getattr(enemy_root, "models", []) or []):
+                    if not bool(getattr(enemy_model, "is_alive", True)):
+                        continue
+                    distance = float(horizontal_distance_between_bases_2d(base, enemy_model.model_base))
+                    if distance <= 6.0 + 1e-6:
+                        return ["Imposing Arrival setup must be more than 6\" horizontally away from all enemy models."]
+        return []
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -5221,6 +5342,74 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_steel_hammer_imposing_arrival(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_steel_hammer():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "movement phase":
+            logger.error("ERROR: IMPOSING ARRIVAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: IMPOSING ARRIVAL: not your Movement phase")
+            return False
+        if not bool(getattr(self.game, "reinforcements_step_active", False)):
+            logger.error("ERROR: IMPOSING ARRIVAL: not in Reinforcements step")
+            return False
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round and battle_round < 2:
+            logger.error("ERROR: IMPOSING ARRIVAL: cannot be used before battle round 2")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: IMPOSING ARRIVAL: no Titanic unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._steel_hammer_imposing_arrival_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: IMPOSING ARRIVAL: selected unit is not eligible")
+            return False
+        model_positions = self._steel_hammer_imposing_arrival_model_positions(root, kwargs)
+        if not model_positions:
+            logger.error("ERROR: IMPOSING ARRIVAL: placement model positions are required")
+            return False
+        custom_errors = self._steel_hammer_imposing_arrival_custom_errors(root, model_positions)
+        if custom_errors:
+            logger.error("ERROR: IMPOSING ARRIVAL: %s", "; ".join(custom_errors))
+            return False
+
+        from ..engine.decision_handlers.movement import _finalize_reserves_arrival_move
+        from ..engine.reserve_entry_rules import validate_reserves_arrival_positions
+
+        context = {
+            "placement_kind": "reserves_arrival",
+            "reserves_arrival_min_enemy_distance_override": 6.0,
+            "reserves_arrival_ignore_battlefield_edge_requirement": True,
+        }
+        errors = list(validate_reserves_arrival_positions(self.game, root, model_positions, ctx=context) or [])
+        if errors:
+            logger.error("ERROR: IMPOSING ARRIVAL: %s", "; ".join(str(error) for error in errors if error))
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        _finalize_reserves_arrival_move(self.game, root, model_positions, ctx=context)
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: IMPOSING ARRIVAL: %s set up from Reserves wholly within 8\" of a battlefield edge.",
+            getattr(root, "name", "Titanic unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -6110,6 +6299,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_steel_hammer_adamantine_behemoth(stratagem, **kwargs)
         if name_u == "ENGINE OF WRATH":
             return self._use_steel_hammer_engine_of_wrath(stratagem, **kwargs)
+        if name_u == "IMPOSING ARRIVAL":
+            return self._use_steel_hammer_imposing_arrival(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":

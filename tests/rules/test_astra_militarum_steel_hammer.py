@@ -364,6 +364,18 @@ def test_steel_hammer_engine_of_wrath_descriptor_registered():
     assert descriptor.effect_params["melee_ap_bonus"] == 2
 
 
+def test_steel_hammer_imposing_arrival_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788003")
+
+    assert descriptor is not None
+    assert descriptor.name == "Imposing Arrival"
+    assert descriptor.cp_cost == 1
+    assert descriptor.effect == "custom_reserves_arrival"
+    assert descriptor.effect_params["target_keywords_all"] == ["TITANIC"]
+    assert descriptor.effect_params["battlefield_edge_wholly_within"] == 8
+    assert descriptor.effect_params["min_enemy_horizontal_distance"] == 6
+
+
 def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
     game, player, enemy_player = _make_game()
     squadron = create_unit(
@@ -639,3 +651,99 @@ def test_engine_of_wrath_rejects_non_titanic_or_already_fought_units():
     assert int(player.command_points or 0) == 10
     assert player.stratagems.use("ENGINE OF WRATH", unit=valid, enemy_unit=enemy, phase_name="Fight phase") is True
     assert int(player.command_points or 0) == 9
+
+
+def test_imposing_arrival_sets_up_titanic_unit_from_reserves():
+    game, player, enemy_player = _make_game()
+    titan = create_unit(
+        "Baneblade",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    titan.reserve_status = "strategic_reserves"
+    titan.deployed = False
+    enemy = create_unit("Enemy", 20.0, 20.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(titan)
+    enemy_player.army.add_unit(enemy)
+    _place_unit(game, enemy)
+    player.command_points = 10
+    game.turn = 2
+    game.reinforcements_step_active = True
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert player.stratagems.use(
+        "IMPOSING ARRIVAL",
+        unit=titan,
+        position=(3.0, 20.0, 0.0),
+        phase_name="Movement phase",
+    ) is True
+    assert int(player.command_points or 0) == 9
+    assert str(getattr(titan, "reserve_status", "") or "") == "deployed"
+    assert bool(getattr(titan, "deployed", False)) is True
+    assert titan in game.map.units
+    assert bool(getattr(titan, "arrived_from_reserves_this_turn", False)) is True
+
+
+def test_imposing_arrival_rejects_round_one_non_titanic_and_invalid_placement():
+    game, player, enemy_player = _make_game()
+    titan = create_unit(
+        "Baneblade",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    infantry = create_unit(
+        "Infantry Squad",
+        10.0,
+        12.0,
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    enemy = create_unit("Enemy", 8.0, 20.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (titan, infantry):
+        unit.reserve_status = "strategic_reserves"
+        unit.deployed = False
+        player.army.add_unit(unit)
+    enemy_player.army.add_unit(enemy)
+    _place_unit(game, enemy)
+    player.command_points = 10
+    game.turn = 1
+    game.reinforcements_step_active = True
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert player.stratagems.use(
+        "IMPOSING ARRIVAL",
+        unit=titan,
+        position=(3.0, 20.0, 0.0),
+        phase_name="Movement phase",
+    ) is False
+
+    game.turn = 2
+    assert player.stratagems.use(
+        "IMPOSING ARRIVAL",
+        unit=infantry,
+        position=(3.0, 20.0, 0.0),
+        phase_name="Movement phase",
+    ) is False
+    assert player.stratagems.use(
+        "IMPOSING ARRIVAL",
+        unit=titan,
+        position=(3.0, 20.0, 0.0),
+        phase_name="Movement phase",
+    ) is False
+    assert int(player.command_points or 0) == 10
+    assert str(getattr(titan, "reserve_status", "") or "") == "strategic_reserves"

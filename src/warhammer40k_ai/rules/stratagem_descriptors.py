@@ -3771,6 +3771,24 @@ _STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "target_lock": True,
         },
     ),
+    "000010788003": StratagemToolDescriptor(
+        stratagem_id="000010788003",
+        name="Imposing Arrival",
+        timing="your_movement_phase_reinforcements_step_round_two_onwards",
+        target="astra_militarum_titanic_unit_in_reserves",
+        duration="immediate",
+        effect="custom_reserves_arrival",
+        cp_cost=1,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_keywords_all": ["TITANIC"],
+            "requires_in_reserves": True,
+            "requires_reinforcements_step": True,
+            "minimum_battle_round": 2,
+            "battlefield_edge_wholly_within": 8,
+            "min_enemy_horizontal_distance": 6,
+        },
+    ),
 }
 
 _STEEL_HAMMER_STRATAGEM_BY_NAME = {
