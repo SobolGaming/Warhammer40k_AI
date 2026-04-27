@@ -846,6 +846,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
     "MOBILE DAKKASTORM",
+    "EVASIVE MANOOVA",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1108,6 +1109,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "ORDER THE ADVANCE": {"000010792002"},
     "SUPPORTING ORDNANCE": {"000010792005"},
     "MOBILE DAKKASTORM": {"000010796003"},
+    "EVASIVE MANOOVA": {"000010796007"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -1142,6 +1144,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CLAIMED FOR THE DARK GODS",
     "COMBINED FIRE",
     "MOBILE DAKKASTORM",
+    "EVASIVE MANOOVA",
     "MOBILE FIREBASE",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
@@ -3235,6 +3238,7 @@ class StratagemManager(
             "INVISIBLE HUNTER",
             "INSTINCTIVE HUNTERS",
             "DED SNEAKY",
+            "EVASIVE MANOOVA",
             "INESCAPABLE WRATH",
             "ORBITAL TELEPORTARIUM",
             "RIGID DISCIPLINE",
@@ -11265,6 +11269,18 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and a friendly KOMMANDOS or STORMBOYZ unit not within Engagement Range"
             return result
+        if name_u == "EVASIVE MANOOVA":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(
+                    target_matcher=self._orks_is_speed_freeks_or_trukk,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent's Fight phase and a friendly SPEED FREEKS or TRUKK unit not within Engagement Range"
+            return result
         if name_u == "RAPID REGENERATION":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12083,6 +12099,7 @@ class StratagemManager(
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
+            "EVASIVE MANOOVA": "Target: SPEED FREEKS or TRUKK unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
             "WHERE DÃ¢â‚¬â„¢YA FINK YOUÃ¢â‚¬â„¢RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
             "KRUMP AND RUN": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",

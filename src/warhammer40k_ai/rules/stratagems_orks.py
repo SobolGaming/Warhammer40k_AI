@@ -2558,6 +2558,11 @@ class OrksStratagemMixin:
             detachment_check=self._is_taktikal_brigade_detachment,
             target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
         )
+        self._queue_single_orks_end_of_opponent_fight_phase_reserves_reaction(
+            stratagem_names=("EVASIVE MANOOVA",),
+            detachment_check=self._is_speedwaaagh_detachment,
+            target_matcher=self._orks_is_speed_freeks_or_trukk,
+        )
 
     def _orks_too_arrogant_to_die_candidates(
         self,
@@ -4158,6 +4163,8 @@ class OrksStratagemMixin:
             return self._use_orks_instinctive_hunters(stratagem, **kwargs)
         if name_u == "DED SNEAKY":
             return self._use_orks_ded_sneaky(stratagem, **kwargs)
+        if name_u == "EVASIVE MANOOVA":
+            return self._use_orks_evasive_manoova(stratagem, **kwargs)
         if name_u == "CRUSHING IMPACT":
             return self._use_orks_crushing_impact(stratagem, **kwargs)
         if name_u == "UNSTOPPABLE MOMENTUM":
@@ -4621,6 +4628,16 @@ class OrksStratagemMixin:
             detachment_check=self._is_taktikal_brigade_detachment,
             target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
             target_error="target must be a Kommandos or Stormboyz unit",
+            **kwargs,
+        )
+
+    def _use_orks_evasive_manoova(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_end_of_opponent_fight_phase_reserves_stratagem(
+            stratagem,
+            stratagem_name="EVASIVE MANOOVA",
+            detachment_check=self._is_speedwaaagh_detachment,
+            target_matcher=self._orks_is_speed_freeks_or_trukk,
+            target_error="target must be a Speed Freeks or Trukk unit",
             **kwargs,
         )
 

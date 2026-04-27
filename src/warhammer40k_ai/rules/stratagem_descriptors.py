@@ -2383,6 +2383,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "strength_bonus": 2,
         },
     ),
+    "000010796007": StratagemToolDescriptor(
+        stratagem_id="000010796007",
+        name="EVASIVE MANOOVA",
+        timing="end_of_opponent_fight_phase",
+        target="speed_freeks_or_trukk_unit_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={"requires_not_in_engagement_range": True, "reserve_status": "strategic_reserves"},
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

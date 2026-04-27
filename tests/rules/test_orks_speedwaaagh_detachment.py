@@ -408,3 +408,72 @@ def test_mobile_dakkastorm_rejects_non_speed_source_and_invalid_enemy_selection(
     assert _validate_choose_quarry(game, fake_request, invalid) == (
         "Mobile Dakkastorm target is not in this request's candidate list.",
     )
+
+
+def test_evasive_manoova_queues_at_opponent_fight_end_and_enters_reserves():
+    game, ork_player, army, enemy_army = _build_game()
+    enemy_player = game.players[1]
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    trukk = _unit("Trukk", keywords=["VEHICLE", "TRANSPORT", "TRUKK"], faction_keywords=["ORKS"])
+    engaged = _unit("Engaged Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (warbikers, trukk, engaged):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, trukk, 8.0, 0.0)
+    _place(game, engaged, 16.0, 0.0)
+    _place(game, enemy, 16.0, 0.5)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.current_player_index = game.players.index(enemy_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+
+    pending = _pending_by_name(ork_player, "EVASIVE MANOOVA")
+    assert pending is not None
+    assert set(pending.get("candidates") or []) == {warbikers, trukk}
+    assert engaged not in list(pending.get("candidates") or [])
+    assert ork_player.stratagems.use("EVASIVE MANOOVA", unit=trukk, phase_name="Fight phase", dequeue=True)
+    assert int(ork_player.command_points or 0) == 9
+    assert str(getattr(trukk, "reserve_status", "") or "") == "strategic_reserves"
+    assert trukk not in list(game.map.units or [])
+
+
+def test_evasive_manoova_rejects_engaged_or_non_speed_targets():
+    game, ork_player, army, enemy_army = _build_game()
+    enemy_player = game.players[1]
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    engaged = _unit("Engaged Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (warbikers, engaged, boyz):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, engaged, 8.0, 0.0)
+    _place(game, boyz, 14.0, 0.0)
+    _place(game, enemy, 8.0, 0.5)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.current_player_index = game.players.index(enemy_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert not ork_player.stratagems.use(
+        "EVASIVE MANOOVA",
+        unit=engaged,
+        candidates=[warbikers],
+        phase_name="Fight phase",
+    )
+    assert not ork_player.stratagems.use(
+        "EVASIVE MANOOVA",
+        unit=boyz,
+        candidates=[warbikers],
+        phase_name="Fight phase",
+    )
+    assert int(ork_player.command_points or 0) == 10
+    assert str(getattr(engaged, "reserve_status", "") or "") == "deployed"
+    assert str(getattr(boyz, "reserve_status", "") or "") == "deployed"
