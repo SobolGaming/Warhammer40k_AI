@@ -4049,6 +4049,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(alive_attr) and not bool(alive_attr()):
             return ("Combined Fire target is no longer eligible.",)
         return ()
+    if ability == "steel_hammer_shattering_salvo":
+        if is_skip_choice(request, result):
+            return ("Shattering Salvo target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        target = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        attacker = resolve_unit(game, payload.get("attacker_unit_id") or ctx.get("attacker_unit_id"))
+        if target is None:
+            return ("Shattering Salvo target unit was not found.",)
+        if attacker is None:
+            return ("Shattering Salvo attacker unit was not found.",)
+        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        attacker_root = attacker.get_attached_unit_root() if hasattr(attacker, "get_attached_unit_root") else attacker
+        target_id = str(get_entity_id(target_root) or "").strip()
+        attacker_id = str(get_entity_id(attacker_root) or "").strip()
+        if str(ctx.get("attacker_unit_id", "") or "") and str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+            return ("Shattering Salvo attacker unit mismatch.",)
+        candidate_unit_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_unit_ids and target_id not in candidate_unit_ids:
+            return ("Shattering Salvo target is not in this request's candidate list.",)
+        army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        if army is None:
+            return ("Shattering Salvo attacker army was not found.",)
+        mgr = getattr(army, "astra_militarum_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_steel_hammer", lambda: False)()):
+            return ("Shattering Salvo requires the Steel Hammer detachment.",)
+        has_any = getattr(attacker_root, "has_any_keyword", None)
+        if not callable(has_any) or not bool(has_any("ASTRA MILITARUM")) or not bool(has_any("TITANIC")):
+            return ("Shattering Salvo attacker must be an ASTRA MILITARUM TITANIC unit.",)
+        player = getattr(army, "player", None)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is army or getattr(target_army, "player", None) is player:
+            return ("Shattering Salvo target must be an enemy unit.",)
+        alive_attr = getattr(target_root, "is_alive", None)
+        if callable(alive_attr) and not bool(alive_attr()):
+            return ("Shattering Salvo target is no longer eligible.",)
+        return ()
     if ability == "corrupt_realspace":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -29812,6 +29852,29 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     game,
                     player,
                     f"{str(ctx.get('ability_name', '') or 'COMBINED FIRE')}: {getattr(target_root, 'name', 'Unit')} loses Benefit of Cover and is vulnerable to Armoured Skirmisher fire this phase.",
+                )
+    if str(ctx.get("ability", "") or "") == "steel_hammer_shattering_salvo":
+        if chosen is not None:
+            get_root = getattr(chosen, "get_attached_unit_root", None)
+            target_root = get_root() if callable(get_root) else chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            get_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_army() if callable(get_army) else getattr(attacker_unit, "parent_army", None)
+            player = getattr(army, "player", None) if army is not None else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            marker = getattr(am_mgr, "mark_steel_hammer_shattering_salvo_target", None) if am_mgr is not None else None
+            if callable(marker):
+                marker(
+                    target_root,
+                    game=game,
+                    player=player,
+                    phase_name=str(ctx.get("expires_phase", "") or "SHOOTING_PHASE"),
+                    source=str(ctx.get("ability_name", "") or "SHATTERING SALVO"),
+                )
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{str(ctx.get('ability_name', '') or 'SHATTERING SALVO')}: {getattr(target_root, 'name', 'Unit')} cannot have the Benefit of Cover this phase.",
                 )
     if str(ctx.get("ability", "") or "") == "post_shoot_staggered_oc":
         if chosen is not None:

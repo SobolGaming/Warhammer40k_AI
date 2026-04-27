@@ -3789,6 +3789,22 @@ _STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "min_enemy_horizontal_distance": 6,
         },
     ),
+    "000010788005": StratagemToolDescriptor(
+        stratagem_id="000010788005",
+        name="Shattering Salvo",
+        timing="your_shooting_phase_after_titanic_unit_has_shot",
+        target="astra_militarum_titanic_unit_that_just_shot",
+        duration="until_end_of_phase",
+        effect="hit_enemy_cannot_have_benefit_of_cover",
+        cp_cost=1,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_keywords_all": ["TITANIC"],
+            "requires_source_has_shot": True,
+            "requires_hit_enemy_unit": True,
+            "enemy_cannot_have_benefit_of_cover": True,
+        },
+    ),
 }
 
 _STEEL_HAMMER_STRATAGEM_BY_NAME = {

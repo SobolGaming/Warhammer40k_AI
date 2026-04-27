@@ -1565,6 +1565,14 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                     not phase_key or not marked_phase or marked_phase == phase_key
                 ) and (not owner_id or not marked_owner or marked_owner == owner_id):
                     self._clear_prefixed_special_rules(sr, "steel_hammer_engine_of_wrath")
+            if bool(sr.get("steel_hammer_shattering_salvo_active", False)):
+                marked_round = self._safe_int(sr.get("steel_hammer_shattering_salvo_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("steel_hammer_shattering_salvo_phase", "") or "")
+                marked_owner = str(sr.get("steel_hammer_shattering_salvo_owner", "") or "")
+                if (not marked_round or not round_now or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    self._clear_prefixed_special_rules(sr, "steel_hammer_shattering_salvo")
             root.special_rules = sr
 
     def _steel_hammer_phase_effect_state(self, unit, *, prefix: str, game=None):
@@ -1796,6 +1804,45 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             or "ENGINE OF WRATH"
         )
         return int(max(0, attacks_bonus)), int(max(0, ap_bonus)), source
+
+    def mark_steel_hammer_shattering_salvo_target(
+        self,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        game_obj = game if game is not None else self._current_game()
+        owner = player if player is not None else getattr(self.army, "player", None)
+        owner_id = self._player_id(owner)
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        source_name = str(source or "SHATTERING SALVO").strip() or "SHATTERING SALVO"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_no_cover_active"] = True
+        sr["post_shoot_no_cover_expires_phase"] = "SHOOTING_PHASE"
+        sr.pop("post_shoot_no_cover_expires_timing", None)
+        sr["post_shoot_no_cover_source"] = source_name
+        sr["post_shoot_no_cover_owner"] = owner_id
+        sr["post_shoot_no_cover_turn"] = int(round_now)
+        sr["steel_hammer_shattering_salvo_active"] = True
+        sr["steel_hammer_shattering_salvo_round"] = int(round_now)
+        sr["steel_hammer_shattering_salvo_turn"] = int(round_now)
+        sr["steel_hammer_shattering_salvo_phase"] = phase_key or "SHOOTING_PHASE"
+        sr["steel_hammer_shattering_salvo_owner"] = owner_id
+        sr["steel_hammer_shattering_salvo_turn_owner"] = owner_id
+        sr["steel_hammer_shattering_salvo_source"] = source_name
+        target_root.special_rules = sr
+        return True
 
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):

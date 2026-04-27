@@ -131,3 +131,29 @@ def test_imposing_arrival_stratagem_is_supported():
     assert "titanic" in notes_l
     assert "within 8" in notes_l
     assert "more than 6" in notes_l
+
+
+def test_shattering_salvo_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010788005"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Steel Hammer",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "SHATTERING SALVO"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "titanic" in notes_l
+    assert "hit" in notes_l
+    assert "benefit of cover" in notes_l
+    assert "end of phase" in notes_l

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_SELECT_REALM_OF_CHAOS_UNITS
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -195,6 +195,24 @@ def _attack_result(profile, attacker, target_unit):
     )
 
 
+def _pending_reaction_by_name(player: Player, name: str):
+    wanted = str(name or "").strip().upper()
+    for reaction in list(getattr(player.stratagems, "_pending_reactions", []) or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == wanted:
+            return reaction
+    return None
+
+
+def _find_quarry_request(game: Game, *, ability: str):
+    wanted = str(ability or "").strip()
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            continue
+        if str((getattr(request, "context", {}) or {}).get("ability", "") or "").strip() == wanted:
+            return request
+    return None
+
+
 def test_ceaseless_cannonade_muster_selection_applies_character_to_titanic_units():
     game, player, _enemy = _make_game()
     baneblade = create_unit(
@@ -374,6 +392,18 @@ def test_steel_hammer_imposing_arrival_descriptor_registered():
     assert descriptor.effect_params["target_keywords_all"] == ["TITANIC"]
     assert descriptor.effect_params["battlefield_edge_wholly_within"] == 8
     assert descriptor.effect_params["min_enemy_horizontal_distance"] == 6
+
+
+def test_steel_hammer_shattering_salvo_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788005")
+
+    assert descriptor is not None
+    assert descriptor.name == "Shattering Salvo"
+    assert descriptor.cp_cost == 1
+    assert descriptor.effect == "hit_enemy_cannot_have_benefit_of_cover"
+    assert descriptor.effect_params["target_keywords_all"] == ["TITANIC"]
+    assert descriptor.effect_params["requires_hit_enemy_unit"] is True
+    assert descriptor.effect_params["enemy_cannot_have_benefit_of_cover"] is True
 
 
 def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
@@ -747,3 +777,105 @@ def test_imposing_arrival_rejects_round_one_non_titanic_and_invalid_placement():
     ) is False
     assert int(player.command_points or 0) == 10
     assert str(getattr(titan, "reserve_status", "") or "") == "strategic_reserves"
+
+
+def test_shattering_salvo_queues_hit_enemy_and_denies_cover_until_phase_end():
+    game, player, enemy_player = _make_game()
+    titan = create_unit(
+        "Baneblade",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    enemy = create_unit("Enemy Hit", 20.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    unhit_enemy = create_unit("Enemy Not Hit", 24.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(titan)
+    enemy_player.army.add_unit(enemy)
+    enemy_player.army.add_unit(unhit_enemy)
+    for unit in (titan, enemy, unhit_enemy):
+        _place_unit(game, unit)
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    titan.round_state.shot_this_round = True
+
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=titan, hits_by_target={enemy: 2, unhit_enemy: 0})
+    pending = _pending_reaction_by_name(player, "SHATTERING SALVO")
+    assert pending is not None
+    assert pending.get("candidates") == [enemy]
+
+    assert player.stratagems.use("SHATTERING SALVO", unit=titan, phase_name="Shooting phase", dequeue=True) is True
+    assert int(player.command_points or 0) == 9
+
+    request = _find_quarry_request(game, ability="steel_hammer_shattering_salvo")
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert context.get("attacker_unit_id") == get_entity_id(titan)
+    assert context.get("candidate_unit_ids") == [get_entity_id(enemy)]
+
+    cmd = resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+    assert bool(getattr(cmd, "ok", False))
+    assert enemy.special_rules.get("post_shoot_no_cover_active") is True
+    assert enemy.special_rules.get("steel_hammer_shattering_salvo_active") is True
+    assert unhit_enemy.special_rules.get("post_shoot_no_cover_active") is not True
+
+    game.event_system.publish("phase_end", player=player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    assert not bool(enemy.special_rules.get("post_shoot_no_cover_active"))
+    assert not bool(enemy.special_rules.get("steel_hammer_shattering_salvo_active"))
+
+
+def test_shattering_salvo_rejects_non_titanic_or_invalid_enemy_selection():
+    game, player, enemy_player = _make_game()
+    leman_russ = create_unit(
+        "Leman Russ",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    titan = create_unit(
+        "Baneblade",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    enemy = create_unit("Enemy Hit", 20.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    unhit_enemy = create_unit("Enemy Not Hit", 24.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (leman_russ, titan):
+        player.army.add_unit(unit)
+    for unit in (enemy, unhit_enemy):
+        enemy_player.army.add_unit(unit)
+    for unit in (leman_russ, titan, enemy, unhit_enemy):
+        _place_unit(game, unit)
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    leman_russ.round_state.shot_this_round = True
+    titan.round_state.shot_this_round = True
+
+    assert player.stratagems.use(
+        "SHATTERING SALVO",
+        unit=leman_russ,
+        candidates=[enemy],
+        enemy_unit=enemy,
+        phase_name="Shooting phase",
+    ) is False
+    assert player.stratagems.use(
+        "SHATTERING SALVO",
+        unit=titan,
+        candidates=[enemy],
+        enemy_unit=unhit_enemy,
+        phase_name="Shooting phase",
+    ) is False
+    assert int(player.command_points or 0) == 10
