@@ -520,6 +520,295 @@ class VoiceOfCommandManager:
             return bool(active_fn(officer_unit))
         return False
 
+    def _officer_has_exemplary_officer(self, officer_unit) -> bool:
+        if not self._unit_has_enhancement_flag(officer_unit, "enhancement_exemplary_officer"):
+            return False
+        army = self.army
+        if army is None and officer_unit is not None:
+            get_parent_army = getattr(officer_unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        active_fn = getattr(mgr, "is_armoured_infantry", None) if mgr is not None else None
+        if callable(active_fn) and not bool(active_fn()):
+            return False
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return self._enhancement_bearer_alive(
+            officer_unit,
+            sr,
+            bearer_key="enhancement_exemplary_officer_bearer_model_id",
+        )
+
+    def _exemplary_officer_range(self, officer_unit) -> float:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 3.0
+        try:
+            return float(sr.get("enhancement_exemplary_officer_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            return 3.0
+
+    def _exemplary_officer_max_targets(self, officer_unit) -> int:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 2
+        try:
+            return max(1, int(sr.get("enhancement_exemplary_officer_max_targets", 2) or 2))
+        except (TypeError, ValueError):
+            return 2
+
+    def _exemplary_officer_target_keywords(self, officer_unit) -> list[str]:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ["PLATOON"]
+        keywords = [
+            str(value or "").strip().upper()
+            for value in list(sr.get("enhancement_exemplary_officer_target_keywords_all", ("PLATOON",)) or ())
+            if str(value or "").strip()
+        ]
+        return keywords or ["PLATOON"]
+
+    def _exemplary_officer_order_spread_targets(self, officer_unit, target_unit, order_key: str, *, game=None) -> list:
+        if officer_unit is None or target_unit is None:
+            return []
+        if str(order_key or "").strip().upper() not in ORDER_BY_KEY:
+            return []
+        if not self._officer_has_exemplary_officer(officer_unit):
+            return []
+        officer_root = self._attached_unit_root(officer_unit)
+        target_root = self._attached_unit_root(target_unit)
+        if officer_root is None or target_root is None:
+            return []
+        sr = getattr(officer_unit, "special_rules", None)
+        require_own_unit = True
+        if isinstance(sr, dict):
+            require_own_unit = bool(sr.get("enhancement_exemplary_officer_requires_own_unit", True))
+        if require_own_unit and officer_root is not target_root:
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        try:
+            friendlies = list(game_map.get_friendly_units(officer_root) or [])
+        except (AttributeError, TypeError):
+            friendlies = []
+        source_id = str(get_entity_id(officer_root) or "").strip()
+        required_keywords = self._exemplary_officer_target_keywords(officer_unit)
+        max_range = max(0.0, float(self._exemplary_officer_range(officer_unit)))
+        out = []
+        seen: set[str] = set()
+        for unit in friendlies:
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id == source_id:
+                continue
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._unit_is_available(root):
+                continue
+            if self._unit_is_battleshocked(root):
+                continue
+            if not self._unit_is_astra_militarum(root):
+                continue
+            try:
+                if not all(root.has_any_keyword(keyword) for keyword in required_keywords):
+                    continue
+            except (AttributeError, TypeError):
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(officer_root, root))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if dist > max_range:
+                continue
+            out.append(root)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return out
+
+    def queue_exemplary_officer_order_spread_request(
+        self,
+        game,
+        player,
+        officer_unit,
+        target_unit,
+        order_key: str,
+        *,
+        phase_name: str = "",
+        owner_id: str = "",
+        source_id: str = "",
+    ):
+        request_fn = getattr(game, "request_decision", None) if game is not None else None
+        if officer_unit is None or target_unit is None or not callable(request_fn):
+            return None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        if player is None:
+            return None
+        normalized_order_key = str(order_key or "").strip().upper()
+        targets = self._exemplary_officer_order_spread_targets(
+            officer_unit,
+            target_unit,
+            normalized_order_key,
+            game=game,
+        )
+        if not targets:
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        officer_id = str(get_entity_id(self._attached_unit_root(officer_unit)) or "")
+        target_id = str(get_entity_id(self._attached_unit_root(target_unit)) or "")
+        context = {
+            "ability": "exemplary_officer_order_spread",
+            "ability_name": "Exemplary Officer",
+            "officer_unit_id": officer_id,
+            "target_unit_id": target_id,
+            "order_key": normalized_order_key,
+            "phase_name": str(phase_name or ""),
+            "army_id": str(get_entity_id(self.army) or "") if self.army is not None else "",
+            "candidate_unit_ids": [str(get_entity_id(unit) or "") for unit in targets],
+            "max_units": int(self._exemplary_officer_max_targets(officer_unit)),
+            "optional": True,
+        }
+        if owner_id:
+            context["owner_id"] = str(owner_id or "")
+        if source_id:
+            context["source_id"] = str(source_id or "")
+        existing = self._pending_order_sequence_request(
+            game,
+            DECISION_CHOOSE_QUARRY,
+            player_id=str(getattr(player, "id", "") or ""),
+            context={
+                "ability": context["ability"],
+                "officer_unit_id": officer_id,
+                "target_unit_id": target_id,
+                "order_key": normalized_order_key,
+                "phase_name": str(phase_name or ""),
+            },
+        )
+        if existing is not None:
+            return existing
+
+        options = [DecisionOption.create("Do not spread the Order", payload={"action": "skip"})]
+        max_units = int(context["max_units"])
+        selectable = list(targets[:])
+        for first_index, first_unit in enumerate(selectable):
+            first_id = str(get_entity_id(first_unit) or "")
+            options.append(
+                DecisionOption.create(
+                    getattr(first_unit, "name", "Unit"),
+                    payload={
+                        "selected_unit_ids": [first_id],
+                        "officer_unit_id": officer_id,
+                        "target_unit_id": target_id,
+                        "order_key": normalized_order_key,
+                        "army_id": context["army_id"],
+                        "phase_name": str(phase_name or ""),
+                    },
+                )
+            )
+            if max_units < 2:
+                continue
+            for second_unit in selectable[first_index + 1 :]:
+                second_id = str(get_entity_id(second_unit) or "")
+                label = f"{getattr(first_unit, 'name', 'Unit')} + {getattr(second_unit, 'name', 'Unit')}"
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "selected_unit_ids": [first_id, second_id],
+                            "officer_unit_id": officer_id,
+                            "target_unit_id": target_id,
+                            "order_key": normalized_order_key,
+                            "army_id": context["army_id"],
+                            "phase_name": str(phase_name or ""),
+                        },
+                    )
+                )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Platoon units for Exemplary Officer.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        request_fn(request)
+        return request
+
+    def apply_exemplary_officer_order_spread_selection(
+        self,
+        selected_unit_ids,
+        *,
+        game,
+        officer_unit,
+        order_key: str,
+        target_unit=None,
+        owner_id: str = "",
+        source_id: str = "",
+        phase_name: str = "",
+    ) -> list:
+        if officer_unit is None:
+            return []
+        target = target_unit if target_unit is not None else officer_unit
+        normalized_order_key = str(order_key or "").strip().upper()
+        if normalized_order_key not in ORDER_BY_KEY:
+            return []
+        selected_ids: list[str] = []
+        for raw in list(selected_unit_ids or []):
+            unit_id = str(raw or "").strip()
+            if not unit_id or unit_id in selected_ids:
+                continue
+            selected_ids.append(unit_id)
+        if not selected_ids:
+            return []
+        max_units = self._exemplary_officer_max_targets(officer_unit)
+        if len(selected_ids) > max_units:
+            return []
+        candidates = {
+            str(get_entity_id(unit) or "").strip(): unit
+            for unit in self._exemplary_officer_order_spread_targets(
+                officer_unit,
+                target,
+                normalized_order_key,
+                game=game,
+            )
+        }
+        if not candidates:
+            return []
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if not source_id:
+            source_id = str(get_entity_id(officer_unit) or "")
+        applied = []
+        for unit_id in selected_ids:
+            extra_target = candidates.get(unit_id)
+            if extra_target is None:
+                continue
+            keys = self._order_keys_after_receiving_order(extra_target, normalized_order_key)
+            if not keys:
+                continue
+            self._set_orders_on_unit_and_attached(extra_target, keys, owner_id, source_id)
+            additional_order_key = self._stalwarts_honours_additional_order_key(extra_target)
+            if additional_order_key and additional_order_key not in keys:
+                self._apply_additional_order_to_unit_and_attached(extra_target, additional_order_key)
+            self._sync_coordinated_action_pair(
+                extra_target,
+                game=game,
+                battle_round=self._battle_round(game),
+                phase_name=phase_name,
+                owner_id=self._active_player_id(game),
+            )
+            applied.append(extra_target)
+        return applied
+
     def _armoured_infantry_manager(self):
         if self.army is None:
             return None
@@ -3005,6 +3294,16 @@ class VoiceOfCommandManager:
             battle_round=battle_round,
             phase_name=phase_name,
             owner_id=self._active_player_id(game),
+        )
+        self.queue_exemplary_officer_order_spread_request(
+            game,
+            getattr(self.army, "player", None) if self.army is not None else None,
+            officer_unit,
+            target_unit,
+            order_key,
+            phase_name=phase_name,
+            owner_id=owner_id,
+            source_id=source_id,
         )
         if continuation_kind == "bombast":
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)

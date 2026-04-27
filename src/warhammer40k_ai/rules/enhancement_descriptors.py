@@ -321,6 +321,28 @@ _HAMMER_OF_THE_EMPEROR_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.values()
 }
 
+_ARMOURED_INFANTRY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010791002": EnhancementToolDescriptor(
+        enhancement_id="000010791002",
+        name="Exemplary Officer",
+        timing="after_bearer_issues_order_to_own_unit",
+        target="up_to_two_other_friendly_platoon_units_within_range",
+        duration="same_order_duration",
+        effect="spread_issued_order_to_selected_platoon_units",
+        range_in=3.0,
+        effect_params={
+            "target_keywords_all": ("PLATOON",),
+            "max_targets": 2,
+            "requires_target_own_unit": True,
+            "optional": True,
+        },
+    ),
+}
+
+_ARMOURED_INFANTRY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ARMOURED_INFANTRY_DESCRIPTORS.values()
+}
+
 _MECHANISED_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009861002": EnhancementToolDescriptor(
         enhancement_id="000009861002",
@@ -9827,6 +9849,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ARMOURED_INFANTRY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _MECHANISED_ASSAULT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10353,6 +10378,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _BRIDGEHEAD_STRIKE_BY_NAME.get(key)
         or _COMBINED_ARMS_BY_NAME.get(key)
         or _HAMMER_OF_THE_EMPEROR_BY_NAME.get(key)
+        or _ARMOURED_INFANTRY_BY_NAME.get(key)
         or _MECHANISED_ASSAULT_BY_NAME.get(key)
         or _RECON_ELEMENT_BY_NAME.get(key)
         or _SIEGE_REGIMENT_BY_NAME.get(key)

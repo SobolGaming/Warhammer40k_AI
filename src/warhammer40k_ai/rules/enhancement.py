@@ -2138,6 +2138,10 @@ class Enhancement:
         except Exception:
             is_hammer_of_the_emperor = False
         try:
+            is_armoured_infantry = bool(am_mgr and am_mgr.is_armoured_infantry())
+        except Exception:
+            is_armoured_infantry = False
+        try:
             is_mechanised_assault = bool(am_mgr and am_mgr.is_mechanised_assault())
         except Exception:
             is_mechanised_assault = False
@@ -6025,6 +6029,36 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veteran_crew_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010791002" or (name == "exemplary officer" and is_armoured_infantry):
+            if not is_armoured_infantry:
+                return
+            unit.special_rules["enhancement_exemplary_officer"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 3.0) if desc is not None else 3.0)
+            try:
+                spread_range = float(range_value or 3.0)
+            except (TypeError, ValueError):
+                spread_range = 3.0
+            max_targets = _coerce_int(params.get("max_targets", 2) or 2, default=2)
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("target_keywords_all", ("PLATOON",)) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["PLATOON"]
+            unit.special_rules["enhancement_exemplary_officer_range"] = float(max(0.0, spread_range))
+            unit.special_rules["enhancement_exemplary_officer_max_targets"] = int(max(1, int(max_targets)))
+            unit.special_rules["enhancement_exemplary_officer_target_keywords_all"] = list(target_keywords)
+            unit.special_rules["enhancement_exemplary_officer_requires_own_unit"] = bool(
+                params.get("requires_target_own_unit", True)
+            )
+            unit.special_rules["enhancement_exemplary_officer_source"] = "Exemplary Officer"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_exemplary_officer_bearer_model_id"] = bearer_id
 
         if name == "death mask of ollanius" or enh_id == "000008380002":
             if not is_combined_arms:

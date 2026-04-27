@@ -1,9 +1,12 @@
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry, _validate_choose_quarry
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decisions import DecisionResult
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, ORDER_ON_MY_SIGNAL
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -132,6 +135,40 @@ def _first_confirmation(game: Game, *, source: str):
     return None
 
 
+def _exemplary_officer() -> Enhancement:
+    return Enhancement(
+        id="000010791002",
+        name="Exemplary Officer",
+        faction_id="AM",
+        detachment="Armoured Infantry",
+        points=20,
+        description=(
+            "Infantry Officer model only. Each time the bearer issues an Order to its own unit, "
+            "you can select up to two other Platoon units within 3\" of the bearer's unit. "
+            "That Order is also issued to each of those units."
+        ),
+    )
+
+
+def _find_quarry_request(game: Game, *, ability: str):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("ability", "") or "") == ability:
+            return request
+    return None
+
+
+def _option_with_selected_units(request, selected_units):
+    selected_ids = [str(get_entity_id(unit) or "") for unit in selected_units]
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if list(payload.get("selected_unit_ids", []) or []) == selected_ids:
+            return option
+    return None
+
+
 def test_armoured_infantry_grants_armoured_skirmisher_only_to_eligible_squadrons():
     army = Army.with_detachment("Astra Militarum", detachment_type="Armoured Infantry")
     army.faction_id = "AM"
@@ -232,3 +269,103 @@ def test_on_my_signal_is_not_available_outside_armoured_infantry():
     available = {order.key for order in army.voice_of_command.get_available_orders(officer)}
     assert ORDER_ON_MY_SIGNAL.key not in available
     assert army.voice_of_command.issue_order(game, officer, squadron, ORDER_ON_MY_SIGNAL.key) is False
+
+
+def test_exemplary_officer_spreads_own_unit_order_to_up_to_two_nearby_platoon_units():
+    game, am_player, _enemy_player, army, _enemy_army = _build_game()
+    officer = _officer("Platoon Commander")
+    officer.keywords.extend(["REGIMENT", "PLATOON"])
+    platoon_a = _make_unit("Infantry Squad A", keywords=["INFANTRY", "PLATOON", "REGIMENT"], wounds=1)
+    platoon_b = _make_unit("Infantry Squad B", keywords=["INFANTRY", "PLATOON", "REGIMENT"], wounds=1)
+    far_platoon = _make_unit("Far Infantry", keywords=["INFANTRY", "PLATOON", "REGIMENT"], wounds=1)
+    non_platoon = _make_unit("Command Vehicle", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    for unit in (officer, platoon_a, platoon_b, far_platoon, non_platoon):
+        army.add_unit(unit)
+    _exemplary_officer().apply_to_unit(officer)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, platoon_a, 12.0, 10.0)
+    _place_unit(game, platoon_b, 10.0, 12.0)
+    _place_unit(game, far_platoon, 18.0, 10.0)
+    _place_unit(game, non_platoon, 11.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert army.voice_of_command.issue_order(
+        game,
+        officer,
+        officer,
+        ORDER_MOVE.key,
+        phase_name="COMMAND_PHASE",
+    ) is True
+    assert officer.special_rules.get("voice_of_command_order_key") == ORDER_MOVE.key
+
+    request = _find_quarry_request(game, ability="exemplary_officer_order_spread")
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    candidate_ids = list(context.get("candidate_unit_ids") or [])
+    assert set(candidate_ids) == {get_entity_id(platoon_a), get_entity_id(platoon_b)}
+    unit_by_id = {get_entity_id(platoon_a): platoon_a, get_entity_id(platoon_b): platoon_b}
+    selected_units = [unit_by_id[unit_id] for unit_id in candidate_ids]
+    option = _option_with_selected_units(request, selected_units)
+    assert option is not None
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=am_player.id,
+        option_id=option.option_id,
+        payload={},
+    )
+    assert _validate_choose_quarry(game, request, result) == ()
+    applied = _apply_choose_quarry(game, request, result)
+
+    assert applied == selected_units
+    assert platoon_a.special_rules.get("voice_of_command_order_key") == ORDER_MOVE.key
+    assert platoon_b.special_rules.get("voice_of_command_order_key") == ORDER_MOVE.key
+    assert far_platoon.special_rules.get("voice_of_command_order_key") is None
+    assert non_platoon.special_rules.get("voice_of_command_order_key") is None
+
+
+def test_exemplary_officer_skip_and_non_own_unit_order_do_not_apply_extra_orders():
+    game, am_player, _enemy_player, army, _enemy_army = _build_game()
+    officer = _officer("Platoon Commander")
+    officer.keywords.extend(["REGIMENT", "PLATOON"])
+    target = _make_unit("Target Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    nearby_platoon = _make_unit("Nearby Platoon", keywords=["INFANTRY", "PLATOON", "REGIMENT"], wounds=1)
+    for unit in (officer, target, nearby_platoon):
+        army.add_unit(unit)
+    _exemplary_officer().apply_to_unit(officer)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, target, 12.0, 10.0)
+    _place_unit(game, nearby_platoon, 11.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert army.voice_of_command.issue_order(
+        game,
+        officer,
+        target,
+        ORDER_MOVE.key,
+        phase_name="COMMAND_PHASE",
+    ) is True
+    assert _find_quarry_request(game, ability="exemplary_officer_order_spread") is None
+
+    officer.special_rules.clear()
+    _exemplary_officer().apply_to_unit(officer)
+    target.special_rules.clear()
+    nearby_platoon.special_rules.clear()
+    assert army.voice_of_command.issue_order(
+        game,
+        officer,
+        officer,
+        ORDER_MOVE.key,
+        phase_name="COMMAND_PHASE",
+    ) is True
+    request = _find_quarry_request(game, ability="exemplary_officer_order_spread")
+    assert request is not None
+    skip_option = next(option for option in request.options if (option.payload or {}).get("action") == "skip")
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=am_player.id,
+        option_id=skip_option.option_id,
+        payload={},
+    )
+    assert _validate_choose_quarry(game, request, result) == ()
+    assert _apply_choose_quarry(game, request, result) == []
+    assert nearby_platoon.special_rules.get("voice_of_command_order_key") is None

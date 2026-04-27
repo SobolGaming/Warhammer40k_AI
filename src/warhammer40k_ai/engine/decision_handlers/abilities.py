@@ -3913,6 +3913,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not eligible:
             return (reason,)
         return ()
+    if ability == "exemplary_officer_order_spread":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "voice_of_command", None) if army is not None else None
+        if mgr is None:
+            return ("Exemplary Officer requires Voice of Command manager.",)
+        officer = resolve_unit(
+            game,
+            payload.get("officer_unit_id") or ctx.get("officer_unit_id"),
+        )
+        target = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if officer is None:
+            return ("Exemplary Officer officer was not found.",)
+        if target is None:
+            return ("Exemplary Officer ordered unit was not found.",)
+        order_key = str(payload.get("order_key") or ctx.get("order_key") or "").strip().upper()
+        if not order_key:
+            return ("Exemplary Officer requires order_key.",)
+        selected_ids_raw = payload.get("selected_unit_ids", [])
+        if not isinstance(selected_ids_raw, list):
+            return ("Exemplary Officer selection requires selected_unit_ids list.",)
+        selected_ids = [str(value or "").strip() for value in selected_ids_raw if str(value or "").strip()]
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Exemplary Officer selected units must be unique.",)
+        try:
+            max_units = int(ctx.get("max_units", 2) or 2)
+        except (TypeError, ValueError):
+            max_units = 2
+        if len(selected_ids) > max(1, max_units):
+            return ("Exemplary Officer selected too many units.",)
+        request_candidates = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if request_candidates and any(unit_id not in request_candidates for unit_id in selected_ids):
+            return ("Exemplary Officer selected unit is not in this request's candidates.",)
+        candidates = {
+            str(get_entity_id(unit) or "").strip()
+            for unit in list(
+                getattr(mgr, "_exemplary_officer_order_spread_targets", lambda *_args, **_kwargs: [])(
+                    officer,
+                    target,
+                    order_key,
+                    game=game,
+                )
+                or []
+            )
+            if str(get_entity_id(unit) or "").strip()
+        }
+        if any(unit_id not in candidates for unit_id in selected_ids):
+            return ("Exemplary Officer selected unit is no longer eligible.",)
+        return ()
     if ability == "corrupt_realspace":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -13010,6 +13068,36 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if not bool(mgr.issue_order(game, officer, target, order_key, phase_name=phase_name, trigger=trigger)):
             return None
         return target
+    if ability == "exemplary_officer_order_spread":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return []
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "voice_of_command", None) if army is not None else None
+        if mgr is None:
+            return []
+        officer = resolve_unit(
+            game,
+            payload.get("officer_unit_id") or ctx.get("officer_unit_id"),
+        )
+        target = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        selected_ids = list(payload.get("selected_unit_ids", []) or [])
+        order_key = str(payload.get("order_key") or ctx.get("order_key") or "").strip().upper()
+        if officer is None or target is None or not order_key:
+            return []
+        return mgr.apply_exemplary_officer_order_spread_selection(
+            selected_ids,
+            game=game,
+            officer_unit=officer,
+            target_unit=target,
+            order_key=order_key,
+            owner_id=str(ctx.get("owner_id", "") or ""),
+            source_id=str(ctx.get("source_id", "") or ""),
+            phase_name=str(payload.get("phase_name", "") or ctx.get("phase_name", "") or ""),
+        )
     if ability in {
         "combined_arms_coordinated_action_regiment",
         "combined_arms_coordinated_action_squadron",
