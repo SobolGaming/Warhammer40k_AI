@@ -20532,6 +20532,20 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{int(bonus)} to wound from {source_name}")
         except Exception:
             pass
+        # Astra Militarum: Armoured Infantry (Opening Salvo).
+        unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        bonus_fn = getattr(am_mgr, "armoured_infantry_opening_salvo_wound_bonus", None) if am_mgr is not None else None
+        if callable(bonus_fn):
+            attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = bonus_fn(attacker, attack_type=attack_type, game=game)
+            if bonus:
+                source_name = str(source or "OPENING SALVO").strip() or "OPENING SALVO"
+                dice_modifier += int(bonus)
+                wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None

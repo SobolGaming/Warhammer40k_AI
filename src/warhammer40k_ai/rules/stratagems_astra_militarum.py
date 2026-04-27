@@ -3196,6 +3196,32 @@ class AstraMilitarumStratagemMixin:
             candidates.append(target_root)
         return sorted(candidates, key=self._am_sort_key)
 
+    def _armoured_infantry_opening_salvo_candidates(self) -> list[Any]:
+        if not self._is_armoured_infantry():
+            return []
+        mgr = self._get_astra_militarum_mgr()
+        disembarked_fn = (
+            getattr(mgr, "_attached_unit_disembarked_from_transport_this_round", None)
+            if mgr is not None
+            else None
+        )
+        candidates: list[Any] = []
+        for unit in self._am_battlefield_units(require_not_shot=True):
+            root = self._am_root(unit)
+            if root is None:
+                continue
+            if callable(disembarked_fn):
+                if not bool(disembarked_fn(root)):
+                    continue
+            else:
+                round_state = getattr(root, "round_state", None)
+                if not bool(getattr(round_state, "disembarked_this_round", False)):
+                    continue
+                if not str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip():
+                    continue
+            candidates.append(root)
+        return sorted(candidates, key=self._am_sort_key)
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -4626,6 +4652,78 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_armoured_infantry_opening_salvo(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: OPENING SALVO: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: OPENING SALVO: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._armoured_infantry_opening_salvo_candidates()
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: OPENING SALVO: no target unit provided")
+            return False
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: OPENING SALVO: selected unit is not eligible")
+            return False
+        if not self._am_on_battlefield(root):
+            logger.error("ERROR: OPENING SALVO: target must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(root):
+            logger.error("ERROR: OPENING SALVO: target must be ASTRA MILITARUM")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: OPENING SALVO: target has already been selected to shoot")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        disembarked_fn = (
+            getattr(mgr, "_attached_unit_disembarked_from_transport_this_round", None)
+            if mgr is not None
+            else None
+        )
+        if callable(disembarked_fn):
+            disembarked = bool(disembarked_fn(root))
+        else:
+            round_state = getattr(root, "round_state", None)
+            disembarked = bool(getattr(round_state, "disembarked_this_round", False)) and bool(
+                str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+            )
+        if not disembarked:
+            logger.error("ERROR: OPENING SALVO: target must have disembarked from a Transport this turn")
+            return False
+        activate = getattr(mgr, "activate_armoured_infantry_opening_salvo", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: OPENING SALVO: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "OPENING SALVO"),
+            )
+        ):
+            logger.error("ERROR: OPENING SALVO: failed to activate wound bonus")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: OPENING SALVO: %s adds 1 to ranged Wound rolls until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5559,6 +5657,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_armoured_infantry_mobile_firebase(stratagem, **kwargs)
         if name_u == "MOVE OUT":
             return self._use_mechanised_move_out(stratagem, **kwargs)
+        if name_u == "OPENING SALVO":
+            return self._use_armoured_infantry_opening_salvo(stratagem, **kwargs)
         if name_u == "ON MY POSITION":
             return self._use_bridgehead_on_my_position(stratagem, **kwargs)
         if name_u == "OVER THE TOP":

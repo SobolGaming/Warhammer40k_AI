@@ -168,6 +168,16 @@ def _finalize_game(game: Game, *armies: Army, players: list[Player]) -> None:
         player.stratagems.refresh_available()
 
 
+def _mark_disembarked(game: Game, player: Player, unit: Unit, transport: Unit, *, phase_name: str = "MOVEMENT_PHASE") -> None:
+    unit.round_state.disembarked_this_round = True
+    unit.round_state.disembarked_from_transport_id = str(get_entity_id(transport) or "")
+    special_rules = dict(getattr(unit, "special_rules", {}) or {})
+    special_rules["voice_of_command_disembark_phase"] = str(phase_name or "").strip().upper()
+    special_rules["voice_of_command_disembark_round"] = int(getattr(game, "turn", 0) or 0)
+    special_rules["voice_of_command_disembark_owner"] = str(getattr(player, "id", "") or "")
+    unit.special_rules = special_rules
+
+
 def _exemplary_officer() -> Enhancement:
     return Enhancement(
         id="000010791002",
@@ -320,6 +330,17 @@ def test_armoured_infantry_mobile_firebase_descriptor_registered():
     assert by_id.effect == "armoured_skirmisher_shoot_after_advance_or_fall_back"
     assert by_id.effect_params["allow_shoot_after_advance"] is True
     assert by_id.effect_params["allow_shoot_after_fall_back"] is True
+
+
+def test_armoured_infantry_opening_salvo_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792007")
+
+    assert by_id is not None
+    assert by_id.name == "Opening Salvo"
+    assert by_id.effect == "disembarked_unit_ranged_wound_bonus"
+    assert by_id.effect_params["requires_disembarked_from_transport_this_turn"] is True
+    assert by_id.effect_params["requires_not_selected_to_shoot_this_phase"] is True
+    assert by_id.effect_params["wound_bonus"] == 1
 
 
 def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
@@ -670,6 +691,83 @@ def test_armoured_infantry_mobile_firebase_rejects_non_skirmisher_and_normal_mov
         phase_name="Movement phase",
     ) is False
     assert int(am_player.command_points or 0) == 10
+
+
+def test_armoured_infantry_opening_salvo_adds_wound_bonus_until_phase_end():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    transport = _make_unit("Chimera", keywords=["VEHICLE", "TRANSPORT"], wounds=10)
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    army.add_unit(unit)
+    army.add_unit(transport)
+    enemy_army.add_unit(enemy)
+    _place_unit(game, unit, 10.0, 10.0)
+    _place_unit(game, transport, 12.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    _mark_disembarked(game, am_player, unit, transport)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    profile = Wargear(
+        {
+            "name": "Lasgun",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    ).profiles["default"]
+
+    before = profile._wound_target_with_tracking(enemy, unit.models[0], {}, roll_value=4, allow_rerolls=False)
+    assert before.get("wound") is False
+    assert am_player.stratagems.use("OPENING SALVO", unit=unit, phase_name="Shooting phase") is True
+    assert int(am_player.command_points or 0) == 9
+    assert unit.special_rules.get("armoured_infantry_opening_salvo_active") is True
+
+    after = profile._wound_target_with_tracking(enemy, unit.models[0], {}, roll_value=4, allow_rerolls=False)
+    assert after.get("wound") is True
+    assert any("OPENING SALVO" in str(item).upper() for item in list(after.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=am_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    assert not bool(unit.special_rules.get("armoured_infantry_opening_salvo_active"))
+    expired = profile._wound_target_with_tracking(enemy, unit.models[0], {}, roll_value=4, allow_rerolls=False)
+    assert expired.get("wound") is False
+
+
+def test_armoured_infantry_opening_salvo_rejects_non_disembarked_or_already_shot_units():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    not_disembarked = _make_unit("Second Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    already_shot = _make_unit("Kasrkin", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    transport = _make_unit("Chimera", keywords=["VEHICLE", "TRANSPORT"], wounds=10)
+    for candidate in (unit, not_disembarked, already_shot, transport):
+        army.add_unit(candidate)
+    _place_unit(game, unit, 10.0, 10.0)
+    _place_unit(game, not_disembarked, 12.0, 10.0)
+    _place_unit(game, already_shot, 14.0, 10.0)
+    _place_unit(game, transport, 16.0, 10.0)
+    _mark_disembarked(game, am_player, unit, transport)
+    _mark_disembarked(game, am_player, already_shot, transport)
+    already_shot.round_state.shot_this_round = True
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert am_player.stratagems.use("OPENING SALVO", unit=not_disembarked, phase_name="Shooting phase") is False
+    assert am_player.stratagems.use("OPENING SALVO", unit=already_shot, phase_name="Shooting phase") is False
+    assert int(am_player.command_points or 0) == 10
+    assert am_player.stratagems.use("OPENING SALVO", unit=unit, phase_name="Shooting phase") is True
+    assert int(am_player.command_points or 0) == 9
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

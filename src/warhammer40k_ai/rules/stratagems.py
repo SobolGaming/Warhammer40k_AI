@@ -1097,6 +1097,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "BURST OF SPEED": {"000010792004"},
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
+    "OPENING SALVO": {"000010792007"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -3165,6 +3166,7 @@ class StratagemManager(
             "AERIAL EXTRACTION",
             "BURST OF SPEED",
             "COMBINED FIRE",
+            "OPENING SALVO",
             "WRAITHLIKE RETREAT",
             "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
@@ -11826,6 +11828,7 @@ class StratagemManager(
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
             "COMBINED FIRE": "Target: ARMOURED SKIRMISHER unit that just shot; choose one enemy unit it hit so that enemy loses cover and friendly ARMOURED SKIRMISHER attacks against it gain +2 Strength this phase",
             "MOBILE FIREBASE": "Target: ARMOURED SKIRMISHER unit that just Advanced or Fell Back; it can shoot this turn after advancing or falling back",
+            "OPENING SALVO": "Target: ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; add 1 to Wound rolls this phase",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
             "COURAGEOUS DIVERSION": "Target: one of your ASTRA MILITARUM INFANTRY or MOUNTED units at the start of your opponent's Shooting phase; it gains Feel No Pain 6+, and enemy attacks suffer -1 to hit if it is the closest eligible target until end of phase",
             "CRACK SHOTS": "Target: your PLATOON unit that has not been selected to shoot this phase; its ranged weapons gain [PRECISION] until end of phase",

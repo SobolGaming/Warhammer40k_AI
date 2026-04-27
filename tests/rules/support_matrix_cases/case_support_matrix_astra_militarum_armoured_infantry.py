@@ -106,3 +106,28 @@ def test_mobile_firebase_stratagem_is_supported():
     assert "armoured skirmisher" in notes_l
     assert "advances or falls back" in notes_l
     assert "eligible to shoot" in notes_l
+
+
+def test_opening_salvo_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010792007"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Armoured Infantry",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "OPENING SALVO"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "disembarked from a transport" in notes_l
+    assert "wound rolls" in notes_l
+    assert "end of phase" in notes_l

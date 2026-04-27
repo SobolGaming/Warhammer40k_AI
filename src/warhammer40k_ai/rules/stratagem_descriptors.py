@@ -3668,6 +3668,21 @@ _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "attack_type": "ranged",
         },
     ),
+    "000010792007": StratagemToolDescriptor(
+        stratagem_id="000010792007",
+        name="Opening Salvo",
+        timing="your_shooting_phase",
+        target="astra_militarum_unit_that_disembarked_from_transport_this_turn_and_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="disembarked_unit_ranged_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "requires_disembarked_from_transport_this_turn": True,
+            "requires_not_selected_to_shoot_this_phase": True,
+            "wound_bonus": 1,
+            "attack_type": "ranged",
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {
