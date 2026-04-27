@@ -14,6 +14,10 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _GREEN_TIDE_MOB_MENTALITY_SOURCE = "Mob Mentality"
     _KULT_OF_SPEED_SPEED_FREEKS_KEYWORD = "SPEED FREEKS"
     _KULT_OF_SPEED_ADRENALINE_JUNKIES_SOURCE = "Adrenaline Junkies"
+    _SPEEDWAAAGH_TURBO_BOOSTAS_ABILITY = "orks_speedwaaagh_turbo_boostas"
+    _SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE = "Turbo Boostas"
+    _SPEEDWAAAGH_TURBO_BOOSTAS_MOVE_CHARACTERISTIC = 24
+    _SPEEDWAAAGH_TRUKK_KEYWORD = "TRUKK"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
     _WAZDAKKA_GUTSMEK_NAMED_UNITS = ("wazdakka gutsmek",)
@@ -104,6 +108,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Kult of Speed")
+
+    def is_speedwaaagh(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Speedwaaagh!")
 
     def is_more_dakka(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -492,6 +501,237 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._unit_contains_keyword(root, self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD):
             return False
         return True
+
+    def speedwaaagh_turbo_boostas_eligible(self, unit) -> bool:
+        if not self.is_speedwaaagh():
+            return False
+        if unit is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        if self._unit_contains_keyword(root, "AIRCRAFT"):
+            return False
+        return bool(
+            self._unit_contains_keyword(root, self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD)
+            or self._unit_contains_keyword(root, self._SPEEDWAAAGH_TRUKK_KEYWORD)
+        )
+
+    def queue_speedwaaagh_turbo_boostas_choice(self, unit, *, game=None, player=None):
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        if not self.speedwaaagh_turbo_boostas_eligible(unit):
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        unit_id = self._unit_root_id(root)
+        if not unit_id:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != "CONFIRM_YES_NO":
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != self._SPEEDWAAAGH_TURBO_BOOSTAS_ABILITY:
+                    continue
+                if str(ctx.get("unit_id", "") or "") == unit_id:
+                    return req
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                "Use Turbo Boostas",
+                payload={
+                    "choice": True,
+                    "unit_id": unit_id,
+                    "ability": self._SPEEDWAAAGH_TURBO_BOOSTAS_ABILITY,
+                    "summary": 'Do not roll; Move characteristic becomes 24", move straight with no pivot, gain Assault, and cannot charge.',
+                },
+            ),
+            DecisionOption.create(
+                "Advance normally",
+                payload={
+                    "choice": False,
+                    "unit_id": unit_id,
+                    "ability": self._SPEEDWAAAGH_TURBO_BOOSTAS_ABILITY,
+                    "summary": "Make a normal Advance roll.",
+                },
+            ),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            f"Use Turbo Boostas for {getattr(root, 'name', 'Unit')}?",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": self._SPEEDWAAAGH_TURBO_BOOSTAS_ABILITY,
+                "ability_name": self._SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE,
+                "unit_id": unit_id,
+                "movement_type": "advance",
+                "optional": True,
+            },
+        )
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+        return request
+
+    def apply_speedwaaagh_turbo_boostas_choice(self, unit, *, use_turbo: bool, game=None, player=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self.speedwaaagh_turbo_boostas_eligible(root):
+            return False
+        if game is None and self.army is not None:
+            player_obj = getattr(self.army, "player", None)
+            game = getattr(player_obj, "game", None) if player_obj is not None else None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        if player is None and game is not None:
+            get_current = getattr(game, "get_current_player", None)
+            player = get_current() if callable(get_current) else None
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        effect_id = "detachment:speedwaaagh:turbo_boostas"
+        sr["speedwaaagh_turbo_boostas_declined_turn_owner"] = owner_id
+        sr["speedwaaagh_turbo_boostas_declined_turn"] = int(turn)
+        advance_effects = [
+            dict(entry)
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if isinstance(entry, dict) and str(entry.get("tag", "") or "") != effect_id
+        ]
+        temp_effects = [
+            dict(entry)
+            for entry in list(sr.get("orks_temp_effects", []) or [])
+            if isinstance(entry, dict) and str(entry.get("id", "") or "") != effect_id
+        ]
+        if use_turbo:
+            sr["speedwaaagh_turbo_boostas_active"] = True
+            sr["speedwaaagh_turbo_boostas_turn_owner"] = owner_id
+            sr["speedwaaagh_turbo_boostas_turn"] = int(turn)
+            sr["speedwaaagh_turbo_boostas_source"] = self._SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE
+            sr["speedwaaagh_turbo_boostas_move_characteristic"] = int(
+                self._SPEEDWAAAGH_TURBO_BOOSTAS_MOVE_CHARACTERISTIC
+            )
+            sr["speedwaaagh_turbo_boostas_straight_line_only"] = True
+            sr["speedwaaagh_turbo_boostas_no_pivot"] = True
+            sr["speedwaaagh_turbo_boostas_no_charge"] = True
+            sr["speedwaaagh_turbo_boostas_ranged_assault"] = True
+            advance_effects.append(
+                {
+                    "tag": effect_id,
+                    "source": self._SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE,
+                    "distance": 0,
+                    "move_characteristic": int(self._SPEEDWAAAGH_TURBO_BOOSTAS_MOVE_CHARACTERISTIC),
+                    "straight_line_only": True,
+                    "no_pivot": True,
+                    "expires_phase": "MOVEMENT_PHASE",
+                }
+            )
+            temp_effects.append(
+                {
+                    "id": effect_id,
+                    "detachment": "speedwaaagh",
+                    "source": self._SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE,
+                    "effect": "keyword",
+                    "attack_type": "ranged",
+                    "keyword": "ASSAULT",
+                    "expires_mode": "turn",
+                    "turn_owner_id": owner_id,
+                    "turn": int(turn),
+                }
+            )
+            temp_effects.sort(key=lambda entry: str(entry.get("id", "") or ""))
+            sr["orks_temp_effects"] = temp_effects
+        else:
+            for key in (
+                "speedwaaagh_turbo_boostas_active",
+                "speedwaaagh_turbo_boostas_turn_owner",
+                "speedwaaagh_turbo_boostas_turn",
+                "speedwaaagh_turbo_boostas_source",
+                "speedwaaagh_turbo_boostas_move_characteristic",
+                "speedwaaagh_turbo_boostas_straight_line_only",
+                "speedwaaagh_turbo_boostas_no_pivot",
+                "speedwaaagh_turbo_boostas_no_charge",
+                "speedwaaagh_turbo_boostas_ranged_assault",
+            ):
+                sr.pop(key, None)
+        if advance_effects:
+            advance_effects.sort(key=lambda entry: str(entry.get("tag", "") or ""))
+            sr["advance_no_roll_effects"] = advance_effects
+        else:
+            sr.pop("advance_no_roll_effects", None)
+        if temp_effects:
+            sr["orks_temp_effects"] = temp_effects
+        else:
+            sr.pop("orks_temp_effects", None)
+        root.special_rules = sr
+        round_state = getattr(root, "round_state", None)
+        if round_state is not None:
+            try:
+                round_state.advance_roll = None
+            except AttributeError:
+                pass
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+        return True
+
+    def speedwaaagh_turbo_boostas_active(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("speedwaaagh_turbo_boostas_active")):
+            return False
+        if game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return True
+        owner_id = str(sr.get("speedwaaagh_turbo_boostas_turn_owner", "") or "").strip()
+        if owner_id:
+            get_current = getattr(game, "get_current_player", None)
+            current = get_current() if callable(get_current) else None
+            current_id = str(getattr(current, "id", "") or "").strip()
+            if current_id and current_id != owner_id:
+                return False
+        try:
+            effect_turn = int(sr.get("speedwaaagh_turbo_boostas_turn", 0) or 0)
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def speedwaaagh_turbo_boostas_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if not self.speedwaaagh_turbo_boostas_active(unit, game=game):
+            return False
+        if profile is None:
+            return True
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        return bool(callable(is_ranged_fn) and is_ranged_fn())
+
+    def speedwaaagh_turbo_boostas_blocks_charge(self, unit, *, game=None) -> bool:
+        if not self.speedwaaagh_turbo_boostas_active(unit, game=game):
+            return False
+        root = self._unit_root(unit)
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        return bool(isinstance(sr, dict) and sr.get("speedwaaagh_turbo_boostas_no_charge"))
 
     def _more_dakka_unit_is_eligible(self, unit) -> bool:
         if not self.is_more_dakka():

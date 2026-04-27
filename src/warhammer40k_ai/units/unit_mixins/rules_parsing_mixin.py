@@ -5080,19 +5080,26 @@ class RulesParsingMixin:
                     distance = int(entry.get("distance", entry.get("value", 0)) or 0)
                 except (TypeError, ValueError):
                     distance = 0
-                if distance <= 0:
+                try:
+                    move_characteristic = int(entry.get("move_characteristic", 0) or 0)
+                except (TypeError, ValueError):
+                    move_characteristic = 0
+                if distance <= 0 and move_characteristic <= 0:
                     continue
                 source = str(entry.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
                 entry_id = str(entry.get("id", "") or "").strip() or "orks_temp_effect:advance_no_roll"
                 expires_phase = str(entry.get("expires_phase", "") or "").strip().upper()
-                effects.append(
-                    {
-                        "distance": int(distance),
-                        "source": source,
-                        "tag": entry_id,
-                        "expires_phase": expires_phase,
-                    }
-                )
+                payload = {
+                    "distance": int(distance),
+                    "source": source,
+                    "tag": entry_id,
+                    "expires_phase": expires_phase,
+                }
+                if move_characteristic > 0:
+                    payload["move_characteristic"] = int(move_characteristic)
+                    payload["straight_line_only"] = bool(entry.get("straight_line_only", False))
+                    payload["no_pivot"] = bool(entry.get("no_pivot", False))
+                effects.append(payload)
         try:
             from ...rules.selectable_section_abilities import (
                 KEY_PULSE_JET,
@@ -5128,20 +5135,29 @@ class RulesParsingMixin:
             try:
                 dist = int(effect.get("distance", 0) or 0)
             except Exception:
-                continue
-            if dist <= 0:
+                dist = 0
+            try:
+                move_characteristic = int(effect.get("move_characteristic", 0) or 0)
+            except Exception:
+                move_characteristic = 0
+            if dist <= 0 and move_characteristic <= 0:
                 continue
             exp = str(effect.get("expires_phase", "") or "").strip().upper()
             if exp and phase_name and exp != phase_name:
                 continue
-            if dist > best_dist:
-                best_dist = dist
+            score = max(int(dist), int(move_characteristic))
+            if score > best_dist:
+                best_dist = score
                 best = {
                     "distance": int(dist),
                     "source": str(effect.get("source", "") or "").strip(),
                     "tag": str(effect.get("tag", "") or "").strip(),
                     "expires_phase": exp,
                 }
+                if move_characteristic > 0:
+                    best["move_characteristic"] = int(move_characteristic)
+                    best["straight_line_only"] = bool(effect.get("straight_line_only", False))
+                    best["no_pivot"] = bool(effect.get("no_pivot", False))
         return best
 
     def ignores_vertical_distance_for_move_type(self, movement_type) -> bool:

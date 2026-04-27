@@ -55,6 +55,7 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
         "pyrogenesis_flux",
         "extremis_level_threat",
         "oath_of_rynn",
+        "orks_speedwaaagh_turbo_boostas",
     ):
         return resolved_payload if choice is not None else None
 
@@ -205,6 +206,20 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
 
     if unit is None or choice is None:
         return None
+
+    if ability == "orks_speedwaaagh_turbo_boostas":
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else getattr(unit, "parent_army", None)
+        except AttributeError:
+            army = getattr(unit, "parent_army", None)
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        apply_choice = getattr(mgr, "apply_speedwaaagh_turbo_boostas_choice", None) if mgr is not None else None
+        if callable(apply_choice):
+            apply_choice(unit, use_turbo=bool(choice), game=game, player=getattr(army, "player", None))
+        prepare_advance = getattr(unit, "prepare_advance", None)
+        if callable(prepare_advance):
+            prepare_advance()
+        return resolved_payload
 
     if ability == "fight_within_3":
         root = unit

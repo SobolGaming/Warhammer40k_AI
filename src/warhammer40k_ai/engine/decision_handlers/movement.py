@@ -1321,8 +1321,18 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                 mgr.queue_malefic_surge_choice(unit, trigger="movement", game=game)
         except Exception:
             pass
+        queued_turbo_boostas_prompt = False
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            queue_turbo = getattr(mgr, "queue_speedwaaagh_turbo_boostas_choice", None) if mgr is not None else None
+            if callable(queue_turbo):
+                queued_turbo_boostas_prompt = queue_turbo(unit, game=game, player=player) is not None
+        except Exception:
+            queued_turbo_boostas_prompt = False
         if bool(getattr(game, "is_authoritative", True)):
-            if queued_redeploy_prompt:
+            if queued_redeploy_prompt or queued_turbo_boostas_prompt:
                 return None
             try:
                 unit.prepare_advance()
@@ -1487,7 +1497,8 @@ def validate_move_unit_payload(
         if fight_move_errors:
             return tuple(fight_move_errors)
     reactive_movement_type = str(ctx.get("reactive_move_movement_type", "") or "").strip().lower()
-    validate_normal_move_sweep = movement_type == "move" or (
+    turbo_boostas_active = movement_type == "advance" and _speedwaaagh_turbo_boostas_active(unit, game)
+    validate_normal_move_sweep = movement_type == "move" or turbo_boostas_active or (
         movement_type == "reactive" and reactive_movement_type == "move"
     )
     if movement_type == "advance":
@@ -1509,6 +1520,15 @@ def validate_move_unit_payload(
         witness_errors = validate_witness_contiguity(witness, list(model_positions or []))
         if witness_errors:
             return tuple(witness_errors)
+    if turbo_boostas_active:
+        turbo_errors = _validate_speedwaaagh_turbo_boostas_positions(
+            game,
+            unit,
+            model_positions,
+            path_witness_ref=path_witness_ref,
+        )
+        if turbo_errors:
+            return turbo_errors
     if validate_normal_move_sweep:
         start_positions = current_model_positions(unit)
         end_positions: list[dict] = []
@@ -2470,6 +2490,111 @@ def _validate_tactica_obliqua_battleline_positions(
             return (
                 f"Move unit: Tactica Obliqua requires every model to end wholly within {int(required_range)}\" of one or more friendly ADEPTUS MECHANICUS BATTLELINE units.",
             )
+    return ()
+
+
+def _speedwaaagh_turbo_boostas_active(unit: object, game: object | None = None) -> bool:
+    if unit is None:
+        return False
+    try:
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    except AttributeError:
+        root = unit
+    if root is None:
+        return False
+    try:
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else getattr(root, "parent_army", None)
+    except AttributeError:
+        army = getattr(root, "parent_army", None)
+    mgr = getattr(army, "orks_detachments", None) if army is not None else None
+    active_fn = getattr(mgr, "speedwaaagh_turbo_boostas_active", None) if mgr is not None else None
+    if callable(active_fn):
+        return bool(active_fn(root, game=game))
+    sr = getattr(root, "special_rules", None)
+    return bool(isinstance(sr, dict) and sr.get("speedwaaagh_turbo_boostas_active"))
+
+
+def _validate_speedwaaagh_turbo_boostas_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    path_witness_ref: str = "",
+) -> Sequence[str]:
+    if not _speedwaaagh_turbo_boostas_active(unit, game):
+        return ()
+    if not isinstance(model_positions, list) or not model_positions:
+        return ("Move unit: Turbo Boostas requires model_positions.",)
+    try:
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    except AttributeError:
+        root = unit
+    sr = getattr(root, "special_rules", None)
+    try:
+        max_move = float(dict(sr or {}).get("speedwaaagh_turbo_boostas_move_characteristic", 24) or 24)
+    except (TypeError, ValueError):
+        max_move = 24.0
+    starts = {
+        str(entry.get("model_id", "") or ""): entry
+        for entry in current_model_positions(unit)
+        if str(entry.get("model_id", "") or "")
+    }
+    for entry in list(model_positions or []):
+        if not isinstance(entry, dict):
+            return ("Move unit: Turbo Boostas model_positions entries must be objects.",)
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            return ("Move unit: Turbo Boostas model_positions missing model_id.",)
+        start = starts.get(model_id)
+        if start is None:
+            return ("Move unit: Turbo Boostas model_positions include a model that is not eligible to move.",)
+        start_pos = list(start.get("position", []) or [])
+        end_pos = list(entry.get("position", []) or [])
+        if len(start_pos) < 2 or len(end_pos) < 2:
+            return ("Move unit: Turbo Boostas positions require x/y coordinates.",)
+        while len(start_pos) < 3:
+            start_pos.append(0.0)
+        while len(end_pos) < 3:
+            end_pos.append(0.0)
+        try:
+            sx, sy, sz = float(start_pos[0]), float(start_pos[1]), float(start_pos[2])
+            ex, ey, ez = float(end_pos[0]), float(end_pos[1]), float(end_pos[2])
+        except (TypeError, ValueError):
+            return ("Move unit: Turbo Boostas positions must be numeric.",)
+        distance = math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2 + (ez - sz) ** 2)
+        if distance > max_move + 1e-6:
+            return (f'Move unit: Turbo Boostas move cannot exceed {max_move:g}".',)
+        try:
+            start_facing = float(start.get("facing", 0.0) or 0.0)
+            end_facing = float(entry.get("facing", start_facing) or 0.0)
+        except (TypeError, ValueError):
+            return ("Move unit: Turbo Boostas facing values must be numeric.",)
+        if abs(((end_facing - start_facing + 180.0) % 360.0) - 180.0) > 1e-4:
+            return ("Move unit: Turbo Boostas models cannot pivot.",)
+    if path_witness_ref:
+        store = getattr(game, "path_witness_store", None)
+        witness = store.get(path_witness_ref) if store is not None else None
+        if witness is None:
+            return ("Move unit: Turbo Boostas path witness_ref not found.",)
+        for model_entry in list(dict(witness or {}).get("models", []) or []):
+            translate_count = 0
+            for step in list(dict(model_entry or {}).get("path", []) or []):
+                step_dict = dict(step or {})
+                kind = str(step_dict.get("kind", "") or "").strip().lower()
+                if kind == "translate":
+                    translate_count += 1
+                    if translate_count > 1:
+                        return ("Move unit: Turbo Boostas requires a single straight-line translate path.",)
+                elif kind == "pivot":
+                    try:
+                        start_facing = float(step_dict.get("start_facing", 0.0) or 0.0)
+                        end_facing = float(step_dict.get("end_facing", start_facing) or 0.0)
+                    except (TypeError, ValueError):
+                        return ("Move unit: Turbo Boostas pivot witness values must be numeric.",)
+                    if abs(((end_facing - start_facing + 180.0) % 360.0) - 180.0) > 1e-4:
+                        return ("Move unit: Turbo Boostas models cannot pivot.",)
+                elif kind:
+                    return ("Move unit: Turbo Boostas requires one straight-line movement segment.",)
     return ()
 
 

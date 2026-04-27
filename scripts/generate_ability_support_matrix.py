@@ -466,6 +466,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each unit can only move in this way once per turn",
             r"astra militarum squadron units from your army have the armoured skirmisher keyword excluding artillery units and units containing one or more models with a wounds characteristic of 13 or higher",
         ),
+        "Turbo Boostas": (
+            r"each time a speed freeks or trukk unit excluding aircraft from your army advances it can use its turbo",
+            r"if it does do not make an advance roll for it",
+            r"instead until the end of the phase models in that unit have a move characteristic of 24 but can only move in one straight line and until the end of the turn ranged weapons equipped by those models have the assault ability and that unit cannot declare a charge",
+            r"until the end of the phase models in that unit have a move characteristic of 24 but can only move in one straight line",
+            r"until the end of the turn ranged weapons equipped by those models have the assault ability and that unit cannot declare a charge",
+            r"when a unit uses its turbo the models in that unit cannot pivot",
+            r"when a unit uses its turbo the models in that unit cannot pivot and they cannot make a move of two or more straight lines e",
+            r"that unit also cannot declare a charge even if another rule would let it declare a charge in a turn in which it advanced",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -1151,6 +1161,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         ),
         "Adrenaline Junkies": (
             r"speed freeks units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
+        ),
+        "Turbo Boostas": (
+            r"each time a speed freeks or trukk unit excluding aircraft from your army advances it can use its turbo",
+            r"if it does do not make an advance roll for it",
+            r"instead until the end of the phase models in that unit have a move characteristic of 24 but can only move in one straight line and until the end of the turn ranged weapons equipped by those models have the assault ability and that unit cannot declare a charge",
+            r"until the end of the phase models in that unit have a move characteristic of 24 but can only move in one straight line",
+            r"until the end of the turn ranged weapons equipped by those models have the assault ability and that unit cannot declare a charge",
+            r"models in that unit cannot pivot",
+            r"when a unit uses its turbo the models in that unit cannot pivot and they cannot make a move of two or more straight lines e",
+            r"that unit also cannot declare a charge even if another rule would let it declare a charge in a turn in which it advanced",
         ),
         "Dakka! Dakka! Dakka!": (
             r"ranged weapons equipped by orks infantry and orks walker models from your army have the assault ability",
@@ -3071,6 +3091,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Adrenaline Junkies": (
             "Supported",
             "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
+        ),
+        "Turbo Boostas": (
+            "Supported",
+            "Speedwaaagh!: eligible SPEED FREEKS/TRUKK non-AIRCRAFT units get an optional Advance decision to use Turbo Boostas, replacing the Advance roll with a 24\" Move characteristic, enforcing single straight-line/no-pivot movement, granting ranged weapons ASSAULT until turn end, and blocking charges until turn end even if another rule would allow charging after Advancing.",
         ),
         "Dakka! Dakka! Dakka!": (
             "Supported",
@@ -6113,6 +6137,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000008871": (
             "Supported",
             "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
+        ),
+        "000010794": (
+            "Supported",
+            "Speedwaaagh!: eligible SPEED FREEKS/TRUKK non-AIRCRAFT units get an optional Advance decision to use Turbo Boostas, replacing the Advance roll with a 24\" Move characteristic, enforcing single straight-line/no-pivot movement, granting ranged weapons ASSAULT until turn end, and blocking charges until turn end even if another rule would allow charging after Advancing.",
         ),
         "000009990": (
             "Supported",

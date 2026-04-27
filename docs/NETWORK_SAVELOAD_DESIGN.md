@@ -330,6 +330,7 @@ Command phase:
 Movement:
 - unit_activation_dialog: SELECT_UNIT {unit_id | action="pass"} (context `phase_name`, `phase_step`, `selection_purpose`, `allowed_unit_ids[]`, `allow_pass`)
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
+- turbo_boostas_dialog: CONFIRM_YES_NO {choice} (context `ability="orks_speedwaaagh_turbo_boostas"`, `ability_name="Turbo Boostas"`, `unit_id`, `movement_type="advance"`, `optional=true`; selecting true applies the fixed 24" straight-line/no-pivot Advance, ranged Assault, and no-charge turn state before the `MOVE_UNIT` advance placement)
 - pre_normal_move_bonus_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="movement_phase_move_weapon_bonus"`, `unit_id`, `model_id`, `move_bonus_dice`, `move_bonus_flat`, `attacks_bonus`, `weapon_name`, `buff_key`)
 - pre_normal_move_flickerjump_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickerjump"`, `unit_id`, `move_value`)
 - cloudstrider_deep_strike_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cloudstrider"`, `unit_id`, `ability_name`)

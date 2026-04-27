@@ -1376,6 +1376,14 @@ class PositioningFightMovementMixin:
             return False
         if self.round_state.attempted_charge_this_round and not out_of_turn:
             return False
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            blocks_fn = getattr(mgr, "speedwaaagh_turbo_boostas_blocks_charge", None) if mgr is not None else None
+            if callable(blocks_fn) and bool(blocks_fn(self, game=game)):
+                return False
+        except Exception:
+            pass
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():
             return False
         if disembark_charge_blocked(self, game=game, out_of_turn=out_of_turn):

@@ -1007,6 +1007,7 @@ class GamePhaseHandlersMixin:
                 "flickerjump": "move",
                 "movement_phase_move_weapon_bonus": "move",
                 "normal_move_redeploy": "move",
+                "orks_speedwaaagh_turbo_boostas": "advance",
             }
             movement_type = ability_to_move_kind.get(ability_key, "")
         else:

@@ -16179,12 +16179,20 @@ class ActionsMovementMixin:
             player = None
             game = None
             no_roll_effect = self._get_advance_no_roll_effect()
+            fixed_move_characteristic = None
             if isinstance(no_roll_effect, dict):
+                try:
+                    fixed_move_characteristic = int(no_roll_effect.get("move_characteristic", 0) or 0)
+                except Exception:
+                    fixed_move_characteristic = None
                 try:
                     fixed_roll = int(no_roll_effect.get("distance", 0) or 0)
                 except Exception:
                     fixed_roll = None
-                if fixed_roll is not None and fixed_roll > 0:
+                if fixed_move_characteristic is not None and fixed_move_characteristic > 0:
+                    fixed_roll = 0
+                    fixed_source = "no_roll_move_characteristic"
+                elif fixed_roll is not None and fixed_roll > 0:
                     fixed_source = "no_roll"
                 else:
                     fixed_roll = None
@@ -16237,10 +16245,13 @@ class ActionsMovementMixin:
 
             if game is None or player is None:
                 if fixed_roll is not None:
-                    try:
-                        advance_roll = self._apply_advance_roll_modifiers(int(fixed_roll))
-                    except Exception:
-                        advance_roll = int(fixed_roll)
+                    if fixed_source == "no_roll_move_characteristic":
+                        advance_roll = 0
+                    else:
+                        try:
+                            advance_roll = self._apply_advance_roll_modifiers(int(fixed_roll))
+                        except Exception:
+                            advance_roll = int(fixed_roll)
                     try:
                         self.round_state.advance_roll = int(advance_roll)
                     except Exception:
@@ -16248,13 +16259,25 @@ class ActionsMovementMixin:
                     try:
                         from ...utility.event_bus import append_dice
                         if player is not None:
-                            append_dice(player, f"Advance roll fixed: {int(advance_roll)} for {self.name}")
+                            if fixed_source == "no_roll_move_characteristic":
+                                append_dice(player, f"Advance roll not made: {self.name} uses {fixed_move_characteristic}\" Move")
+                            else:
+                                append_dice(player, f"Advance roll fixed: {int(advance_roll)} for {self.name}")
                     except Exception:
                         pass
                     return int(advance_roll)
                 return None
             if not bool(getattr(game, "is_authoritative", True)):
                 return None
+
+            if fixed_source == "no_roll_move_characteristic":
+                self.round_state.advance_roll = 0
+                try:
+                    from ...utility.event_bus import append_dice
+                    append_dice(player, f"Advance roll not made: {self.name} uses {fixed_move_characteristic}\" Move")
+                except Exception:
+                    pass
+                return 0
 
             from ...utility.entity_ids import get_entity_id
             from ...engine.roll_utils import command_reroll_available
@@ -16880,8 +16903,15 @@ class ActionsMovementMixin:
         # If advancing, use stored advance roll or roll new one
         if advance:
             no_roll_distance = None
+            no_roll_move_characteristic = None
             effect = self._get_advance_no_roll_effect()
             if isinstance(effect, dict):
+                try:
+                    no_roll_move_characteristic = int(effect.get("move_characteristic", 0) or 0)
+                except Exception:
+                    no_roll_move_characteristic = None
+                if no_roll_move_characteristic is not None and no_roll_move_characteristic <= 0:
+                    no_roll_move_characteristic = None
                 try:
                     no_roll_distance = int(effect.get("distance", 0) or 0)
                 except Exception:
@@ -16909,7 +16939,17 @@ class ActionsMovementMixin:
                 chronoshift_fixed = None
 
             # Use stored advance roll if available, otherwise roll new one
-            if no_roll_distance is not None:
+            if no_roll_move_characteristic is not None:
+                advance_roll = 0
+                movement_range = int(no_roll_move_characteristic)
+                self.round_state.advance_roll = 0
+                try:
+                    from ...utility.event_bus import append_dice
+                    pn = self.get_parent_army().player
+                    append_dice(pn, f"Advance roll not made: {self.name} uses {int(no_roll_move_characteristic)}\" Move")
+                except Exception:
+                    pass
+            elif no_roll_distance is not None:
                 advance_roll = int(no_roll_distance)
                 self.round_state.advance_roll = advance_roll
                 try:
@@ -17016,7 +17056,8 @@ class ActionsMovementMixin:
             if advance_roll is None:
                 logger.error(f"Failed to roll dice for advancing unit {self.name}")
                 return False
-            movement_range += advance_roll
+            if no_roll_move_characteristic is None:
+                movement_range += advance_roll
 
         from ...utility.calcs import MovementType
         movement_type = MovementType.ADVANCE if advance else MovementType.MOVE
@@ -20242,6 +20283,11 @@ class ActionsMovementMixin:
         more_dakka_fn = getattr(mgr, "more_dakka_assault_applies", None) if mgr is not None else None
         if callable(more_dakka_fn) and bool(more_dakka_fn(self, attack_type="ranged", profile=profile)):
             return True
+        turbo_fn = getattr(mgr, "speedwaaagh_turbo_boostas_can_shoot_after_advance", None) if mgr is not None else None
+        if callable(turbo_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(turbo_fn(self, profile, game=game)):
+                return True
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             parent_wargear = getattr(profile, "parent_wargear", None)
