@@ -337,6 +337,22 @@ _ARMOURED_INFANTRY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "optional": True,
         },
     ),
+    "000010791003": EnhancementToolDescriptor(
+        enhancement_id="000010791003",
+        name="Master Manoeuvrist",
+        timing="end_of_opponents_fight_phase",
+        target="bearer_unit_and_friendly_astra_militarum_transport_within_range",
+        duration="immediate",
+        effect="bearer_unit_embarks_in_transport",
+        range_in=3.0,
+        effect_params={
+            "transport_keywords_all": ("ASTRA MILITARUM", "TRANSPORT"),
+            "range": 3.0,
+            "require_not_in_engagement_range": True,
+            "allow_existing_passengers": True,
+            "optional": True,
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_BY_NAME = {

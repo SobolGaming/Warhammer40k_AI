@@ -23802,6 +23802,37 @@ class GamePhaseHandlersMixin:
                         candidates=candidates,
                         spec=spec,
                     )
+        self._on_phase_end_armoured_infantry_master_manoeuvrist(player=player, phase=phase)
+
+    def _on_phase_end_armoured_infantry_master_manoeuvrist(self, player=None, phase=None, **_kwargs) -> None:
+        """Opponent Fight phase end: Armoured Infantry Master Manoeuvrist embark choices."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        opponent_player = player if player is not None else getattr(self, "get_current_player", lambda: None)()
+        for owner in list(getattr(self, "players", []) or []):
+            if owner is None:
+                continue
+            if opponent_player is not None and str(getattr(owner, "id", "") or "") == str(getattr(opponent_player, "id", "") or ""):
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+            am_mgr = getattr(army, "astra_militarum_detachments", None)
+            queue_fn = (
+                getattr(am_mgr, "queue_armoured_infantry_master_manoeuvrist_embark_requests", None)
+                if am_mgr is not None
+                else None
+            )
+            if callable(queue_fn):
+                queue_fn(
+                    game=self,
+                    player=owner,
+                    opponent_player=opponent_player,
+                    phase_name=pname,
+                )
 
     def _on_phase_end_transport_opponent_movement_embark(self, player=None, phase=None, **_kwargs) -> None:
         """End of opponent's Movement phase: optional embark for empty transports with Mount Up!-style abilities."""

@@ -1690,6 +1690,202 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return member, sr
         return None, None
 
+    def _armoured_infantry_master_manoeuvrist_source(self, unit) -> tuple[object | None, dict | None]:
+        if not self.is_armoured_infantry():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        return self._attached_unit_enhancement_source(root, "enhancement_master_manoeuvrist")
+
+    @staticmethod
+    def _unit_engaged(game_map, unit) -> bool:
+        if game_map is None or unit is None:
+            return False
+        try:
+            enemies = list(game_map.get_enemy_units(unit) or [])
+        except (AttributeError, TypeError):
+            enemies = []
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            alive_fn = getattr(enemy, "is_alive", None)
+            alive = bool(alive_fn()) if callable(alive_fn) else bool(getattr(enemy, "is_alive", True))
+            if not alive:
+                continue
+            in_range = getattr(game_map, "is_within_engagement_range", None)
+            if callable(in_range) and bool(in_range(unit, enemy)):
+                return True
+        return False
+
+    def armoured_infantry_master_manoeuvrist_transport_candidates(self, unit, *, game=None) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        source_unit, sr = self._armoured_infantry_master_manoeuvrist_source(root)
+        if source_unit is None or not isinstance(sr, dict):
+            return []
+        if not self._unit_is_on_battlefield(root):
+            return []
+        game_obj = game if game is not None else self._current_game()
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return []
+        if bool(sr.get("enhancement_master_manoeuvrist_require_not_in_engagement_range", True)):
+            if self._unit_engaged(game_map, root):
+                return []
+        try:
+            embark_range = float(sr.get("enhancement_master_manoeuvrist_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            embark_range = 3.0
+        if embark_range <= 0:
+            return []
+        transport_keywords = [
+            str(value or "").strip().upper()
+            for value in list(sr.get("enhancement_master_manoeuvrist_transport_keywords_all", ("ASTRA MILITARUM", "TRANSPORT")) or ())
+            if str(value or "").strip()
+        ]
+        if not transport_keywords:
+            transport_keywords = ["ASTRA MILITARUM", "TRANSPORT"]
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except ImportError:
+            return []
+        out = []
+        seen: set[str] = set()
+        for candidate in list(getattr(self.army, "units", []) or []):
+            transport = self._unit_root(candidate)
+            if transport is None or transport is root:
+                continue
+            transport_id = self._entity_id(transport)
+            if transport_id and transport_id in seen:
+                continue
+            if transport_id:
+                seen.add(transport_id)
+            if not self._unit_is_on_battlefield(transport):
+                continue
+            if any(not self._unit_has_keyword(transport, keyword) for keyword in transport_keywords):
+                continue
+            can_transport = getattr(transport, "can_transport", None)
+            if not callable(can_transport) or not bool(can_transport(root)):
+                continue
+            if not bool(unit_wholly_within_range_of_unit(transport, root, embark_range)):
+                continue
+            out.append(transport)
+        out.sort(key=lambda unit_obj: self._entity_id(unit_obj))
+        return out
+
+    def queue_armoured_infantry_master_manoeuvrist_embark_requests(
+        self,
+        *,
+        game=None,
+        player=None,
+        opponent_player=None,
+        phase_name: str = "",
+    ) -> int:
+        if not self.is_armoured_infantry():
+            return 0
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return 0
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return 0
+        if opponent_player is not None and str(getattr(opponent_player, "id", "") or "") == str(getattr(owner, "id", "") or ""):
+            return 0
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        pending = list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+        queued = 0
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            source_unit, sr = self._armoured_infantry_master_manoeuvrist_source(root)
+            if source_unit is None or not isinstance(sr, dict):
+                continue
+            already_pending = False
+            for req in pending:
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "master_manoeuvrist_embark":
+                    continue
+                if str(ctx.get("target_unit_id", "") or "") == root_id:
+                    already_pending = True
+                    break
+            if already_pending:
+                continue
+            transports = self.armoured_infantry_master_manoeuvrist_transport_candidates(root, game=game)
+            if not transports:
+                continue
+            try:
+                embark_range = float(sr.get("enhancement_master_manoeuvrist_range", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                embark_range = 3.0
+            allow_existing = bool(sr.get("enhancement_master_manoeuvrist_allow_existing_passengers", True))
+            source_name = str(sr.get("enhancement_master_manoeuvrist_source", "") or "Master Manoeuvrist").strip()
+            if not source_name:
+                source_name = "Master Manoeuvrist"
+            spec = {
+                "source": source_name,
+                "range": float(max(0.0, embark_range)),
+                "allow_existing_passengers": bool(allow_existing),
+            }
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            candidate_transport_ids: list[str] = []
+            for transport in transports:
+                transport_id = self._entity_id(transport)
+                if not transport_id:
+                    continue
+                candidate_transport_ids.append(transport_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(transport, "name", "Transport") or "Transport"),
+                        payload={
+                            "target_unit_id": root_id,
+                            "transport_id": transport_id,
+                            "source_unit_id": self._entity_id(source_unit),
+                            "army_id": self._entity_id(self.army),
+                            "spec": dict(spec),
+                        },
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: select a Transport for {getattr(root, 'name', 'Unit')} to embark within.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": "master_manoeuvrist_embark",
+                    "ability_name": source_name,
+                    "army_id": self._entity_id(self.army),
+                    "source_unit_id": self._entity_id(source_unit),
+                    "target_unit_id": root_id,
+                    "candidate_transport_ids": list(candidate_transport_ids),
+                    "range": float(max(0.0, embark_range)),
+                    "phase": "End of opponent's Fight phase",
+                    "phase_name": str(phase_name or "FIGHT_PHASE"),
+                    "spec": dict(spec),
+                    "optional": True,
+                },
+            )
+            request_decision = getattr(game, "request_decision", None)
+            if not callable(request_decision):
+                continue
+            request_decision(request)
+            pending.append(request)
+            queued += 1
+        return int(queued)
+
     def combined_arms_grand_strategist_orders_bonus(self, unit) -> int:
         if not self.is_combined_arms():
             return 0

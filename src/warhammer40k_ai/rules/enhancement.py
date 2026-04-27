@@ -6060,6 +6060,37 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_exemplary_officer_bearer_model_id"] = bearer_id
 
+        if enh_id == "000010791003" or (name == "master manoeuvrist" and is_armoured_infantry):
+            if not is_armoured_infantry:
+                return
+            unit.special_rules["enhancement_master_manoeuvrist"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 3.0) if desc is not None else 3.0)
+            try:
+                embark_range = float(range_value or 3.0)
+            except (TypeError, ValueError):
+                embark_range = 3.0
+            transport_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("transport_keywords_all", ("ASTRA MILITARUM", "TRANSPORT")) or ())
+                if str(v or "").strip()
+            ]
+            if not transport_keywords:
+                transport_keywords = ["ASTRA MILITARUM", "TRANSPORT"]
+            unit.special_rules["enhancement_master_manoeuvrist_range"] = float(max(0.0, embark_range))
+            unit.special_rules["enhancement_master_manoeuvrist_transport_keywords_all"] = list(transport_keywords)
+            unit.special_rules["enhancement_master_manoeuvrist_require_not_in_engagement_range"] = bool(
+                params.get("require_not_in_engagement_range", True)
+            )
+            unit.special_rules["enhancement_master_manoeuvrist_allow_existing_passengers"] = bool(
+                params.get("allow_existing_passengers", True)
+            )
+            unit.special_rules["enhancement_master_manoeuvrist_source"] = "Master Manoeuvrist"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_manoeuvrist_bearer_model_id"] = bearer_id
+
         if name == "death mask of ollanius" or enh_id == "000008380002":
             if not is_combined_arms:
                 return

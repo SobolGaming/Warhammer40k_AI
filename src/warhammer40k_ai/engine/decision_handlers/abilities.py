@@ -3971,6 +3971,47 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if any(unit_id not in candidates for unit_id in selected_ids):
             return ("Exemplary Officer selected unit is no longer eligible.",)
         return ()
+    if ability == "master_manoeuvrist_embark":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        if mgr is None:
+            return ("Master Manoeuvrist requires Astra Militarum detachment manager.",)
+        target = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        transport = resolve_unit(game, payload.get("transport_id") or ctx.get("transport_id"))
+        if target is None:
+            return ("Master Manoeuvrist target unit was not found.",)
+        if transport is None:
+            return ("Master Manoeuvrist transport was not found.",)
+        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        transport_root = transport.get_attached_unit_root() if hasattr(transport, "get_attached_unit_root") else transport
+        target_id = str(get_entity_id(target_root) or "").strip()
+        transport_id = str(get_entity_id(transport_root) or "").strip()
+        if str(ctx.get("target_unit_id", "") or "") and str(ctx.get("target_unit_id", "") or "") != target_id:
+            return ("Master Manoeuvrist target unit mismatch.",)
+        candidate_transport_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_transport_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_transport_ids and transport_id not in candidate_transport_ids:
+            return ("Master Manoeuvrist transport is not in this request's candidates.",)
+        candidates = {
+            str(get_entity_id(unit) or "").strip()
+            for unit in list(
+                getattr(mgr, "armoured_infantry_master_manoeuvrist_transport_candidates", lambda *_args, **_kwargs: [])(
+                    target_root,
+                    game=game,
+                )
+                or []
+            )
+            if str(get_entity_id(unit) or "").strip()
+        }
+        if transport_id not in candidates:
+            return ("Master Manoeuvrist transport is no longer eligible.",)
+        return ()
     if ability == "corrupt_realspace":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -28753,6 +28794,27 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 tname = str(getattr(chosen, "name", "Unit") or "Unit")
                 ability_name = str(ctx.get("ability_name", "") or "Move Out").strip()
                 _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "master_manoeuvrist_embark":
+        transport = resolve_unit(game, payload.get("transport_id") or ctx.get("transport_id"))
+        passenger = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if transport is not None and passenger is not None:
+            spec = dict(payload.get("spec", {}) or ctx.get("spec", {}) or {})
+            if "source" not in spec:
+                spec["source"] = str(ctx.get("ability_name", "") or "Master Manoeuvrist").strip()
+            resolve_fn = getattr(game, "resolve_end_of_fight_embark", None)
+            embarked = bool(resolve_fn(transport, passenger, spec)) if callable(resolve_fn) else False
+            try:
+                player = getattr(getattr(transport, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(transport, "name", "Transport") or "Transport")
+                tname = str(getattr(passenger, "name", "Unit") or "Unit")
+                ability_name = str(ctx.get("ability_name", "") or "Master Manoeuvrist").strip()
+                if embarked:
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "end_of_fight_embark":

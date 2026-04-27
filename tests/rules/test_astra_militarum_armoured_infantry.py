@@ -22,6 +22,7 @@ class _Datasheet:
         abilities=None,
         wounds: int = 6,
         move: str = "10",
+        transport: str = "",
     ):
         self.id = f"ds-{name.lower().replace(' ', '-')}"
         self.name = name
@@ -56,7 +57,7 @@ class _Datasheet:
             for ability in list(abilities or [])
         ]
         self.loadout = "This model is equipped with: nothing"
-        self.transport = ""
+        self.transport = str(transport or "")
         self.attached_to = []
         self.attached_to_names = []
 
@@ -73,6 +74,7 @@ def _make_unit(
     abilities=None,
     wounds: int = 6,
     move: str = "10",
+    transport: str = "",
 ) -> Unit:
     unit = Unit(
         _Datasheet(
@@ -82,6 +84,7 @@ def _make_unit(
             abilities=abilities,
             wounds=wounds,
             move=move,
+            transport=transport,
         )
     )
     unit.deployed = True
@@ -146,6 +149,21 @@ def _exemplary_officer() -> Enhancement:
             "Infantry Officer model only. Each time the bearer issues an Order to its own unit, "
             "you can select up to two other Platoon units within 3\" of the bearer's unit. "
             "That Order is also issued to each of those units."
+        ),
+    )
+
+
+def _master_manoeuvrist() -> Enhancement:
+    return Enhancement(
+        id="000010791003",
+        name="Master Manoeuvrist",
+        faction_id="AM",
+        detachment="Armoured Infantry",
+        points=15,
+        description=(
+            "Infantry Officer model only. At the end of your opponent's Fight phase, if the bearer's unit is not "
+            "within Engagement Range of one or more enemy units and every model in that unit is within 3\" of an "
+            "Astra Militarum Transport from your army, it can embark within that TRANSPORT."
         ),
     )
 
@@ -369,3 +387,78 @@ def test_exemplary_officer_skip_and_non_own_unit_order_do_not_apply_extra_orders
     assert _validate_choose_quarry(game, request, result) == ()
     assert _apply_choose_quarry(game, request, result) == []
     assert nearby_platoon.special_rules.get("voice_of_command_order_key") is None
+
+
+def test_master_manoeuvrist_queues_opponent_fight_phase_embark_and_resolves_transport_choice():
+    game, am_player, enemy_player, army, _enemy_army = _build_game()
+    officer = _officer("Mobile Commander")
+    officer.keywords.extend(["REGIMENT", "PLATOON"])
+    transport = _make_unit(
+        "Chimera",
+        keywords=["Transport", "VEHICLE"],
+        wounds=11,
+        transport="Transport Capacity: 12 Astra Militarum Infantry models",
+    )
+    army.add_unit(officer)
+    army.add_unit(transport)
+    _master_manoeuvrist().apply_to_unit(officer)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, transport, 12.0, 10.0)
+    game.current_player_index = game.players.index(enemy_player)
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.rebuild_entity_registry()
+
+    game._on_phase_end_transport_end_of_fight_embark(player=enemy_player, phase=game.phase)
+
+    request = _find_quarry_request(game, ability="master_manoeuvrist_embark")
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert context.get("target_unit_id") == get_entity_id(officer)
+    assert context.get("candidate_transport_ids") == [get_entity_id(transport)]
+    option = next(
+        opt for opt in request.options
+        if str((opt.payload or {}).get("transport_id", "") or "") == get_entity_id(transport)
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=am_player.id,
+        option_id=option.option_id,
+        payload={},
+    )
+    assert _validate_choose_quarry(game, request, result) == ()
+    _apply_choose_quarry(game, request, result)
+
+    assert officer.embarked_in is transport
+    assert officer in transport.transport_passengers
+    assert officer not in game.map.units
+
+
+def test_master_manoeuvrist_does_not_queue_when_engaged_or_active_player_owns_bearer():
+    game, _am_player, enemy_player, army, enemy_army = _build_game()
+    officer = _officer("Mobile Commander")
+    officer.keywords.extend(["REGIMENT", "PLATOON"])
+    transport = _make_unit(
+        "Chimera",
+        keywords=["Transport", "VEHICLE"],
+        wounds=11,
+        transport="Transport Capacity: 12 Astra Militarum Infantry models",
+    )
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    army.add_unit(officer)
+    army.add_unit(transport)
+    enemy_army.add_unit(enemy)
+    _master_manoeuvrist().apply_to_unit(officer)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, transport, 12.0, 10.0)
+    _place_unit(game, enemy, 10.5, 10.0)
+    game.current_player_index = game.players.index(enemy_player)
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.rebuild_entity_registry()
+
+    game._on_phase_end_transport_end_of_fight_embark(player=enemy_player, phase=game.phase)
+    assert _find_quarry_request(game, ability="master_manoeuvrist_embark") is None
+
+    for model in list(getattr(enemy, "models", []) or []):
+        model.set_location(30.0, 30.0, 0.0, 0.0)
+    game._on_phase_end_transport_end_of_fight_embark(player=army.player, phase=game.phase)
+    assert _find_quarry_request(game, ability="master_manoeuvrist_embark") is None
