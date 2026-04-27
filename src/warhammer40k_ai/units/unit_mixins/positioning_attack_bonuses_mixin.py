@@ -2256,6 +2256,30 @@ class PositioningAttackBonusesMixin:
                             "source": source_name,
                         }
                     )
+        if isinstance(sr, dict) and bool(sr.get("enhancement_speedwaaagh_dakkamek_active")) and model is not None:
+            apply_bonus = True
+            effect_attack_type = str(sr.get("enhancement_speedwaaagh_dakkamek_attack_type", "ranged") or "ranged").strip().lower()
+            if effect_attack_type not in ("any", "melee", "ranged"):
+                effect_attack_type = "ranged"
+            attack_kind = str(attack_type or "").strip().lower()
+            if attack_kind and effect_attack_type not in ("any", attack_kind):
+                apply_bonus = False
+            target_model_id = str(sr.get("enhancement_speedwaaagh_dakkamek_target_model_id", "") or "").strip()
+            if apply_bonus and target_model_id and not self._model_matches_identifier(model, target_model_id):
+                apply_bonus = False
+            if apply_bonus:
+                source_name = str(sr.get("enhancement_speedwaaagh_dakkamek_source", "") or "Dakkamek").strip() or "Dakkamek"
+                for keyword in list(sr.get("enhancement_speedwaaagh_dakkamek_weapon_keywords", []) or []):
+                    keyword_text = str(keyword or "").strip().upper()
+                    if not keyword_text:
+                        continue
+                    rules.append(
+                        {
+                            "attack_type": effect_attack_type,
+                            "keyword": keyword_text,
+                            "source": source_name,
+                        }
+                    )
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         necrons_bonus_fn = getattr(necrons_mgr, "canoptek_court_attack_keyword_bonus_rules", None) if necrons_mgr is not None else None

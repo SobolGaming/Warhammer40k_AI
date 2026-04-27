@@ -9486,6 +9486,67 @@ _ORKS_KULT_OF_SPEED_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_KULT_OF_SPEED_DESCRIPTORS.values()
 }
 
+_ORKS_SPEEDWAAAGH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010795002": EnhancementToolDescriptor(
+        enhancement_id="000010795002",
+        name="Kustom Shokk Box",
+        timing="when_bearer_unit_uses_turbo",
+        target="bearer_unit",
+        duration="that_turbo_move",
+        effect="turbo_move_through_terrain_horizontally",
+        effect_params={
+            "move_types": ("advance",),
+            "requires_turbo_boostas_active": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010795003": EnhancementToolDescriptor(
+        enhancement_id="000010795003",
+        name="Dakkamek",
+        timing="after_mekaniak_resolves",
+        target="selected_friendly_orks_vehicle_model",
+        duration="until_start_of_next_command_phase",
+        effect="mekaniak_selected_vehicle_model_ranged_weapons_gain_keywords",
+        effect_params={
+            "keywords": ("RAPID FIRE 1",),
+            "attack_type": "ranged",
+            "requires_bearer_alive": True,
+            "requires_target_vehicle": True,
+        },
+    ),
+    "000010795004": EnhancementToolDescriptor(
+        enhancement_id="000010795004",
+        name="Supa-burny Fuel",
+        timing="passive",
+        target="bearer_weapons",
+        duration="constant",
+        effect="set_bearer_weapon_attacks_characteristics",
+        effect_params={
+            "weapon_attacks": {
+                "Killa jet - burna": "3D6",
+                "Killa jet - cutta": "3",
+            },
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010795005": EnhancementToolDescriptor(
+        enhancement_id="000010795005",
+        name="Master Meknologist",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="improve_bearer_ranged_ballistic_skill",
+        effect_params={
+            "ballistic_skill_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_ORKS_SPEEDWAAAGH_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_SPEEDWAAAGH_DESCRIPTORS.values()
+}
+
 _ORKS_BLITZ_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010799002": EnhancementToolDescriptor(
         enhancement_id="000010799002",
@@ -10455,6 +10516,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_KULT_OF_SPEED_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_SPEEDWAAAGH_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _ORKS_BLITZ_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10657,6 +10721,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
         or _ORKS_GREEN_TIDE_BY_NAME.get(key)
         or _ORKS_KULT_OF_SPEED_BY_NAME.get(key)
+        or _ORKS_SPEEDWAAAGH_BY_NAME.get(key)
         or _ORKS_BLITZ_BRIGADE_BY_NAME.get(key)
         or _ORKS_MORE_DAKKA_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)

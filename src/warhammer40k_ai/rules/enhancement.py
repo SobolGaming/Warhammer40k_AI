@@ -204,6 +204,42 @@ def _select_bearer_weapon(unit, bearer, *, weapon_name: str, require_ranged: boo
     return "", -1
 
 
+def _set_bearer_weapon_attacks_characteristic(unit, bearer, *, weapon_name: str, attacks: str) -> bool:
+    if bearer is None:
+        return False
+    desired_name = str(weapon_name or "").strip()
+    attacks_raw = str(attacks or "").strip().upper()
+    if not desired_name or not attacks_raw:
+        return False
+    changed = False
+    for wargear in list(getattr(bearer, "wargear", []) or []):
+        if wargear is None:
+            continue
+        current_name = str(getattr(wargear, "name", "") or "").strip()
+        profiles = getattr(wargear, "profiles", None)
+        if isinstance(profiles, dict):
+            profile_values = list(profiles.values())
+        else:
+            profile_values = [wargear]
+        for profile in list(profile_values or []):
+            if profile is None:
+                continue
+            profile_name = str(getattr(profile, "name", "") or "").strip()
+            if profile_name and profile_name.lower() != "default":
+                candidate_names = [profile_name, f"{current_name} - {profile_name}".strip(" -")]
+            else:
+                candidate_names = [current_name]
+            if not any(_weapon_name_matches(unit, desired_name, candidate) for candidate in candidate_names):
+                continue
+            parse_attacks = getattr(profile, "_parse_attacks", None)
+            if not callable(parse_attacks):
+                continue
+            profile._raw_attacks = attacks_raw
+            profile.attacks = parse_attacks(attacks_raw)
+            changed = True
+    return changed
+
+
 def _coerce_int(value, *, default: int) -> int:
     try:
         return int(value)
@@ -1911,6 +1947,9 @@ class Enhancement:
         )
         is_kult_of_speed = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_kult_of_speed", None)) and orks_mgr.is_kult_of_speed()
+        )
+        is_speedwaaagh = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_speedwaaagh", None)) and orks_mgr.is_speedwaaagh()
         )
         is_blitz_brigade = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_blitz_brigade", None)) and orks_mgr.is_blitz_brigade()
@@ -15071,6 +15110,113 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_kult_of_speed_wazblasta_bearer_model_id"] = bearer_id
+
+        if name == "kustom shokk box" or enh_id == "000010795002":
+            if not is_speedwaaagh:
+                return
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+            if unit_name != "deffkilla wartrike":
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Kustom Shokk Box").strip() or "Kustom Shokk Box"
+            move_types = tuple(
+                str(value or "").strip().lower()
+                for value in list(params.get("move_types", ("advance",)) or ())
+                if str(value or "").strip()
+            )
+            unit.special_rules["enhancement_speedwaaagh_kustom_shokk_box"] = True
+            unit.special_rules["enhancement_speedwaaagh_kustom_shokk_box_source"] = source
+            unit.special_rules["enhancement_speedwaaagh_kustom_shokk_box_move_types"] = list(move_types or ("advance",))
+            unit.special_rules["enhancement_speedwaaagh_kustom_shokk_box_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_speedwaaagh_kustom_shokk_box_bearer_model_id"] = bearer_id
+
+        if name == "dakkamek" or enh_id == "000010795003":
+            if not is_speedwaaagh:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("ORKS")) or not bool(has_any_keyword("MEK")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Dakkamek").strip() or "Dakkamek"
+            keywords = tuple(
+                str(value or "").strip().upper()
+                for value in list(params.get("keywords", ("RAPID FIRE 1",)) or ())
+                if str(value or "").strip()
+            )
+            unit.special_rules["enhancement_speedwaaagh_dakkamek"] = True
+            unit.special_rules["enhancement_speedwaaagh_dakkamek_source"] = source
+            unit.special_rules["enhancement_speedwaaagh_dakkamek_weapon_keywords"] = list(keywords or ("RAPID FIRE 1",))
+            unit.special_rules["enhancement_speedwaaagh_dakkamek_attack_type"] = str(
+                params.get("attack_type", "ranged") or "ranged"
+            ).strip().lower() or "ranged"
+            unit.special_rules["enhancement_speedwaaagh_dakkamek_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_speedwaaagh_dakkamek_bearer_model_id"] = bearer_id
+
+        if name == "supa-burny fuel" or enh_id == "000010795004":
+            if not is_speedwaaagh:
+                return
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+            if unit_name != "deffkilla wartrike":
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Supa-burny Fuel").strip() or "Supa-burny Fuel"
+            weapon_attacks = dict(params.get("weapon_attacks", {}) or {})
+            unit.special_rules["enhancement_speedwaaagh_supa_burny_fuel"] = True
+            unit.special_rules["enhancement_speedwaaagh_supa_burny_fuel_source"] = source
+            unit.special_rules["enhancement_speedwaaagh_supa_burny_fuel_weapon_attacks"] = dict(weapon_attacks)
+            unit.special_rules["enhancement_speedwaaagh_supa_burny_fuel_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            for weapon_name, attacks_raw in sorted(weapon_attacks.items(), key=lambda item: str(item[0]).lower()):
+                _set_bearer_weapon_attacks_characteristic(
+                    unit,
+                    bearer,
+                    weapon_name=str(weapon_name),
+                    attacks=str(attacks_raw),
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_speedwaaagh_supa_burny_fuel_bearer_model_id"] = bearer_id
+
+        if name == "master meknologist" or enh_id == "000010795005":
+            if not is_speedwaaagh:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+            is_big_mek_model = bool(has_any_keyword("BIG MEK")) or unit_name.startswith("big mek")
+            if not is_big_mek_model:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Master Meknologist").strip() or "Master Meknologist"
+            bs_bonus = _coerce_int(
+                params.get("ballistic_skill_bonus", params.get("bs_bonus", 1)) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_speedwaaagh_master_meknologist"] = True
+            unit.special_rules["enhancement_speedwaaagh_master_meknologist_source"] = source
+            unit.special_rules["enhancement_speedwaaagh_master_meknologist_bs_bonus"] = int(max(0, bs_bonus))
+            unit.special_rules["enhancement_speedwaaagh_master_meknologist_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_speedwaaagh_master_meknologist_bearer_model_id"] = bearer_id
 
         if name == "runnin' boots" or enh_id == "000010799002":
             if not is_blitz_brigade:

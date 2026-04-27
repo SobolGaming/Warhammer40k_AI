@@ -11575,6 +11575,24 @@ class WargearProfile:
                     _add_skill_mod(ws_bonus, f"+{ws_bonus} Weapon Skill from {source_name}")
         except Exception:
             pass
+        if attack_is_ranged:
+            sr = self._unit_special_rules(attacker)
+            bs_bonus = 0
+            if isinstance(sr, dict):
+                try:
+                    bs_bonus = int(sr.get("enhancement_speedwaaagh_master_meknologist_bs_bonus", 0) or 0)
+                except (TypeError, ValueError):
+                    bs_bonus = 0
+            if (
+                bs_bonus
+                and isinstance(sr, dict)
+                and bool(sr.get("enhancement_speedwaaagh_master_meknologist"))
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+            ):
+                source_name = str(
+                    sr.get("enhancement_speedwaaagh_master_meknologist_source", "") or "Master Meknologist"
+                ).strip() or "Master Meknologist"
+                _add_skill_mod(bs_bonus, f"+{bs_bonus} Ballistic Skill from {source_name}")
         try:
             army = attacker_unit.get_parent_army() if attacker_unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None

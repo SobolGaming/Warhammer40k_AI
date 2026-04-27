@@ -4854,6 +4854,35 @@ class GamePhaseHandlersMixin:
             if callable(resolve_tuff_git):
                 resolve_tuff_git(phase_name=pname, game=self)
 
+    def _on_phase_start_orks_speedwaaagh_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Orks Speedwaaagh start-of-phase enhancement hooks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE" or player is None:
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "orks_detachments", None)
+        cleanup = getattr(mgr, "cleanup_speedwaaagh_dakkamek_command_phase", None) if mgr is not None else None
+        if callable(cleanup):
+            cleanup(player=player, phase_name=pname, game=self)
+
+    def _on_phase_end_orks_speedwaaagh_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Orks Speedwaaagh phase-end enhancement hooks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        for active_player in list(getattr(self, "players", []) or []):
+            if active_player is None:
+                continue
+            army = active_player.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "orks_detachments", None)
+            cleanup = getattr(mgr, "cleanup_speedwaaagh_kustom_shokk_box_phase_end", None) if mgr is not None else None
+            if callable(cleanup):
+                cleanup(phase_name=pname)
+
     def _on_phase_end_orks_da_jump(self, player=None, phase=None, **_kwargs) -> None:
         """End of Movement phase: one Weirdboy from the active Orks army can use Da Jump."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

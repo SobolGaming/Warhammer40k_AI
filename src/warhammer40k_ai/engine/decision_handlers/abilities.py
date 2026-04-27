@@ -27109,6 +27109,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             )
             if callable(squig_oil_fn):
                 squig_oil_fn(source_root, target_root, game=game)
+            dakkamek_fn = (
+                getattr(orks_mgr, "apply_speedwaaagh_dakkamek_on_mekaniak", None)
+                if orks_mgr is not None
+                else None
+            )
+            if callable(dakkamek_fn):
+                dakkamek_fn(source_root, target_root, target_model=target_model, game=game)
         if limit_once_per_turn and limit_scope == "model" and target_model is not None:
             target_msr = getattr(target_model, "special_rules", None)
             if not isinstance(target_msr, dict):

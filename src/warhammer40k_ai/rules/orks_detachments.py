@@ -20,6 +20,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _SPEEDWAAAGH_TRUKK_KEYWORD = "TRUKK"
     _SPEEDWAAAGH_MOBILE_DAKKASTORM_SOURCE = "MOBILE DAKKASTORM"
     _SPEEDWAAAGH_MOBILE_DAKKASTORM_STRENGTH_BONUS = 2
+    _SPEEDWAAAGH_KUSTOM_SHOKK_BOX_SOURCE = "Kustom Shokk Box"
+    _SPEEDWAAAGH_DAKKAMEK_SOURCE = "Dakkamek"
     _BLITZ_BRIGADE_EAGER_SOURCE = "Eager for the Fight"
     _BLITZ_BRIGADE_RUNNIN_BOOTS_SOURCE = "Runnin' Boots"
     _BLITZ_BRIGADE_SQUIG_OIL_SOURCE = "Supercharged Squig Oil"
@@ -592,6 +594,36 @@ class OrksDetachmentManager(DetachmentManagerBase):
             request_decision(request)
         return request
 
+    def speedwaaagh_kustom_shokk_box_turbo_move_types(self, unit) -> tuple[tuple[str, ...], str]:
+        if not self.is_speedwaaagh():
+            return (), ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return (), ""
+        sources = self._collect_active_enhancement_source_units(
+            root,
+            flag_key="enhancement_speedwaaagh_kustom_shokk_box",
+        )
+        if not sources:
+            return (), ""
+        source_unit = sources[0]
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return (), ""
+        move_types = tuple(
+            str(value or "").strip().lower()
+            for value in list(sr.get("enhancement_speedwaaagh_kustom_shokk_box_move_types", ["advance"]) or [])
+            if str(value or "").strip()
+        )
+        if not move_types:
+            move_types = ("advance",)
+        source = self._enhancement_source_name(
+            source_unit,
+            source_key="enhancement_speedwaaagh_kustom_shokk_box_source",
+            default=self._SPEEDWAAAGH_KUSTOM_SHOKK_BOX_SOURCE,
+        )
+        return tuple(sorted(set(move_types))), source
+
     def apply_speedwaaagh_turbo_boostas_choice(self, unit, *, use_turbo: bool, game=None, player=None) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -664,9 +696,32 @@ class OrksDetachmentManager(DetachmentManagerBase):
                     "turn": int(turn),
                 }
             )
+            kustom_move_types, kustom_source = self.speedwaaagh_kustom_shokk_box_turbo_move_types(root)
+            if kustom_move_types:
+                phase_move_types = {
+                    str(value or "").strip().lower()
+                    for value in list(sr.get("bearer_unit_phase_move_terrain_only_types", []) or [])
+                    if str(value or "").strip()
+                }
+                added_move_types = set(kustom_move_types)
+                phase_move_types.update(added_move_types)
+                sr["bearer_unit_phase_move_terrain_only_types"] = sorted(phase_move_types)
+                sr["enhancement_speedwaaagh_kustom_shokk_box_turbo_active"] = True
+                sr["enhancement_speedwaaagh_kustom_shokk_box_turbo_source"] = (
+                    str(kustom_source or self._SPEEDWAAAGH_KUSTOM_SHOKK_BOX_SOURCE).strip()
+                    or self._SPEEDWAAAGH_KUSTOM_SHOKK_BOX_SOURCE
+                )
+                sr["enhancement_speedwaaagh_kustom_shokk_box_added_phase_move_terrain_only_types"] = sorted(
+                    added_move_types
+                )
             temp_effects.sort(key=lambda entry: str(entry.get("id", "") or ""))
             sr["orks_temp_effects"] = temp_effects
         else:
+            self._clear_speedwaaagh_kustom_shokk_box_turbo_state(root)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
             for key in (
                 "speedwaaagh_turbo_boostas_active",
                 "speedwaaagh_turbo_boostas_turn_owner",
@@ -677,6 +732,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
                 "speedwaaagh_turbo_boostas_no_pivot",
                 "speedwaaagh_turbo_boostas_no_charge",
                 "speedwaaagh_turbo_boostas_ranged_assault",
+                "enhancement_speedwaaagh_kustom_shokk_box_turbo_active",
+                "enhancement_speedwaaagh_kustom_shokk_box_turbo_source",
+                "enhancement_speedwaaagh_kustom_shokk_box_added_phase_move_terrain_only_types",
             ):
                 sr.pop(key, None)
         if advance_effects:
@@ -743,6 +801,175 @@ class OrksDetachmentManager(DetachmentManagerBase):
         root = self._unit_root(unit)
         sr = getattr(root, "special_rules", None) if root is not None else None
         return bool(isinstance(sr, dict) and sr.get("speedwaaagh_turbo_boostas_no_charge"))
+
+    @staticmethod
+    def _clear_speedwaaagh_kustom_shokk_box_turbo_state(root) -> bool:
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        sr = dict(sr)
+        added = {
+            str(value or "").strip().lower()
+            for value in list(sr.get("enhancement_speedwaaagh_kustom_shokk_box_added_phase_move_terrain_only_types", []) or [])
+            if str(value or "").strip()
+        }
+        if added:
+            current = [
+                str(value or "").strip().lower()
+                for value in list(sr.get("bearer_unit_phase_move_terrain_only_types", []) or [])
+                if str(value or "").strip()
+            ]
+            kept = [value for value in current if value not in added]
+            if kept:
+                sr["bearer_unit_phase_move_terrain_only_types"] = sorted(set(kept))
+            else:
+                sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+        for key in (
+            "enhancement_speedwaaagh_kustom_shokk_box_turbo_active",
+            "enhancement_speedwaaagh_kustom_shokk_box_turbo_source",
+            "enhancement_speedwaaagh_kustom_shokk_box_added_phase_move_terrain_only_types",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+        return True
+
+    def cleanup_speedwaaagh_kustom_shokk_box_phase_end(self, *, phase_name: str) -> None:
+        pname = str(phase_name or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        for root in self._iter_unique_army_unit_roots():
+            self._clear_speedwaaagh_kustom_shokk_box_turbo_state(root)
+
+    def apply_speedwaaagh_dakkamek_on_mekaniak(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        target_model=None,
+        game=None,
+    ) -> bool:
+        if not self.is_speedwaaagh():
+            return False
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if not self._unit_belongs_to_army(source_root) or not self._unit_belongs_to_army(target_root):
+            return False
+        if not self._unit_has_keyword_or_faction(target_root, "ORKS", faction_id=self.faction_id):
+            return False
+        if not self._unit_contains_keyword(target_root, "VEHICLE"):
+            return False
+        sources = self._collect_active_enhancement_source_units(
+            source_root,
+            flag_key="enhancement_speedwaaagh_dakkamek",
+        )
+        if not sources:
+            return False
+        selected_model = target_model
+        if selected_model is None:
+            models_fn = getattr(target_root, "get_attached_unit_models", None)
+            models = list(models_fn() or []) if callable(models_fn) else list(getattr(target_root, "models", []) or [])
+            for model in models:
+                if self._model_is_alive(model):
+                    selected_model = model
+                    break
+        if selected_model is None:
+            return False
+        model_unit = getattr(selected_model, "parent_unit", None)
+        if self._unit_root(model_unit) is not target_root:
+            return False
+        source_member = sources[0]
+        source_sr = getattr(source_member, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            return False
+        keywords = [
+            str(value or "").strip().upper()
+            for value in list(source_sr.get("enhancement_speedwaaagh_dakkamek_weapon_keywords", ["RAPID FIRE 1"]) or [])
+            if str(value or "").strip()
+        ]
+        if not keywords:
+            keywords = ["RAPID FIRE 1"]
+        attack_type = str(source_sr.get("enhancement_speedwaaagh_dakkamek_attack_type", "ranged") or "ranged").strip().lower()
+        if attack_type not in ("any", "melee", "ranged"):
+            attack_type = "ranged"
+        if game is None and self.army is not None:
+            player_obj = getattr(self.army, "player", None)
+            game = getattr(player_obj, "game", None) if player_obj is not None else None
+        player = None
+        if game is not None:
+            get_current = getattr(game, "get_current_player", None)
+            player = get_current() if callable(get_current) else None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        source = self._enhancement_source_name(
+            source_member,
+            source_key="enhancement_speedwaaagh_dakkamek_source",
+            default=self._SPEEDWAAAGH_DAKKAMEK_SOURCE,
+        )
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["enhancement_speedwaaagh_dakkamek_active"] = True
+        sr["enhancement_speedwaaagh_dakkamek_source"] = source
+        sr["enhancement_speedwaaagh_dakkamek_owner"] = owner_id
+        sr["enhancement_speedwaaagh_dakkamek_turn"] = int(turn)
+        sr["enhancement_speedwaaagh_dakkamek_target_model_id"] = self._model_id(selected_model)
+        sr["enhancement_speedwaaagh_dakkamek_attack_type"] = attack_type
+        sr["enhancement_speedwaaagh_dakkamek_weapon_keywords"] = list(keywords)
+        sr["enhancement_speedwaaagh_dakkamek_expires_phase"] = "COMMAND_PHASE"
+        target_root.special_rules = sr
+        cache = getattr(target_root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+        return True
+
+    def cleanup_speedwaaagh_dakkamek_command_phase(self, *, player=None, phase_name: str, game=None) -> None:
+        pname = str(phase_name or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        for root in self._iter_unique_army_unit_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_speedwaaagh_dakkamek_active")):
+                continue
+            effect_owner = str(sr.get("enhancement_speedwaaagh_dakkamek_owner", "") or "").strip()
+            if owner_id and effect_owner and owner_id != effect_owner:
+                continue
+            try:
+                effect_turn = int(sr.get("enhancement_speedwaaagh_dakkamek_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn == current_turn:
+                continue
+            updated = dict(sr)
+            for key in (
+                "enhancement_speedwaaagh_dakkamek_active",
+                "enhancement_speedwaaagh_dakkamek_source",
+                "enhancement_speedwaaagh_dakkamek_owner",
+                "enhancement_speedwaaagh_dakkamek_turn",
+                "enhancement_speedwaaagh_dakkamek_target_model_id",
+                "enhancement_speedwaaagh_dakkamek_attack_type",
+                "enhancement_speedwaaagh_dakkamek_weapon_keywords",
+                "enhancement_speedwaaagh_dakkamek_expires_phase",
+            ):
+                updated.pop(key, None)
+            root.special_rules = updated
+            cache = getattr(root, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.clear()
 
     def mark_speedwaaagh_mobile_dakkastorm_target(
         self,
