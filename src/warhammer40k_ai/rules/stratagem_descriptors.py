@@ -2413,6 +2413,22 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"grant_keywords": ["LANCE"], "charge_damage_bonus": 1},
     ),
+    "000010796002": StratagemToolDescriptor(
+        stratagem_id="000010796002",
+        name="ON DA MOVE",
+        timing="movement_phase",
+        target="orks_unit_not_yet_moved_and_not_used_turbo",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_or_fall_back_unless_turbo",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "shoot_after_fall_back": True,
+            "charge_after_advance": True,
+            "charge_after_fall_back": True,
+            "excludes_speedwaaagh_turbo_boostas_active": True,
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

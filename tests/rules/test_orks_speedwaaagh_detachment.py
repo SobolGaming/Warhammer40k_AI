@@ -10,6 +10,7 @@ from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, De
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear, WargearProfile
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -576,4 +577,67 @@ def test_ded_killy_construction_rejects_non_speed_or_already_fought_targets():
 
     assert not ork_player.stratagems.use("DED KILLY CONSTRUCTION", unit=warbikers, phase_name="Fight phase")
     assert not ork_player.stratagems.use("DED KILLY CONSTRUCTION", unit=boyz, phase_name="Fight phase")
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_on_da_move_allows_shoot_and_charge_after_advance_or_fall_back_unless_turbo():
+    game, ork_player, army, enemy_army = _build_game()
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(warbikers)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, enemy, 8.0, 0.0)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use("ON DA MOVE", unit=warbikers, phase_name="Movement phase")
+    assert int(ork_player.command_points or 0) == 9
+
+    profile = _ranged_profile()
+    warbikers.round_state.advanced_this_round = True
+    assert warbikers.can_shoot_after_advance(profile) is True
+    assert warbikers.can_charge_after_advance() is True
+
+    warbikers.round_state.advanced_this_round = False
+    warbikers.round_state.fell_back_this_round = True
+    assert warbikers.can_shoot_after_fall_back(profile) is True
+    assert warbikers.can_charge_after_fall_back() is True
+
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010796002", name="ON DA MOVE")
+    assert descriptor is not None
+    assert descriptor.effect_params["excludes_speedwaaagh_turbo_boostas_active"] is True
+
+
+def test_on_da_move_rejects_already_moved_or_turbo_units():
+    game, ork_player, army, enemy_army = _build_game()
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    trukk = _unit("Trukk", keywords=["VEHICLE", "TRANSPORT", "TRUKK"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (warbikers, trukk):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, trukk, 8.0, 0.0)
+    _place(game, enemy, 16.0, 0.0)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    warbikers.round_state.moved_this_round = True
+    assert not ork_player.stratagems.use("ON DA MOVE", unit=warbikers, phase_name="Movement phase")
+    assert int(ork_player.command_points or 0) == 10
+
+    assert army.orks_detachments.apply_speedwaaagh_turbo_boostas_choice(
+        trukk,
+        use_turbo=True,
+        game=game,
+        player=ork_player,
+    )
+    assert not ork_player.stratagems.use("ON DA MOVE", unit=trukk, phase_name="Movement phase")
     assert int(ork_player.command_points or 0) == 10

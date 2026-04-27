@@ -222,6 +222,15 @@ class OrksStratagemMixin:
             return not bool(getattr(round_state, "shot_this_round", False))
         if phase_u == "FIGHT_PHASE":
             return not bool(getattr(round_state, "fought_this_phase", False))
+        if phase_u == "MOVEMENT_PHASE":
+            return not any(
+                bool(getattr(round_state, attr, False))
+                for attr in (
+                    "moved_this_round",
+                    "advanced_this_round",
+                    "fell_back_this_round",
+                )
+            )
         return True
 
     @staticmethod
@@ -420,6 +429,42 @@ class OrksStratagemMixin:
             keyword_any=("SPEED FREEKS", "TRUKK"),
             require_not_selected_phase="Fight phase",
         )
+
+    def _orks_unit_used_speedwaaagh_turbo_this_turn(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        mgr = self._orks_detachment_mgr()
+        active_fn = getattr(mgr, "speedwaaagh_turbo_boostas_active", None) if mgr is not None else None
+        if callable(active_fn):
+            return bool(active_fn(root, game=getattr(self, "game", None)))
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("speedwaaagh_turbo_boostas_active")):
+            return False
+        owner_id = str(sr.get("speedwaaagh_turbo_boostas_turn_owner", "") or "").strip()
+        if owner_id and owner_id != self._orks_turn_owner_id():
+            return False
+        try:
+            effect_turn = int(sr.get("speedwaaagh_turbo_boostas_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = self._orks_current_turn()
+        return not bool(effect_turn and current_turn and effect_turn != current_turn)
+
+    def _orks_on_da_move_candidates(self) -> list[Any]:
+        if not self._is_speedwaaagh_detachment():
+            return []
+        candidates = self._orks_offensive_candidates(
+            require_targetable=True,
+            require_not_selected_phase="Movement phase",
+        )
+        kept = [
+            root
+            for root in list(candidates or [])
+            if not self._orks_unit_used_speedwaaagh_turbo_this_turn(root)
+        ]
+        kept.sort(key=self._orks_sort_key)
+        return kept
 
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
@@ -4257,6 +4302,8 @@ class OrksStratagemMixin:
             return self._use_orks_dust_trails(stratagem, **kwargs)
         if name_u == "DED KILLY CONSTRUCTION":
             return self._use_orks_ded_killy_construction(stratagem, **kwargs)
+        if name_u == "ON DA MOVE":
+            return self._use_orks_on_da_move(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6233,6 +6280,81 @@ class OrksStratagemMixin:
             "INFO: DED KILLY CONSTRUCTION: %s gains melee [LANCE]%s until end of phase.",
             getattr(root, "name", "Unit"),
             " and +1 Damage" if len(effects) > 1 else "",
+        )
+        return True
+
+    def _use_orks_on_da_move(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_speedwaaagh_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Movement phase",),
+            require_your_turn=True,
+            error_prefix="ON DA MOVE",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("ON DA MOVE", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: ON DA MOVE: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_on_da_move_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="ON DA MOVE",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Movement phase",
+        )
+        if not ok:
+            return False
+        if self._orks_unit_used_speedwaaagh_turbo_this_turn(root):
+            logger.error("ERROR: ON DA MOVE: target used Turbo Boostas this turn")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: ON DA MOVE: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "ON DA MOVE").strip() or "ON DA MOVE"
+        self._orks_apply_temp_effects(
+            root,
+            detachment="speedwaaagh",
+            effects=[
+                {
+                    "id": "on_da_move:assault_ranged",
+                    "source": source_name,
+                    "effect": "assault_ranged",
+                    "attack_type": "ranged",
+                    "expires_mode": "turn",
+                },
+                {
+                    "id": "on_da_move:shoot_after_fall_back",
+                    "source": source_name,
+                    "effect": "shoot_after_fall_back",
+                    "attack_type": "any",
+                    "expires_mode": "turn",
+                },
+                {
+                    "id": "on_da_move:charge_after_advance",
+                    "source": source_name,
+                    "effect": "charge_after_advance",
+                    "attack_type": "any",
+                    "expires_mode": "turn",
+                },
+                {
+                    "id": "on_da_move:charge_after_fall_back",
+                    "source": source_name,
+                    "effect": "charge_after_fall_back",
+                    "attack_type": "any",
+                    "expires_mode": "turn",
+                },
+            ],
+        )
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ON DA MOVE: %s can shoot and charge after Advancing or Falling Back until end of turn.",
+            getattr(root, "name", "Unit"),
         )
         return True
 
