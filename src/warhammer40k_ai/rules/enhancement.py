@@ -6091,6 +6091,33 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_master_manoeuvrist_bearer_model_id"] = bearer_id
 
+        if enh_id == "000010791004" or (name in ("omnissian unguents", "omnissian unguents (aura)") and is_armoured_infantry):
+            if not is_armoured_infantry:
+                return
+            unit.special_rules["enhancement_omnissian_unguents"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 3.0) if desc is not None else 3.0)
+            try:
+                aura_range = float(range_value or 3.0)
+            except (TypeError, ValueError):
+                aura_range = 3.0
+            fnp_value = _coerce_int(params.get("feel_no_pain", 5) or 5, default=5)
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("target_keywords_all", ("ARMOURED", "SKIRMISHER")) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["ARMOURED", "SKIRMISHER"]
+            unit.special_rules["enhancement_omnissian_unguents_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_omnissian_unguents_fnp"] = int(max(2, min(6, int(fnp_value))))
+            unit.special_rules["enhancement_omnissian_unguents_target_keywords_all"] = list(target_keywords)
+            unit.special_rules["enhancement_omnissian_unguents_source"] = "Omnissian Unguents (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_omnissian_unguents_bearer_model_id"] = bearer_id
+
         if name == "death mask of ollanius" or enh_id == "000008380002":
             if not is_combined_arms:
                 return

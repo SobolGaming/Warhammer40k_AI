@@ -353,6 +353,20 @@ _ARMOURED_INFANTRY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "optional": True,
         },
     ),
+    "000010791004": EnhancementToolDescriptor(
+        enhancement_id="000010791004",
+        name="Omnissian Unguents (Aura)",
+        timing="passive_aura",
+        target="friendly_armoured_skirmisher_unit_within_range",
+        duration="while_bearer_alive_and_target_within_range",
+        effect="friendly_keyword_unit_feel_no_pain_aura",
+        range_in=3.0,
+        effect_params={
+            "target_keywords_all": ("ARMOURED", "SKIRMISHER"),
+            "feel_no_pain": 5,
+            "requires_bearer_alive": True,
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_BY_NAME = {

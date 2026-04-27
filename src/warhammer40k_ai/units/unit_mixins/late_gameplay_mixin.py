@@ -2855,6 +2855,18 @@ class LateGameplayMixin:
                 entry = (int(xenocreed_fnp_value), None)
                 if entry not in result:
                     result.append(entry)
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        omnissian_unguents_fnp_fn = (
+            getattr(am_mgr, "armoured_infantry_omnissian_unguents_fnp", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(omnissian_unguents_fnp_fn):
+            omnissian_fnp_value, _omnissian_source = omnissian_unguents_fnp_fn(self, target_model=target_model)
+            if int(omnissian_fnp_value or 0) > 0:
+                entry = (int(omnissian_fnp_value), None)
+                if entry not in result:
+                    result.append(entry)
         try:
             # Truesilver Aegis (Aura): friendly GREY KNIGHTS units wholly within 6" gain FNP 6+ vs mortal wounds.
             if self.has_any_keyword("GREY KNIGHTS"):

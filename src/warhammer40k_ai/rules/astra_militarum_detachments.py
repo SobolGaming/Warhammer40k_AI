@@ -1690,6 +1690,99 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return member, sr
         return None, None
 
+    def _enhancement_bearer_model(self, unit, sr, *, bearer_key: str = ""):
+        if unit is None or not isinstance(sr, dict):
+            return None
+        key_name = str(bearer_key or "").strip()
+        bearer_id = str(sr.get(key_name, "") or "").strip() if key_name else ""
+        if not bearer_id:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                if str(get_entity_id(model) or "").strip() != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                return model if alive else None
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return bearer
+        for model in list(getattr(unit, "models", []) or []):
+            alive_attr = getattr(model, "is_alive", True)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if alive:
+                return model
+        return None
+
+    def _armoured_infantry_omnissian_unguents_sources(self) -> list[tuple[object, dict, object]]:
+        if not self.is_armoured_infantry():
+            return []
+        out: list[tuple[object, dict, object]] = []
+        seen: set[str] = set()
+        for root in self._iter_unique_army_roots():
+            source_unit, sr = self._attached_unit_enhancement_source(root, "enhancement_omnissian_unguents")
+            if source_unit is None or not isinstance(sr, dict):
+                continue
+            source_id = self._entity_id(source_unit) or f"unit:{id(source_unit)}"
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            if not self._unit_is_on_battlefield(source_unit):
+                continue
+            bearer = self._enhancement_bearer_model(
+                source_unit,
+                sr,
+                bearer_key="enhancement_omnissian_unguents_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            out.append((source_unit, sr, bearer))
+        out.sort(key=lambda entry: self._entity_id(entry[0]) or str(id(entry[0])))
+        return out
+
+    def armoured_infantry_omnissian_unguents_fnp(self, unit, *, target_model=None) -> tuple[int, str]:
+        del target_model
+        if not self.is_armoured_infantry():
+            return 0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(root):
+            return 0, ""
+        if not self._unit_is_astra_militarum(root):
+            return 0, ""
+        if not self._unit_has_keyword(root, "ARMOURED"):
+            return 0, ""
+        if not self._unit_has_keyword(root, "SKIRMISHER"):
+            return 0, ""
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        best_value = 0
+        best_source = ""
+        for source_unit, sr, bearer in self._armoured_infantry_omnissian_unguents_sources():
+            try:
+                aura_range = float(sr.get("enhancement_omnissian_unguents_range", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                aura_range = 3.0
+            if aura_range < 0:
+                continue
+            if not bool(model_within_range_of_unit(bearer, root, aura_range, use_attached_aggregate=True)):
+                continue
+            try:
+                fnp_value = int(sr.get("enhancement_omnissian_unguents_fnp", 5) or 5)
+            except (TypeError, ValueError):
+                fnp_value = 5
+            fnp_value = int(max(2, min(6, fnp_value)))
+            source_name = str(sr.get("enhancement_omnissian_unguents_source", "") or "Omnissian Unguents (Aura)").strip()
+            if not best_value or fnp_value < best_value:
+                best_value = int(fnp_value)
+                best_source = source_name
+        return int(best_value), best_source
+
     def _armoured_infantry_master_manoeuvrist_source(self, unit) -> tuple[object | None, dict | None]:
         if not self.is_armoured_infantry():
             return None, None

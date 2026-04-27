@@ -168,6 +168,20 @@ def _master_manoeuvrist() -> Enhancement:
     )
 
 
+def _omnissian_unguents() -> Enhancement:
+    return Enhancement(
+        id="000010791004",
+        name="Omnissian Unguents (Aura)",
+        faction_id="AM",
+        detachment="Armoured Infantry",
+        points=10,
+        description=(
+            "Astra Militarum Tech-Priest Enginseer model only. While a friendly Armoured Skirmisher unit is "
+            "within 3\" of the bearer, that unit has the Feel No Pain 5+ ability."
+        ),
+    )
+
+
 def _find_quarry_request(game: Game, *, ability: str):
     for request in list(game.decision_queue.list() or []):
         if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
@@ -462,3 +476,43 @@ def test_master_manoeuvrist_does_not_queue_when_engaged_or_active_player_owns_be
         model.set_location(30.0, 30.0, 0.0, 0.0)
     game._on_phase_end_transport_end_of_fight_embark(player=army.player, phase=game.phase)
     assert _find_quarry_request(game, ability="master_manoeuvrist_embark") is None
+
+
+def test_omnissian_unguents_grants_fnp_to_nearby_armoured_skirmisher_units_only():
+    game, _am_player, _enemy_player, army, _enemy_army = _build_game()
+    enginseer = _make_unit("Tech-Priest Enginseer", keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST ENGINSEER"])
+    near_sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    far_sentinel = _make_unit("Far Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    artillery = _make_unit("Field Ordnance Battery", keywords=["VEHICLE", "SQUADRON", "ARTILLERY"], wounds=6)
+    for unit in (enginseer, near_sentinel, far_sentinel, artillery):
+        army.add_unit(unit)
+    _omnissian_unguents().apply_to_unit(enginseer)
+    _place_unit(game, enginseer, 10.0, 10.0)
+    _place_unit(game, near_sentinel, 11.0, 10.0)
+    _place_unit(game, far_sentinel, 20.0, 10.0)
+    _place_unit(game, artillery, 11.0, 11.0)
+    game.rebuild_entity_registry()
+
+    assert near_sentinel.has_any_keyword("ARMOURED")
+    assert near_sentinel.has_any_keyword("SKIRMISHER")
+    assert (5, None) in list(near_sentinel.has_feel_no_pain(target_model=near_sentinel.models[0]) or [])
+    assert (5, None) not in list(far_sentinel.has_feel_no_pain(target_model=far_sentinel.models[0]) or [])
+    assert not artillery.has_any_keyword("ARMOURED")
+    assert (5, None) not in list(artillery.has_feel_no_pain(target_model=artillery.models[0]) or [])
+
+
+def test_omnissian_unguents_fnp_stops_when_bearer_is_not_alive():
+    game, _am_player, _enemy_player, army, _enemy_army = _build_game()
+    enginseer = _make_unit("Tech-Priest Enginseer", keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST ENGINSEER"])
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    army.add_unit(enginseer)
+    army.add_unit(sentinel)
+    _omnissian_unguents().apply_to_unit(enginseer)
+    _place_unit(game, enginseer, 10.0, 10.0)
+    _place_unit(game, sentinel, 11.0, 10.0)
+    game.rebuild_entity_registry()
+
+    assert (5, None) in list(sentinel.has_feel_no_pain(target_model=sentinel.models[0]) or [])
+
+    enginseer.models[0].wounds = 0
+    assert (5, None) not in list(sentinel.has_feel_no_pain(target_model=sentinel.models[0]) or [])
