@@ -30,3 +30,29 @@ def test_squadron_command_detachment_ability_is_supported():
     assert "squadron" in notes_l
     assert "on my signal" in notes_l
     assert "armoured skirmisher" in notes_l
+
+
+def test_burst_of_speed_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010792004"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Armoured Infantry",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "BURST OF SPEED"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "reactive normal move" in notes_l
+    assert "d6" in notes_l
+    assert "remain stationary" in notes_l
+    assert "reserves" in notes_l

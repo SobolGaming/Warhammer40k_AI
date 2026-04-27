@@ -44,6 +44,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_combined_arms", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_armoured_infantry(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_armoured_infantry", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_hammer_of_the_emperor(self) -> bool:
         mgr = self._get_astra_militarum_mgr()
         checker = getattr(mgr, "is_hammer_of_the_emperor", None) if mgr is not None else None
@@ -1655,6 +1660,30 @@ class AstraMilitarumStratagemMixin:
             out.append(root)
         return sorted(out, key=self._am_sort_key)
 
+    def _armoured_infantry_burst_of_speed_candidates(self) -> list[Any]:
+        if not self._is_armoured_infantry():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in self._am_battlefield_units():
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "remained_stationary_this_round", False)):
+                continue
+            if bool(getattr(root, "arrived_from_reserves_this_phase", False)):
+                continue
+            if bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
     def _mechanised_clear_and_secure_candidates(self) -> list[Any]:
         if not self._is_mechanised_assault():
             return []
@@ -2655,6 +2684,45 @@ class AstraMilitarumStratagemMixin:
                 payload["unit"] = candidate.get("target_unit")
                 payload["target_unit"] = candidate.get("target_unit")
                 break
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_armoured_infantry_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_armoured_infantry():
+            return
+        if player is not self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("BURST OF SPEED")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._armoured_infantry_burst_of_speed_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") == "phase_end":
+                return
+        payload = {
+            "event": "phase_end",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
         queue_reaction = getattr(self, "_queue_reaction", None)
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
@@ -4114,6 +4182,73 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_armoured_infantry_burst_of_speed(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: BURST OF SPEED: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BURST OF SPEED: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("BURST OF SPEED")
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: BURST OF SPEED: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._armoured_infantry_burst_of_speed_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error(
+                "ERROR: BURST OF SPEED: target must be an ASTRA MILITARUM unit that did not Remain Stationary or arrive from Reserves this phase"
+            )
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: BURST OF SPEED: reactive move queue unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        try:
+            roll = get_roll("D6")
+        except (TypeError, ValueError):
+            roll = 0
+        if roll <= 0:
+            roll = 1
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(roll),
+            kind="astra_militarum_armoured_infantry_burst_of_speed",
+            movement_type="move",
+            reactive_movement_type="armoured_infantry_burst_of_speed",
+            source=str(getattr(stratagem, "name", "BURST OF SPEED") or "BURST OF SPEED"),
+        )
+        if request is None:
+            logger.error("ERROR: BURST OF SPEED: failed to queue movement decision")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BURST OF SPEED: %s can make a Normal move of up to %s\".",
+            getattr(root, "name", "Unit"),
+            int(roll),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5003,6 +5138,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_bridgehead_bellicosa_drop(stratagem, **kwargs)
         if name_u == "BLAZING ADVANCE":
             return self._use_hammer_blazing_advance(stratagem, **kwargs)
+        if name_u == "BURST OF SPEED":
+            return self._use_armoured_infantry_burst_of_speed(stratagem, **kwargs)
         if name_u == "CLEAR AND SECURE":
             return self._use_mechanised_clear_and_secure(stratagem, **kwargs)
         if name_u == "COORDINATED ACTION":

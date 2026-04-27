@@ -1,12 +1,14 @@
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry, _validate_choose_quarry
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import DecisionResult
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, ORDER_ON_MY_SIGNAL
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -139,6 +141,32 @@ def _first_confirmation(game: Game, *, source: str):
     return None
 
 
+def _find_request(game: Game, decision_type: str):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") == str(decision_type):
+            return request
+    return None
+
+
+def _pending_by_name(stratagems, name: str):
+    wanted = str(name or "").strip().upper()
+    for reaction in list(stratagems.get_pending_reactions() or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == wanted:
+            return reaction
+    return None
+
+
+def _finalize_game(game: Game, *armies: Army, players: list[Player]) -> None:
+    game.rebuild_entity_registry()
+    for army in armies:
+        army.configure_rule_managers(force=True)
+    refresh = getattr(game, "refresh_rule_subscribers", None)
+    if callable(refresh):
+        refresh()
+    for player in players:
+        player.stratagems.refresh_available()
+
+
 def _exemplary_officer() -> Enhancement:
     return Enhancement(
         id="000010791002",
@@ -260,6 +288,81 @@ def test_armoured_infantry_grants_armoured_skirmisher_only_to_eligible_squadrons
     assert not artillery.has_any_keyword("SKIRMISHER")
     assert not russ.has_any_keyword("ARMOURED")
     assert not russ.has_any_keyword("SKIRMISHER")
+
+
+def test_armoured_infantry_burst_of_speed_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792004")
+
+    assert by_id is not None
+    assert by_id.name == "Burst of Speed"
+    assert by_id.effect == "reactive_normal_move_d6"
+    assert by_id.effect_params["requires_not_remained_stationary"] is True
+    assert by_id.effect_params["requires_not_arrived_from_reserves_this_phase"] is True
+
+
+def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
+    game, am_player, _enemy_player, army, enemy_army = _build_game()
+    moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    stationary_unit = _make_unit("Heavy Weapon Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    reserves_unit = _make_unit("Kasrkin", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (moved_unit, stationary_unit, reserves_unit):
+        army.add_unit(unit)
+        _place_unit(game, unit, 10.0 + len(game.map.units), 10.0)
+    moved_unit.round_state.remained_stationary_this_round = False
+    moved_unit.round_state.moved_this_round = True
+    stationary_unit.round_state.remained_stationary_this_round = True
+    reserves_unit.round_state.remained_stationary_this_round = False
+    reserves_unit.arrived_from_reserves_this_turn = True
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, _enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.event_system.publish("phase_end", player=am_player, phase=game.phase)
+
+    pending = _pending_by_name(am_player.stratagems, "BURST OF SPEED")
+    assert pending is not None
+    assert pending.get("candidates") == [moved_unit]
+
+    with patch("warhammer40k_ai.rules.stratagems_astra_militarum.get_roll", return_value=5):
+        ok = am_player.stratagems.use("BURST OF SPEED", unit=moved_unit, phase_name="Movement phase", dequeue=True)
+
+    assert ok is True
+    assert int(am_player.command_points or 0) == 9
+    request = _find_request(game, DECISION_MOVE_UNIT)
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert context.get("reactive_move_source") == "BURST OF SPEED"
+    assert context.get("reactive_move_kind") == "astra_militarum_armoured_infantry_burst_of_speed"
+    assert context.get("reactive_move_movement_type") == "armoured_infantry_burst_of_speed"
+    assert context.get("unit_id") == get_entity_id(moved_unit)
+    assert int(context.get("max_distance", 0) or 0) == 5
+
+
+def test_armoured_infantry_burst_of_speed_rejects_stationary_or_reserve_arrivals():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    stationary_unit = _make_unit("Heavy Weapon Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    reserves_unit = _make_unit("Kasrkin", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (moved_unit, stationary_unit, reserves_unit):
+        army.add_unit(unit)
+        _place_unit(game, unit, 10.0 + len(game.map.units), 10.0)
+    moved_unit.round_state.remained_stationary_this_round = False
+    moved_unit.round_state.moved_this_round = True
+    stationary_unit.round_state.remained_stationary_this_round = True
+    reserves_unit.round_state.remained_stationary_this_round = False
+    reserves_unit.arrived_from_reserves_this_turn = True
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert am_player.stratagems.use("BURST OF SPEED", unit=stationary_unit, phase_name="Movement phase") is False
+    assert am_player.stratagems.use("BURST OF SPEED", unit=reserves_unit, phase_name="Movement phase") is False
+    assert int(am_player.command_points or 0) == 10
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

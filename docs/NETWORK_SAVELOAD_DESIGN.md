@@ -414,6 +414,7 @@ Shoot Sharp and Scarper queues `MOVE_UNIT` with `movement_type="reactive"` and `
 A Foot in the Future queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="a_foot_in_the_future"` (max distance from the recorded D6 roll).
 Taloned Pincer queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="taloned_pincer"` for each selected unit.
 Rapid Feint queues `MOVE_UNIT` with `movement_type="move"` and `reactive_move_kind="genestealer_cults_rapid_feint"` for a fixed 6" Normal move.
+Burst of Speed queues `MOVE_UNIT` with `movement_type="move"` and `reactive_move_kind="astra_militarum_armoured_infantry_burst_of_speed"` for a D6" Normal move.
 Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Martial Philosopher uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="martial_philosopher"` and `reactive_move_kind="martial_philosopher"`.
 Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.

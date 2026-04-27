@@ -1093,6 +1093,8 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     # Firestorm Assault Force only. Armoured Speartip added a different
     # RAPID EMBARKATION in the 2026-04-22 Space Marines update.
     "RAPID EMBARKATION": {"000008483004"},
+    # Armoured Infantry only. Challenger has a different BURST OF SPEED.
+    "BURST OF SPEED": {"000010792004"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -3154,6 +3156,7 @@ class StratagemManager(
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
             "AERIAL EXTRACTION",
+            "BURST OF SPEED",
             "WRAITHLIKE RETREAT",
             "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
@@ -13916,6 +13919,10 @@ class StratagemManager(
             raise
         try:
             self._queue_bridgehead_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_armoured_infantry_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

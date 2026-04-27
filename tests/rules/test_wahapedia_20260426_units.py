@@ -680,7 +680,7 @@ def test_rapid_embarkation_collision_does_not_mark_new_armoured_speartip_entry_i
     assert manager._is_implemented_stratagem(new_armoured_speartip) is False
 
 
-def test_burst_of_speed_collision_entries_remain_separate_and_unimplemented():
+def test_burst_of_speed_collision_entries_remain_separate_and_only_armoured_infantry_is_implemented():
     manager = StratagemManager.__new__(StratagemManager)
     manager._defensive_reaction_cache = {}
     manager._charge_melee_ap_cache = {}
@@ -712,7 +712,7 @@ def test_burst_of_speed_collision_entries_remain_separate_and_unimplemented():
 
     assert challenger.id != armoured_infantry.id
     assert manager._is_implemented_stratagem(challenger) is False
-    assert manager._is_implemented_stratagem(armoured_infantry) is False
+    assert manager._is_implemented_stratagem(armoured_infantry) is True
 
 
 def test_armour_of_contempt_uses_deathwatch_target_constraint_when_text_requires_it():
