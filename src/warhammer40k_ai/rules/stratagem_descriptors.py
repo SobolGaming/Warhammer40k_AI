@@ -3721,6 +3721,28 @@ _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010788007": StratagemToolDescriptor(
+        stratagem_id="000010788007",
+        name="Accuracy Under Pressure",
+        timing="your_shooting_phase",
+        target="astra_militarum_unit_that_has_not_been_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="full_hit_reroll",
+        cp_cost=2,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "requires_not_selected_to_shoot_this_phase": True,
+            "reroll_hit_full": True,
+            "attack_type": "ranged",
+        },
+    ),
+}
+
+_STEEL_HAMMER_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _STEEL_HAMMER_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009866002": StratagemToolDescriptor(
         stratagem_id="000009866002",
@@ -15360,6 +15382,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _STEEL_HAMMER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -15840,6 +15865,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _COMBINED_ARMS_STRATAGEM_BY_NAME.get(key)
         or _ARMOURED_INFANTRY_STRATAGEM_BY_NAME.get(key)
+        or _STEEL_HAMMER_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _MECHANISED_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _RECON_ELEMENT_STRATAGEM_BY_NAME.get(key)

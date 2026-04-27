@@ -49,6 +49,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_armoured_infantry", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_steel_hammer(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_steel_hammer", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_hammer_of_the_emperor(self) -> bool:
         mgr = self._get_astra_militarum_mgr()
         checker = getattr(mgr, "is_hammer_of_the_emperor", None) if mgr is not None else None
@@ -3315,6 +3320,11 @@ class AstraMilitarumStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._am_sort_key)
 
+    def _steel_hammer_accuracy_under_pressure_candidates(self) -> list[Any]:
+        if not self._is_steel_hammer():
+            return []
+        return self._am_battlefield_units(require_not_shot=True)
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -4988,6 +4998,68 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_steel_hammer_accuracy_under_pressure(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_steel_hammer():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._steel_hammer_accuracy_under_pressure_candidates()
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._steel_hammer_accuracy_under_pressure_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if root not in list(eligible or []):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: selected unit is not eligible")
+            return False
+        if not self._am_on_battlefield(root):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: target must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(root):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: target must be ASTRA MILITARUM")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: target has already been selected to shoot")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_steel_hammer_accuracy_under_pressure", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "ACCURACY UNDER PRESSURE"),
+            )
+        ):
+            logger.error("ERROR: ACCURACY UNDER PRESSURE: failed to activate hit rerolls")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ACCURACY UNDER PRESSURE: %s can re-roll Hit rolls until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5871,6 +5943,8 @@ class AstraMilitarumStratagemMixin:
         name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if name_u == "ABLATIVE PLATING":
             return self._use_hammer_ablative_plating(stratagem, **kwargs)
+        if name_u == "ACCURACY UNDER PRESSURE":
+            return self._use_steel_hammer_accuracy_under_pressure(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":

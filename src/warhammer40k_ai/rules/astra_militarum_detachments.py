@@ -1513,6 +1513,133 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "reroll_full_reasons": (f"{source}: re-roll Hit roll vs visible MONSTER/VEHICLE",),
         }
 
+    def cleanup_steel_hammer_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_steel_hammer():
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+        prefixes = ("steel_hammer_accuracy_under_pressure",)
+        for root in self._iter_game_unit_roots(game=game_obj):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for prefix in prefixes:
+                if not bool(sr.get(f"{prefix}_active", False)):
+                    continue
+                marked_round = self._safe_int(sr.get(f"{prefix}_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get(f"{prefix}_phase", "") or "")
+                marked_owner = str(sr.get(f"{prefix}_owner", "") or "")
+                if marked_round and round_now and marked_round != round_now:
+                    continue
+                if phase_key and marked_phase and marked_phase != phase_key:
+                    continue
+                if owner_id and marked_owner and marked_owner != owner_id:
+                    continue
+                self._clear_prefixed_special_rules(sr, prefix)
+            root.special_rules = sr
+
+    def _steel_hammer_phase_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_steel_hammer():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_turn = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id != active_player_id:
+            return None, None
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None, None
+        return root, sr
+
+    def activate_steel_hammer_accuracy_under_pressure(
+        self,
+        unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root):
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        if phase_key and phase_key != "SHOOTING_PHASE":
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["steel_hammer_accuracy_under_pressure_active"] = True
+        sr["steel_hammer_accuracy_under_pressure_round"] = round_now
+        sr["steel_hammer_accuracy_under_pressure_turn"] = round_now
+        sr["steel_hammer_accuracy_under_pressure_phase"] = "SHOOTING_PHASE"
+        sr["steel_hammer_accuracy_under_pressure_owner"] = owner_id
+        sr["steel_hammer_accuracy_under_pressure_turn_owner"] = owner_id
+        sr["steel_hammer_accuracy_under_pressure_source"] = (
+            str(source or "ACCURACY UNDER PRESSURE").strip() or "ACCURACY UNDER PRESSURE"
+        )
+        root.special_rules = sr
+        return True
+
+    def steel_hammer_accuracy_under_pressure_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> dict:
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        if attacker_model is None:
+            return {}
+        root, sr = self._steel_hammer_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="steel_hammer_accuracy_under_pressure",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return {}
+        source = (
+            str(sr.get("steel_hammer_accuracy_under_pressure_source", "") or "ACCURACY UNDER PRESSURE").strip()
+            or "ACCURACY UNDER PRESSURE"
+        )
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
+        }
+
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):
             return False

@@ -4,6 +4,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -104,6 +105,7 @@ def create_unit(
     for model in list(unit.models or []):
         model.set_location(x, y, 0.0, 0.0)
     unit.deployed = True
+    unit.reserve_status = "deployed"
     return unit
 
 
@@ -118,6 +120,25 @@ def _make_game():
     game.add_player(guard_player)
     game.add_player(enemy_player)
     return game, guard_player, enemy_player
+
+
+def _place_unit(game: Game, unit: Unit) -> None:
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    unit.embarked_in = None
+    if unit not in game.map.units:
+        game.map.units.append(unit)
+
+
+def _finalize_game(game: Game, *players: Player) -> None:
+    game.rebuild_entity_registry()
+    for player in players:
+        player.army.configure_rule_managers(force=True)
+    refresh = getattr(game, "refresh_rule_subscribers", None)
+    if callable(refresh):
+        refresh()
+    for player in players:
+        player.stratagems.refresh_available()
 
 
 def _make_hit_profile(*, indirect: bool = False):
@@ -267,3 +288,114 @@ def test_ceaseless_cannonade_suppresses_bgnt_hit_penalty_except_indirect_fire(mo
     indirect_hit = indirect._hit_target_with_tracking(enemy, squadron.models[0], {})
     assert any("Big Guns Never Tire" in str(mod or "") for mod in list(indirect_hit.get("modifiers", []) or []))
 
+
+def test_steel_hammer_accuracy_under_pressure_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788007")
+
+    assert descriptor is not None
+    assert descriptor.name == "Accuracy Under Pressure"
+    assert descriptor.cp_cost == 2
+    assert descriptor.effect == "full_hit_reroll"
+    assert descriptor.effect_params["requires_not_selected_to_shoot_this_phase"] is True
+    assert descriptor.effect_params["attack_type"] == "ranged"
+
+
+def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
+    game, player, enemy_player = _make_game()
+    squadron = create_unit(
+        "Leman Russ",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    infantry = create_unit(
+        "Infantry Squad",
+        12.0,
+        10.0,
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    enemy = create_unit("Enemy", 20.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(squadron)
+    player.army.add_unit(infantry)
+    enemy_player.army.add_unit(enemy)
+    for unit in (squadron, infantry, enemy):
+        _place_unit(game, unit)
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert player.stratagems.use("ACCURACY UNDER PRESSURE", unit=squadron, phase_name="Shooting phase") is True
+    assert int(player.command_points or 0) == 8
+    assert squadron.special_rules.get("steel_hammer_accuracy_under_pressure_active") is True
+
+    mods = squadron.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy,
+        attacker_model=squadron.models[0],
+    )
+    assert mods.get("reroll_hit_full") is True
+    assert any("ACCURACY UNDER PRESSURE" in str(item).upper() for item in mods.get("reroll_hit_full_reasons", ()))
+
+    melee_mods = squadron.get_unit_hit_reroll_modifiers(
+        "melee",
+        target=enemy,
+        attacker_model=squadron.models[0],
+    )
+    assert melee_mods.get("reroll_hit_full") is False
+    other_mods = infantry.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy,
+        attacker_model=infantry.models[0],
+    )
+    assert other_mods.get("reroll_hit_full") is False
+
+    game.event_system.publish("phase_end", player=player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    expired_mods = squadron.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy,
+        attacker_model=squadron.models[0],
+    )
+    assert expired_mods.get("reroll_hit_full") is False
+
+
+def test_accuracy_under_pressure_rejects_units_that_already_shot():
+    game, player, enemy_player = _make_game()
+    already_shot = create_unit(
+        "Rogal Dorn Battle Tank",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="18",
+    )
+    valid = create_unit(
+        "Leman Russ",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    player.army.add_unit(already_shot)
+    player.army.add_unit(valid)
+    for unit in (already_shot, valid):
+        _place_unit(game, unit)
+    already_shot.round_state.shot_this_round = True
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert player.stratagems.use("ACCURACY UNDER PRESSURE", unit=already_shot, phase_name="Shooting phase") is False
+    assert int(player.command_points or 0) == 10
+    assert player.stratagems.use("ACCURACY UNDER PRESSURE", unit=valid, phase_name="Shooting phase") is True
+    assert int(player.command_points or 0) == 8

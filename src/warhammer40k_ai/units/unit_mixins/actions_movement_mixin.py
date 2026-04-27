@@ -6899,6 +6899,29 @@ class ActionsMovementMixin:
                 if bool(supporting_mods.get("reroll_full", False)):
                     mods["reroll_hit_full"] = True
                     reroll_hit_full_reasons.extend(list(supporting_mods.get("reroll_full_reasons", ()) or ()))
+        accuracy_under_pressure_fn = (
+            getattr(mgr, "steel_hammer_accuracy_under_pressure_hit_reroll_mods", None)
+            if mgr is not None
+            else None
+        )
+        if callable(accuracy_under_pressure_fn) and attacker_model is not None:
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            accuracy_mods = accuracy_under_pressure_fn(
+                attacker_model,
+                target,
+                attack_type=atype,
+                game=game_local,
+            )
+            if isinstance(accuracy_mods, dict):
+                for value in list(accuracy_mods.get("reroll_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(value))
+                    except (TypeError, ValueError):
+                        continue
+                reroll_hit_reasons.extend(list(accuracy_mods.get("reroll_reasons", ()) or ()))
+                if bool(accuracy_mods.get("reroll_full", False)):
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.extend(list(accuracy_mods.get("reroll_full_reasons", ()) or ()))
 
         votann_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
         etacarn_reroll_fn = (

@@ -30,3 +30,27 @@ def test_ceaseless_cannonade_detachment_ability_is_supported():
     assert "engagement range" in notes_l
     assert "character" in notes_l
 
+
+def test_accuracy_under_pressure_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010788007"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Steel Hammer",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "ACCURACY UNDER PRESSURE"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "astra militarum" in notes_l
+    assert "re-roll hit rolls" in notes_l
+    assert "end of phase" in notes_l

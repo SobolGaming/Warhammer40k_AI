@@ -1095,6 +1095,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "RAPID EMBARKATION": {"000008483004"},
     # Armoured Infantry only. Challenger has a different BURST OF SPEED.
     "BURST OF SPEED": {"000010792004"},
+    "ACCURACY UNDER PRESSURE": {"000010788007"},
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
     "OPENING SALVO": {"000010792007"},
@@ -3166,6 +3167,7 @@ class StratagemManager(
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
             "AERIAL EXTRACTION",
+            "ACCURACY UNDER PRESSURE",
             "BURST OF SPEED",
             "COMBINED FIRE",
             "OPENING SALVO",
@@ -11827,6 +11829,7 @@ class StratagemManager(
             "HEIGHTENED JEALOUSY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured or after destroying an enemy)",
             "AERIAL EXTRACTION": "Target: your ASTRA MILITARUM Deep Strike unit or Valkyrie not within Engagement Range at end of opponent's Fight phase; enters Strategic Reserves",
             "ABLATIVE PLATING": "Target: your ASTRA MILITARUM VEHICLE selected as a target after enemy shooting targets are declared; reduces incoming Damage by 1 this phase",
+            "ACCURACY UNDER PRESSURE": "Target: your ASTRA MILITARUM unit that has not been selected to shoot; it re-rolls Hit rolls this phase",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
@@ -13983,6 +13986,16 @@ class StratagemManager(
             cleanup_armoured = getattr(am_mgr, "cleanup_armoured_infantry_phase_effects", None) if am_mgr is not None else None
             if callable(cleanup_armoured):
                 cleanup_armoured(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
+            cleanup_steel_hammer = (
+                getattr(am_mgr, "cleanup_steel_hammer_phase_effects", None) if am_mgr is not None else None
+            )
+            if callable(cleanup_steel_hammer):
+                cleanup_steel_hammer(
                     phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
                     player=self.player,
                     game=self.game,
