@@ -500,6 +500,27 @@ _SIEGE_REGIMENT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SIEGE_REGIMENT_DESCRIPTORS.values()
 }
 
+_STEEL_HAMMER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010787002": EnhancementToolDescriptor(
+        enhancement_id="000010787002",
+        name="Battalion Commander",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="grant_voice_of_command_and_officer",
+        effect_params={
+            "add_keywords": ("OFFICER",),
+            "order_count": 2,
+            "order_target_keywords_any": ("TITANIC", "SQUADRON"),
+            "requires_astra_militarum_target": True,
+        },
+    ),
+}
+
+_STEEL_HAMMER_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _STEEL_HAMMER_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -9780,6 +9801,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SIEGE_REGIMENT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _STEEL_HAMMER_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10297,6 +10321,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _MECHANISED_ASSAULT_BY_NAME.get(key)
         or _RECON_ELEMENT_BY_NAME.get(key)
         or _SIEGE_REGIMENT_BY_NAME.get(key)
+        or _STEEL_HAMMER_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)

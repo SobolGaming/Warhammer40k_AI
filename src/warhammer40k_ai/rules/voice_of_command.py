@@ -108,6 +108,8 @@ class VoiceOfCommandManager:
         sr = getattr(root, "special_rules", None)
         if isinstance(sr, dict) and bool(sr.get("gsc_brood_brothers_voice_of_command_lost")):
             return False
+        if self._officer_has_battalion_commander(root):
+            return True
         for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
             try:
                 name = ab if isinstance(ab, str) else getattr(ab, "name", "")
@@ -399,6 +401,26 @@ class VoiceOfCommandManager:
                 break
             except Exception:
                 continue
+        if self._officer_has_battalion_commander(unit):
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                try:
+                    count = max(
+                        int(count),
+                        int(sr.get("enhancement_battalion_commander_order_count", 2) or 2),
+                    )
+                except (TypeError, ValueError):
+                    count = max(int(count), 2)
+                for raw_keyword in list(
+                    sr.get(
+                        "enhancement_battalion_commander_order_target_keywords_any",
+                        ("TITANIC", "SQUADRON"),
+                    )
+                    or ()
+                ):
+                    keyword = str(raw_keyword or "").strip().upper()
+                    if keyword and keyword not in keywords:
+                        keywords.append(keyword)
         return count, keywords, allowed_order_keys
 
     def _parse_order_range_override_from_text(self, text: str) -> float:
@@ -483,6 +505,20 @@ class VoiceOfCommandManager:
 
     def _officer_has_laud_hailer(self, officer_unit) -> bool:
         return self._unit_has_enhancement_flag(officer_unit, "enhancement_laud_hailer")
+
+    def _officer_has_battalion_commander(self, officer_unit) -> bool:
+        if not self._unit_has_enhancement_flag(officer_unit, "enhancement_battalion_commander"):
+            return False
+        army = self.army
+        if army is None and officer_unit is not None:
+            get_parent_army = getattr(officer_unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        active_fn = getattr(mgr, "steel_hammer_battalion_commander_active", None) if mgr is not None else None
+        if callable(active_fn):
+            return bool(active_fn(officer_unit))
+        return False
 
     def _armoured_infantry_manager(self):
         if self.army is None:
@@ -2226,6 +2262,13 @@ class VoiceOfCommandManager:
                 if not self._target_matches_siege_over_the_top_keyword(root):
                     continue
             elif keywords:
+                if self._officer_has_battalion_commander(officer_unit):
+                    sr = getattr(officer_unit, "special_rules", None)
+                    require_am = True
+                    if isinstance(sr, dict):
+                        require_am = bool(sr.get("enhancement_battalion_commander_requires_astra_militarum_target", True))
+                    if require_am and not self._unit_is_astra_militarum(root):
+                        continue
                 try:
                     if not any(root.has_any_keyword(k) for k in keywords) and not vox_relay_transport_target:
                         continue

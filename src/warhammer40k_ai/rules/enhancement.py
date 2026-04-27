@@ -2149,6 +2149,10 @@ class Enhancement:
             is_siege_regiment = bool(am_mgr and am_mgr.is_siege_regiment())
         except Exception:
             is_siege_regiment = False
+        try:
+            is_steel_hammer = bool(am_mgr and am_mgr.is_steel_hammer())
+        except Exception:
+            is_steel_hammer = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_houndpack_lance = bool(ck_mgr and ck_mgr.is_houndpack_lance())
@@ -5266,6 +5270,32 @@ class Enhancement:
             unit.special_rules["enhancement_laud_hailer_order_range"] = float(max(0.0, order_range))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "battalion commander" or enh_id == "000010787002":
+            if not is_steel_hammer:
+                return
+            unit.special_rules["enhancement_battalion_commander"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            order_count = _coerce_int(params.get("order_count", 2) or 2, default=2)
+            target_keywords = [
+                str(value or "").strip().upper()
+                for value in list(params.get("order_target_keywords_any", ("TITANIC", "SQUADRON")) or ())
+                if str(value or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["TITANIC", "SQUADRON"]
+            unit.special_rules["enhancement_battalion_commander_order_count"] = int(max(0, int(order_count)))
+            unit.special_rules["enhancement_battalion_commander_order_target_keywords_any"] = list(target_keywords)
+            unit.special_rules["enhancement_battalion_commander_requires_astra_militarum_target"] = bool(
+                params.get("requires_astra_militarum_target", True)
+            )
+            unit.special_rules["enhancement_battalion_commander_source"] = "Battalion Commander"
+            _grant_enhancement_unit_keyword(unit, "OFFICER")
+            _grant_enhancement_bearer_keyword(unit, bearer, "OFFICER")
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_battalion_commander_bearer_model_id"] = bearer_id
 
         if name in ("bombast-class vox-array", "bombast class vox array") or enh_id == "000009801002":
             if not is_bridgehead_strike:
