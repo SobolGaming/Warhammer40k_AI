@@ -5067,6 +5067,12 @@ class RulesParsingMixin:
             mailed_fist_effect = mailed_fist_fn(root)
             if isinstance(mailed_fist_effect, dict):
                 effects.append(dict(mailed_fist_effect))
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        target_sighted_fn = getattr(sm_mgr, "target_sighted_advance_no_roll_effect", None) if sm_mgr is not None else None
+        if callable(target_sighted_fn):
+            target_sighted_effect = target_sighted_fn(root)
+            if isinstance(target_sighted_effect, dict):
+                effects.append(dict(target_sighted_effect))
         temp_effect_iter = getattr(root, "iter_active_orks_temp_effects", None)
         if callable(temp_effect_iter):
             for entry in list(

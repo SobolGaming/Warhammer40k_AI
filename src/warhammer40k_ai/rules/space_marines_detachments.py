@@ -148,6 +148,7 @@ def _normalize_detachment_name(text: str) -> str:
 
 class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     faction_id = "SM"
+    _HEADHUNTER_TANK_ACE_CHARACTER_SELECTION_ABILITY = "headhunter_tank_ace_character_selection"
     _HEROES_ALL_BOAST_HIDE_AS_TROPHY = "HIDE_AS_TROPHY"
     _HEROES_ALL_BOAST_SLAY_THEM_ALL = "SLAY_THEM_ALL"
     _HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION = "OVERRUN_THEIR_POSITION"
@@ -650,6 +651,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         clean = str(keyword or "").strip()
         if not clean:
             return
+        direct_keywords = getattr(unit, "keywords", None)
+        if isinstance(direct_keywords, list):
+            existing_direct = {str(value or "").strip().upper() for value in direct_keywords}
+            if clean.upper() not in existing_direct:
+                direct_keywords.append(clean)
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -725,6 +731,214 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         for candidate in units:
             if self.armoured_speartip_heavy_transport_eligible(candidate):
                 self._add_ability_keyword(candidate, "Heavy Transport")
+
+    def headhunter_task_force_tank_ace_eligible(self, unit) -> bool:
+        if not self.is_headhunter_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._attached_unit_belongs_to_army(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return False
+        for excluded in ("FORTIFICATION", "DROP POD", "WALKER", "FLY"):
+            if self._attached_unit_has_keyword(root, excluded):
+                return False
+        if "DROP POD" in str(getattr(root, "name", "") or "").strip().upper():
+            return False
+        return True
+
+    def apply_headhunter_task_force_tank_ace_keywords(self, unit=None) -> None:
+        if not self.is_headhunter_task_force():
+            return
+        if unit is None:
+            units = self._iter_unique_army_roots()
+        else:
+            root = self._attached_unit_root(unit)
+            units = [root] if root is not None else []
+        for candidate in units:
+            if self.headhunter_task_force_tank_ace_eligible(candidate):
+                self._add_ability_keyword(candidate, "Tank Ace")
+
+    def target_sighted_unit_applies(self, unit) -> bool:
+        if not self.is_headhunter_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._attached_unit_belongs_to_army(root):
+            return False
+        return self._attached_unit_has_keyword(root, "TANK ACE")
+
+    def target_sighted_advance_no_roll_effect(self, unit) -> dict | None:
+        if not self.target_sighted_unit_applies(unit):
+            return None
+        return {
+            "distance": 6,
+            "source": "Target Sighted",
+            "tag": "detachment:headhunter_task_force:target_sighted",
+            "expires_phase": "MOVEMENT_PHASE",
+        }
+
+    def target_sighted_selected_to_shoot_damage_reroll_applies(self, unit, *, model=None, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.target_sighted_unit_applies(root):
+            return False
+        if model is not None:
+            parent_unit = getattr(model, "parent_unit", None)
+            parent_root = self._attached_unit_root(parent_unit)
+            if parent_root is not root:
+                return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "advanced_this_round", False)):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        is_shooting_phase = getattr(game_obj, "is_shooting_phase", None)
+        if callable(is_shooting_phase):
+            if not bool(is_shooting_phase()):
+                return False
+        else:
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "SHOOTING_PHASE":
+                return False
+        current_player = game_obj.get_current_player() if hasattr(game_obj, "get_current_player") else None
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        return player is not None and current_player is player
+
+    def _headhunter_tank_ace_character_candidates(self) -> list:
+        if not self.is_headhunter_task_force():
+            return []
+        candidates = []
+        for root in self._iter_unique_army_roots():
+            if self.target_sighted_unit_applies(root):
+                candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_headhunter_tank_ace_character_selection_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            ability = str(ctx.get("ability", "") or "").strip().lower()
+            if ability != self._HEADHUNTER_TANK_ACE_CHARACTER_SELECTION_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            return True
+        return False
+
+    def queue_headhunter_tank_ace_character_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_headhunter_task_force():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if bool(getattr(self, "_headhunter_tank_ace_character_selection_resolved", False)):
+            return
+        self.apply_headhunter_task_force_tank_ace_keywords()
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        candidates = list(self._headhunter_tank_ace_character_candidates() or [])
+        if not candidates:
+            self._headhunter_tank_ace_character_selection_resolved = True
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_headhunter_tank_ace_character_selection_request(game, army_id=army_id):
+            return
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")]
+        if not candidate_ids:
+            self._headhunter_tank_ace_character_selection_resolved = True
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Target Sighted: select up to three TANK ACE units to gain CHARACTER.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": self._HEADHUNTER_TANK_ACE_CHARACTER_SELECTION_ABILITY,
+                "ability_name": "Target Sighted",
+                "phase": "Muster Armies step",
+                "allowed_unit_ids": list(candidate_ids),
+                "max_units": 3,
+                "title": "Target Sighted",
+                "subtitle": "Select up to three TANK ACE units.",
+                "instruction": "Selected TANK ACE units gain the CHARACTER keyword.",
+                "skip_label": "None (do not select TANK ACE units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def headhunter_tank_ace_character_selection_is_valid(self, unit_ids, *, game=None) -> tuple[bool, str]:
+        del game
+        if not self.is_headhunter_task_force():
+            return False, "Target Sighted is not active for this army."
+        if unit_ids is None:
+            return True, ""
+        if not isinstance(unit_ids, list):
+            return False, "Target Sighted selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        if len(selected) > 3:
+            return False, "Target Sighted can select up to three TANK ACE units."
+        candidates = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._headhunter_tank_ace_character_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        for unit_id in selected:
+            if unit_id not in candidates:
+                return False, "Target Sighted selection contains an ineligible unit."
+        return True, ""
+
+    def apply_headhunter_tank_ace_character_selection(self, unit_ids, *, game=None) -> list[str]:
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        valid, _reason = self.headhunter_tank_ace_character_selection_is_valid(selected, game=game)
+        if not valid:
+            return []
+        candidate_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._headhunter_tank_ace_character_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        applied_ids: list[str] = []
+        for unit_id in selected:
+            root = candidate_by_id.get(unit_id)
+            if root is None:
+                continue
+            self._add_ability_keyword(root, "Character")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_ability_keyword(model, "Character")
+            applied_ids.append(unit_id)
+        self.headhunter_tank_ace_character_unit_ids = tuple(applied_ids)
+        if self.army is not None:
+            setattr(self.army, "headhunter_tank_ace_character_unit_ids", list(applied_ids))
+        self._headhunter_tank_ace_character_selection_resolved = True
+        return list(applied_ids)
 
     def _armoured_speartip_transport_moved_normally_or_advanced_this_phase(self, transport_unit, *, game=None) -> bool:
         if transport_unit is None:

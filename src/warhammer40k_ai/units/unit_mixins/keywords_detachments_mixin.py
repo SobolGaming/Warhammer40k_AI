@@ -16375,28 +16375,47 @@ class KeywordsDetachmentsMixin:
             except Exception:
                 continue
             rule = self.get_selected_to_shoot_reroll_rule(model)
-            if not rule:
-                continue
-            if rule.get("requires_shooting_phase"):
-                game = None
-                try:
-                    game = self.get_parent_army().player.game
-                except Exception:
+            if rule:
+                if rule.get("requires_shooting_phase"):
                     game = None
-                if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
-                    continue
-                try:
-                    if game.get_current_player() is not self.get_parent_army().player:
+                    try:
+                        game = self.get_parent_army().player.game
+                    except Exception:
+                        game = None
+                    if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                        rule = None
+                    else:
+                        try:
+                            if game.get_current_player() is not self.get_parent_army().player:
+                                rule = None
+                        except Exception:
+                            rule = None
+                if rule:
+                    try:
+                        model.grant_selected_to_shoot_rerolls(
+                            hit=bool(rule.get("reroll_hit")),
+                            wound=bool(rule.get("reroll_wound")),
+                            damage=bool(rule.get("reroll_damage")),
+                            source=str(rule.get("source", "") or ""),
+                        )
+                    except Exception:
                         continue
-                except Exception:
-                    continue
             try:
-                model.grant_selected_to_shoot_rerolls(
-                    hit=bool(rule.get("reroll_hit")),
-                    wound=bool(rule.get("reroll_wound")),
-                    damage=bool(rule.get("reroll_damage")),
-                    source=str(rule.get("source", "") or ""),
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                applies = (
+                    getattr(sm_mgr, "target_sighted_selected_to_shoot_damage_reroll_applies", None)
+                    if sm_mgr is not None
+                    else None
                 )
+                if callable(applies) and applies(self, model=model, game=game):
+                    model.grant_selected_to_shoot_rerolls(
+                        hit=False,
+                        wound=False,
+                        damage=True,
+                        source="Target Sighted",
+                    )
             except Exception:
                 continue
 

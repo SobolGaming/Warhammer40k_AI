@@ -2615,6 +2615,14 @@ class GameSetupDeploymentReservesMixin:
                 ) if am_mgr is not None else None
                 if callable(queue_steel_hammer_fn):
                     queue_steel_hammer_fn(game=self, player=player)
+                sm_mgr = getattr(army, "space_marines_detachments", None)
+                queue_tank_ace_fn = getattr(
+                    sm_mgr,
+                    "queue_headhunter_tank_ace_character_selection_request",
+                    None,
+                ) if sm_mgr is not None else None
+                if callable(queue_tank_ace_fn):
+                    queue_tank_ace_fn(game=self, player=player)
                 ck_mgr = getattr(army, "chaos_knights_detachments", None)
                 queue_houndpack_fn = getattr(
                     ck_mgr,

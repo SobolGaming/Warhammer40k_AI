@@ -471,6 +471,23 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         if not bool(valid):
             return (str(reason or "Ceaseless Cannonade selection is invalid."),)
         return ()
+    if ability_key == "headhunter_tank_ace_character_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Target Sighted requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Target Sighted requires an army.",)
+        mgr = getattr(army, "space_marines_detachments", None)
+        if mgr is None or not getattr(mgr, "is_headhunter_task_force", lambda: False)():
+            return ("Target Sighted requires the Headhunter Task Force detachment.",)
+        validate_fn = getattr(mgr, "headhunter_tank_ace_character_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Target Sighted validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game)
+        if not bool(valid):
+            return (str(reason or "Target Sighted selection is invalid."),)
+        return ()
     if ability_key == "houndpack_lance_character_selection":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -966,6 +983,29 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
         apply_fn = getattr(mgr, "apply_steel_hammer_titanic_character_selection", None)
         if not callable(apply_fn):
             raise RuntimeError("Ceaseless Cannonade apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game) or [])
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is not None:
+                units.append(unit)
+        return units
+    if ability_key == "headhunter_tank_ace_character_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Target Sighted player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Target Sighted army not found.")
+        mgr = getattr(army, "space_marines_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Target Sighted detachment manager not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_headhunter_tank_ace_character_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Target Sighted apply function is unavailable.")
         applied_ids = list(apply_fn(unit_ids, game=game) or [])
         units = []
         for uid in list(applied_ids or []):

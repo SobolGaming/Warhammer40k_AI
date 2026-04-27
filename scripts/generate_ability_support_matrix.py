@@ -483,6 +483,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an adeptus astartes unit from your army disembarks from a transport excluding aircraft that made a normal or advance move this phase that disembarked unit can make a normal move of up to d6 or a normal move of up to d3 3 instead if that transport is a heavy transport(?: see below)?",
             r"adeptus astartes transport units from your army excluding aircraft that have a wounds characteristic of 14 have the heavy transport keyword",
         ),
+        "Target Sighted": (
+            r"each time a tank ace unit from your army(?: see below)? advances do not make an advance roll for it",
+            r"instead until the end of the phase add 6 to the move characteristic of models in that unit",
+            r"each time a tank ace unit from your army shoots in your shooting phase if that unit did not advance this turn you can reroll the damage roll",
+            r"adeptus astartes vehicle units from your army excluding fortifications drop pods walkers and units that can fly have the tank ace keyword",
+            r"in the muster armies step you can select up to three tank ace units from your army to gain the character keyword",
+            r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -3110,6 +3118,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rapid Deployment": (
             "Supported",
             "Armoured Speartip: ADEPTUS ASTARTES TRANSPORT non-AIRCRAFT units with Wounds 14+ gain HEAVY TRANSPORT, and ADEPTUS ASTARTES units disembarking from a friendly TRANSPORT that made a Normal/Advance move in the Movement phase queue an optional MOVE_UNIT Normal move bounded by D6 or D3+3 for HEAVY TRANSPORT.",
+        ),
+        "Target Sighted": (
+            "Supported",
+            "Headhunter Task Force: eligible ADEPTUS ASTARTES VEHICLE units gain TANK ACE, TANK ACE units replace Advance rolls with +6\" Move, non-Advanced TANK ACE units gain one Damage-roll re-roll when shooting in your Shooting phase, and up to three TANK ACE units can be selected during muster to gain CHARACTER.",
         ),
         "Dakka! Dakka! Dakka!": (
             "Supported",
