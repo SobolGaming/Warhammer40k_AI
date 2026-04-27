@@ -1230,6 +1230,82 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             self._clear_prefixed_special_rules(sr, prefix)
             root.special_rules = sr
 
+    def _armoured_infantry_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_armoured_infantry():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_turn = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id != active_player_id:
+            return None, None
+        return root, sr
+
+    def activate_armoured_infantry_mobile_firebase(
+        self,
+        unit,
+        *,
+        game=None,
+        action: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_armoured_infantry():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root):
+            return False
+        if not (self._unit_has_keyword(root, "ARMOURED") and self._unit_has_keyword(root, "SKIRMISHER")):
+            return False
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"advance", "fall_back", "fallback"}:
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["armoured_infantry_mobile_firebase_active"] = True
+        sr["armoured_infantry_mobile_firebase_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["armoured_infantry_mobile_firebase_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["armoured_infantry_mobile_firebase_source"] = (
+            str(source or "MOBILE FIREBASE").strip() or "MOBILE FIREBASE"
+        )
+        sr["armoured_infantry_mobile_firebase_trigger_action"] = (
+            "fall_back" if action_key in {"fall_back", "fallback"} else "advance"
+        )
+        root.special_rules = sr
+        return True
+
+    def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._armoured_infantry_turn_effect_state(
+            unit,
+            prefix="armoured_infantry_mobile_firebase",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def armoured_infantry_mobile_firebase_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._armoured_infantry_turn_effect_state(
+            unit,
+            prefix="armoured_infantry_mobile_firebase",
+            game=game,
+        )
+        return bool(root is not None)
+
     def _steel_hammer_titanic_character_candidates(self) -> list:
         if not self.is_steel_hammer():
             return []
@@ -3119,6 +3195,8 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     def can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):
             return False
+        if self.armoured_infantry_mobile_firebase_can_shoot_after_advance(unit, profile=profile, game=game):
+            return True
         root, _sr = self._hammer_turn_effect_state(
             unit,
             prefix="hammer_of_the_emperor_blazing_advance",
@@ -3129,6 +3207,8 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     def can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):
             return False
+        if self.armoured_infantry_mobile_firebase_can_shoot_after_fall_back(unit, profile=profile, game=game):
+            return True
         root, _sr = self._hammer_turn_effect_state(
             unit,
             prefix="hammer_of_the_emperor_tactical_withdrawal",

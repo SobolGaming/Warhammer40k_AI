@@ -1096,6 +1096,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     # Armoured Infantry only. Challenger has a different BURST OF SPEED.
     "BURST OF SPEED": {"000010792004"},
     "COMBINED FIRE": {"000010792006"},
+    "MOBILE FIREBASE": {"000010792003"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -1129,6 +1130,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
     "COMBINED FIRE",
+    "MOBILE FIREBASE",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
     "THE SMOTHERING SHADOW",
@@ -2641,6 +2643,7 @@ class StratagemManager(
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
             "BLAZING ADVANCE",
+            "MOBILE FIREBASE",
             "DRAW THEM OUT",
             "SWIFT INTERCEPTION",
             "BOUNDLESS ZEAL",
@@ -11822,6 +11825,7 @@ class StratagemManager(
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
             "COMBINED FIRE": "Target: ARMOURED SKIRMISHER unit that just shot; choose one enemy unit it hit so that enemy loses cover and friendly ARMOURED SKIRMISHER attacks against it gain +2 Strength this phase",
+            "MOBILE FIREBASE": "Target: ARMOURED SKIRMISHER unit that just Advanced or Fell Back; it can shoot this turn after advancing or falling back",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
             "COURAGEOUS DIVERSION": "Target: one of your ASTRA MILITARUM INFANTRY or MOUNTED units at the start of your opponent's Shooting phase; it gains Feel No Pain 6+, and enemy attacks suffer -1 to hit if it is the closest eligible target until end of phase",
             "CRACK SHOTS": "Target: your PLATOON unit that has not been selected to shoot this phase; its ranged weapons gain [PRECISION] until end of phase",
@@ -16367,6 +16371,7 @@ class StratagemManager(
         self._queue_iconoclast_fiefdom_move_end_reactions(unit=unit, action=action)
         self._queue_hammer_blazing_advance_reactions(unit=unit, action=action)
         self._queue_hammer_tactical_withdrawal_reactions(unit=unit, action=action)
+        self._queue_armoured_infantry_mobile_firebase_reactions(unit=unit, action=action)
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
         self._queue_haloscreed_guided_retreat_reactions(unit=unit, action=action)
         self._queue_haloscreed_analytical_divination_reactions(unit=unit, action=action)

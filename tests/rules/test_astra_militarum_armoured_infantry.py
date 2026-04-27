@@ -312,6 +312,16 @@ def test_armoured_infantry_combined_fire_descriptor_registered():
     assert by_id.effect_params["strength_bonus"] == 2
 
 
+def test_armoured_infantry_mobile_firebase_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792003")
+
+    assert by_id is not None
+    assert by_id.name == "Mobile Firebase"
+    assert by_id.effect == "armoured_skirmisher_shoot_after_advance_or_fall_back"
+    assert by_id.effect_params["allow_shoot_after_advance"] is True
+    assert by_id.effect_params["allow_shoot_after_fall_back"] is True
+
+
 def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
     game, am_player, _enemy_player, army, enemy_army = _build_game()
     moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
@@ -548,6 +558,118 @@ def test_armoured_infantry_combined_fire_rejects_non_skirmisher_or_invalid_enemy
     )
     errors = _validate_choose_quarry(game, fake_request, invalid)
     assert errors == ("Combined Fire target is not in this request's candidate list.",)
+
+
+def test_armoured_infantry_mobile_firebase_advance_trigger_allows_ranged_shooting_this_turn():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    army.add_unit(sentinel)
+    _place_unit(game, sentinel, 10.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    profile = Wargear(
+        {
+            "name": "Multilaser",
+            "type": "Ranged",
+            "range": "36",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    ).profiles["default"]
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    sentinel.round_state.advanced_this_round = True
+    assert sentinel.can_shoot_after_advance(profile) is False
+
+    game.event_system.publish("unit_move_ended", unit=sentinel, action="advance")
+    pending = _pending_by_name(am_player.stratagems, "MOBILE FIREBASE")
+    assert pending is not None
+    assert pending.get("candidates") == [sentinel]
+
+    assert am_player.stratagems.use("MOBILE FIREBASE", unit=sentinel, phase_name="Movement phase", dequeue=True) is True
+    assert int(am_player.command_points or 0) == 9
+    assert sentinel.can_shoot_after_advance(profile) is True
+    assert sentinel.special_rules.get("armoured_infantry_mobile_firebase_trigger_action") == "advance"
+
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    assert sentinel.can_shoot_after_advance(profile) is True
+    game.current_player_index = game.players.index(enemy_player)
+    game.current_player_idx = game.current_player_index
+    assert sentinel.can_shoot_after_advance(profile) is False
+
+
+def test_armoured_infantry_mobile_firebase_fall_back_trigger_allows_ranged_shooting_this_turn():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    army.add_unit(sentinel)
+    _place_unit(game, sentinel, 10.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    profile = Wargear(
+        {
+            "name": "Multilaser",
+            "type": "Ranged",
+            "range": "36",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    ).profiles["default"]
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    sentinel.round_state.fell_back_this_round = True
+    assert sentinel.can_shoot_after_fall_back(profile) is False
+
+    game.event_system.publish("unit_move_ended", unit=sentinel, action="fall_back")
+    pending = _pending_by_name(am_player.stratagems, "MOBILE FIREBASE")
+    assert pending is not None
+    assert pending.get("candidates") == [sentinel]
+
+    assert am_player.stratagems.use("MOBILE FIREBASE", unit=sentinel, phase_name="Movement phase", dequeue=True) is True
+    assert int(am_player.command_points or 0) == 9
+    assert sentinel.can_shoot_after_fall_back(profile) is True
+    assert sentinel.special_rules.get("armoured_infantry_mobile_firebase_trigger_action") == "fall_back"
+
+
+def test_armoured_infantry_mobile_firebase_rejects_non_skirmisher_and_normal_moves():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    infantry = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    army.add_unit(sentinel)
+    army.add_unit(infantry)
+    _place_unit(game, sentinel, 10.0, 10.0)
+    _place_unit(game, infantry, 12.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    sentinel.round_state.moved_this_round = True
+    game.event_system.publish("unit_move_ended", unit=sentinel, action="move")
+    assert _pending_by_name(am_player.stratagems, "MOBILE FIREBASE") is None
+
+    infantry.round_state.advanced_this_round = True
+    game.event_system.publish("unit_move_ended", unit=infantry, action="advance")
+    assert _pending_by_name(am_player.stratagems, "MOBILE FIREBASE") is None
+    assert am_player.stratagems.use(
+        "MOBILE FIREBASE",
+        unit=infantry,
+        action="advance",
+        phase_name="Movement phase",
+    ) is False
+    assert int(am_player.command_points or 0) == 10
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

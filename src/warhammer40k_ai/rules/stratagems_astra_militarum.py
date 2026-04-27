@@ -2776,6 +2776,66 @@ class AstraMilitarumStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_armoured_infantry_mobile_firebase_reactions(self, *, unit: Any, action: str) -> None:
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"advance", "fall_back", "fallback"}:
+            return
+        if not self._is_armoured_infantry():
+            return
+        root = self._am_root(unit)
+        if root is None or not self._am_owned_by_player(root, self.player):
+            return
+        if not self._am_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_astra_militarum_unit(root):
+            return
+        if not (self._am_has_keyword(root, "ARMOURED") and self._am_has_keyword(root, "SKIRMISHER")):
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("MOBILE FIREBASE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        canonical_action = "fall_back" if action_key in {"fall_back", "fallback"} else "advance"
+        if canonical_action == "advance":
+            if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+                return
+        elif not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": canonical_action,
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _queue_combined_arms_stalwart_protector_reactions(
         self,
         *,
@@ -4484,6 +4544,88 @@ class AstraMilitarumStratagemMixin:
         logger.info("INFO: COMBINED FIRE: choose a hit enemy unit to mark.")
         return True
 
+    def _use_armoured_infantry_mobile_firebase(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MOBILE FIREBASE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MOBILE FIREBASE: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("MOBILE FIREBASE")
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+                kwargs.setdefault("action", pending.get("action"))
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: MOBILE FIREBASE: no ARMOURED SKIRMISHER unit provided")
+            return False
+        action_key = str(kwargs.get("action", "") or "").strip().lower()
+        if action_key not in {"", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: MOBILE FIREBASE: invalid trigger")
+            return False
+        if action_key == "":
+            advanced = bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False))
+            fell_back = bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False))
+            if advanced:
+                action_key = "advance"
+            elif fell_back:
+                action_key = "fall_back"
+        canonical_action = "fall_back" if action_key in {"fall_back", "fallback"} else "advance"
+        if canonical_action == "advance":
+            if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+                logger.error("ERROR: MOBILE FIREBASE: target did not Advance this turn")
+                return False
+        else:
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                logger.error("ERROR: MOBILE FIREBASE: target did not Fall Back this turn")
+                return False
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: MOBILE FIREBASE: selected unit is not eligible")
+            return False
+        if not self._am_on_battlefield(root):
+            logger.error("ERROR: MOBILE FIREBASE: target must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(root):
+            logger.error("ERROR: MOBILE FIREBASE: target must be ASTRA MILITARUM")
+            return False
+        if not (self._am_has_keyword(root, "ARMOURED") and self._am_has_keyword(root, "SKIRMISHER")):
+            logger.error("ERROR: MOBILE FIREBASE: target must be ARMOURED SKIRMISHER")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_armoured_infantry_mobile_firebase", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: MOBILE FIREBASE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                action=canonical_action,
+                source=str(getattr(stratagem, "name", "") or "MOBILE FIREBASE"),
+            )
+        ):
+            logger.error("ERROR: MOBILE FIREBASE: failed to activate shoot-after-move")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MOBILE FIREBASE: %s can shoot after Advancing or Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5413,6 +5555,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_combined_arms_inspired_command(stratagem, **kwargs)
         if name_u == "MINEFIELD":
             return self._use_siege_minefield(stratagem, **kwargs)
+        if name_u == "MOBILE FIREBASE":
+            return self._use_armoured_infantry_mobile_firebase(stratagem, **kwargs)
         if name_u == "MOVE OUT":
             return self._use_mechanised_move_out(stratagem, **kwargs)
         if name_u == "ON MY POSITION":

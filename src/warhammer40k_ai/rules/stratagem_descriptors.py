@@ -3653,6 +3653,21 @@ _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "attack_type": "ranged",
         },
     ),
+    "000010792003": StratagemToolDescriptor(
+        stratagem_id="000010792003",
+        name="Mobile Firebase",
+        timing="your_movement_phase_after_armoured_skirmisher_unit_advances_or_falls_back",
+        target="armoured_skirmisher_unit_that_just_advanced_or_fell_back",
+        duration="until_end_of_turn",
+        effect="armoured_skirmisher_shoot_after_advance_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "friendly_target_keywords_all": ["ARMOURED", "SKIRMISHER"],
+            "allow_shoot_after_advance": True,
+            "allow_shoot_after_fall_back": True,
+            "attack_type": "ranged",
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {
