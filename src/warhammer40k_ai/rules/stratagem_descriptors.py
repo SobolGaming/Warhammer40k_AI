@@ -3737,6 +3737,22 @@ _STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "attack_type": "ranged",
         },
     ),
+    "000010788004": StratagemToolDescriptor(
+        stratagem_id="000010788004",
+        name="Adamantine Behemoth",
+        timing="your_movement_or_charge_phase",
+        target="astra_militarum_vehicle_unit_that_has_not_been_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_terrain_horizontally",
+        cp_cost=1,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_keywords_all": ["VEHICLE"],
+            "requires_not_selected_to_move_or_charge_this_phase": True,
+            "movement_types": ["move", "advance", "charge"],
+            "horizontal_only": True,
+        },
+    ),
 }
 
 _STEEL_HAMMER_STRATAGEM_BY_NAME = {

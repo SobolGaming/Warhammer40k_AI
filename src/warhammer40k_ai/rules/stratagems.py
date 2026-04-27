@@ -1096,6 +1096,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     # Armoured Infantry only. Challenger has a different BURST OF SPEED.
     "BURST OF SPEED": {"000010792004"},
     "ACCURACY UNDER PRESSURE": {"000010788007"},
+    "ADAMANTINE BEHEMOTH": {"000010788004"},
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
     "OPENING SALVO": {"000010792007"},
@@ -3168,6 +3169,7 @@ class StratagemManager(
             "DEATH ANSWERS DEATH",
             "AERIAL EXTRACTION",
             "ACCURACY UNDER PRESSURE",
+            "ADAMANTINE BEHEMOTH",
             "BURST OF SPEED",
             "COMBINED FIRE",
             "OPENING SALVO",
@@ -11830,6 +11832,7 @@ class StratagemManager(
             "AERIAL EXTRACTION": "Target: your ASTRA MILITARUM Deep Strike unit or Valkyrie not within Engagement Range at end of opponent's Fight phase; enters Strategic Reserves",
             "ABLATIVE PLATING": "Target: your ASTRA MILITARUM VEHICLE selected as a target after enemy shooting targets are declared; reduces incoming Damage by 1 this phase",
             "ACCURACY UNDER PRESSURE": "Target: your ASTRA MILITARUM unit that has not been selected to shoot; it re-rolls Hit rolls this phase",
+            "ADAMANTINE BEHEMOTH": "Target: your ASTRA MILITARUM VEHICLE that has not been selected to move or charge; it moves horizontally through terrain this phase",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",

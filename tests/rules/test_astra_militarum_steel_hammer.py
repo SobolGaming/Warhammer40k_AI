@@ -7,6 +7,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -300,6 +301,17 @@ def test_steel_hammer_accuracy_under_pressure_descriptor_registered():
     assert descriptor.effect_params["attack_type"] == "ranged"
 
 
+def test_steel_hammer_adamantine_behemoth_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788004")
+
+    assert descriptor is not None
+    assert descriptor.name == "Adamantine Behemoth"
+    assert descriptor.cp_cost == 1
+    assert descriptor.effect == "move_through_terrain_horizontally"
+    assert descriptor.effect_params["target_keywords_all"] == ["VEHICLE"]
+    assert descriptor.effect_params["movement_types"] == ["move", "advance", "charge"]
+
+
 def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
     game, player, enemy_player = _make_game()
     squadron = create_unit(
@@ -399,3 +411,84 @@ def test_accuracy_under_pressure_rejects_units_that_already_shot():
     assert int(player.command_points or 0) == 10
     assert player.stratagems.use("ACCURACY UNDER PRESSURE", unit=valid, phase_name="Shooting phase") is True
     assert int(player.command_points or 0) == 8
+
+
+def test_adamantine_behemoth_allows_vehicle_to_move_horizontally_through_terrain_until_phase_end():
+    game, player, enemy_player = _make_game()
+    vehicle = create_unit(
+        "Rogal Dorn Battle Tank",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="18",
+    )
+    player.army.add_unit(vehicle)
+    _place_unit(game, vehicle)
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=vehicle, phase_name="Movement phase") is True
+    assert int(player.command_points or 0) == 9
+    assert vehicle.special_rules.get("steel_hammer_adamantine_behemoth_active") is True
+
+    move_rules = get_validation_rules(MovementType.MOVE, moving_unit=vehicle)
+    advance_rules = get_validation_rules(MovementType.ADVANCE, moving_unit=vehicle)
+    charge_rules = get_validation_rules(MovementType.CHARGE, moving_unit=vehicle)
+    assert bool(move_rules.get("can_move_through_terrain")) is True
+    assert bool(advance_rules.get("can_move_through_terrain")) is True
+    assert bool(charge_rules.get("can_move_through_terrain")) is True
+
+    game.event_system.publish("phase_end", player=player, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+    move_rules_after = get_validation_rules(MovementType.MOVE, moving_unit=vehicle)
+    charge_rules_after = get_validation_rules(MovementType.CHARGE, moving_unit=vehicle)
+    assert bool(move_rules_after.get("can_move_through_terrain")) is False
+    assert bool(charge_rules_after.get("can_move_through_terrain")) is False
+
+
+def test_adamantine_behemoth_rejects_non_vehicle_or_already_selected_units():
+    game, player, enemy_player = _make_game()
+    infantry = create_unit(
+        "Infantry Squad",
+        10.0,
+        10.0,
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    moved_vehicle = create_unit(
+        "Leman Russ",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    valid = create_unit(
+        "Rogal Dorn Battle Tank",
+        14.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="18",
+    )
+    for unit in (infantry, moved_vehicle, valid):
+        player.army.add_unit(unit)
+        _place_unit(game, unit)
+    moved_vehicle.round_state.moved_this_round = True
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=infantry, phase_name="Movement phase") is False
+    assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=moved_vehicle, phase_name="Movement phase") is False
+    assert int(player.command_points or 0) == 10
+    assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=valid, phase_name="Movement phase") is True
+    assert int(player.command_points or 0) == 9

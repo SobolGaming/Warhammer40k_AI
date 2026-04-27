@@ -3325,6 +3325,16 @@ class AstraMilitarumStratagemMixin:
             return []
         return self._am_battlefield_units(require_not_shot=True)
 
+    def _steel_hammer_adamantine_behemoth_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_steel_hammer():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_vehicle=True) or []):
+            if self._hammer_selected_to_act_this_phase(root, phase_name=phase_name):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -5060,6 +5070,54 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_steel_hammer_adamantine_behemoth(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_steel_hammer():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        phase_key = phase_name.lower()
+        if phase_key not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: not your turn")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: no vehicle unit provided")
+            return False
+        eligible = candidates or self._steel_hammer_adamantine_behemoth_candidates(phase_name=phase_name)
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: selected vehicle is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_steel_hammer_adamantine_behemoth", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "ADAMANTINE BEHEMOTH"),
+            )
+        ):
+            logger.error("ERROR: ADAMANTINE BEHEMOTH: failed to activate movement override")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ADAMANTINE BEHEMOTH: %s can move horizontally through terrain until end of phase.",
+            getattr(root, "name", "Vehicle"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5945,6 +6003,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_hammer_ablative_plating(stratagem, **kwargs)
         if name_u == "ACCURACY UNDER PRESSURE":
             return self._use_steel_hammer_accuracy_under_pressure(stratagem, **kwargs)
+        if name_u == "ADAMANTINE BEHEMOTH":
+            return self._use_steel_hammer_adamantine_behemoth(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":

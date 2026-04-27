@@ -1530,24 +1530,33 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         )
         phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
         owner_id = self._player_id(player)
-        prefixes = ("steel_hammer_accuracy_under_pressure",)
         for root in self._iter_game_unit_roots(game=game_obj):
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            for prefix in prefixes:
-                if not bool(sr.get(f"{prefix}_active", False)):
-                    continue
-                marked_round = self._safe_int(sr.get(f"{prefix}_round", 0) or 0, 0)
-                marked_phase = self._phase_key(sr.get(f"{prefix}_phase", "") or "")
-                marked_owner = str(sr.get(f"{prefix}_owner", "") or "")
-                if marked_round and round_now and marked_round != round_now:
-                    continue
-                if phase_key and marked_phase and marked_phase != phase_key:
-                    continue
-                if owner_id and marked_owner and marked_owner != owner_id:
-                    continue
-                self._clear_prefixed_special_rules(sr, prefix)
+            if bool(sr.get("steel_hammer_accuracy_under_pressure_active", False)):
+                marked_round = self._safe_int(sr.get("steel_hammer_accuracy_under_pressure_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("steel_hammer_accuracy_under_pressure_phase", "") or "")
+                marked_owner = str(sr.get("steel_hammer_accuracy_under_pressure_owner", "") or "")
+                if (not marked_round or not round_now or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    self._clear_prefixed_special_rules(sr, "steel_hammer_accuracy_under_pressure")
+            if bool(sr.get("steel_hammer_adamantine_behemoth_active", False)):
+                marked_round = self._safe_int(sr.get("steel_hammer_adamantine_behemoth_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("steel_hammer_adamantine_behemoth_phase", "") or "")
+                marked_owner = str(sr.get("steel_hammer_adamantine_behemoth_owner", "") or "")
+                if (not marked_round or not round_now or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    added = set(sr.get("steel_hammer_adamantine_behemoth_added_phase_move_terrain_only_types") or [])
+                    current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                    kept = [move_type for move_type in current if move_type not in added]
+                    if kept:
+                        sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                    else:
+                        sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                    self._clear_prefixed_special_rules(sr, "steel_hammer_adamantine_behemoth")
             root.special_rules = sr
 
     def _steel_hammer_phase_effect_state(self, unit, *, prefix: str, game=None):
@@ -1639,6 +1648,52 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "reroll_full": True,
             "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
         }
+
+    def activate_steel_hammer_adamantine_behemoth(
+        self,
+        unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "VEHICLE"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = set(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+        added = set()
+        for move_type in ("move", "advance", "charge"):
+            if move_type not in current:
+                current.add(move_type)
+                added.add(move_type)
+        if current:
+            sr["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+        if added:
+            sr["steel_hammer_adamantine_behemoth_added_phase_move_terrain_only_types"] = sorted(added)
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["steel_hammer_adamantine_behemoth_active"] = True
+        sr["steel_hammer_adamantine_behemoth_round"] = round_now
+        sr["steel_hammer_adamantine_behemoth_turn"] = round_now
+        sr["steel_hammer_adamantine_behemoth_phase"] = phase_key
+        sr["steel_hammer_adamantine_behemoth_owner"] = owner_id
+        sr["steel_hammer_adamantine_behemoth_turn_owner"] = owner_id
+        sr["steel_hammer_adamantine_behemoth_source"] = (
+            str(source or "ADAMANTINE BEHEMOTH").strip() or "ADAMANTINE BEHEMOTH"
+        )
+        root.special_rules = sr
+        return True
 
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):
