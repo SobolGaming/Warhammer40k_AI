@@ -1100,6 +1100,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "ENGINE OF WRATH": {"000010788002"},
     "IMPOSING ARRIVAL": {"000010788003"},
     "SHATTERING SALVO": {"000010788005"},
+    "WITHERING FIREPOWER": {"000010788006"},
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
     "OPENING SALVO": {"000010792007"},
@@ -2902,6 +2903,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armoured_infantry_combined_fire)
         if "SHATTERING SALVO" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_steel_hammer_shattering_salvo)
+        if "WITHERING FIREPOWER" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_steel_hammer_withering_firepower)
         if "TO THE FAVOURED THE SPOILS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
         if "REAVERS' REACTION" in names or "REAVERSÃ¢â‚¬â„¢ REACTION" in names:
@@ -8524,6 +8527,24 @@ class StratagemManager(
                 "Requires your Shooting phase just after a friendly ASTRA MILITARUM TITANIC unit has shot and hit one or more enemy units"
             )
             return result
+        if name_u == "WITHERING FIREPOWER":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "WITHERING FIREPOWER":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            unit = context.get("target_unit") or context.get("unit")
+            hits_by_target = context.get("hits_by_target") or {}
+            if unit is not None and self._steel_hammer_withering_firepower_hit_candidates(unit, hits_by_target):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase just after a friendly ASTRA MILITARUM VEHICLE unit has shot and hit one or more enemy units"
+            )
+            return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
                 result["available"] = True
@@ -11879,6 +11900,7 @@ class StratagemManager(
             "ENGINE OF WRATH": "Target: your ASTRA MILITARUM TITANIC unit that has not fought; choose one engaged enemy it must target while melee weapons gain +6 Attacks and +2 AP this phase",
             "IMPOSING ARRIVAL": "Target: your ASTRA MILITARUM TITANIC unit in Reserves during your Reinforcements step from round 2; set it up wholly within 8\" of a battlefield edge and more than 6\" horizontally from enemies",
             "SHATTERING SALVO": "Target: your ASTRA MILITARUM TITANIC unit that just shot; choose one enemy unit it hit so that enemy cannot have Benefit of Cover this phase",
+            "WITHERING FIREPOWER": "Target: your ASTRA MILITARUM VEHICLE unit that just shot; choose one enemy unit it hit to take a Battle-shock test at -1",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",

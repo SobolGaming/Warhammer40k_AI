@@ -32462,12 +32462,24 @@ def _validate_post_shoot_battleshock_target(game: object, request: DecisionReque
         return errors
     if is_skip_choice(request, result):
         return ()
+    ctx = dict(getattr(request, "context", {}) or {})
     payload = _option_payload(request, result)
     target_val = payload.get("unit_id") or payload.get("target_unit_id")
     if not target_val:
         return ("Post-shoot Battle-shock requires target unit.",)
-    if resolve_unit(game, target_val) is None:
+    target_unit = resolve_unit(game, target_val)
+    if target_unit is None:
         return ("Post-shoot Battle-shock target not found.",)
+    candidate_ids = {
+        str(value or "").strip()
+        for value in list(ctx.get("candidate_unit_ids", []) or [])
+        if str(value or "").strip()
+    }
+    if candidate_ids:
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        target_id = str(get_entity_id(target_root) or "").strip()
+        if target_id not in candidate_ids:
+            return ("Post-shoot Battle-shock target is not in this request's candidate list.",)
     return ()
 
 

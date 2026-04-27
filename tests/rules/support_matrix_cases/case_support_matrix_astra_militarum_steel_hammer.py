@@ -157,3 +157,29 @@ def test_shattering_salvo_stratagem_is_supported():
     assert "hit" in notes_l
     assert "benefit of cover" in notes_l
     assert "end of phase" in notes_l
+
+
+def test_withering_firepower_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010788006"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Steel Hammer",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "WITHERING FIREPOWER"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "vehicle" in notes_l
+    assert "hit" in notes_l
+    assert "battle-shock test" in notes_l
+    assert "-1" in notes_l

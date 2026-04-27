@@ -1039,6 +1039,56 @@ class AstraMilitarumStratagemMixin:
             return True
         return False
 
+    def _queue_steel_hammer_withering_firepower_target_decision(
+        self,
+        *,
+        stratagem: Any,
+        source_unit: Any,
+        candidates: list[Any],
+    ) -> bool:
+        if self.game is None:
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        source_root = self._am_root(source_unit)
+        if source_root is None:
+            return False
+        candidate_units = [
+            candidate
+            for candidate in list(candidates or [])
+            if candidate is not None and self._am_root(candidate) is not None
+        ]
+        if not candidate_units:
+            return False
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={
+                    "unit_id": maybe_entity_id(candidate),
+                    "battle_shock_test_modifier": -1,
+                },
+            )
+            for candidate in candidate_units
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            "WITHERING FIREPOWER: select an enemy unit hit by that Vehicle unit.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "attacker_unit_id": maybe_entity_id(source_root),
+                "ability_name": str(getattr(stratagem, "name", "") or "WITHERING FIREPOWER"),
+                "candidate_unit_ids": [maybe_entity_id(candidate) for candidate in candidate_units],
+                "battle_shock_test_modifier": -1,
+            },
+        )
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        return False
+
     def _queue_combined_arms_choose_quarry_request(
         self,
         *,
@@ -3297,6 +3347,13 @@ class AstraMilitarumStratagemMixin:
     ) -> list[Any]:
         return self._armoured_infantry_combined_fire_hit_candidates(source_unit, hits_by_target)
 
+    def _steel_hammer_withering_firepower_hit_candidates(
+        self,
+        source_unit: Any,
+        hits_by_target: Any,
+    ) -> list[Any]:
+        return self._armoured_infantry_combined_fire_hit_candidates(source_unit, hits_by_target)
+
     def _armoured_infantry_opening_salvo_candidates(self) -> list[Any]:
         if not self._is_armoured_infantry():
             return []
@@ -3657,6 +3714,66 @@ class AstraMilitarumStratagemMixin:
             return
 
         candidates = self._steel_hammer_shattering_salvo_hit_candidates(source_root, hits_by_target)
+        if not candidates:
+            return
+        if self._bridgehead_reaction_exists("unit_shooting_resolved", stratagem.name):
+            return
+        if not bool(stratagem.can_use(self.player, self.game, unit=source_root, candidates=candidates, phase_name="Shooting phase")):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_shooting_resolved",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": source_root,
+                "target_unit": source_root,
+                "candidates": candidates,
+            },
+            use_timer=False,
+        )
+
+    def _on_unit_shooting_resolved_steel_hammer_withering_firepower(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self._is_steel_hammer():
+            return
+        current_phase = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != "SHOOTING_PHASE":
+            return
+        source_root = self._am_root(attacker_unit)
+        if source_root is None:
+            return
+        attacker_army = getattr(source_root, "get_parent_army", lambda: None)()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is not self.player:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        if not self._am_on_battlefield(source_root):
+            return
+        if not self._is_astra_militarum_unit(source_root) or not self._am_has_keyword(source_root, "VEHICLE"):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("WITHERING FIREPOWER")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._steel_hammer_withering_firepower_hit_candidates(source_root, hits_by_target)
         if not candidates:
             return
         if self._bridgehead_reaction_exists("unit_shooting_resolved", stratagem.name):
@@ -5623,6 +5740,118 @@ class AstraMilitarumStratagemMixin:
         logger.info("INFO: SHATTERING SALVO: choose a hit enemy unit to deny cover.")
         return True
 
+    def _apply_steel_hammer_withering_firepower_battleshock(self, target_unit: Any, *, source: str) -> bool:
+        target_root = self._am_root(target_unit)
+        if target_root is None:
+            return False
+        source_name = str(source or "WITHERING FIREPOWER").strip() or "WITHERING FIREPOWER"
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        force_test = getattr(target_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(turn, modifier=-1, source=source_name)
+            return True
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+        sr["battle_shock_test_modifier"] = int(current - 1)
+        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+        reasons.append(source_name)
+        sr["battle_shock_test_modifier_reasons"] = reasons
+        target_root.special_rules = sr
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if not callable(take_test):
+            return False
+        take_test(turn)
+        return True
+
+    def _use_steel_hammer_withering_firepower(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_steel_hammer():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: WITHERING FIREPOWER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: WITHERING FIREPOWER: not your Shooting phase")
+            return False
+        source_unit = kwargs.get("unit") or kwargs.get("source_unit") or kwargs.get("target_unit")
+        pending = None
+        if source_unit is None or not list(kwargs.get("candidates") or []):
+            pending = self._am_pending_reaction_by_names("WITHERING FIREPOWER")
+        if source_unit is None and pending is not None:
+            source_unit = pending.get("unit") or pending.get("target_unit")
+        source_root = self._am_root(source_unit)
+        if source_root is None:
+            logger.error("ERROR: WITHERING FIREPOWER: no Vehicle source unit provided")
+            return False
+        if not self._am_on_battlefield(source_root):
+            logger.error("ERROR: WITHERING FIREPOWER: source unit must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(source_root):
+            logger.error("ERROR: WITHERING FIREPOWER: source unit must be ASTRA MILITARUM")
+            return False
+        if not self._am_has_keyword(source_root, "VEHICLE"):
+            logger.error("ERROR: WITHERING FIREPOWER: source unit must be VEHICLE")
+            return False
+        if pending is None and not bool(getattr(getattr(source_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: WITHERING FIREPOWER: source unit has not shot")
+            return False
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if not candidates:
+            candidates = self._steel_hammer_withering_firepower_hit_candidates(
+                source_root,
+                kwargs.get("hits_by_target") or {},
+            )
+        candidates = [self._am_root(candidate) for candidate in candidates if self._am_root(candidate) is not None]
+        candidates = sorted(candidates, key=self._am_sort_key)
+        if not candidates:
+            logger.error("ERROR: WITHERING FIREPOWER: no eligible enemy units were hit")
+            return False
+        direct_target = (
+            kwargs.get("enemy_unit")
+            or kwargs.get("selected_enemy_unit")
+            or kwargs.get("target_enemy_unit")
+            or kwargs.get("quarry")
+            or kwargs.get("selected_unit")
+        )
+        if direct_target is not None:
+            target_root = self._am_root(direct_target)
+            if target_root not in candidates:
+                logger.error("ERROR: WITHERING FIREPOWER: selected enemy unit is not eligible")
+                return False
+            if not self._am_spend_cp(stratagem, target_unit=source_root):
+                return False
+            if not self._apply_steel_hammer_withering_firepower_battleshock(
+                target_root,
+                source=str(getattr(stratagem, "name", "") or "WITHERING FIREPOWER"),
+            ):
+                logger.error("ERROR: WITHERING FIREPOWER: failed to force Battle-shock test")
+                return False
+            self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: WITHERING FIREPOWER: %s must take a Battle-shock test at -1.",
+                getattr(target_root, "name", "Unit"),
+            )
+            return True
+        request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+        if self.game is None or not callable(request_decision):
+            logger.error("ERROR: WITHERING FIREPOWER: no decision queue available")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=source_root):
+            return False
+        if not self._queue_steel_hammer_withering_firepower_target_decision(
+            stratagem=stratagem,
+            source_unit=source_root,
+            candidates=candidates,
+        ):
+            logger.error("ERROR: WITHERING FIREPOWER: failed to queue target selection")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: WITHERING FIREPOWER: choose a hit enemy unit to take a Battle-shock test at -1.")
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -6516,6 +6745,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_steel_hammer_imposing_arrival(stratagem, **kwargs)
         if name_u == "SHATTERING SALVO":
             return self._use_steel_hammer_shattering_salvo(stratagem, **kwargs)
+        if name_u == "WITHERING FIREPOWER":
+            return self._use_steel_hammer_withering_firepower(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":

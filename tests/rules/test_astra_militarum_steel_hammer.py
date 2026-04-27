@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_SELECT_REALM_OF_CHAOS_UNITS
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_QUARRY,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+)
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -213,6 +217,13 @@ def _find_quarry_request(game: Game, *, ability: str):
     return None
 
 
+def _find_post_shoot_battleshock_request(game: Game):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+            return request
+    return None
+
+
 def test_ceaseless_cannonade_muster_selection_applies_character_to_titanic_units():
     game, player, _enemy = _make_game()
     baneblade = create_unit(
@@ -404,6 +415,18 @@ def test_steel_hammer_shattering_salvo_descriptor_registered():
     assert descriptor.effect_params["target_keywords_all"] == ["TITANIC"]
     assert descriptor.effect_params["requires_hit_enemy_unit"] is True
     assert descriptor.effect_params["enemy_cannot_have_benefit_of_cover"] is True
+
+
+def test_steel_hammer_withering_firepower_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788006")
+
+    assert descriptor is not None
+    assert descriptor.name == "Withering Firepower"
+    assert descriptor.cp_cost == 1
+    assert descriptor.effect == "hit_enemy_battle_shock_test_with_modifier"
+    assert descriptor.effect_params["target_keywords_all"] == ["VEHICLE"]
+    assert descriptor.effect_params["requires_hit_enemy_unit"] is True
+    assert descriptor.effect_params["battle_shock_test_modifier"] == -1
 
 
 def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
@@ -879,3 +902,132 @@ def test_shattering_salvo_rejects_non_titanic_or_invalid_enemy_selection():
         phase_name="Shooting phase",
     ) is False
     assert int(player.command_points or 0) == 10
+
+
+def test_withering_firepower_queues_hit_enemy_and_applies_battleshock_modifier():
+    game, player, enemy_player = _make_game()
+    vehicle = create_unit(
+        "Leman Russ",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    enemy = create_unit("Enemy Hit", 20.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    unhit_enemy = create_unit("Enemy Not Hit", 24.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(vehicle)
+    enemy_player.army.add_unit(enemy)
+    enemy_player.army.add_unit(unhit_enemy)
+    for unit in (vehicle, enemy, unhit_enemy):
+        _place_unit(game, unit)
+    player.command_points = 10
+    game.turn = 3
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    vehicle.round_state.shot_this_round = True
+
+    calls = []
+
+    def record_battle_shock(turn):
+        calls.append(
+            {
+                "turn": int(turn),
+                "modifier": int(enemy.special_rules.get("battle_shock_test_modifier", 0) or 0),
+                "reasons": list(enemy.special_rules.get("battle_shock_test_modifier_reasons", []) or []),
+            }
+        )
+
+    enemy.take_battle_shock_test = record_battle_shock
+
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=vehicle, hits_by_target={enemy: 1, unhit_enemy: 0})
+    pending = _pending_reaction_by_name(player, "WITHERING FIREPOWER")
+    assert pending is not None
+    assert pending.get("candidates") == [enemy]
+
+    assert player.stratagems.use("WITHERING FIREPOWER", unit=vehicle, phase_name="Shooting phase", dequeue=True) is True
+    assert int(player.command_points or 0) == 9
+
+    request = _find_post_shoot_battleshock_request(game)
+    assert request is not None
+    context = dict(getattr(request, "context", {}) or {})
+    assert context.get("attacker_unit_id") == get_entity_id(vehicle)
+    assert context.get("candidate_unit_ids") == [get_entity_id(enemy)]
+    assert int(context.get("battle_shock_test_modifier", 0) or 0) == -1
+    payload = dict(getattr(request.options[0], "payload", {}) or {})
+    assert payload.get("unit_id") == get_entity_id(enemy)
+    assert int(payload.get("battle_shock_test_modifier", 0) or 0) == -1
+
+    cmd = resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+    assert bool(getattr(cmd, "ok", False))
+    assert calls == [{"turn": 3, "modifier": -1, "reasons": ["WITHERING FIREPOWER"]}]
+    assert unhit_enemy.special_rules.get("battle_shock_test_modifier") is None
+
+
+def test_withering_firepower_rejects_non_vehicle_or_invalid_enemy_selection():
+    game, player, enemy_player = _make_game()
+    infantry = create_unit(
+        "Infantry Squad",
+        10.0,
+        10.0,
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    vehicle = create_unit(
+        "Leman Russ",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="13",
+    )
+    enemy = create_unit("Enemy Hit", 20.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    unhit_enemy = create_unit("Enemy Not Hit", 24.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (infantry, vehicle):
+        player.army.add_unit(unit)
+    for unit in (enemy, unhit_enemy):
+        enemy_player.army.add_unit(unit)
+    for unit in (infantry, vehicle, enemy, unhit_enemy):
+        _place_unit(game, unit)
+    player.command_points = 10
+    game.turn = 2
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    infantry.round_state.shot_this_round = True
+    vehicle.round_state.shot_this_round = True
+    calls = []
+    enemy.force_battle_shock_test = lambda turn, modifier=0, source="": calls.append((int(turn), int(modifier), source))
+
+    assert player.stratagems.use(
+        "WITHERING FIREPOWER",
+        unit=infantry,
+        candidates=[enemy],
+        enemy_unit=enemy,
+        phase_name="Shooting phase",
+    ) is False
+    assert player.stratagems.use(
+        "WITHERING FIREPOWER",
+        unit=vehicle,
+        candidates=[enemy],
+        enemy_unit=unhit_enemy,
+        phase_name="Shooting phase",
+    ) is False
+    assert int(player.command_points or 0) == 10
+    assert calls == []
+
+    assert player.stratagems.use(
+        "WITHERING FIREPOWER",
+        unit=vehicle,
+        candidates=[enemy],
+        enemy_unit=enemy,
+        phase_name="Shooting phase",
+    ) is True
+    assert int(player.command_points or 0) == 9
+    assert calls == [(2, -1, "WITHERING FIREPOWER")]

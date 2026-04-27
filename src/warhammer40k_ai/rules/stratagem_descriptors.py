@@ -3805,6 +3805,22 @@ _STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "enemy_cannot_have_benefit_of_cover": True,
         },
     ),
+    "000010788006": StratagemToolDescriptor(
+        stratagem_id="000010788006",
+        name="Withering Firepower",
+        timing="your_shooting_phase_after_vehicle_unit_has_shot",
+        target="astra_militarum_vehicle_unit_that_just_shot",
+        duration="immediate",
+        effect="hit_enemy_battle_shock_test_with_modifier",
+        cp_cost=1,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_keywords_all": ["VEHICLE"],
+            "requires_source_has_shot": True,
+            "requires_hit_enemy_unit": True,
+            "battle_shock_test_modifier": -1,
+        },
+    ),
 }
 
 _STEEL_HAMMER_STRATAGEM_BY_NAME = {
