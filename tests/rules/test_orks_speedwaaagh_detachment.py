@@ -77,6 +77,23 @@ def _ranged_profile() -> WargearProfile:
     )
 
 
+def _melee_profile(*, strength: str = "5", damage: str = "2") -> WargearProfile:
+    parent = SimpleNamespace(name="Spiked Ram", is_melee=lambda: True, is_ranged=lambda: False)
+    return WargearProfile(
+        "Profile",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": str(strength),
+            "AP": "0",
+            "D": str(damage),
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+
 def _weapon(name: str, *, strength: str = "4", description: str = "") -> Wargear:
     return Wargear(
         {
@@ -477,3 +494,86 @@ def test_evasive_manoova_rejects_engaged_or_non_speed_targets():
     assert int(ork_player.command_points or 0) == 10
     assert str(getattr(engaged, "reserve_status", "") or "") == "deployed"
     assert str(getattr(boyz, "reserve_status", "") or "") == "deployed"
+
+
+def test_ded_killy_construction_grants_lance_and_charge_damage_bonus():
+    game, ork_player, army, enemy_army = _build_game()
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(warbikers)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, enemy, 1.0, 0.0)
+    warbikers.round_state.charged_this_round = True
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use("DED KILLY CONSTRUCTION", unit=warbikers, phase_name="Fight phase")
+    assert int(ork_player.command_points or 0) == 9
+
+    profile = _melee_profile(strength="5", damage="2")
+    keyword_bonus = warbikers.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="melee",
+        model=warbikers.models[0],
+        weapon_profile=profile,
+        game_map=game.map,
+    )
+    assert bool(keyword_bonus.get("lance"))
+    assert any("DED KILLY" in str(item).upper() for item in list(keyword_bonus.get("sources", []) or []))
+    attack_instance = {
+        "attacker_model": warbikers.models[0],
+        "attacker_unit": warbikers,
+        "target_unit": enemy,
+        "target_model": enemy.models[0],
+        "mortal_wound": False,
+    }
+    profile._hit_target_with_tracking(
+        enemy,
+        warbikers.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    wound = profile._wound_target_with_tracking(
+        enemy,
+        warbikers.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert wound.get("wound") is True
+    assert bool(attack_instance.get("bonus_lance"))
+    assert any("LANCE" in str(item).upper() for item in list(wound.get("modifiers", []) or []))
+
+    damage = profile._damage_target_with_tracking(enemy.models[0], warbikers.models[0], dict(attack_instance))
+    assert int(damage.get("damage_applied", 0) or 0) == 3
+    assert any("DED KILLY" in str(item).upper() for item in list(damage.get("special_effects", []) or []))
+
+
+def test_ded_killy_construction_rejects_non_speed_or_already_fought_targets():
+    game, ork_player, army, enemy_army = _build_game()
+    warbikers = _unit("Warbikers", keywords=["MOUNTED", "SPEED FREEKS"], faction_keywords=["ORKS"])
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (warbikers, boyz):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    _place(game, warbikers, 0.0, 0.0)
+    _place(game, boyz, 4.0, 0.0)
+    _place(game, enemy, 1.0, 0.0)
+    warbikers.round_state.fought_this_phase = True
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.current_player_index = game.players.index(ork_player)
+    game.current_player_idx = game.current_player_index
+    game.rebuild_entity_registry()
+
+    assert not ork_player.stratagems.use("DED KILLY CONSTRUCTION", unit=warbikers, phase_name="Fight phase")
+    assert not ork_player.stratagems.use("DED KILLY CONSTRUCTION", unit=boyz, phase_name="Fight phase")
+    assert int(ork_player.command_points or 0) == 10

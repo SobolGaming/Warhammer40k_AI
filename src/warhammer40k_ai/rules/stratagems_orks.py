@@ -412,6 +412,15 @@ class OrksStratagemMixin:
         kept.sort(key=self._orks_sort_key)
         return kept
 
+    def _orks_ded_killy_construction_candidates(self) -> list[Any]:
+        if not self._is_speedwaaagh_detachment():
+            return []
+        return self._orks_offensive_candidates(
+            require_targetable=True,
+            keyword_any=("SPEED FREEKS", "TRUKK"),
+            require_not_selected_phase="Fight phase",
+        )
+
     def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -4246,6 +4255,8 @@ class OrksStratagemMixin:
             return self._use_orks_extra_gubbinz(stratagem, **kwargs)
         if name_u == "DUST TRAILS":
             return self._use_orks_dust_trails(stratagem, **kwargs)
+        if name_u == "DED KILLY CONSTRUCTION":
+            return self._use_orks_ded_killy_construction(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6162,6 +6173,68 @@ class OrksStratagemMixin:
             effect_builder=lambda _unit, *, source_name: self._orks_dust_trails_defensive_effects(source_name=source_name),
             **kwargs,
         )
+
+    def _use_orks_ded_killy_construction(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_speedwaaagh_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=True,
+            error_prefix="DED KILLY CONSTRUCTION",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("DED KILLY CONSTRUCTION", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: DED KILLY CONSTRUCTION: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_ded_killy_construction_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="DED KILLY CONSTRUCTION",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("SPEED FREEKS", "TRUKK"),
+            require_not_selected_phase="Fight phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: DED KILLY CONSTRUCTION: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "DED KILLY CONSTRUCTION").strip() or "DED KILLY CONSTRUCTION"
+        effects = [
+            {
+                "id": "ded_killy_construction:lance",
+                "source": source_name,
+                "effect": "keyword",
+                "attack_type": "melee",
+                "keyword": "LANCE",
+                "expires_mode": "phase",
+            }
+        ]
+        if bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+            effects.append(
+                {
+                    "id": "ded_killy_construction:charge_damage_bonus",
+                    "source": source_name,
+                    "effect": "damage_bonus",
+                    "attack_type": "melee",
+                    "value": 1,
+                    "expires_mode": "phase",
+                }
+            )
+        self._orks_apply_temp_effects(root, detachment="speedwaaagh", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DED KILLY CONSTRUCTION: %s gains melee [LANCE]%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and +1 Damage" if len(effects) > 1 else "",
+        )
+        return True
 
     def _use_orks_where_dya_fink_youre_going(self, stratagem: Any, **kwargs) -> bool:
         return self._use_orks_reactive_reposition_stratagem(

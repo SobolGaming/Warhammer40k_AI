@@ -848,6 +848,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MOBILE DAKKASTORM",
     "EVASIVE MANOOVA",
     "DUST TRAILS",
+    "DED KILLY CONSTRUCTION",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1112,6 +1113,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "MOBILE DAKKASTORM": {"000010796003"},
     "EVASIVE MANOOVA": {"000010796007"},
     "DUST TRAILS": {"000010796006"},
+    "DED KILLY CONSTRUCTION": {"000010796005"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -11214,6 +11216,24 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a targeted friendly ORKS unit"
             return result
+        if name_u == "DED KILLY CONSTRUCTION":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "fight phase":
+                result["reason"] = "Requires your Fight phase and a SPEED FREEKS or TRUKK unit that has not fought this phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_ded_killy_construction_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Fight phase and a SPEED FREEKS or TRUKK unit that has not fought this phase"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12108,6 +12128,7 @@ class StratagemManager(
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "UNSTOPPABLE MOMENTUM": "Target: BEAST SNAGGA MOUNTED unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per model in your unit (plus 3D6 if target is your Prey), 4+ deals 1 mortal (max 6)",
+            "DED KILLY CONSTRUCTION": "Target: SPEED FREEKS or TRUKK unit that has not fought; melee weapons gain [LANCE] this phase and +1 Damage if it charged this turn",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",

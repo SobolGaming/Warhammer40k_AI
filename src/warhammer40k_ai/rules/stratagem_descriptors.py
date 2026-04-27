@@ -2403,6 +2403,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"cover_attack_type": "ranged"},
     ),
+    "000010796005": StratagemToolDescriptor(
+        stratagem_id="000010796005",
+        name="DED KILLY CONSTRUCTION",
+        timing="fight_phase",
+        target="speed_freeks_or_trukk_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_lance_and_conditional_charge_damage_bonus",
+        cp_cost=1,
+        effect_params={"grant_keywords": ["LANCE"], "charge_damage_bonus": 1},
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",
