@@ -772,6 +772,81 @@ def _validate_xenocreed_path_of_anguish_positions(
     return ()
 
 
+def _validate_surge_move_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    movement_type = str(context.get("movement_type", "") or "").strip().lower()
+    reactive_move_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    if movement_type != "surge_move" and reactive_move_type != "surge_move" and reactive_kind != "yooz_in_trouble_now":
+        return ()
+    if unit is None:
+        return ("Move unit: Surge Move requires a valid unit.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ("Move unit: Surge Move requires a game map.",)
+
+    try:
+        from ...utility.calcs import MovementType, get_validation_rules, validate_final_position
+    except ImportError:
+        return ("Move unit: Surge Move validation rules are unavailable.",)
+
+    validation_rules = get_validation_rules(MovementType.SURGE_MOVE, moving_unit=unit)
+    source = str(context.get("ability_name", "") or context.get("reactive_move_source", "") or "Surge Move").strip()
+    validation_rules["closest_enemy_unit_reason"] = source or "Surge Move"
+    excluded_keywords = {
+        str(value or "").strip().upper()
+        for value in list(context.get("closest_enemy_unit_exclude_keywords", ("AIRCRAFT",)) or ("AIRCRAFT",))
+        if str(value or "").strip()
+    }
+    if excluded_keywords:
+        validation_rules["closest_enemy_unit_exclude_keywords"] = excluded_keywords
+    try:
+        max_distance = float(context.get("max_distance", 0) or 0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    if max_distance > 0:
+        validation_rules["max_distance_override"] = float(max_distance)
+
+    positions_by_id: dict[str, tuple[float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "").strip()
+        position = entry.get("position") or []
+        if not model_id or not isinstance(position, (list, tuple)) or len(position) < 2:
+            continue
+        try:
+            positions_by_id[model_id] = (
+                float(position[0]),
+                float(position[1]),
+                float(position[2]) if len(position) > 2 else 0.0,
+            )
+        except (TypeError, ValueError):
+            continue
+
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    for model in list(models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        if not model_id or model_id not in positions_by_id:
+            continue
+        validation = validate_final_position(model, positions_by_id[model_id], validation_rules, game_map)
+        if not bool((validation or {}).get("valid", False)):
+            reason = str((validation or {}).get("reason", "") or "invalid final position")
+            return (f"Move unit: Surge Move {reason}.",)
+    return ()
+
+
 def _masters_of_the_void_enemy_dz_override_active(unit: object, game: object) -> bool:
     if unit is None or game is None:
         return False
@@ -1691,6 +1766,14 @@ def validate_move_unit_payload(
     )
     if xenocreed_path_of_anguish_errors:
         return xenocreed_path_of_anguish_errors
+    surge_move_errors = _validate_surge_move_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if surge_move_errors:
+        return surge_move_errors
     if movement_type == "charge":
         target_units = _resolve_charge_targets(game, ctx)
         if not target_units:
@@ -3706,6 +3789,7 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 )
             )
             if finalized:
+                _maybe_queue_post_reactive_disembark_move(game, request, unit)
                 _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
             return finalized
         unit.disembark(
@@ -3724,8 +3808,64 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 else:
                     sr.pop(key, None)
             unit.special_rules = sr
+    _maybe_queue_post_reactive_disembark_move(game, request, unit)
     _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
     return None
+
+
+def _maybe_queue_post_reactive_disembark_move(game: object, request: DecisionRequest, unit: object) -> None:
+    if game is None or request is None or unit is None:
+        return
+    ctx = dict(getattr(request, "context", {}) or {})
+    if not bool(ctx.get("reactive_disembark_then_move", False)):
+        return
+    if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+        return
+    get_parent_army = getattr(unit, "get_parent_army", None)
+    parent_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+    player = getattr(parent_army, "player", None)
+    if player is None:
+        return
+    movement_type = str(ctx.get("reactive_disembark_move_movement_type", "") or "surge_move").strip() or "surge_move"
+    kind = str(ctx.get("reactive_disembark_move_kind", "") or movement_type).strip() or movement_type
+    source = str(ctx.get("reactive_disembark_move_source", "") or ctx.get("reactive_disembark_source", "") or "Reactive Disembark").strip()
+    roll_spec = str(ctx.get("reactive_disembark_move_distance_roll", "") or "").strip().upper()
+    try:
+        max_distance = int(ctx.get("reactive_disembark_move_max_distance", 0) or 0)
+    except (TypeError, ValueError):
+        max_distance = 0
+    if roll_spec:
+        max_distance = int(get_roll(roll_spec) or 0)
+    if max_distance <= 0:
+        return
+    enemy_id = str(ctx.get("reactive_disembark_enemy_unit_id", "") or "")
+    enemy_unit = get_unit(game, enemy_id) if enemy_id else None
+    queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+    if not callable(queue_move):
+        return
+    excluded_keywords = [
+        str(value or "").strip().upper()
+        for value in list(ctx.get("reactive_disembark_move_exclude_keywords_any", ("AIRCRAFT",)) or ("AIRCRAFT",))
+        if str(value or "").strip()
+    ]
+    extra_context = {
+        "ability_name": source or "Reactive Disembark",
+        "reactive_disembark_move": True,
+        "enforce_max_distance": bool(ctx.get("reactive_disembark_move_enforce_max_distance", True)),
+        "closest_enemy_unit_exclude_keywords": excluded_keywords or ["AIRCRAFT"],
+    }
+    queue_move(
+        player=player,
+        unit=unit,
+        max_distance=int(max_distance),
+        kind=kind,
+        movement_type=movement_type,
+        reactive_movement_type=movement_type,
+        source=source or "Reactive Disembark",
+        attacker_unit=enemy_unit,
+        allow_engagement_range=bool(ctx.get("reactive_disembark_move_allow_engagement_range", True)),
+        extra_context=extra_context,
+    )
 
 
 def _maybe_queue_post_reactive_disembark_shooting(game: object, request: DecisionRequest, unit: object) -> None:

@@ -577,6 +577,80 @@ class OrksStratagemMixin:
         transport_candidates.sort(key=self._orks_sort_key)
         return (transport_candidates, passenger_map)
 
+    def _orks_yooz_in_trouble_now_passenger_candidates(self, transport: Any) -> list[Any]:
+        transport_root = self._orks_root(transport)
+        if transport_root is None:
+            return []
+        eligible: list[Any] = []
+        seen: set[str] = set()
+        for passenger in list(getattr(transport_root, "transport_passengers", []) or []):
+            root = self._orks_root(passenger)
+            if root is None:
+                continue
+            unit_id = self._orks_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if getattr(root, "embarked_in", None) is not transport_root:
+                continue
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "embarked_this_round", False)):
+                continue
+            if bool(getattr(round_state, "disembarked_this_round", False)):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if not self._orks_unit_contains_keyword(root, "INFANTRY"):
+                continue
+            eligible.append(root)
+        eligible.sort(key=self._orks_sort_key)
+        return eligible
+
+    def _orks_yooz_in_trouble_now_candidates(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_blitz_brigade_detachment():
+            return ([], {})
+        if not isinstance(hits_by_target, dict):
+            return ([], {})
+        candidates: list[Any] = []
+        passenger_map: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for raw_target, raw_hits in list(hits_by_target.items()):
+            try:
+                hits = int(raw_hits or 0)
+            except (TypeError, ValueError):
+                hits = 0
+            if hits <= 0:
+                continue
+            root = self._orks_root(raw_target)
+            if root is None:
+                continue
+            uid = self._orks_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._orks_owned_by_player(root, self.player):
+                continue
+            if not self._orks_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if not self._orks_is_battlewagon_kill_rig_or_hunta_rig(root):
+                continue
+            passengers = self._orks_yooz_in_trouble_now_passenger_candidates(root)
+            if not passengers:
+                continue
+            candidates.append(root)
+            passenger_map[uid] = passengers
+        candidates.sort(key=self._orks_sort_key)
+        return (candidates, passenger_map)
+
     def _orks_run_em_down_other_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._orks_root(source_unit)
         if source_root is None:
@@ -3291,6 +3365,75 @@ class OrksStratagemMixin:
                 attacker_unit=attacker_root,
             )
 
+    def _on_unit_shooting_resolved_orks_blitz_brigade(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if not self._is_blitz_brigade_detachment():
+            return
+        if self._orks_phase_label(self._orks_current_phase_label()) != "shooting phase":
+            return
+        if self._orks_is_players_turn():
+            return
+        attacker_root = self._orks_root(attacker_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self._orks_get_available_stratagem_by_names("YOOZ IN TROUBLE NOW")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates, passenger_map = self._orks_yooz_in_trouble_now_candidates(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not candidates:
+            return
+        stratagem_name = str(getattr(stratagem, "name", "") or "YOOZ IN TROUBLE NOW")
+        if self._orks_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem_name,
+            attacking_unit=attacker_root,
+        ):
+            return
+        if not bool(
+            stratagem.can_use(
+                self.player,
+                self.game,
+                attacking_unit=attacker_root,
+                enemy_unit=attacker_root,
+                candidates=candidates,
+                phase_name="Shooting phase",
+            )
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "unit_shooting_resolved",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem_name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "candidates": list(candidates),
+            "transport_candidates": list(candidates),
+            "passenger_candidates_by_transport": passenger_map,
+        }
+        if len(candidates) == 1:
+            transport = candidates[0]
+            payload["unit"] = transport
+            payload["target_unit"] = transport
+            payload["transport_unit"] = transport
+            passengers = list(passenger_map.get(self._orks_sort_key(transport)) or [])
+            if passengers:
+                payload["passenger_candidates"] = passengers
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_orks_move_started_reactions(self, *, unit: Any, action: str) -> None:
         self._queue_orks_cut_em_down_move_started_reaction(unit=unit, action=action)
         self._queue_orks_superfuelled_boiler_move_started_reaction(unit=unit, action=action)
@@ -4548,6 +4691,8 @@ class OrksStratagemMixin:
             return self._use_orks_mount_up_ladz(stratagem, **kwargs)
         if name_u == "RUN 'EM DOWN":
             return self._use_orks_run_em_down(stratagem, **kwargs)
+        if name_u == "YOOZ IN TROUBLE NOW":
+            return self._use_orks_yooz_in_trouble_now(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -7035,6 +7180,216 @@ class OrksStratagemMixin:
             "INFO: RUN 'EM DOWN: %d Blitz Brigade unit(s) can declare a charge after Advancing this turn.",
             len(affected_units),
         )
+        return True
+
+    def _orks_resolve_yooz_in_trouble_now_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, Any, list[Any], dict[str, list[Any]], Any, str]:
+        transport = kwargs.get("transport_unit") or kwargs.get("target_unit") or kwargs.get("unit")
+        passenger = kwargs.get("passenger_unit") or kwargs.get("embarked_unit")
+        candidates = list(kwargs.get("candidates") or kwargs.get("transport_candidates") or [])
+        raw_passenger_map = kwargs.get("passenger_candidates_by_transport")
+        passenger_map: dict[str, list[Any]] = dict(raw_passenger_map or {}) if isinstance(raw_passenger_map, dict) else {}
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            if transport is None:
+                transport = reaction.get("transport_unit") or reaction.get("target_unit") or reaction.get("unit")
+            if passenger is None:
+                passenger = reaction.get("passenger_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or reaction.get("transport_candidates") or [])
+            if not passenger_map:
+                raw_map = reaction.get("passenger_candidates_by_transport")
+                passenger_map = dict(raw_map or {}) if isinstance(raw_map, dict) else {}
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if attacking_unit is None:
+                attacking_unit = reaction.get("attacking_unit") or reaction.get("attacker_unit") or reaction.get("enemy_unit")
+            break
+
+        if transport is None and len(candidates) == 1:
+            transport = candidates[0]
+        transport_root = self._orks_root(transport)
+        passenger_candidates: list[Any] = []
+        if transport_root is not None:
+            passenger_candidates = list(passenger_map.get(self._orks_sort_key(transport_root)) or [])
+        if not passenger_candidates:
+            passenger_candidates = list(kwargs.get("passenger_candidates") or [])
+        if passenger is None and len(passenger_candidates) == 1:
+            passenger = passenger_candidates[0]
+        return transport, passenger, passenger_candidates, passenger_map, attacking_unit, phase_name
+
+    def _queue_orks_yooz_in_trouble_now_disembark_decision(
+        self,
+        *,
+        transport: Any,
+        passengers: list[Any],
+        enemy_unit: Any,
+        source_name: str,
+    ) -> Any:
+        if self.game is None or transport is None or not passengers:
+            return None
+        from ..engine.decision_kinds import DECISION_DISEMBARK
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        transport_id = self._orks_sort_key(transport)
+        if not transport_id:
+            return None
+        list_requests = getattr(getattr(self.game, "decision_queue", None), "list", None)
+        pending_requests = list(list_requests() or []) if callable(list_requests) else []
+        for request in pending_requests:
+            if str(getattr(request, "decision_type", "") or "") != DECISION_DISEMBARK:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("transport_id", "") or "") != transport_id:
+                continue
+            if str(ctx.get("ability", "") or "") == "yooz_in_trouble_now_disembark":
+                return None
+
+        options = []
+        for passenger in sorted(list(passengers or []), key=self._orks_sort_key):
+            passenger_id = self._orks_sort_key(passenger)
+            if not passenger_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    getattr(passenger, "name", "Unit"),
+                    payload={"unit_id": passenger_id, "transport_id": transport_id},
+                )
+            )
+        if not options:
+            return None
+        options.append(DecisionOption.create("Remain embarked", payload={"action": "skip", "skip": True}))
+        enemy_id = self._orks_sort_key(enemy_unit)
+        ctx: dict[str, Any] = {
+            "ability": "yooz_in_trouble_now_disembark",
+            "ability_name": source_name,
+            "transport_id": transport_id,
+            "reactive_disembark": True,
+            "reactive_disembark_source": source_name,
+            "reactive_disembark_max_units": 1,
+            "reactive_disembark_trigger": "yooz_in_trouble_now",
+            "reactive_disembark_then_move": True,
+            "reactive_disembark_move_kind": "yooz_in_trouble_now",
+            "reactive_disembark_move_movement_type": "surge_move",
+            "reactive_disembark_move_distance_roll": "D6",
+            "reactive_disembark_move_source": source_name,
+            "reactive_disembark_move_allow_engagement_range": True,
+            "reactive_disembark_move_exclude_keywords_any": ["AIRCRAFT"],
+            "reactive_disembark_move_enforce_max_distance": True,
+        }
+        if enemy_id:
+            ctx["reactive_disembark_enemy_unit_id"] = enemy_id
+        request = DecisionRequest.create(
+            DECISION_DISEMBARK,
+            f"{source_name}: select one embarked ORKS INFANTRY unit to disembark",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        request_decision = getattr(self.game, "request_decision", None)
+        if not callable(request_decision):
+            return None
+        request_decision(request)
+        return request
+
+    def _use_orks_yooz_in_trouble_now(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blitz_brigade_detachment():
+            return False
+        transport, passenger, passenger_candidates, passenger_map, attacking_unit, phase_name = (
+            self._orks_resolve_yooz_in_trouble_now_context("YOOZ IN TROUBLE NOW", **kwargs)
+        )
+        if self._orks_phase_label(phase_name or self._orks_current_phase_label()) != "shooting phase":
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: wrong phase")
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: not opponent's Shooting phase")
+            return False
+        transport_root = self._orks_root(transport)
+        attacker_root = self._orks_root(attacking_unit)
+        if transport_root is None:
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: no target transport provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: missing attacking enemy unit")
+            return False
+        if not self._orks_owned_by_player(transport_root, self.player):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: target transport is not yours")
+            return False
+        if self._orks_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: attacker is not enemy")
+            return False
+        if not self._orks_on_battlefield(transport_root, require_targetable=True):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: target transport must be on the battlefield and targetable")
+            return False
+        if not self._orks_is_battlewagon_kill_rig_or_hunta_rig(transport_root):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: target must be a Battlewagon, Hunta Rig or Kill Rig model")
+            return False
+        candidates = list(kwargs.get("candidates") or kwargs.get("transport_candidates") or [])
+        if not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != self._orks_normalize_name("YOOZ IN TROUBLE NOW"):
+                    continue
+                candidates = list(reaction.get("candidates") or reaction.get("transport_candidates") or [])
+                break
+        if not candidates:
+            generated_candidates, generated_passenger_map = self._orks_yooz_in_trouble_now_candidates(
+                attacker_unit=attacker_root,
+                hits_by_target=kwargs.get("hits_by_target"),
+            )
+            candidates = generated_candidates
+            if generated_passenger_map and not passenger_map:
+                passenger_map = generated_passenger_map
+        if not candidates or not self._orks_unit_in_candidates(transport_root, candidates):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: selected transport was not hit by the attacking unit")
+            return False
+        if not passenger_candidates:
+            passenger_candidates = self._orks_yooz_in_trouble_now_passenger_candidates(transport_root)
+        if passenger is not None:
+            passenger_root = self._orks_root(passenger)
+            if passenger_root is None:
+                return False
+            if not self._orks_unit_in_candidates(passenger_root, passenger_candidates):
+                logger.error("ERROR: YOOZ IN TROUBLE NOW: selected passenger must be an embarked ORKS INFANTRY unit")
+                return False
+            passenger_candidates = [passenger_root]
+        if not passenger_candidates:
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: no eligible embarked ORKS INFANTRY unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=transport_root,
+            unit=transport_root,
+            attacking_unit=attacker_root,
+            enemy_unit=attacker_root,
+            candidates=candidates or [transport_root],
+            passenger_candidates_by_transport=passenger_map,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=transport_root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "YOOZ IN TROUBLE NOW").strip() or "YOOZ IN TROUBLE NOW"
+        request = self._queue_orks_yooz_in_trouble_now_disembark_decision(
+            transport=transport_root,
+            passengers=passenger_candidates,
+            enemy_unit=attacker_root,
+            source_name=source_name,
+        )
+        if request is None:
+            logger.error("ERROR: YOOZ IN TROUBLE NOW: no disembark decision was queued")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: YOOZ IN TROUBLE NOW: queued a reactive disembark followed by a Surge move.")
         return True
 
     def _use_orks_where_dya_fink_youre_going(self, stratagem: Any, **kwargs) -> bool:

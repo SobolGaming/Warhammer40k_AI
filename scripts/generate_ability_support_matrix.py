@@ -20692,6 +20692,7 @@ def _stratagem_support(
         "000010800003": "Your Movement phase: selected Battlewagon, Kill Rig or Hunta Rig unit that has not moved lets units disembarking from it after it makes a Normal move remain eligible to declare a charge this turn.",
         "000010800002": "End of the Fight phase: selected friendly TRANSPORT with an eligible ORKS INFANTRY unit wholly within 6\" queues a deterministic embark decision; that unit must not be within Engagement Range and existing passengers do not block support.",
         "000010800004": "Your Movement phase: selected Battlewagon, Kill Rig or Hunta Rig unit that has not moved, plus up to two other friendly ORKS VEHICLE or MONSTER units within 6\", can declare charges after Advancing until end of turn.",
+        "000010800007": "Opponent Shooting phase reaction after an enemy unit has shot: selected hit Battlewagon, Hunta Rig or Kill Rig queues an eligible embarked ORKS INFANTRY unit to disembark, then roll D6 for a Surge move toward the closest non-AIRCRAFT enemy and allow ending within Engagement Range.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21705,6 +21706,7 @@ def _stratagem_support(
         "000010800003",
         "000010800002",
         "000010800004",
+        "000010800007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

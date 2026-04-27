@@ -336,6 +336,7 @@ def get_validation_rules(
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
         MovementType.HORDE_MOVE,
+        MovementType.SURGE_MOVE,
         MovementType.BLISTERING_ASSAULT,
         MovementType.BESTIAL_RAGE,
     ):
@@ -426,6 +427,7 @@ def build_collision_trees(
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
         MovementType.HORDE_MOVE,
+        MovementType.SURGE_MOVE,
         MovementType.BLISTERING_ASSAULT,
         MovementType.BESTIAL_RAGE,
     ):

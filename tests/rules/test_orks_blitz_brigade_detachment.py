@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_DISEMBARK, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -12,6 +12,7 @@ from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
 
 
 class _MockDatasheet:
@@ -703,3 +704,151 @@ def test_blitz_brigade_stratagem_tool_descriptors_include_run_em_down():
     assert descriptor.effect == "source_and_selected_units_charge_after_advance"
     assert descriptor.effect_params.get("max_other_units") == 2
     assert descriptor.effect_params.get("charge_after_advance") is True
+
+
+def test_yooz_in_trouble_now_queues_disembark_then_surge_move():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    enemy_player = enemy_army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    buggy = _unit("Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Shooter", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    battlewagon.transport_capacity = 22
+    battlewagon.transport_required_keywords = set()
+    battlewagon.transport_excluded_keywords = set()
+    for unit in (battlewagon, boyz, buggy):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    battlewagon.transport_passengers = [boyz, buggy]
+    boyz.embarked_in = battlewagon
+    boyz.reserve_status = "embarked"
+    buggy.embarked_in = battlewagon
+    buggy.reserve_status = "embarked"
+    game.rebuild_entity_registry()
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    ork_player.stratagems._current_phase_name = "Shooting phase"
+    ork_player.stratagems._on_unit_shooting_resolved_orks_blitz_brigade(
+        attacker_unit=enemy,
+        hits_by_target={battlewagon: 1},
+    )
+    pending = _pending_by_name(ork_player.stratagems, "YOOZ IN TROUBLE NOW")
+    assert pending is not None
+    assert pending.get("transport_unit") is battlewagon
+    assert boyz in list(pending.get("passenger_candidates") or [])
+
+    assert ork_player.stratagems.use(
+        "YOOZ IN TROUBLE NOW",
+        unit=battlewagon,
+        attacking_unit=enemy,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert int(ork_player.command_points or 0) == 9
+    disembark_request = _first_request(game, DECISION_DISEMBARK, ability="yooz_in_trouble_now_disembark")
+    assert disembark_request is not None
+    disembark_ctx = dict(getattr(disembark_request, "context", {}) or {})
+    assert disembark_ctx.get("reactive_disembark_then_move") is True
+    assert disembark_ctx.get("reactive_disembark_move_movement_type") == "surge_move"
+    assert str(disembark_ctx.get("reactive_disembark_enemy_unit_id", "") or "") == str(get_entity_id(enemy) or "")
+
+    option = _find_option_by_payload(disembark_request, key="unit_id", value=str(get_entity_id(boyz)))
+    assert option is not None
+    assert _find_option_by_payload(disembark_request, key="unit_id", value=str(get_entity_id(buggy))) is None
+    with patch.object(boyz, "_find_disembark_positions", return_value=[(12.5, 10.0, 0.0, 0.0)]), patch.object(
+        game.map,
+        "place_unit",
+        return_value=True,
+    ), patch("warhammer40k_ai.engine.decision_handlers.movement.get_roll", return_value=4):
+        result = resolve_decision_command(
+            game,
+            disembark_request,
+            option.option_id,
+            player_id=ork_player.id,
+        )
+    assert bool(getattr(result, "ok", False)) is True
+    assert boyz.embarked_in is None
+
+    move_request = _first_request(game, DECISION_MOVE_UNIT)
+    assert move_request is not None
+    move_ctx = dict(getattr(move_request, "context", {}) or {})
+    assert move_ctx.get("reactive_move_kind") == "yooz_in_trouble_now"
+    assert move_ctx.get("movement_type") == "surge_move"
+    assert int(move_ctx.get("max_distance", 0) or 0) == 4
+    assert move_ctx.get("enforce_max_distance") is True
+    assert "AIRCRAFT" in list(move_ctx.get("closest_enemy_unit_exclude_keywords") or [])
+
+
+def test_yooz_in_trouble_now_rejects_invalid_targets_and_unhit_transports():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    enemy_player = enemy_army.player
+    battlewagon = _unit(
+        "Battlewagon",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 22",
+    )
+    trukk = _unit(
+        "Trukk",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 12",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Shooter", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (battlewagon, trukk, boyz):
+        army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, trukk, 15.0, 10.0)
+    _place_unit(game, enemy, 20.0, 10.0)
+    _embark(battlewagon, boyz)
+    game.rebuild_entity_registry()
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    ork_player.stratagems._current_phase_name = "Shooting phase"
+
+    assert not ork_player.stratagems.use(
+        "YOOZ IN TROUBLE NOW",
+        unit=battlewagon,
+        attacking_unit=enemy,
+        candidates=[],
+        phase_name="Shooting phase",
+    )
+    assert not ork_player.stratagems.use(
+        "YOOZ IN TROUBLE NOW",
+        unit=trukk,
+        attacking_unit=enemy,
+        candidates=[trukk],
+        phase_name="Shooting phase",
+    )
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_surge_move_validation_rules_allow_engagement_and_exclude_aircraft():
+    unit = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    rules = get_validation_rules(MovementType.SURGE_MOVE, moving_unit=unit)
+
+    assert rules.get("allow_engagement_range_movement") is True
+    assert rules.get("must_end_as_close_as_possible_to_closest_enemy_unit") is True
+    assert "AIRCRAFT" in set(rules.get("closest_enemy_unit_exclude_keywords") or set())
+
+
+def test_blitz_brigade_stratagem_tool_descriptors_include_yooz_in_trouble_now():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010800007", name="YOOZ IN TROUBLE NOW")
+
+    assert descriptor is not None
+    assert descriptor.name == "YOOZ IN TROUBLE NOW"
+    assert descriptor.effect == "reactive_disembark_then_surge_move"
+    assert descriptor.effect_params.get("surge_move_distance_roll") == "D6"
+    assert descriptor.effect_params.get("allow_engagement_range_movement") is True

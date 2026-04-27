@@ -2523,6 +2523,23 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "charge_after_advance": True,
         },
     ),
+    "000010800007": StratagemToolDescriptor(
+        stratagem_id="000010800007",
+        name="YOOZ IN TROUBLE NOW",
+        timing="opponent_shooting_phase_after_enemy_unit_shot",
+        target="battlewagon_hunta_rig_or_kill_rig_hit_with_embarked_orks_infantry",
+        duration="immediate_decision",
+        effect="reactive_disembark_then_surge_move",
+        cp_cost=1,
+        effect_params={
+            "target_names_any": ["Battlewagon", "Hunta Rig", "Kill Rig"],
+            "passenger_required_keywords_all": ["ORKS", "INFANTRY"],
+            "surge_move_distance_roll": "D6",
+            "must_end_as_close_as_possible_to_closest_enemy_unit": True,
+            "closest_enemy_unit_exclude_keywords": ["AIRCRAFT"],
+            "allow_engagement_range_movement": True,
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

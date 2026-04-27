@@ -18,6 +18,7 @@ class MovementType(Enum):
     BLOOD_SURGE = "blood_surge"
     BRAZEN_FURY = "brazen_fury"
     HORDE_MOVE = "horde_move"
+    SURGE_MOVE = "surge_move"
     BLISTERING_ASSAULT = "blistering_assault"
     BESTIAL_RAGE = "bestial_rage"
     CAREEN = "careen"

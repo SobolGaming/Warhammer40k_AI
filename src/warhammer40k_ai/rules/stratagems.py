@@ -856,6 +856,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MEKANISED BRUTALITY",
     "MOUNT UP, LADZ",
     "RUN 'EM DOWN",
+    "YOOZ IN TROUBLE NOW",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1128,6 +1129,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "MEKANISED BRUTALITY": {"000010800003"},
     "MOUNT UP, LADZ": {"000010800002"},
     "RUN 'EM DOWN": {"000010800004"},
+    "YOOZ IN TROUBLE NOW": {"000010800007"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -2928,6 +2930,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armoured_infantry_combined_fire)
         if "MOBILE DAKKASTORM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_speedwaaagh_mobile_dakkastorm)
+        if "YOOZ IN TROUBLE NOW" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_orks_blitz_brigade)
         if "SHATTERING SALVO" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_steel_hammer_shattering_salvo)
         if "WITHERING FIREPOWER" in names:
@@ -11375,6 +11379,27 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase and a Battlewagon, Kill Rig or Hunta Rig unit that has not moved this phase"
             return result
+        if name_u == "YOOZ IN TROUBLE NOW":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires your opponent's Shooting phase just after an enemy unit has shot"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or context.get("transport_candidates") or [])
+            if not candidates:
+                candidates, _passenger_map = self._orks_yooz_in_trouble_now_candidates(
+                    attacker_unit=context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit"),
+                    hits_by_target=context.get("hits_by_target"),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a hit Battlewagon, Kill Rig or Hunta Rig with an embarked ORKS INFANTRY unit"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12277,6 +12302,7 @@ class StratagemManager(
             "MEKANISED BRUTALITY": "Target: Battlewagon, Kill Rig or Hunta Rig unit that has not moved; units disembarking from it after it makes a Normal move remain eligible to charge this turn",
             "MOUNT UP, LADZ": "Target: friendly TRANSPORT with an eligible ORKS INFANTRY unit wholly within 6\" and not within Engagement Range; queues an end-of-Fight embark decision that allows existing passengers",
             "RUN 'EM DOWN": "Target: Battlewagon, Kill Rig or Hunta Rig unit that has not moved; it and up to two other friendly ORKS VEHICLE or MONSTER units within 6\" can declare charges after Advancing this turn",
+            "YOOZ IN TROUBLE NOW": "Target: hit Battlewagon, Hunta Rig or Kill Rig with an embarked ORKS INFANTRY unit; queues a reactive disembark and D6 Surge move toward the closest non-AIRCRAFT enemy",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",

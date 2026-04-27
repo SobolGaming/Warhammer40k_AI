@@ -622,6 +622,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
         MovementType.HORDE_MOVE,
+        MovementType.SURGE_MOVE,
         MovementType.BLISTERING_ASSAULT,
         MovementType.BESTIAL_RAGE,
     ]:
@@ -1085,6 +1086,7 @@ def get_validation_rules(
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
         MovementType.HORDE_MOVE,
+        MovementType.SURGE_MOVE,
         MovementType.BLISTERING_ASSAULT,
         MovementType.BESTIAL_RAGE,
     ):
@@ -1100,6 +1102,8 @@ def get_validation_rules(
             reason = "Brazen Fury"
         elif movement_type == MovementType.BLISTERING_ASSAULT:
             reason = "Blistering Assault"
+        elif movement_type == MovementType.SURGE_MOVE:
+            reason = "Surge Move"
         elif movement_type == MovementType.BESTIAL_RAGE:
             reason = "Bestial Rage"
         else:
@@ -1111,7 +1115,7 @@ def get_validation_rules(
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
         })
-        if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.BESTIAL_RAGE):
+        if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.SURGE_MOVE, MovementType.BESTIAL_RAGE):
             base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
         if movement_type == MovementType.HORDE_MOVE and moving_unit is not None:
             exclude_keywords = {"AIRCRAFT"}
