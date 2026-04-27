@@ -61,3 +61,28 @@ def test_blitz_brigade_armoured_duellists_stratagem_is_supported():
     assert "+1 to wound" in notes_l
     assert "monster" in notes_l
     assert "vehicle" in notes_l
+
+
+def test_blitz_brigade_impervious_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010800006"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Blitz Brigade",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "IMPERVIOUS"
+    notes_l = str(notes or "").lower()
+    assert "battlewagon" in notes_l
+    assert "wound" in notes_l
+    assert "strength" in notes_l
+    assert "toughness" in notes_l

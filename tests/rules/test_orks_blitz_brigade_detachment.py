@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.units.unit import Unit
 
@@ -256,3 +257,104 @@ def test_armoured_duellists_rejects_non_vehicle_or_already_shot_targets():
     assert not ork_player.stratagems.use("ARMOURED DUELLISTS", unit=battlewagon, phase_name="Shooting phase")
     assert not ork_player.stratagems.use("ARMOURED DUELLISTS", unit=boyz, phase_name="Shooting phase")
     assert int(ork_player.command_points or 0) == 10
+
+
+def test_impervious_queues_and_applies_conditional_wound_penalty():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit("Battlewagon", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Shooter", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(battlewagon)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 1
+    game.current_player_idx = 1
+    game.rebuild_entity_registry()
+    ork_player.stratagems._current_phase_name = "Shooting phase"
+
+    ork_player.stratagems._on_shooting_targets_selected(
+        attacking_unit=enemy,
+        target_units=[battlewagon],
+    )
+    pending = ork_player.stratagems.get_pending_reactions()
+    assert any(str(entry.get("stratagem", "") or "").strip().upper() == "IMPERVIOUS" for entry in pending)
+
+    assert ork_player.stratagems.use(
+        "IMPERVIOUS",
+        unit=battlewagon,
+        attacking_unit=enemy,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert int(ork_player.command_points or 0) == 9
+
+    high_strength_profile = _ranged_profile(strength="6", skill="3+")
+    high_strength_attack = {
+        "attacker_model": enemy.models[0],
+        "attacker_unit": enemy,
+        "target_unit": battlewagon,
+        "target_model": battlewagon.models[0],
+        "mortal_wound": False,
+    }
+    high_strength_wound = high_strength_profile._wound_target_with_tracking(
+        battlewagon,
+        enemy.models[0],
+        high_strength_attack,
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert high_strength_wound.get("wound") is False
+    assert any("IMPERVIOUS" in str(item).upper() for item in list(high_strength_wound.get("modifiers", []) or []))
+
+    equal_strength_profile = _ranged_profile(strength="5", skill="3+")
+    equal_strength_attack = {
+        "attacker_model": enemy.models[0],
+        "attacker_unit": enemy,
+        "target_unit": battlewagon,
+        "target_model": battlewagon.models[0],
+        "mortal_wound": False,
+    }
+    equal_strength_wound = equal_strength_profile._wound_target_with_tracking(
+        battlewagon,
+        enemy.models[0],
+        equal_strength_attack,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert equal_strength_wound.get("wound") is True
+    assert not any("IMPERVIOUS" in str(item).upper() for item in list(equal_strength_wound.get("modifiers", []) or []))
+
+
+def test_impervious_rejects_non_rig_non_battlewagon_targets():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy Shooter", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(boyz)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 1
+    game.current_player_idx = 1
+    game.rebuild_entity_registry()
+
+    assert not ork_player.stratagems.use(
+        "IMPERVIOUS",
+        unit=boyz,
+        attacking_unit=enemy,
+        candidates=[boyz],
+        phase_name="Shooting phase",
+    )
+    assert int(ork_player.command_points or 0) == 10
+
+
+def test_blitz_brigade_stratagem_tool_descriptors_include_impervious():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010800006", name="IMPERVIOUS")
+
+    assert descriptor is not None
+    assert descriptor.name == "IMPERVIOUS"
+    assert descriptor.effect == "defensive_wound_penalty_if_strength_gt_toughness"
+    assert descriptor.effect_params.get("requires_strength_gt_toughness") is True

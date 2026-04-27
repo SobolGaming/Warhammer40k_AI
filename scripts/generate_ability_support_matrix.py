@@ -20688,6 +20688,7 @@ def _stratagem_support(
         "000010796002": "Your Movement phase: selected ORKS unit that has not moved and has not used Turbo Boostas this turn can shoot and declare charges after Advancing or Falling Back until end of turn.",
         "000010796004": "Your Shooting phase: selected ORKS unit that has not shot gains [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] on non-Torrent ranged weapons until end of phase.",
         "000010800005": "Your Shooting phase: selected ORKS VEHICLE unit that has not shot gains +1 to Hit rolls and +1 to Wound rolls for ranged attacks against MONSTER or VEHICLE targets until end of phase.",
+        "000010800006": "Opponent Shooting phase reaction after targets selected: targeted Battlewagon, Kill Rig or Hunta Rig unit imposes -1 to Wound rolls on incoming ranged attacks whose Strength exceeds its Toughness until end of phase.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21697,6 +21698,7 @@ def _stratagem_support(
         "000010796002",
         "000010796004",
         "000010800005",
+        "000010800006",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

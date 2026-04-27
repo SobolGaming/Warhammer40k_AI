@@ -852,6 +852,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ON DA MOVE",
     "SPESHUL AMMO",
     "ARMOURED DUELLISTS",
+    "IMPERVIOUS",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1120,6 +1121,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "ON DA MOVE": {"000010796002"},
     "SPESHUL AMMO": {"000010796004"},
     "ARMOURED DUELLISTS": {"000010800005"},
+    "IMPERVIOUS": {"000010800006"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -11294,6 +11296,28 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Shooting phase and an ORKS VEHICLE unit that has not shot this phase"
             return result
+        if name_u == "IMPERVIOUS":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a targeted Battlewagon, Kill Rig or Hunta Rig unit"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                target_units = context.get("target_units") or context.get("targets")
+                candidates = self._orks_target_selected_reaction_candidates(
+                    list(target_units or []),
+                    matcher=self._orks_is_battlewagon_kill_rig_or_hunta_rig,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a targeted Battlewagon, Kill Rig or Hunta Rig unit"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12192,6 +12216,7 @@ class StratagemManager(
             "ON DA MOVE": "Target: ORKS unit that has not moved and has not used Turbo Boostas this turn; it can shoot and charge after Advancing or Falling Back until end of turn",
             "SPESHUL AMMO": "Target: ORKS unit that has not shot; non-Torrent ranged weapons gain [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] until end of phase",
             "ARMOURED DUELLISTS": "Target: ORKS VEHICLE unit that has not shot; ranged attacks gain +1 to hit and +1 to wound against MONSTER or VEHICLE targets this phase",
+            "IMPERVIOUS": "Target: Battlewagon, Kill Rig or Hunta Rig unit selected by the enemy shooter's targets; incoming ranged attacks suffer -1 to wound while Strength is greater than target Toughness this phase",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",

@@ -2013,6 +2013,18 @@ class OrksStratagemMixin:
             return True
         return self._orks_unit_name_contains(root, "trukk")
 
+    def _orks_is_battlewagon_kill_rig_or_hunta_rig(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_any_keyword(root, ("BATTLEWAGON", "KILL RIG", "HUNTA RIG")):
+            return True
+        return (
+            self._orks_unit_name_contains(root, "battlewagon")
+            or self._orks_unit_name_contains(root, "kill rig")
+            or self._orks_unit_name_contains(root, "hunta rig")
+        )
+
     def _orks_normalize_weapon_key(self, source_unit: Any, value: str) -> str:
         root = self._orks_root(source_unit)
         normalizer = getattr(root, "_normalize_keyword_phrase", None) if root is not None else None
@@ -2271,6 +2283,18 @@ class OrksStratagemMixin:
                 "attack_type": "ranged",
                 "duration": "phase",
                 "source": source_name,
+            }
+        ]
+
+    def _orks_impervious_defensive_effects(self, *, source_name: str) -> list[dict]:
+        return [
+            {
+                "key": "defensive_wound_mods",
+                "value": 1,
+                "attack_type": "ranged",
+                "duration": "phase",
+                "source": source_name,
+                "requires_strength_gt_toughness": True,
             }
         ]
 
@@ -2548,6 +2572,14 @@ class OrksStratagemMixin:
                 stratagem_names=("DUST TRAILS",),
                 detachment_check=self._is_speedwaaagh_detachment,
                 target_matcher=self._is_orks_unit,
+            )
+            self._queue_single_orks_target_selected_defensive_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                stratagem_names=("IMPERVIOUS",),
+                detachment_check=self._is_blitz_brigade_detachment,
+                target_matcher=self._orks_is_battlewagon_kill_rig_or_hunta_rig,
             )
 
         self._queue_single_orks_target_selected_defensive_reaction(
@@ -4330,6 +4362,8 @@ class OrksStratagemMixin:
             return self._use_orks_speshul_ammo(stratagem, **kwargs)
         if name_u == "ARMOURED DUELLISTS":
             return self._use_orks_armoured_duellists(stratagem, **kwargs)
+        if name_u == "IMPERVIOUS":
+            return self._use_orks_impervious(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6505,6 +6539,20 @@ class OrksStratagemMixin:
             getattr(root, "name", "Unit"),
         )
         return True
+
+    def _use_orks_impervious(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_target_selected_defensive_reaction(
+            stratagem,
+            stratagem_name="IMPERVIOUS",
+            expected_phases=("Shooting phase",),
+            detachment_check=self._is_blitz_brigade_detachment,
+            target_matcher=self._orks_is_battlewagon_kill_rig_or_hunta_rig,
+            target_error="target must be a Battlewagon, Kill Rig or Hunta Rig unit",
+            effect_builder=lambda _unit, *, source_name: self._orks_impervious_defensive_effects(
+                source_name=source_name
+            ),
+            **kwargs,
+        )
 
     def _use_orks_where_dya_fink_youre_going(self, stratagem: Any, **kwargs) -> bool:
         return self._use_orks_reactive_reposition_stratagem(

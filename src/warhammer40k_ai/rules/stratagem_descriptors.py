@@ -2458,6 +2458,21 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "target_keywords_any": ["MONSTER", "VEHICLE"],
         },
     ),
+    "000010800006": StratagemToolDescriptor(
+        stratagem_id="000010800006",
+        name="IMPERVIOUS",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="battlewagon_kill_rig_or_hunta_rig_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "wound_roll_modifier": -1,
+            "requires_strength_gt_toughness": True,
+            "target_names_any": ["Battlewagon", "Kill Rig", "Hunta Rig"],
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",
