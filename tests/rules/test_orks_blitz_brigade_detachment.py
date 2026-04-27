@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.units.unit import Unit
 
 
@@ -42,6 +43,23 @@ def _unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
     unit.deployed = True
     unit.reserve_status = "deployed"
     return unit
+
+
+def _ranged_profile(*, strength: str = "5", skill: str = "5+") -> WargearProfile:
+    parent = SimpleNamespace(name="Kannon", is_melee=lambda: False, is_ranged=lambda: True)
+    return WargearProfile(
+        "Profile",
+        wargear_data={
+            "range": "24",
+            "A": "1",
+            "BS_WS": str(skill),
+            "S": str(strength),
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
 
 
 def _build_game(*, detachment: str = "Blitz Brigade"):
@@ -139,3 +157,102 @@ def test_eager_for_the_fight_disembark_hook_applies_existing_reroll_path():
 
     assert boyz.can_reroll_advance_roll() is True
     assert boyz.can_reroll_charge_roll(target_unit=enemy, game=game) is True
+
+
+def test_armoured_duellists_grants_hit_and_wound_bonus_vs_monster_or_vehicle_targets():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit("Battlewagon", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    enemy_tank = _unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"])
+    enemy_infantry = _unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(battlewagon)
+    enemy_army.add_unit(enemy_tank)
+    enemy_army.add_unit(enemy_infantry)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 0
+    game.current_player_idx = 0
+    game.rebuild_entity_registry()
+
+    assert ork_player.stratagems.use("ARMOURED DUELLISTS", unit=battlewagon, phase_name="Shooting phase")
+    assert int(ork_player.command_points or 0) == 9
+
+    profile = _ranged_profile(strength="5", skill="5+")
+    attack_instance = {
+        "attacker_model": battlewagon.models[0],
+        "attacker_unit": battlewagon,
+        "target_unit": enemy_tank,
+        "target_model": enemy_tank.models[0],
+        "mortal_wound": False,
+    }
+    hit = profile._hit_target_with_tracking(
+        enemy_tank,
+        battlewagon.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert hit.get("hit") is True
+    assert any("ARMOURED DUELLISTS" in str(item).upper() for item in list(hit.get("modifiers", []) or []))
+
+    wound = profile._wound_target_with_tracking(
+        enemy_tank,
+        battlewagon.models[0],
+        attack_instance,
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert wound.get("wound") is True
+    assert any("ARMOURED DUELLISTS" in str(item).upper() for item in list(wound.get("modifiers", []) or []))
+
+    infantry_instance = {
+        "attacker_model": battlewagon.models[0],
+        "attacker_unit": battlewagon,
+        "target_unit": enemy_infantry,
+        "target_model": enemy_infantry.models[0],
+        "mortal_wound": False,
+    }
+    infantry_hit = profile._hit_target_with_tracking(
+        enemy_infantry,
+        battlewagon.models[0],
+        infantry_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert infantry_hit.get("hit") is False
+    assert not any("ARMOURED DUELLISTS" in str(item).upper() for item in list(infantry_hit.get("modifiers", []) or []))
+
+    infantry_wound = profile._wound_target_with_tracking(
+        enemy_infantry,
+        battlewagon.models[0],
+        infantry_instance,
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert infantry_wound.get("wound") is False
+    assert not any("ARMOURED DUELLISTS" in str(item).upper() for item in list(infantry_wound.get("modifiers", []) or []))
+
+
+def test_armoured_duellists_rejects_non_vehicle_or_already_shot_targets():
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit("Battlewagon", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(battlewagon)
+    army.add_unit(boyz)
+    enemy_army.add_unit(enemy)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 0
+    game.current_player_idx = 0
+    game.rebuild_entity_registry()
+
+    battlewagon.round_state.shot_this_round = True
+    assert not ork_player.stratagems.use("ARMOURED DUELLISTS", unit=battlewagon, phase_name="Shooting phase")
+    assert not ork_player.stratagems.use("ARMOURED DUELLISTS", unit=boyz, phase_name="Shooting phase")
+    assert int(ork_player.command_points or 0) == 10

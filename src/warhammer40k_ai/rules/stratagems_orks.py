@@ -84,6 +84,11 @@ class OrksStratagemMixin:
         checker = getattr(mgr, "is_speedwaaagh", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_blitz_brigade_detachment(self) -> bool:
+        mgr = self._orks_detachment_mgr()
+        checker = getattr(mgr, "is_blitz_brigade", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _orks_normalize_name(text: str) -> str:
         value = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
@@ -471,6 +476,15 @@ class OrksStratagemMixin:
             return []
         return self._orks_offensive_candidates(
             require_targetable=True,
+            require_not_selected_phase="Shooting phase",
+        )
+
+    def _orks_armoured_duellists_candidates(self) -> list[Any]:
+        if not self._is_blitz_brigade_detachment():
+            return []
+        return self._orks_offensive_candidates(
+            require_targetable=True,
+            keyword_any=("VEHICLE",),
             require_not_selected_phase="Shooting phase",
         )
 
@@ -4314,6 +4328,8 @@ class OrksStratagemMixin:
             return self._use_orks_on_da_move(stratagem, **kwargs)
         if name_u == "SPESHUL AMMO":
             return self._use_orks_speshul_ammo(stratagem, **kwargs)
+        if name_u == "ARMOURED DUELLISTS":
+            return self._use_orks_armoured_duellists(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6426,6 +6442,66 @@ class OrksStratagemMixin:
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: SPESHUL AMMO: %s gains [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] on non-Torrent ranged weapons until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_armoured_duellists(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blitz_brigade_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Shooting phase",),
+            require_your_turn=True,
+            error_prefix="ARMOURED DUELLISTS",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("ARMOURED DUELLISTS", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: ARMOURED DUELLISTS: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_armoured_duellists_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="ARMOURED DUELLISTS",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("VEHICLE",),
+            require_not_selected_phase="Shooting phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: ARMOURED DUELLISTS: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "ARMOURED DUELLISTS").strip() or "ARMOURED DUELLISTS"
+        effects = [
+            {
+                "id": "armoured_duellists:hit_bonus",
+                "source": source_name,
+                "effect": "hit_bonus",
+                "attack_type": "ranged",
+                "value": 1,
+                "target_keywords_any": ["MONSTER", "VEHICLE"],
+                "expires_mode": "phase",
+            },
+            {
+                "id": "armoured_duellists:wound_bonus",
+                "source": source_name,
+                "effect": "wound_bonus",
+                "attack_type": "ranged",
+                "value": 1,
+                "target_keywords_any": ["MONSTER", "VEHICLE"],
+                "expires_mode": "phase",
+            },
+        ]
+        self._orks_apply_temp_effects(root, detachment="blitz_brigade", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ARMOURED DUELLISTS: %s gains +1 to hit and wound vs MONSTER/VEHICLE targets this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

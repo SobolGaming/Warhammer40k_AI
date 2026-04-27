@@ -2443,6 +2443,21 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "exclude_weapon_keywords_any": ["TORRENT"],
         },
     ),
+    "000010800005": StratagemToolDescriptor(
+        stratagem_id="000010800005",
+        name="ARMOURED DUELLISTS",
+        timing="shooting_phase",
+        target="orks_vehicle_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_and_wound_bonus_vs_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "hit_bonus": 1,
+            "wound_bonus": 1,
+            "target_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

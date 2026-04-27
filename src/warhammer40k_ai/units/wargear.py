@@ -13036,6 +13036,26 @@ class WargearProfile:
         unit = getattr(attacker, "parent_unit", None)
         get_root = getattr(unit, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else unit
+        temp_effect_iter = getattr(root, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="hit_bonus",
+                    attack_type=attack_type,
+                    target=target,
+                    model=attacker,
+                    weapon_profile=self,
+                )
+                or []
+            ):
+                try:
+                    hit_bonus = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    hit_bonus = 0
+                if hit_bonus:
+                    source_name = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                    _add_hit_mod(int(hit_bonus), f"{int(hit_bonus):+d} to hit from {source_name}")
         sr = getattr(root, "special_rules", None)
         if isinstance(sr, dict) and bool(sr.get("space_marines_overwhelming_onslaught_active")):
             owner_id = str(sr.get("space_marines_overwhelming_onslaught_turn_owner", "") or "")
@@ -20458,6 +20478,28 @@ class WargearProfile:
                 wound_result['modifiers'].extend(list((bonuses or {}).get("wound_reasons", []) or []))
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        temp_effect_iter = getattr(attacker_unit, "iter_active_orks_temp_effects", None) if attacker_unit is not None else None
+        if callable(temp_effect_iter):
+            attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="wound_bonus",
+                    attack_type=attack_type,
+                    target=target,
+                    model=attacker,
+                    weapon_profile=self,
+                )
+                or []
+            ):
+                try:
+                    wound_bonus = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    wound_bonus = 0
+                if wound_bonus:
+                    source_name = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(f"{int(wound_bonus):+d} to wound from {source_name}")
         # Dark Ritual (once per battle): +1 to wound until end of turn.
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)

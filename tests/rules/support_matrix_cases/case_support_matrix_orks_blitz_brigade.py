@@ -36,3 +36,28 @@ def test_blitz_brigade_eager_for_the_fight_detachment_ability_is_supported():
     assert "disembarks" in notes_l
     assert "advance" in notes_l
     assert "charge" in notes_l
+
+
+def test_blitz_brigade_armoured_duellists_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010800005"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Blitz Brigade",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "ARMOURED DUELLISTS"
+    notes_l = str(notes or "").lower()
+    assert "+1 to hit" in notes_l
+    assert "+1 to wound" in notes_l
+    assert "monster" in notes_l
+    assert "vehicle" in notes_l

@@ -851,6 +851,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DED KILLY CONSTRUCTION",
     "ON DA MOVE",
     "SPESHUL AMMO",
+    "ARMOURED DUELLISTS",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1118,6 +1119,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "DED KILLY CONSTRUCTION": {"000010796005"},
     "ON DA MOVE": {"000010796002"},
     "SPESHUL AMMO": {"000010796004"},
+    "ARMOURED DUELLISTS": {"000010800005"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -11274,6 +11276,24 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Shooting phase and an ORKS unit that has not shot this phase"
             return result
+        if name_u == "ARMOURED DUELLISTS":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase and an ORKS VEHICLE unit that has not shot this phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_armoured_duellists_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an ORKS VEHICLE unit that has not shot this phase"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12171,6 +12191,7 @@ class StratagemManager(
             "DED KILLY CONSTRUCTION": "Target: SPEED FREEKS or TRUKK unit that has not fought; melee weapons gain [LANCE] this phase and +1 Damage if it charged this turn",
             "ON DA MOVE": "Target: ORKS unit that has not moved and has not used Turbo Boostas this turn; it can shoot and charge after Advancing or Falling Back until end of turn",
             "SPESHUL AMMO": "Target: ORKS unit that has not shot; non-Torrent ranged weapons gain [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+] until end of phase",
+            "ARMOURED DUELLISTS": "Target: ORKS VEHICLE unit that has not shot; ranged attacks gain +1 to hit and +1 to wound against MONSTER or VEHICLE targets this phase",
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
