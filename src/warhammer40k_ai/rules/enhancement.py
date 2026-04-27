@@ -5307,6 +5307,19 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_titan_killer_bearer_model_id"] = bearer_id
 
+        if name == "engine speaker" or enh_id == "000010787004":
+            if not is_steel_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_bonus = _coerce_int(params.get("move_bonus", 3) or 3, default=3)
+            unit.special_rules["enhancement_engine_speaker"] = True
+            unit.special_rules["enhancement_engine_speaker_move_bonus"] = int(max(0, move_bonus))
+            unit.special_rules["enhancement_engine_speaker_source"] = "Engine Speaker"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_engine_speaker_bearer_model_id"] = bearer_id
+
         if name in ("bombast-class vox-array", "bombast class vox array") or enh_id == "000009801002":
             if not is_bridgehead_strike:
                 return

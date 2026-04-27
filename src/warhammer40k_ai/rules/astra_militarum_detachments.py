@@ -1757,6 +1757,31 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self._enhancement_bearer_alive(root, sr, bearer_key=bearer_key)
 
+    def steel_hammer_engine_speaker_move_bonus(self, unit, model=None) -> int:
+        if not self.is_steel_hammer():
+            return 0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_in_army(root):
+            return 0
+        if not self.unit_is_astra_militarum(root):
+            return 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_engine_speaker", False)):
+            return 0
+        bearer_key = "enhancement_engine_speaker_bearer_model_id"
+        bearer_id = str(sr.get(bearer_key, "") or "").strip()
+        if model is not None and bearer_id and self._entity_id(model) != bearer_id:
+            return 0
+        if not self._enhancement_bearer_alive(root, sr, bearer_key=bearer_key):
+            return 0
+        try:
+            bonus = int(sr.get("enhancement_engine_speaker_move_bonus", 3) or 3)
+        except (TypeError, ValueError):
+            bonus = 3
+        return int(max(0, bonus))
+
     def combined_arms_reactive_command_trigger_spec(self, unit) -> dict | None:
         if not self.is_combined_arms():
             return None

@@ -3432,6 +3432,10 @@ class KeywordsDetachmentsMixin:
                     and "end of your movement phase" in norm
                     and "friendly necrons model" in norm
                 )
+                is_astra_militarum_vehicle_repair_rule = bool(
+                    "friendly astra militarum vehicle model within" in norm
+                    and "regains up to d3 lost wounds" in norm
+                )
                 if not any(
                     (
                         has_hit_bonus_clause,
@@ -3439,6 +3443,7 @@ class KeywordsDetachmentsMixin:
                         has_fnp_clause,
                         weapon_choice_required,
                         is_technomancer_rule,
+                        is_astra_militarum_vehicle_repair_rule,
                         is_grot_oiler_rule,
                         is_mekaniak_rule,
                         is_sawbonez_rule,
@@ -3513,7 +3518,7 @@ class KeywordsDetachmentsMixin:
                     or is_grot_oiler_rule
                     or is_mekaniak_rule
                     or is_sawbonez_rule
-                    or ("friendly astra militarum vehicle model within" in norm and "regains up to d3 lost wounds" in norm)
+                    or is_astra_militarum_vehicle_repair_rule
                 ):
                     selection_kind = "model"
                 limit_once_per_turn = (

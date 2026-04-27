@@ -26653,6 +26653,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             fnp_value = 0
         fnp_requires_vehicle = bool(ctx.get("fnp_requires_vehicle", False))
+        try:
+            move_bonus = int(ctx.get("move_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            move_bonus = 0
         expires_phase = str(ctx.get("expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
         hit_bonus_model_only = bool(ctx.get("hit_bonus_model_only", False))
         once_per_battle = bool(ctx.get("once_per_battle", False))
@@ -26799,6 +26803,35 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             tsr.pop("master_of_mechanisms_fnp_active", None)
             tsr.pop("master_of_mechanisms_fnp_value", None)
             tsr.pop("master_of_mechanisms_fnp_owner", None)
+        move_bonus_applies = bool(move_bonus > 0 and has_vehicle_keyword)
+        remove_modifiers = getattr(target_root, "remove_characteristic_modifiers_by_source", None)
+        if callable(remove_modifiers):
+            remove_modifiers("master_of_mechanisms:move_bonus")
+        if move_bonus_applies:
+            add_modifier = getattr(target_root, "add_characteristic_modifier", None)
+            if callable(add_modifier):
+                from ...utility.modifiers import Modifier, ModifierOp
+
+                add_modifier(
+                    "movement",
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(move_bonus),
+                        source="master_of_mechanisms:move_bonus",
+                    ),
+                )
+            tsr["master_of_mechanisms_move_bonus_active"] = True
+            tsr["master_of_mechanisms_move_bonus"] = int(move_bonus)
+            tsr["master_of_mechanisms_move_bonus_owner"] = owner_id
+            if target_model is not None:
+                tsr["master_of_mechanisms_move_bonus_model_id"] = str(get_entity_id(target_model) or "")
+            else:
+                tsr.pop("master_of_mechanisms_move_bonus_model_id", None)
+        else:
+            tsr.pop("master_of_mechanisms_move_bonus_active", None)
+            tsr.pop("master_of_mechanisms_move_bonus", None)
+            tsr.pop("master_of_mechanisms_move_bonus_owner", None)
+            tsr.pop("master_of_mechanisms_move_bonus_model_id", None)
         if weapon_choice_required and target_model is not None and chosen_weapon_name and weapon_keywords:
             tsr["master_of_mechanisms_weapon_keywords_active"] = True
             tsr["master_of_mechanisms_weapon_keywords_owner"] = owner_id
@@ -26836,6 +26869,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             summary_parts.append(f"re-rolls Hit rolls of 1 until next {duration_label}")
         if fnp_applies:
             summary_parts.append(f"gains Feel No Pain {int(fnp_value)}+ until next {duration_label}")
+        if move_bonus_applies:
+            summary_parts.append(f"gets +{int(move_bonus)}\" Move until next {duration_label}")
         if weapon_choice_required and chosen_weapon_name and weapon_keywords:
             summary_parts.append(
                 f"{chosen_weapon_name} gains [{', '.join(list(weapon_keywords))}] until next {duration_label}"

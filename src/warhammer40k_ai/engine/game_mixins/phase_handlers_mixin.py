@@ -14086,6 +14086,7 @@ class GamePhaseHandlersMixin:
             has_hit_reroll_ones = bool(sr.get("master_of_mechanisms_hit_reroll_ones_active"))
             has_fnp_bonus = bool(sr.get("master_of_mechanisms_fnp_active"))
             has_weapon_keyword_bonus = bool(sr.get("master_of_mechanisms_weapon_keywords_active"))
+            has_move_bonus = bool(sr.get("master_of_mechanisms_move_bonus_active"))
             has_selection_marker = (
                 "master_of_mechanisms_selected_turn_owner" in sr
                 or "master_of_mechanisms_selected_turn" in sr
@@ -14095,6 +14096,7 @@ class GamePhaseHandlersMixin:
                 and not has_hit_reroll_ones
                 and not has_fnp_bonus
                 and not has_weapon_keyword_bonus
+                and not has_move_bonus
                 and not has_selection_marker
             ):
                 continue
@@ -14108,6 +14110,8 @@ class GamePhaseHandlersMixin:
                 effect_owner = str(sr.get("master_of_mechanisms_fnp_owner", "") or "")
             if not effect_owner:
                 effect_owner = str(sr.get("master_of_mechanisms_weapon_keywords_owner", "") or "")
+            if not effect_owner:
+                effect_owner = str(sr.get("master_of_mechanisms_move_bonus_owner", "") or "")
             if effect_owner != owner_id:
                 continue
             try:
@@ -14135,6 +14139,9 @@ class GamePhaseHandlersMixin:
                         )
                     except Exception:
                         pass
+            remove_modifiers = getattr(root, "remove_characteristic_modifiers_by_source", None)
+            if callable(remove_modifiers):
+                remove_modifiers("master_of_mechanisms:move_bonus")
             for key in (
                 "master_of_mechanisms_hit_bonus_active",
                 "master_of_mechanisms_hit_bonus",
@@ -14151,6 +14158,10 @@ class GamePhaseHandlersMixin:
                 "master_of_mechanisms_weapon_attack_type",
                 "master_of_mechanisms_weapon_name",
                 "master_of_mechanisms_weapon_keywords",
+                "master_of_mechanisms_move_bonus_active",
+                "master_of_mechanisms_move_bonus",
+                "master_of_mechanisms_move_bonus_owner",
+                "master_of_mechanisms_move_bonus_model_id",
                 "master_of_mechanisms_source",
                 "master_of_mechanisms_selected_turn_owner",
                 "master_of_mechanisms_selected_turn",
@@ -14345,6 +14356,19 @@ class GamePhaseHandlersMixin:
             if once_per_battle and once_per_battle_key and once_per_battle_scope == "model":
                 if bool(getattr(bearer, "has_used_once_per_battle", lambda _k: False)(once_per_battle_key)):
                     continue
+            move_bonus = 0
+            if "omnissiah" in ability_name.lower():
+                am_mgr = getattr(army, "astra_militarum_detachments", None)
+                move_bonus_fn = (
+                    getattr(am_mgr, "steel_hammer_engine_speaker_move_bonus", None)
+                    if am_mgr is not None
+                    else None
+                )
+                if callable(move_bonus_fn):
+                    try:
+                        move_bonus = int(move_bonus_fn(root, model=bearer) or 0)
+                    except (TypeError, ValueError):
+                        move_bonus = 0
             csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
             range_bonus_fn = (
                 getattr(csm_mgr, "cult_of_the_arkifane_crown_of_worms_range_bonus", None)
@@ -14589,6 +14613,7 @@ class GamePhaseHandlersMixin:
                     "hit_reroll_ones": bool(hit_reroll_ones),
                     "fnp_value": int(fnp_value),
                     "fnp_requires_vehicle": bool(fnp_requires_vehicle),
+                    "move_bonus": int(max(0, move_bonus)),
                     "target_requires_vehicle": bool(target_requires_vehicle),
                     "target_keyword": str(target_keyword or ""),
                     "target_keywords": list(target_keywords),

@@ -524,6 +524,19 @@ _STEEL_HAMMER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="bearer_ranged_damage_reroll",
         effect_params={"attack_type": "ranged", "reroll_damage": True},
     ),
+    "000010787004": EnhancementToolDescriptor(
+        enhancement_id="000010787004",
+        name="Engine Speaker",
+        timing="on_omnissiahs_blessing_use",
+        target="selected_vehicle_model",
+        duration="until_start_of_next_command_phase",
+        effect="omnissiahs_blessing_vehicle_move_bonus",
+        effect_params={
+            "move_bonus": 3,
+            "target_requires_keyword": "VEHICLE",
+            "requires_bearer_alive": True,
+        },
+    ),
 }
 
 _STEEL_HAMMER_BY_NAME = {

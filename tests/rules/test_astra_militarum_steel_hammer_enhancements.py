@@ -1,5 +1,8 @@
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.game import BattleRoundPhases
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -8,6 +11,14 @@ from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_d
 from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, VoiceOfCommandManager
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+
+OMNISSIAHS_BLESSING_TEXT = (
+    "In your Command phase, select one friendly Astra Militarum Vehicle model within 3\" of this model. "
+    "That VEHICLE model regains up to D3 lost wounds. Each model can only be selected for this ability once per turn."
+)
 
 
 class _Datasheet:
@@ -137,6 +148,42 @@ def _titan_killer() -> Enhancement:
     )
 
 
+def _engine_speaker() -> Enhancement:
+    return Enhancement(
+        id="000010787004",
+        name="Engine Speaker",
+        faction_id="AM",
+        detachment="Steel Hammer",
+        points=10,
+        description=(
+            "Astra Militarum Tech-Priest Enginseer model only. Each time the bearer uses its Omnissiah's Blessing "
+            "ability, until the start of your next Command phase, add 3\" to the Move characteristic of the selected "
+            "VEHICLE model."
+        ),
+    )
+
+
+def _find_request(game: Game, decision_type: str, *, ability: str | None = None):
+    for req in list(game.decision_queue.list() or []):
+        if str(getattr(req, "decision_type", "") or "") != decision_type:
+            continue
+        if ability is None:
+            return req
+        ctx = dict(getattr(req, "context", {}) or {})
+        if str(ctx.get("ability", "") or "") == ability:
+            return req
+    return None
+
+
+def _option_for_model(request, model):
+    model_id = str(get_entity_id(model) or "")
+    return next(
+        opt
+        for opt in list(getattr(request, "options", []) or [])
+        if str((getattr(opt, "payload", {}) or {}).get("target_model_id", "") or "") == model_id
+    )
+
+
 def _damage_profile(*, weapon_type: str = "Ranged"):
     return Wargear(
         {
@@ -156,6 +203,7 @@ def _damage_profile(*, weapon_type: str = "Ranged"):
 def test_steel_hammer_enhancement_descriptors_exist():
     battalion = get_enhancement_tool_descriptor(enhancement_id="000010787002")
     titan_killer = get_enhancement_tool_descriptor(enhancement_id="000010787003")
+    engine_speaker = get_enhancement_tool_descriptor(enhancement_id="000010787004")
 
     assert battalion is not None
     assert battalion.name == "Battalion Commander"
@@ -164,6 +212,10 @@ def test_steel_hammer_enhancement_descriptors_exist():
     assert titan_killer is not None
     assert titan_killer.name == "Titan Killer"
     assert titan_killer.effect == "bearer_ranged_damage_reroll"
+    assert engine_speaker is not None
+    assert engine_speaker.name == "Engine Speaker"
+    assert engine_speaker.effect == "omnissiahs_blessing_vehicle_move_bonus"
+    assert engine_speaker.effect_params["move_bonus"] == 3
 
 
 def test_battalion_commander_grants_voice_and_two_titanic_or_squadron_orders():
@@ -299,3 +351,78 @@ def test_titan_killer_is_ranged_and_character_gated(monkeypatch):
     assert int(non_character_damage.get("damage_rolled", 0) or 0) == 3
     assert "reroll" not in non_character_damage
     assert calls == []
+
+
+def test_engine_speaker_adds_move_to_selected_omnissiahs_blessing_vehicle_until_next_command_phase():
+    game, army, _enemy_army = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    enginseer = _make_unit(
+        "Tech-Priest Enginseer",
+        keywords=["INFANTRY", "CHARACTER", "ASTRA MILITARUM"],
+        abilities=[_ability("Omnissiah's Blessing", OMNISSIAHS_BLESSING_TEXT)],
+    )
+    tank = _make_unit("Leman Russ", keywords=["VEHICLE", "ASTRA MILITARUM"], wounds=13)
+    army.add_unit(enginseer)
+    army.add_unit(tank)
+    _engine_speaker().apply_to_unit(enginseer)
+    _place_unit(game, enginseer, 10.0, 10.0)
+    _place_unit(game, tank, 12.0, 10.0)
+    game.rebuild_entity_registry()
+
+    tank_model = tank.models[0]
+    base_move = int(tank.movement)
+
+    game._on_phase_start_master_of_mechanisms(player=army.player, phase=game.phase)
+    request = _find_request(game, DECISION_CHOOSE_QUARRY, ability="master_of_mechanisms")
+
+    assert request is not None
+    assert int((request.context or {}).get("move_bonus", 0) or 0) == 3
+    option = _option_for_model(request, tank_model)
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+        result = resolve_decision_command(game, request, option.option_id, player_id=army.player.id)
+
+    assert bool(getattr(result, "ok", False)) is True
+    assert int(tank.movement) == base_move + 3
+    sr = dict(getattr(tank, "special_rules", {}) or {})
+    assert bool(sr.get("master_of_mechanisms_move_bonus_active", False)) is True
+    assert int(sr.get("master_of_mechanisms_move_bonus", 0) or 0) == 3
+    assert str(sr.get("master_of_mechanisms_move_bonus_model_id", "") or "") == str(get_entity_id(tank_model) or "")
+
+    game.turn = 2
+    game._on_phase_start_master_of_mechanisms_cleanup(player=army.player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    assert int(tank.movement) == base_move
+    sr_after = dict(getattr(tank, "special_rules", {}) or {})
+    assert bool(sr_after.get("master_of_mechanisms_move_bonus_active", False)) is False
+
+
+def test_engine_speaker_is_detachment_gated_for_omnissiahs_blessing_move_bonus():
+    game, army, _enemy_army = _build_game(detachment_type="Combined Arms")
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    enginseer = _make_unit(
+        "Tech-Priest Enginseer",
+        keywords=["INFANTRY", "CHARACTER", "ASTRA MILITARUM"],
+        abilities=[_ability("Omnissiah's Blessing", OMNISSIAHS_BLESSING_TEXT)],
+    )
+    tank = _make_unit("Leman Russ", keywords=["VEHICLE", "ASTRA MILITARUM"], wounds=13)
+    army.add_unit(enginseer)
+    army.add_unit(tank)
+    _engine_speaker().apply_to_unit(enginseer)
+    _place_unit(game, enginseer, 10.0, 10.0)
+    _place_unit(game, tank, 12.0, 10.0)
+    game.rebuild_entity_registry()
+
+    base_move = int(tank.movement)
+
+    game._on_phase_start_master_of_mechanisms(player=army.player, phase=game.phase)
+    request = _find_request(game, DECISION_CHOOSE_QUARRY, ability="master_of_mechanisms")
+
+    assert request is not None
+    assert int((request.context or {}).get("move_bonus", 0) or 0) == 0
+    option = _option_for_model(request, tank.models[0])
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+        result = resolve_decision_command(game, request, option.option_id, player_id=army.player.id)
+
+    assert bool(getattr(result, "ok", False)) is True
+    assert int(tank.movement) == base_move
+    assert not bool((getattr(tank, "special_rules", {}) or {}).get("master_of_mechanisms_move_bonus_active", False))
