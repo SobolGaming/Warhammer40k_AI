@@ -18,6 +18,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE = "Turbo Boostas"
     _SPEEDWAAAGH_TURBO_BOOSTAS_MOVE_CHARACTERISTIC = 24
     _SPEEDWAAAGH_TRUKK_KEYWORD = "TRUKK"
+    _BLITZ_BRIGADE_EAGER_SOURCE = "Eager for the Fight"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
     _WAZDAKKA_GUTSMEK_NAMED_UNITS = ("wazdakka gutsmek",)
@@ -113,6 +114,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Speedwaaagh!")
+
+    def is_blitz_brigade(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Blitz Brigade")
 
     def is_more_dakka(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -732,6 +738,93 @@ class OrksDetachmentManager(DetachmentManagerBase):
         root = self._unit_root(unit)
         sr = getattr(root, "special_rules", None) if root is not None else None
         return bool(isinstance(sr, dict) and sr.get("speedwaaagh_turbo_boostas_no_charge"))
+
+    def blitz_brigade_eager_for_the_fight_eligible(self, unit, *, transport_unit=None) -> bool:
+        if not self.is_blitz_brigade():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        if not self._unit_has_keyword_or_faction(root, "ORKS", faction_id=self.faction_id):
+            return False
+        transport_root = self._unit_root(transport_unit)
+        if transport_root is None or not self._unit_belongs_to_army(transport_root):
+            return False
+        is_transport = bool(getattr(transport_root, "is_transport", False))
+        return bool(is_transport or self._unit_contains_keyword(transport_root, "TRANSPORT"))
+
+    def apply_blitz_brigade_eager_for_the_fight_on_disembark(
+        self,
+        unit,
+        *,
+        transport_unit=None,
+        game=None,
+        current_turn: int = 0,
+    ) -> bool:
+        if not self.blitz_brigade_eager_for_the_fight_eligible(unit, transport_unit=transport_unit):
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if game is None and self.army is not None:
+            player_obj = getattr(self.army, "player", None)
+            game = getattr(player_obj, "game", None) if player_obj is not None else None
+        player = None
+        if game is not None:
+            get_current = getattr(game, "get_current_player", None)
+            player = get_current() if callable(get_current) else None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            turn = int(getattr(game, "turn", current_turn) or current_turn or 0)
+        except (TypeError, ValueError):
+            turn = int(current_turn or 0)
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        effect_prefix = "detachment:blitz_brigade:eager_for_the_fight"
+        temp_effects = [
+            dict(entry)
+            for entry in list(sr.get("orks_temp_effects", []) or [])
+            if isinstance(entry, dict)
+            and not str(entry.get("id", "") or "").startswith(effect_prefix)
+        ]
+        common = {
+            "detachment": "blitz_brigade",
+            "source": self._BLITZ_BRIGADE_EAGER_SOURCE,
+            "expires_mode": "turn",
+            "turn_owner_id": owner_id,
+            "turn": int(turn),
+        }
+        temp_effects.extend(
+            [
+                {
+                    **common,
+                    "id": f"{effect_prefix}:advance",
+                    "effect": "reroll_advance_roll",
+                    "attack_type": "any",
+                },
+                {
+                    **common,
+                    "id": f"{effect_prefix}:charge",
+                    "effect": "charge_reroll",
+                    "attack_type": "any",
+                },
+            ]
+        )
+        temp_effects.sort(key=lambda entry: str(entry.get("id", "") or ""))
+        sr["orks_temp_effects"] = temp_effects
+        sr["blitz_brigade_eager_for_the_fight_active"] = True
+        sr["blitz_brigade_eager_for_the_fight_turn_owner"] = owner_id
+        sr["blitz_brigade_eager_for_the_fight_turn"] = int(turn)
+        root.special_rules = sr
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+        return True
 
     def _more_dakka_unit_is_eligible(self, unit) -> bool:
         if not self.is_more_dakka():

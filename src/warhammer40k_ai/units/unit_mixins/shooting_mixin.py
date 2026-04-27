@@ -4787,6 +4787,25 @@ class ShootingMixin:
         if callable(apply_fn):
             apply_fn(self, game=game, current_turn=current_turn)
 
+    def _apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+        self,
+        *,
+        transport_unit=None,
+        game=None,
+        current_turn: int = 0,
+    ) -> None:
+        army = self.get_parent_army()
+        if army is None:
+            return
+        mgr = getattr(army, "orks_detachments", None)
+        apply_fn = (
+            getattr(mgr, "apply_blitz_brigade_eager_for_the_fight_on_disembark", None)
+            if mgr is not None
+            else None
+        )
+        if callable(apply_fn):
+            apply_fn(self, transport_unit=transport_unit, game=game, current_turn=current_turn)
+
     def _disembark_override_rules(self, *, transport_unit: Optional['Unit'] = None, game: Optional['Game'] = None) -> dict:
         overrides: dict[str, object] = {}
         try:
@@ -5339,6 +5358,11 @@ class ShootingMixin:
                 self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
+                self._apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+                    transport_unit=transport_unit,
+                    game=game,
+                    current_turn=current_turn,
+                )
 
                 # Battle-shock until next Command phase
                 if not self.is_battle_shocked():
@@ -5420,6 +5444,11 @@ class ShootingMixin:
         self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+            transport_unit=transport_unit,
+            game=game,
+            current_turn=current_turn,
+        )
 
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
@@ -5719,6 +5748,11 @@ class ShootingMixin:
         self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_blitz_brigade_eager_for_the_fight_disembark_effect(
+            transport_unit=transport_unit,
+            game=game,
+            current_turn=current_turn,
+        )
 
         if destroyed_transport:
             self.round_state.disembarked_from_destroyed_transport = True

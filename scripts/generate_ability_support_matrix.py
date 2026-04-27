@@ -476,6 +476,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"when a unit uses its turbo the models in that unit cannot pivot and they cannot make a move of two or more straight lines e",
             r"that unit also cannot declare a charge even if another rule would let it declare a charge in a turn in which it advanced",
         ),
+        "Eager for the Fight": (
+            r"each time an orks unit from your army disembarks from a transport until the end of the turn you can re ?roll advance and charge rolls made for that orks unit",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -3095,6 +3098,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Turbo Boostas": (
             "Supported",
             "Speedwaaagh!: eligible SPEED FREEKS/TRUKK non-AIRCRAFT units get an optional Advance decision to use Turbo Boostas, replacing the Advance roll with a 24\" Move characteristic, enforcing single straight-line/no-pivot movement, granting ranged weapons ASSAULT until turn end, and blocking charges until turn end even if another rule would allow charging after Advancing.",
+        ),
+        "Eager for the Fight": (
+            "Supported",
+            "Blitz Brigade: when an ORKS unit disembarks from a friendly TRANSPORT, it gains turn-long re-rolls for Advance rolls and Charge rolls through the existing deterministic dice-reroll flow.",
         ),
         "Dakka! Dakka! Dakka!": (
             "Supported",
