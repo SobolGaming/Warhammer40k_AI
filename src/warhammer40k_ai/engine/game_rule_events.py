@@ -12301,6 +12301,12 @@ class GameRuleEventService(GameServiceBase):
                 return
         except Exception:
             pass
+        try:
+            if bool(getattr(unit, "_armoured_speartip_machine_wrath_pending_destroyed", False)):
+                unit._armoured_speartip_machine_wrath_pending_transport_disembark = True
+                return
+        except Exception:
+            pass
 
         passengers = list(getattr(unit, "transport_passengers", []) or [])
         if not passengers:

@@ -72,6 +72,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_headhunter_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_armoured_speartip_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_armoured_speartip", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_bastion_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
@@ -683,6 +688,16 @@ class SpaceMarinesStratagemMixin:
         if self._sm_has_keyword(root, "TRANSPORT"):
             return True
         return bool(getattr(root, "is_transport", False))
+
+    def _sm_is_heavy_transport_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if self._sm_has_keyword(root, "HEAVY TRANSPORT"):
+            return True
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "armoured_speartip_heavy_transport_eligible", None) if mgr is not None else None
+        return bool(checker(root)) if callable(checker) else False
 
     def _sm_is_land_raider_unit(self, unit: Any) -> bool:
         root = self._sm_root(unit)
@@ -13713,6 +13728,253 @@ class SpaceMarinesStratagemMixin:
         candidates.sort(key=self._sm_sort_key)
         return (candidates, infantry_map)
 
+    def _space_marines_armoured_speartip_phase_unit_candidates(
+        self,
+        *,
+        phase_name: str,
+        require_transport: bool = False,
+        require_heavy_transport: bool = False,
+        require_infantry: bool = False,
+        require_not_selected_to_move: bool = False,
+        require_not_selected_to_shoot: bool = False,
+    ) -> list[Any]:
+        if not self._is_armoured_speartip_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if require_transport and not self._sm_is_transport_unit(root):
+                continue
+            if require_heavy_transport and not self._sm_is_heavy_transport_unit(root):
+                continue
+            if require_infantry and not self._sm_is_infantry_unit(root):
+                continue
+            if require_not_selected_to_move and self._sm_selected_to_move_this_phase(root):
+                continue
+            if require_not_selected_to_shoot and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "movement phase" and require_not_selected_to_move and self._sm_selected_to_move_this_phase(root):
+                continue
+            if phase_key == "shooting phase" and require_not_selected_to_shoot and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._sm_sort_key)
+        return candidates
+
+    def _space_marines_armoured_rapid_embarkation_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_armoured_speartip_detachment():
+            return ([], {})
+        game_map = self._sm_game_map()
+        if game_map is None:
+            return ([], {})
+
+        infantry_units = self._space_marines_armoured_speartip_phase_unit_candidates(
+            phase_name="Fight phase",
+            require_infantry=True,
+        )
+        candidates: list[Any] = []
+        infantry_map: dict[str, list[Any]] = {}
+        for transport_root in self._space_marines_armoured_speartip_phase_unit_candidates(
+            phase_name="Fight phase",
+            require_transport=True,
+            require_heavy_transport=True,
+        ):
+            transport_id = self._sm_sort_key(transport_root)
+            if not transport_id:
+                continue
+            embarkable: list[Any] = []
+            for infantry_root in list(infantry_units or []):
+                if infantry_root is None or infantry_root is transport_root:
+                    continue
+                if self._sm_unit_is_engaged(infantry_root):
+                    continue
+                distance = self._sm_distance_between_units(transport_root, infantry_root)
+                if distance is None or float(distance) > 6.0 + 1e-6:
+                    continue
+                can_transport = getattr(transport_root, "can_transport", None)
+                if callable(can_transport) and not bool(can_transport(infantry_root)):
+                    continue
+                embarkable.append(infantry_root)
+            embarkable.sort(key=self._sm_sort_key)
+            if not embarkable:
+                continue
+            candidates.append(transport_root)
+            infantry_map[transport_id] = embarkable
+        candidates.sort(key=self._sm_sort_key)
+        return (candidates, infantry_map)
+
+    def _queue_space_marines_armoured_speartip_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_armoured_speartip_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            movement_candidates = self._space_marines_armoured_speartip_phase_unit_candidates(
+                phase_name="Movement phase",
+                require_transport=True,
+                require_not_selected_to_move=True,
+            )
+            for stratagem_name in ("ADVANCED DEPLOYMENT", "CERAMITE SLEDGEHAMMER"):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not movement_candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Movement phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Movement phase",
+                    "phase_name": "Movement phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": movement_candidates,
+                }
+                if len(movement_candidates) == 1:
+                    payload["unit"] = movement_candidates[0]
+                    payload["target_unit"] = movement_candidates[0]
+                    payload["transport"] = movement_candidates[0]
+                    payload["transport_unit"] = movement_candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("PURGATION DOCTRINE")
+            candidates = self._space_marines_armoured_speartip_phase_unit_candidates(
+                phase_name="Shooting phase",
+                require_not_selected_to_shoot=True,
+            )
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_armoured_speartip_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_armoured_speartip_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("RAPID EMBARKATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, embark_candidate_map = self._space_marines_armoured_rapid_embarkation_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "embark_candidates_by_transport": embark_candidate_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            payload["transport"] = candidates[0]
+            payload["transport_unit"] = candidates[0]
+            uid = self._sm_sort_key(candidates[0])
+            embark_candidates = list(embark_candidate_map.get(uid) or [])
+            if embark_candidates:
+                payload["embark_candidates"] = embark_candidates
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_armoured_speartip_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any = None,
+        last_model: Any = None,
+    ) -> None:
+        del destroyed_by_unit
+        if not self._is_armoured_speartip_detachment():
+            return
+        root = self._sm_root(destroyed_unit)
+        if root is None:
+            return
+        if not self._sm_owned_by_player(root, self.player):
+            return
+        if not self._is_adeptus_astartes_unit(root):
+            return
+        if not self._sm_is_heavy_transport_unit(root):
+            return
+        stratagem = self.get_by_name("MACHINE WRATH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=str(getattr(self, "_current_phase_name", "") or "Any phase"),
+            target_unit=root,
+        ):
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "Any phase")
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "destroyed_unit": root,
+                "last_model": last_model,
+                "model": last_model,
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
     def _space_marines_firestorm_burning_vengeance_candidates(
         self,
         *,
@@ -17531,6 +17793,473 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_armoured_advanced_deployment(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: ADVANCED DEPLOYMENT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ADVANCED DEPLOYMENT: not your Movement phase")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, from_pending = self._sm_firestorm_context(
+            "ADVANCED DEPLOYMENT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: ADVANCED DEPLOYMENT: no target transport provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: ADVANCED DEPLOYMENT: target transport is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: ADVANCED DEPLOYMENT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_transport_unit(root):
+            logger.error("ERROR: ADVANCED DEPLOYMENT: target must be an ADEPTUS ASTARTES TRANSPORT")
+            return False
+        if self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: ADVANCED DEPLOYMENT: target has already been selected to move this phase")
+            return False
+        eligible = candidates or self._space_marines_armoured_speartip_phase_unit_candidates(
+            phase_name="Movement phase",
+            require_transport=True,
+            require_not_selected_to_move=True,
+        )
+        if (eligible or not from_pending) and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ADVANCED DEPLOYMENT: selected transport is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_armoured_advanced_deployment_active"] = True
+        sr["space_marines_armoured_advanced_deployment_expires_phase"] = "MOVEMENT_PHASE"
+        sr["space_marines_armoured_advanced_deployment_source"] = str(
+            getattr(stratagem, "name", "") or "ADVANCED DEPLOYMENT"
+        )
+        sr["space_marines_armoured_advanced_deployment_allow_after_advance"] = True
+        sr["space_marines_armoured_advanced_deployment_allow_charge_if_assault_ramp"] = True
+        sr["space_marines_armoured_advanced_deployment_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_armoured_advanced_deployment_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ADVANCED DEPLOYMENT: %s can let units disembark after it Advances this phase.",
+            getattr(root, "name", "Transport"),
+        )
+        return True
+
+    def _use_space_marines_armoured_ceramite_sledgehammer(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: not your Movement phase")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, from_pending = self._sm_firestorm_context(
+            "CERAMITE SLEDGEHAMMER",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: no target transport provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: target transport is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_transport_unit(root):
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: target must be an ADEPTUS ASTARTES TRANSPORT")
+            return False
+        if self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: target has already been selected to move this phase")
+            return False
+        eligible = candidates or self._space_marines_armoured_speartip_phase_unit_candidates(
+            phase_name="Movement phase",
+            require_transport=True,
+            require_not_selected_to_move=True,
+        )
+        if (eligible or not from_pending) and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CERAMITE SLEDGEHAMMER: selected transport is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_terrain_only_types",
+            "space_marines_armoured_ceramite_sledgehammer_added_phase_move_terrain_only_types",
+            {"move", "advance"},
+        )
+        if self._sm_is_heavy_transport_unit(root):
+            self._sm_merge_phase_move_types(
+                sr,
+                "bearer_unit_phase_move_enemy_models_only_types",
+                "space_marines_armoured_ceramite_sledgehammer_added_phase_move_enemy_models_only_types",
+                {"move", "advance"},
+            )
+            self._sm_merge_phase_move_types(
+                sr,
+                "bearer_unit_phase_move_block_monster_vehicle_types",
+                "space_marines_armoured_ceramite_sledgehammer_added_phase_move_block_monster_vehicle_types",
+                {"move", "advance"},
+            )
+            sr["space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape_present"] = (
+                "bearer_unit_auto_pass_desperate_escape" in sr
+            )
+            sr["space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape"] = bool(
+                sr.get("bearer_unit_auto_pass_desperate_escape", False)
+            )
+            sr["bearer_unit_auto_pass_desperate_escape"] = True
+        sr["space_marines_armoured_ceramite_sledgehammer_active"] = True
+        sr["space_marines_armoured_ceramite_sledgehammer_expires_phase"] = "MOVEMENT_PHASE"
+        sr["space_marines_armoured_ceramite_sledgehammer_source"] = str(
+            getattr(stratagem, "name", "") or "CERAMITE SLEDGEHAMMER"
+        )
+        sr["space_marines_armoured_ceramite_sledgehammer_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_armoured_ceramite_sledgehammer_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CERAMITE SLEDGEHAMMER: %s gains terrain traversal on Normal and Advance moves this phase.",
+            getattr(root, "name", "Transport"),
+        )
+        return True
+
+    def _use_space_marines_armoured_purgation_doctrine(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PURGATION DOCTRINE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PURGATION DOCTRINE: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, from_pending = self._sm_stormlance_context(
+            "PURGATION DOCTRINE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: PURGATION DOCTRINE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: PURGATION DOCTRINE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PURGATION DOCTRINE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: PURGATION DOCTRINE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: PURGATION DOCTRINE: target has already been selected to shoot")
+            return False
+        eligible = candidates or self._space_marines_armoured_speartip_phase_unit_candidates(
+            phase_name="Shooting phase",
+            require_not_selected_to_shoot=True,
+        )
+        if (eligible or not from_pending) and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PURGATION DOCTRINE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_armoured_speartip_purgation_doctrine", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: PURGATION DOCTRINE: Armoured Speartip detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "PURGATION DOCTRINE"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: PURGATION DOCTRINE: failed to apply shooting bonuses")
+            return False
+
+        self._sm_clear_ability_cache(root, "unit_attack_roll_rules", "unit_hit_reroll_modifiers", "unit_wound_reroll_modifiers")
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PURGATION DOCTRINE: %s gains +1 to hit this Shooting phase, and +1 to wound if it disembarked from a Heavy Transport this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_armoured_rapid_embarkation(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RAPID EMBARKATION: wrong phase")
+            return False
+
+        unit, candidates, _enemy_unit, embark_candidates, embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "RAPID EMBARKATION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RAPID EMBARKATION: no target Heavy Transport provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RAPID EMBARKATION: target transport is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RAPID EMBARKATION: target transport must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_heavy_transport_unit(root):
+            logger.error("ERROR: RAPID EMBARKATION: target must be an ADEPTUS ASTARTES HEAVY TRANSPORT")
+            return False
+        eligible_transports, embark_map = self._space_marines_armoured_rapid_embarkation_candidates()
+        if not candidates:
+            candidates = eligible_transports
+        if candidates and not self._sm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: RAPID EMBARKATION: selected transport is not currently eligible")
+            return False
+        if not embark_candidates:
+            candidate_map = embark_candidate_map if embark_candidate_map is not None else embark_map
+            embark_candidates = list(candidate_map.get(self._sm_sort_key(root)) or []) if hasattr(candidate_map, "get") else []
+        if not embark_candidates:
+            logger.error("ERROR: RAPID EMBARKATION: no eligible Infantry units can embark")
+            return False
+
+        queue_fn = getattr(self.game, "_queue_end_of_fight_embark_decision", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: RAPID EMBARKATION: end-of-fight embark decision queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            transport=root,
+            candidates=embark_candidates,
+            spec={
+                "source": str(getattr(stratagem, "name", "") or "RAPID EMBARKATION"),
+                "range": 6,
+                "keyword": "ADEPTUS ASTARTES",
+                "allow_existing_passengers": True,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: RAPID EMBARKATION: no embark decision was queued")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: RAPID EMBARKATION: queued embark decision for a nearby eligible Infantry unit.")
+        return True
+
+    def _use_space_marines_armoured_machine_wrath(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "Any phase").strip() or "Any phase"
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        model = kwargs.get("model") or kwargs.get("last_model")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MACHINE WRATH":
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if model is None:
+                model = reaction.get("last_model") or reaction.get("model")
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                phase_name = str(reaction.get("phase_name") or phase_name)
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._sm_root(unit)
+        if root is None:
+            logger.error("ERROR: MACHINE WRATH: no destroyed Heavy Transport provided")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MACHINE WRATH: target transport is not yours")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_heavy_transport_unit(root):
+            logger.error("ERROR: MACHINE WRATH: target must be an ADEPTUS ASTARTES HEAVY TRANSPORT")
+            return False
+        if candidates and not self._sm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MACHINE WRATH: selected transport is not currently eligible")
+            return False
+        if not from_pending and self._sm_is_alive(root):
+            logger.error("ERROR: MACHINE WRATH: target transport has not just been destroyed")
+            return False
+        queue_fn = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: MACHINE WRATH: reactive move decision queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        if model is None:
+            models = list(getattr(root, "models", []) or [])
+            model = models[0] if models else None
+        origin = None
+        if model is not None:
+            get_location = getattr(model, "get_location", None)
+            origin = get_location() if callable(get_location) else None
+        movement_type = "fall_back" if self._sm_unit_is_engaged(root) else "move"
+        try:
+            max_distance = int(float(getattr(root, "movement", 0) or 0))
+        except (TypeError, ValueError):
+            max_distance = 0
+        if max_distance <= 0:
+            max_distance = 6
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_enemy_models_only_types",
+            "space_marines_armoured_machine_wrath_added_phase_move_enemy_models_only_types",
+            {movement_type},
+        )
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_block_monster_vehicle_types",
+            "space_marines_armoured_machine_wrath_added_phase_move_block_monster_vehicle_types",
+            {movement_type},
+        )
+        sr["space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape_present"] = (
+            "bearer_unit_auto_pass_desperate_escape" in sr
+        )
+        sr["space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape"] = bool(
+            sr.get("bearer_unit_auto_pass_desperate_escape", False)
+        )
+        sr["bearer_unit_auto_pass_desperate_escape"] = True
+        sr["space_marines_armoured_machine_wrath_active"] = True
+        sr["space_marines_armoured_machine_wrath_source"] = str(getattr(stratagem, "name", "") or "MACHINE WRATH")
+        sr["space_marines_armoured_machine_wrath_phase_name"] = phase_name
+        root.special_rules = sr
+
+        root._armoured_speartip_machine_wrath_pending_destroyed = True
+        root._armoured_speartip_machine_wrath_origin_position = origin
+        root._armoured_speartip_machine_wrath_pending_model_id = str(get_entity_id(model) or "") if model is not None else ""
+        root._armoured_speartip_machine_wrath_pending_phase_name = phase_name
+
+        request = queue_fn(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="armoured_speartip_machine_wrath",
+            movement_type=movement_type,
+            reactive_movement_type=movement_type,
+            source=str(getattr(stratagem, "name", "") or "MACHINE WRATH"),
+            allow_skip=True,
+            extra_context={
+                "ability": "space_marines_armoured_speartip_machine_wrath",
+                "ability_name": "Machine Wrath",
+                "destroyed_transport_unit_id": str(get_entity_id(root) or ""),
+                "machine_wrath_movement_type": movement_type,
+                "enforce_max_distance": True,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: MACHINE WRATH: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MACHINE WRATH: %s can make a pre-Deadly Demise %s move.",
+            getattr(root, "name", "Heavy Transport"),
+            movement_type.replace("_", " "),
+        )
+        return True
+
+    def _cleanup_space_marines_armoured_speartip_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_armoured_speartip_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "SHOOTING_PHASE"}:
+            return
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_name == "MOVEMENT_PHASE":
+                exp = str(sr.get("space_marines_armoured_advanced_deployment_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_armoured_advanced_deployment_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "space_marines_armoured_advanced_deployment_active",
+                        "space_marines_armoured_advanced_deployment_expires_phase",
+                        "space_marines_armoured_advanced_deployment_source",
+                        "space_marines_armoured_advanced_deployment_allow_after_advance",
+                        "space_marines_armoured_advanced_deployment_allow_charge_if_assault_ramp",
+                        "space_marines_armoured_advanced_deployment_turn_owner",
+                        "space_marines_armoured_advanced_deployment_turn",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("space_marines_armoured_ceramite_sledgehammer_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_armoured_ceramite_sledgehammer_active") is True and (not exp or exp == phase_name):
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_terrain_only_types",
+                        "space_marines_armoured_ceramite_sledgehammer_added_phase_move_terrain_only_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_enemy_models_only_types",
+                        "space_marines_armoured_ceramite_sledgehammer_added_phase_move_enemy_models_only_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_block_monster_vehicle_types",
+                        "space_marines_armoured_ceramite_sledgehammer_added_phase_move_block_monster_vehicle_types",
+                    )
+                    if bool(sr.get("space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape_present", False)):
+                        sr["bearer_unit_auto_pass_desperate_escape"] = bool(
+                            sr.get("space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape", False)
+                        )
+                    else:
+                        sr.pop("bearer_unit_auto_pass_desperate_escape", None)
+                    for key in (
+                        "space_marines_armoured_ceramite_sledgehammer_active",
+                        "space_marines_armoured_ceramite_sledgehammer_expires_phase",
+                        "space_marines_armoured_ceramite_sledgehammer_source",
+                        "space_marines_armoured_ceramite_sledgehammer_turn_owner",
+                        "space_marines_armoured_ceramite_sledgehammer_turn",
+                        "space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape_present",
+                        "space_marines_armoured_ceramite_sledgehammer_prev_auto_pass_desperate_escape",
+                    ):
+                        sr.pop(key, None)
+            if phase_name == "SHOOTING_PHASE":
+                mgr = self._sm_detachment_mgr()
+                clear_fn = getattr(mgr, "clear_armoured_speartip_purgation_doctrine", None) if mgr is not None else None
+                if callable(clear_fn):
+                    clear_fn(root)
+            root.special_rules = sr
+
     def _use_space_marines_wrathful_inferno(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "movement phase":
@@ -19678,6 +20407,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_headhunter_machine_vengeance(stratagem, **kwargs)
         if name_u == "REACTIVE REPOSITIONING":
             return self._use_space_marines_headhunter_reactive_repositioning(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_armoured_speartip_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_armoured_speartip_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ADVANCED DEPLOYMENT":
+            return self._use_space_marines_armoured_advanced_deployment(stratagem, **kwargs)
+        if name_u == "CERAMITE SLEDGEHAMMER":
+            return self._use_space_marines_armoured_ceramite_sledgehammer(stratagem, **kwargs)
+        if name_u == "PURGATION DOCTRINE":
+            return self._use_space_marines_armoured_purgation_doctrine(stratagem, **kwargs)
+        if name_u == "RAPID EMBARKATION":
+            return self._use_space_marines_armoured_rapid_embarkation(stratagem, **kwargs)
+        if name_u == "MACHINE WRATH":
+            return self._use_space_marines_armoured_machine_wrath(stratagem, **kwargs)
         return None
 
     def _use_space_marines_liberator_assault_group_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

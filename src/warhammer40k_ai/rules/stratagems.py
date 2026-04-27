@@ -71,6 +71,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ABLATIVE PLATING",
     "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
+    "ADVANCED DEPLOYMENT",
     "AGGRESSIVE ONSLAUGHT",
     "AGGRESSIVE ANTICIPATION",
     "AGGRESSIVE MOBILITY",
@@ -115,7 +116,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COURAGEOUS DIVERSION",
     "CHAOS BANE",
     "KILL SHOT",
+    "CERAMITE SLEDGEHAMMER",
     "MACHINE VENGEANCE",
+    "MACHINE WRATH",
+    "PURGATION DOCTRINE",
     "RAPID GUNNERY",
     "REACTIVE REPOSITIONING",
     "TARGET WEAK POINT",
@@ -1107,9 +1111,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 }
 
 IMPLEMENTED_STRATAGEM_NAME_IDS = {
-    # Firestorm Assault Force only. Armoured Speartip added a different
-    # RAPID EMBARKATION in the 2026-04-22 Space Marines update.
-    "RAPID EMBARKATION": {"000008483004"},
+    # Firestorm Assault Force and Armoured Speartip have separate
+    # RAPID EMBARKATION datasheet entries.
+    "RAPID EMBARKATION": {"000008483004", "000010780004"},
     # Armoured Infantry only. Challenger has a different BURST OF SPEED.
     "BURST OF SPEED": {"000010792004"},
     "ACCURACY UNDER PRESSURE": {"000010788007"},
@@ -2783,6 +2787,7 @@ class StratagemManager(
             "AVENGE THE MASTERS!",
             "AVENGE THE STAR CHILDREN",
             "VENGEANCE OF THE MACHINE CULT",
+            "MACHINE WRATH",
             "REGIMENTAL REINFORCEMENTS",
             "REINFORCEMENTS!",
             "CACHED ACQUISITION",
@@ -3559,6 +3564,9 @@ class StratagemManager(
             "VOID HARDENED",
             "UNSTOPPABLE FORCE",
             "WRATHFUL INFERNO",
+            "ADVANCED DEPLOYMENT",
+            "CERAMITE SLEDGEHAMMER",
+            "PURGATION DOCTRINE",
             "BLAZING EARTH",
             "RIDE HARD, RIDE FAST",
             "SHOCK ASSAULT",
@@ -13029,6 +13037,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_armoured_speartip_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_inner_circle_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -14479,6 +14491,7 @@ class StratagemManager(
             self._queue_space_marines_emperors_shield_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_armoured_speartip_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_vanguard_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_shadowmark_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_spearpoint_phase_end_reactions(player=player, phase=phase)
@@ -14499,6 +14512,7 @@ class StratagemManager(
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
             self._cleanup_space_marines_reclamation_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_armoured_speartip_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lost_brethren_phase_end_effects(phase=phase)
             self._cleanup_space_marines_unforgiven_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
@@ -22701,6 +22715,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_armoured_speartip_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+                last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_angelic_host_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -26053,6 +26075,9 @@ class StratagemManager(
         headhunter_result = self._use_space_marines_headhunter_task_force_stratagem(s, **kwargs)
         if headhunter_result is not None:
             return headhunter_result
+        armoured_speartip_result = self._use_space_marines_armoured_speartip_stratagem(s, **kwargs)
+        if armoured_speartip_result is not None:
+            return armoured_speartip_result
         inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
         if inner_circle_result is not None:
             return inner_circle_result

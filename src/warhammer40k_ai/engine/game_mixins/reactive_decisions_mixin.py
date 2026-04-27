@@ -5666,7 +5666,7 @@ class GameReactiveDecisionsMixin:
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("reactive_move_kind", "") or "").strip()
-            if kind != "careen":
+            if kind not in {"careen", "armoured_speartip_machine_wrath"}:
                 return
             opt = None
             for candidate in list(getattr(request, "options", []) or []):
@@ -5679,7 +5679,12 @@ class GameReactiveDecisionsMixin:
             unit = self._resolve_unit_by_id(unit_id)
             if unit is None:
                 return
-            unit.resolve_careen_deadly_demise(game_map=getattr(self, "map", None), use_move=not skipped)
+            if kind == "careen":
+                unit.resolve_careen_deadly_demise(game_map=getattr(self, "map", None), use_move=not skipped)
+            else:
+                resolver = getattr(unit, "resolve_armoured_speartip_machine_wrath_post_move", None)
+                if callable(resolver):
+                    resolver(game_map=getattr(self, "map", None), use_move=not skipped)
         return
 
     def _maybe_apply_optional_ability_confirmation(self, request: DecisionRequest, result: DecisionResult) -> None:

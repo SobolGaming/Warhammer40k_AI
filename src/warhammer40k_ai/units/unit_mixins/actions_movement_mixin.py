@@ -6640,6 +6640,25 @@ class ActionsMovementMixin:
                 mods["hit"] += int(prey_hit_bonus)
                 hit_reasons.append(reason)
 
+        if atype in ("any", "ranged") and attacker_model is not None:
+            get_parent_army = getattr(root, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            purgation_hit_fn = (
+                getattr(sm_mgr, "armoured_speartip_purgation_doctrine_hit_bonus", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(purgation_hit_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = purgation_hit_fn(attacker_model, weapon_profile=weapon_profile, game=game)
+                if bonus:
+                    source_name = str(source or "Purgation Doctrine").strip() or "Purgation Doctrine"
+                    reason = f"{int(bonus):+d} to hit from {source_name}"
+                    if reason not in hit_reasons:
+                        mods["hit"] += int(bonus)
+                        hit_reasons.append(reason)
+
         target_root = root
         if isinstance(getattr(target_root, "special_rules", None), dict) and bool(
             target_root.special_rules.get("imperial_agents_stun_grenades_active")
@@ -9227,6 +9246,20 @@ class ActionsMovementMixin:
                     reroll_wound_reasons.append(
                         f"{source_name}: re-roll Wound rolls of 1 against MONSTER or VEHICLE targets"
                     )
+            purgation_wound_fn = (
+                getattr(sm_mgr, "armoured_speartip_purgation_doctrine_wound_bonus", None)
+                if sm_mgr is not None
+                else None
+            )
+            if atype in ("any", "ranged") and callable(purgation_wound_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = purgation_wound_fn(attacker_model, weapon_profile=weapon_profile, game=game)
+                if bonus:
+                    source_name = str(source or "Purgation Doctrine").strip() or "Purgation Doctrine"
+                    reason = f"{int(bonus):+d} to wound from {source_name}"
+                    if reason not in wound_reasons:
+                        mods["wound"] += int(bonus)
+                        wound_reasons.append(reason)
         except Exception:
             pass
 

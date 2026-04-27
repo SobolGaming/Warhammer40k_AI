@@ -1479,6 +1479,187 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             },
         )
 
+    @staticmethod
+    def _armoured_speartip_purgation_doctrine_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_armoured_purgation_doctrine_active",
+            "space_marines_armoured_purgation_doctrine_expires_phase",
+            "space_marines_armoured_purgation_doctrine_turn",
+            "space_marines_armoured_purgation_doctrine_player_id",
+            "space_marines_armoured_purgation_doctrine_hit_bonus",
+            "space_marines_armoured_purgation_doctrine_wound_bonus",
+            "space_marines_armoured_purgation_doctrine_source",
+        )
+
+    def clear_armoured_speartip_purgation_doctrine(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._armoured_speartip_purgation_doctrine_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_armoured_speartip_purgation_doctrine(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Purgation Doctrine",
+    ) -> bool:
+        if not self.is_armoured_speartip():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._attached_unit_belongs_to_army(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_armoured_purgation_doctrine_active"] = True
+        sr["space_marines_armoured_purgation_doctrine_expires_phase"] = "SHOOTING_PHASE"
+        try:
+            sr["space_marines_armoured_purgation_doctrine_turn"] = int(battle_round or 0)
+        except (TypeError, ValueError):
+            sr["space_marines_armoured_purgation_doctrine_turn"] = 0
+        sr["space_marines_armoured_purgation_doctrine_player_id"] = str(player_id or "").strip()
+        sr["space_marines_armoured_purgation_doctrine_hit_bonus"] = 1
+        sr["space_marines_armoured_purgation_doctrine_wound_bonus"] = 1
+        sr["space_marines_armoured_purgation_doctrine_source"] = (
+            str(source or "Purgation Doctrine").strip() or "Purgation Doctrine"
+        )
+        root.special_rules = sr
+        return True
+
+    def _armoured_speartip_purgation_doctrine_context(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[object | None, dict, str]:
+        if not self.is_armoured_speartip():
+            return None, {}, ""
+        if attacker_model is None:
+            return None, {}, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return None, {}, ""
+        if not self._attached_unit_belongs_to_army(root):
+            return None, {}, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None, {}, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent_wargear is not None:
+            is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(is_ranged) and not bool(is_ranged()):
+                return None, {}, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_armoured_purgation_doctrine_active")):
+            return None, {}, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            expected_phase = str(
+                sr.get("space_marines_armoured_purgation_doctrine_expires_phase", "") or ""
+            ).strip().upper()
+            if expected_phase and current_phase and current_phase != expected_phase:
+                self.clear_armoured_speartip_purgation_doctrine(root)
+                return None, {}, ""
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("space_marines_armoured_purgation_doctrine_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            if marked_turn and current_turn and current_turn != marked_turn:
+                self.clear_armoured_speartip_purgation_doctrine(root)
+                return None, {}, ""
+            owner = str(sr.get("space_marines_armoured_purgation_doctrine_player_id", "") or "").strip()
+            current_player = game_obj.get_current_player() if hasattr(game_obj, "get_current_player") else None
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if owner and current_owner and owner != current_owner:
+                return None, {}, ""
+        source = str(
+            sr.get("space_marines_armoured_purgation_doctrine_source", "") or "Purgation Doctrine"
+        ).strip() or "Purgation Doctrine"
+        return root, sr, source
+
+    def _armoured_speartip_resolve_unit_by_id(self, unit_id: str, *, game=None):
+        target_id = str(unit_id or "").strip()
+        if not target_id:
+            return None
+        game_obj = self._resolve_game_context(game=game)
+        resolver = getattr(game_obj, "_resolve_unit_by_id", None) if game_obj is not None else None
+        if callable(resolver):
+            resolved = resolver(target_id)
+            if resolved is not None:
+                return self._attached_unit_root(resolved)
+        for root in list(self._iter_unique_army_roots() or []):
+            if str(get_entity_id(root) or "") == target_id:
+                return root
+        return None
+
+    def armoured_speartip_purgation_doctrine_hit_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _root, sr, source = self._armoured_speartip_purgation_doctrine_context(
+            attacker_model,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+        if not sr:
+            return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_armoured_purgation_doctrine_hit_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def armoured_speartip_purgation_doctrine_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        root, sr, source = self._armoured_speartip_purgation_doctrine_context(
+            attacker_model,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+        if root is None or not sr:
+            return 0, ""
+        round_state = getattr(root, "round_state", None)
+        if round_state is None or not bool(getattr(round_state, "disembarked_this_round", False)):
+            return 0, ""
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        transport = self._armoured_speartip_resolve_unit_by_id(transport_id, game=game)
+        if transport is None:
+            return 0, ""
+        if not self._attached_unit_has_keyword(transport, "HEAVY TRANSPORT"):
+            if not self.armoured_speartip_heavy_transport_eligible(transport):
+                return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_armoured_purgation_doctrine_wound_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
     def armoured_speartip_shock_deployment_sustained_hits_value(
         self,
         attacker_model,

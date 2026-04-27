@@ -10718,6 +10718,102 @@ _HEADHUNTER_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HEADHUNTER_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ARMOURED_SPEARTIP_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010780006": StratagemToolDescriptor(
+        stratagem_id="000010780006",
+        name="Advanced Deployment",
+        timing="your_movement_phase_before_transport_selected_to_move",
+        target="adeptus_astartes_transport_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advanced_transport_allows_after_advance_disembark",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "TRANSPORT"],
+            "disembarking_units_count_as_normal_move": True,
+            "disembarking_units_cannot_charge": True,
+            "assault_ramp_preserves_charge_after_advance_disembark": True,
+        },
+    ),
+    "000010780005": StratagemToolDescriptor(
+        stratagem_id="000010780005",
+        name="Ceramite Sledgehammer",
+        timing="your_movement_phase_before_transport_selected_to_move",
+        target="adeptus_astartes_transport_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="normal_and_advance_move_through_terrain_with_heavy_transport_enemy_model_traversal",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "TRANSPORT"],
+            "affected_move_types": ["normal_move", "advance"],
+            "move_horizontally_through_terrain": True,
+            "heavy_transport_extra_effects": {
+                "can_move_through_enemy_models": True,
+                "enemy_model_excluded_keywords_any": ["MONSTER", "VEHICLE"],
+                "can_move_within_engagement_range": True,
+                "cannot_end_within_engagement_range": True,
+                "auto_pass_desperate_escape": True,
+            },
+        },
+    ),
+    "000010780007": StratagemToolDescriptor(
+        stratagem_id="000010780007",
+        name="Purgation Doctrine",
+        timing="your_shooting_phase_before_unit_selected_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_bonus_and_heavy_transport_disembark_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attack_type": "ranged",
+            "hit_bonus": 1,
+            "wound_bonus": 1,
+            "wound_bonus_requires_disembarked_from_heavy_transport_this_turn": True,
+        },
+    ),
+    "000010780004": StratagemToolDescriptor(
+        stratagem_id="000010780004",
+        name="Rapid Embarkation",
+        timing="end_of_fight_phase",
+        target="heavy_transport_and_nearby_adeptus_astartes_infantry_unit",
+        duration="immediate",
+        effect="end_of_fight_embark",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "HEAVY TRANSPORT"],
+            "passenger_required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "range_in": 6.0,
+            "allow_existing_passengers": True,
+            "passenger_requires_not_engaged": True,
+        },
+    ),
+    "000010780002": StratagemToolDescriptor(
+        stratagem_id="000010780002",
+        name="Machine Wrath",
+        timing="any_phase_after_heavy_transport_destroyed",
+        target="destroyed_adeptus_astartes_heavy_transport",
+        duration="immediate",
+        effect="pre_deadly_demise_reactive_normal_or_fall_back_move",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "HEAVY TRANSPORT"],
+            "allowed_move_types": ["normal_move", "fall_back"],
+            "move_before_deadly_demise": True,
+            "move_before_emergency_disembarkation": True,
+            "can_move_through_enemy_models": True,
+            "enemy_model_excluded_keywords_any": ["MONSTER", "VEHICLE"],
+            "can_move_within_engagement_range": True,
+            "cannot_end_within_engagement_range": True,
+            "auto_pass_desperate_escape": True,
+            "allow_skip": True,
+        },
+    ),
+}
+
+_ARMOURED_SPEARTIP_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ARMOURED_SPEARTIP_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008775004": StratagemToolDescriptor(
         stratagem_id="000008775004",
@@ -15963,6 +16059,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HEADHUNTER_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ARMOURED_SPEARTIP_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -16303,6 +16402,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SHADOWMARK_TALON_STRATAGEM_BY_NAME.get(key)
         or _SPEARPOINT_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ARMOURED_SPEARTIP_STRATAGEM_BY_NAME.get(key)
         or _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME.get(key)
         or _GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

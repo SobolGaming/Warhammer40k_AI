@@ -767,7 +767,8 @@ class DamageDeathMixin:
                     return
             except Exception:
                 pass
-            # Record the loss now, but keep the model to allow CAREEN movement.
+            # Record the loss now, but keep the model to allow the deferred
+            # destroyed-transport move to resolve.
             try:
                 if not bool(getattr(model, "_careen_loss_recorded", False)):
                     self.round_state.num_lost_models_this_round += 1
@@ -776,7 +777,10 @@ class DamageDeathMixin:
             except Exception:
                 pass
             try:
-                if not bool(getattr(self, "_careen_pending_destroyed", False)):
+                machine_wrath_pending = bool(
+                    getattr(self, "_armoured_speartip_machine_wrath_pending_destroyed", False)
+                )
+                if not machine_wrath_pending and not bool(getattr(self, "_careen_pending_destroyed", False)):
                     self._careen_pending_destroyed = True
             except Exception:
                 pass
@@ -2227,6 +2231,34 @@ class DamageDeathMixin:
             except Exception:
                 pass
 
+        # Armoured Speartip: MACHINE WRATH is offered before rolling for Deadly Demise
+        # and before embarked units make Emergency Disembarkation.
+        try:
+            if len(getattr(self, "models", []) or []) == 1:
+                army = self.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                mgr = getattr(player, "stratagems", None) if player is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "")
+                queue_machine_wrath = (
+                    getattr(mgr, "_queue_space_marines_armoured_speartip_unit_destroyed_reactions", None)
+                    if mgr is not None
+                    else None
+                )
+                if callable(queue_machine_wrath):
+                    before_count = len(list(getattr(mgr, "_pending_reactions", []) or []))
+                    queue_machine_wrath(destroyed_unit=self, last_model=dying_model)
+                    after_count = len(list(getattr(mgr, "_pending_reactions", []) or []))
+                    if after_count > before_count:
+                        origin = dying_model.get_location() if hasattr(dying_model, "get_location") else None
+                        self._armoured_speartip_machine_wrath_pending_destroyed = True
+                        self._armoured_speartip_machine_wrath_origin_position = origin
+                        self._armoured_speartip_machine_wrath_pending_model_id = str(get_entity_id(dying_model) or "")
+                        self._armoured_speartip_machine_wrath_pending_phase_name = phase_name
+                        return True
+        except Exception:
+            pass
+
         # Check if the unit has Deadly Demise ability
         has_deadly_demise, damage_dice = self.has_deadly_demise()
         if not has_deadly_demise:
@@ -2605,6 +2637,125 @@ class DamageDeathMixin:
             pass
 
         # Remove the model without re-triggering Deadly Demise or unit-destroyed events.
+        try:
+            setattr(model, "_skip_deadly_demise_once", True)
+        except Exception:
+            pass
+        try:
+            setattr(self, "_skip_unit_destroyed_event_once", True)
+        except Exception:
+            pass
+        try:
+            self.remove_model(model, False, game_map=game_map)
+        except Exception:
+            pass
+
+    def resolve_armoured_speartip_machine_wrath_post_move(
+        self,
+        game_map: Optional['Map'],
+        *,
+        use_move: bool = True,
+    ) -> None:
+        if not bool(getattr(self, "_armoured_speartip_machine_wrath_pending_destroyed", False)):
+            return
+        model = None
+        try:
+            pending_id = str(getattr(self, "_armoured_speartip_machine_wrath_pending_model_id", "") or "")
+            for candidate in list(getattr(self, "models", []) or []):
+                if str(get_entity_id(candidate) or "") == pending_id:
+                    model = candidate
+                    break
+        except Exception:
+            model = None
+        if model is None:
+            try:
+                models = list(getattr(self, "models", []) or [])
+                model = models[0] if models else None
+            except Exception:
+                model = None
+
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        def _remove_added_move_types(target_key: str, added_key: str) -> None:
+            existing = set(str(v).strip() for v in list(sr.get(target_key) or []) if str(v).strip())
+            added = set(str(v).strip() for v in list(sr.get(added_key) or []) if str(v).strip())
+            remaining = sorted(existing - added)
+            if remaining:
+                sr[target_key] = remaining
+            else:
+                sr.pop(target_key, None)
+            sr.pop(added_key, None)
+
+        _remove_added_move_types(
+            "bearer_unit_phase_move_enemy_models_only_types",
+            "space_marines_armoured_machine_wrath_added_phase_move_enemy_models_only_types",
+        )
+        _remove_added_move_types(
+            "bearer_unit_phase_move_block_monster_vehicle_types",
+            "space_marines_armoured_machine_wrath_added_phase_move_block_monster_vehicle_types",
+        )
+        if bool(sr.get("space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape_present", False)):
+            sr["bearer_unit_auto_pass_desperate_escape"] = bool(
+                sr.get("space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape", False)
+            )
+        else:
+            sr.pop("bearer_unit_auto_pass_desperate_escape", None)
+        for key in (
+            "space_marines_armoured_machine_wrath_active",
+            "space_marines_armoured_machine_wrath_source",
+            "space_marines_armoured_machine_wrath_phase_name",
+            "space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape_present",
+            "space_marines_armoured_machine_wrath_prev_auto_pass_desperate_escape",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+        if model is None:
+            try:
+                self._armoured_speartip_machine_wrath_pending_destroyed = False
+                self._armoured_speartip_machine_wrath_origin_position = None
+                self._armoured_speartip_machine_wrath_pending_model_id = None
+                self._armoured_speartip_machine_wrath_pending_phase_name = None
+                self._armoured_speartip_machine_wrath_pending_transport_disembark = False
+            except Exception:
+                pass
+            return
+
+        try:
+            position = model.get_location() if use_move else getattr(
+                self,
+                "_armoured_speartip_machine_wrath_origin_position",
+                None,
+            )
+            if not position:
+                position = model.get_location()
+        except Exception:
+            position = getattr(self, "_armoured_speartip_machine_wrath_origin_position", None)
+        try:
+            has_deadly_demise, damage_dice = self.has_deadly_demise()
+        except Exception:
+            has_deadly_demise, damage_dice = (False, None)
+        if has_deadly_demise and damage_dice is not None and game_map is not None:
+            self._apply_deadly_demise_explosion(damage_dice=damage_dice, position=position, game_map=game_map)
+
+        try:
+            self._armoured_speartip_machine_wrath_pending_destroyed = False
+            self._armoured_speartip_machine_wrath_origin_position = None
+            self._armoured_speartip_machine_wrath_pending_model_id = None
+            self._armoured_speartip_machine_wrath_pending_phase_name = None
+        except Exception:
+            pass
+
+        try:
+            if bool(getattr(self, "_armoured_speartip_machine_wrath_pending_transport_disembark", False)):
+                game = self.get_parent_army().player.game
+                game._on_unit_destroyed_transport_rules(unit=self, last_model=model, game_map=game_map)
+                self._armoured_speartip_machine_wrath_pending_transport_disembark = False
+        except Exception:
+            pass
+
         try:
             setattr(model, "_skip_deadly_demise_once", True)
         except Exception:

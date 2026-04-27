@@ -505,7 +505,7 @@ Fight:
 - eye_of_spite_dialog: CHOOSE_QUARRY {action="spend_pain_token" | skip} (context `ability="eye_of_spite"`, `ability_name="Eye of Spite"`, `phase="Fight phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `optional=true`)
 - fight_phase_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="fight_phase_end"`, `unit_id`, `model_id`, `ability_name`, `spec`)
 - curse_of_walking_pox_dialog: CHOOSE_QUARRY {returns | skip} (context `ability="curse_of_walking_pox"`, `ability_name`, `source_unit_id`, `unit_id`, `max_returns`, `turn_owner`, `turn`, `phase`, `optional=true`)
-- end_of_fight_embark_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="end_of_fight_embark"`, `transport_id`, `range`, `max_models`, `keyword`)
+- end_of_fight_embark_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="end_of_fight_embark"`, `transport_id`, `range`, `max_models`, `keyword`, `spec`; Armoured Speartip Rapid Embarkation sets `spec.allow_existing_passengers=true`)
 - mechanised_turn_end_embark_dialog: CHOOSE_QUARRY {transport_id, target_unit_id} (context `ability="mechanised_turn_end_embark"`, `ability_name="MOVE OUT"`, `phase="End of opponent's turn"`, `optional=false`)
 - exploding_horrors_model_selection_dialog: SELECT_EXPLODING_HORRORS_MODELS {model_ids[]} (context `unit_id`, `target_unit_id`, `allowed_model_ids`)
 - fight_within_3_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_within_3"`, `unit_id`, `target_unit_id`)
@@ -714,6 +714,8 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - choice_samples_dialog: ALLOCATE_DAMAGE {model_id | gain_cp | skip} (context `selection_kind="choice_samples"`, `unit_id`, `cp_gain`, `allowed_model_ids`)
 
 Note: CAREEN! resolutions queue MOVE_UNIT with context `reactive_move_kind="careen"` and `movement_type="careen"`.
+
+Note: Armoured Speartip Machine Wrath resolutions queue MOVE_UNIT with context `reactive_move_kind="armoured_speartip_machine_wrath"`, `ability="space_marines_armoured_speartip_machine_wrath"`, `ability_name="Machine Wrath"`, `destroyed_transport_unit_id`, `movement_type="move"|"fall_back"`, `max_distance`, `enforce_max_distance=true`, and `allow_skip=true`.
 
 Note: All decision types must be validated in the engine and return errors if
 the selected option is not currently legal.

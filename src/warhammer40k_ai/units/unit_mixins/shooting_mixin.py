@@ -5037,6 +5037,44 @@ class ShootingMixin:
                     swift_active = False
             if swift_active:
                 overrides["allow_after_advance"] = True
+        if isinstance(tsr, dict) and tsr.get("space_marines_armoured_advanced_deployment_active"):
+            advanced_deployment_active = True
+            exp = str(tsr.get("space_marines_armoured_advanced_deployment_expires_phase", "") or "").strip().upper()
+            if exp:
+                try:
+                    phase = getattr(game, "phase", None)
+                    phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                if phase_name and phase_name != exp:
+                    advanced_deployment_active = False
+            owner = str(tsr.get("space_marines_armoured_advanced_deployment_turn_owner", "") or "")
+            try:
+                turn = int(tsr.get("space_marines_armoured_advanced_deployment_turn", 0) or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if advanced_deployment_active and game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    advanced_deployment_active = False
+                if turn and current_turn and turn != current_turn:
+                    advanced_deployment_active = False
+            if advanced_deployment_active:
+                if bool(tsr.get("space_marines_armoured_advanced_deployment_allow_after_advance", True)):
+                    overrides["allow_after_advance"] = True
+                if bool(tsr.get("space_marines_armoured_advanced_deployment_allow_charge_if_assault_ramp", True)):
+                    transport_rules_fn = getattr(transport_unit, "_transport_disembark_rules", None)
+                    transport_rules = transport_rules_fn() if callable(transport_rules_fn) else {}
+                    if bool(dict(transport_rules or {}).get("allow_charge_after_normal_move", False)):
+                        overrides["allow_charge_after_advance_disembark"] = True
         if isinstance(tsr, dict) and tsr.get("cloudstrike_transport_no_charge_disembark"):
             cloudstrike_active = True
             owner = str(tsr.get("cloudstrike_transport_disembark_turn_owner", "") or "")
@@ -5307,6 +5345,7 @@ class ShootingMixin:
         if overrides.get("allow_after_advance") is True:
             allow_after_advance = True
         allow_after_fall_back = bool(overrides.get("allow_after_fall_back", False))
+        allow_charge_after_advance_disembark = bool(overrides.get("allow_charge_after_advance_disembark", False))
         if overrides.get("allow_charge_after_normal_move") is True:
             allow_charge_after_normal_move = True
         force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
@@ -5583,11 +5622,12 @@ class ShootingMixin:
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
             elif advanced and allow_after_advance:
-                # Assault Vehicle: counts as Normal move, cannot charge this turn.
+                # Advanced Deployment: counts as Normal move; Assault Ramp transports preserve charge eligibility.
                 self.round_state.disembarked_from_moved_transport = True
-                self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+                if not allow_charge_after_advance_disembark:
+                    self.round_state.disembarked_cannot_charge = True
             elif transport_set_up_this_turn:
                 # Immediate disembark after a reserves transport is set up still counts as a Normal move.
                 self.round_state.disembarked_from_moved_transport = True
@@ -5798,6 +5838,7 @@ class ShootingMixin:
         if overrides.get("allow_after_advance") is True:
             allow_after_advance = True
         allow_after_fall_back = bool(overrides.get("allow_after_fall_back", False))
+        allow_charge_after_advance_disembark = bool(overrides.get("allow_charge_after_advance_disembark", False))
         if overrides.get("allow_charge_after_normal_move") is True:
             allow_charge_after_normal_move = True
         force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
@@ -5889,9 +5930,10 @@ class ShootingMixin:
                 self.round_state.remained_stationary_this_round = False
             elif advanced and allow_after_advance:
                 self.round_state.disembarked_from_moved_transport = True
-                self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+                if not allow_charge_after_advance_disembark:
+                    self.round_state.disembarked_cannot_charge = True
             elif transport_set_up_this_turn:
                 self.round_state.disembarked_from_moved_transport = True
                 self.round_state.moved_this_round = True

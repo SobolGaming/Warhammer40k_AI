@@ -644,7 +644,7 @@ def test_waha_helper_prefers_non_legendary_wolf_scouts_without_explicit_legendar
     assert helper.get_datasheet("Wolf Scouts Legendary").id == "legend"
 
 
-def test_rapid_embarkation_collision_does_not_mark_new_armoured_speartip_entry_implemented():
+def test_rapid_embarkation_collision_marks_both_space_marines_entries_implemented():
     manager = StratagemManager.__new__(StratagemManager)
     manager._defensive_reaction_cache = {}
     manager._charge_melee_ap_cache = {}
@@ -677,7 +677,7 @@ def test_rapid_embarkation_collision_does_not_mark_new_armoured_speartip_entry_i
     )
 
     assert manager._is_implemented_stratagem(old_firestorm) is True
-    assert manager._is_implemented_stratagem(new_armoured_speartip) is False
+    assert manager._is_implemented_stratagem(new_armoured_speartip) is True
 
 
 def test_burst_of_speed_collision_entries_remain_separate_and_only_armoured_infantry_is_implemented():
