@@ -556,6 +556,21 @@ def test_commissar_graves_variants_are_mutually_exclusive():
         army.validate_unique_model_restrictions()
 
 
+def test_support_matrix_classifies_genestealer_cults_rapid_strike_vehicle_as_supported():
+    from scripts.generate_ability_support_matrix import _classify_ability
+
+    status, notes = _classify_ability(
+        "Rapid Strike Vehicle",
+        "While one or more units are embarked within this model, unless this model is Battle-shocked, add 1 to this model's Objective Control characteristic for every 3 models (rounding down) embarked within it.",
+        faction_id="GC",
+        datasheet_id="000004222",
+    )
+
+    assert status == "Supported"
+    assert "Objective Control" in notes
+    assert "full 3 embarked models" in notes
+
+
 def test_centaur_rsv_objective_control_scales_with_embarked_model_count():
     transport = _make_unit(
         "Centaur RSV",

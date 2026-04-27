@@ -6624,6 +6624,7 @@ def _classify_ability_base(
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
+    embarked_models_oc_support = _embarked_models_objective_control_bonus_support(description)
     unit_contains_action_support = _unit_contains_model_action_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_leadership_bonus_support = _aura_leadership_bonus_support(description)
@@ -7127,6 +7128,8 @@ def _classify_ability_base(
         return monster_vehicle_reroll_support
     if unit_contains_oc_support:
         return unit_contains_oc_support
+    if embarked_models_oc_support:
+        return embarked_models_oc_support
     if unit_contains_action_support:
         return unit_contains_action_support
     if aura_oc_support:
@@ -8757,6 +8760,26 @@ def _unit_contains_oc_support(description: str) -> Optional[Tuple[str, str]]:
     model_name = m.group("model").strip()
     amt = m.group("amt")
     return ("Supported", f"Unit Objective Control +{amt} while it contains {model_name}.")
+
+
+def _embarked_models_objective_control_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"while one or more units (?:are )?embarked within this (?:model|transport) "
+        r"unless this (?:model|unit|transport) is battle shocked "
+        r"add 1 to (?:this (?:model|unit|transport)s|its) objective control characteristic "
+        r"for every (?:3|three) models(?: rounding down)? embarked within it",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "While not Battle-shocked, the model/transport gains +1 Objective Control for each full 3 embarked models.",
+    )
 
 
 def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str]]:
