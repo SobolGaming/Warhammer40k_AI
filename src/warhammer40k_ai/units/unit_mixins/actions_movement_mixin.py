@@ -8335,6 +8335,16 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _astra_militarum_engine_of_wrath_target_locked_to(self, target_unit, *, game=None) -> bool:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        army = root.get_parent_army() if root is not None and hasattr(root, "get_parent_army") else None
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        lock_check = getattr(mgr, "steel_hammer_engine_of_wrath_target_locked_to", None) if mgr is not None else None
+        if not callable(lock_check):
+            return True
+        game_obj = game if game is not None else getattr(getattr(army, "player", None), "game", None)
+        return bool(lock_check(root, target_unit, game=game_obj))
+
     def _helhunt_merciless_fusillade_context(self, *, game=None) -> Optional[dict]:
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self

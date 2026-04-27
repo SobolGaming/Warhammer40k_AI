@@ -3753,6 +3753,24 @@ _STEEL_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "horizontal_only": True,
         },
     ),
+    "000010788002": StratagemToolDescriptor(
+        stratagem_id="000010788002",
+        name="Engine of Wrath",
+        timing="fight_phase",
+        target="astra_militarum_titanic_unit_that_has_not_been_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="target_locked_melee_attacks_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_keywords_all": ["TITANIC"],
+            "requires_not_selected_to_fight_this_phase": True,
+            "requires_enemy_within_engagement_range": True,
+            "melee_attacks_bonus": 6,
+            "melee_ap_bonus": 2,
+            "target_lock": True,
+        },
+    ),
 }
 
 _STEEL_HAMMER_STRATAGEM_BY_NAME = {

@@ -3335,6 +3335,49 @@ class AstraMilitarumStratagemMixin:
             out.append(root)
         return sorted(out, key=self._am_sort_key)
 
+    def _steel_hammer_engine_of_wrath_enemy_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_steel_hammer():
+            return []
+        root = self._am_root(unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if root is None or game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        in_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(in_engagement):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._am_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._am_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._am_on_battlefield(enemy_root):
+                continue
+            if not bool(in_engagement(root, enemy_root)):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _steel_hammer_engine_of_wrath_candidates(self) -> list[Any]:
+        if not self._is_steel_hammer():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if not self._am_has_keyword(root, "TITANIC"):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            if not self._steel_hammer_engine_of_wrath_enemy_candidates(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -5118,6 +5161,66 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_steel_hammer_engine_of_wrath(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_steel_hammer():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "fight phase":
+            logger.error("ERROR: ENGINE OF WRATH: wrong phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("selected_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: ENGINE OF WRATH: no Titanic unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._steel_hammer_engine_of_wrath_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: ENGINE OF WRATH: selected unit is not eligible")
+            return False
+        enemy_candidates = self._steel_hammer_engine_of_wrath_enemy_candidates(root)
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        enemy_root = self._am_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: ENGINE OF WRATH: no engaged enemy unit selected")
+            return False
+        if enemy_root not in list(enemy_candidates or []):
+            logger.error("ERROR: ENGINE OF WRATH: selected enemy is not within Engagement Range")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_steel_hammer_engine_of_wrath", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: ENGINE OF WRATH: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                enemy_root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "ENGINE OF WRATH"),
+            )
+        ):
+            logger.error("ERROR: ENGINE OF WRATH: failed to activate melee bonuses")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ENGINE OF WRATH: %s gains melee bonuses and can only target %s until end of phase.",
+            getattr(root, "name", "Titanic unit"),
+            getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -6005,6 +6108,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_steel_hammer_accuracy_under_pressure(stratagem, **kwargs)
         if name_u == "ADAMANTINE BEHEMOTH":
             return self._use_steel_hammer_adamantine_behemoth(stratagem, **kwargs)
+        if name_u == "ENGINE OF WRATH":
+            return self._use_steel_hammer_engine_of_wrath(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":

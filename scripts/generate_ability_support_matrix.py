@@ -20677,6 +20677,7 @@ def _stratagem_support(
         "000010792005": "Your Shooting phase: selected ARMOURED SKIRMISHER unit that has not shot can re-roll Hit rolls for ranged attacks against visible MONSTER or VEHICLE targets until end of phase.",
         "000010788007": "Your Shooting phase: selected ASTRA MILITARUM unit that has not shot can re-roll Hit rolls for ranged attacks until end of phase.",
         "000010788004": "Your Movement or Charge phase: selected ASTRA MILITARUM VEHICLE that has not been selected to move or charge can move horizontally through terrain features until end of phase.",
+        "000010788002": "Fight phase: selected ASTRA MILITARUM TITANIC unit that has not fought selects one enemy within Engagement Range; until end of phase its melee weapons gain +6 Attacks and improve AP by 2, and it can only target that enemy.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21675,6 +21676,7 @@ def _stratagem_support(
         "000010792005",
         "000010788007",
         "000010788004",
+        "000010788002",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

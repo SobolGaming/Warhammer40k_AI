@@ -1,12 +1,13 @@
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
-from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.units.wargear import AttackResult, Wargear, WargearProfile
 from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -153,6 +154,45 @@ def _make_hit_profile(*, indirect: bool = False):
     profile.is_lethal_hits = lambda: False
     profile.is_sustained_hits = lambda: False
     return profile
+
+
+def _make_melee_profile(*, attacks: str = "3", ap: str = "-1"):
+    weapon = Wargear(
+        {
+            "name": "Titanic Feet",
+            "type": "Melee",
+            "range": "Melee",
+            "A": str(attacks),
+            "BS_WS": "4+",
+            "S": "8",
+            "AP": str(ap),
+            "D": "2",
+        }
+    )
+    return weapon.profiles["default"]
+
+
+def _attack_result(profile, attacker, target_unit):
+    return AttackResult(
+        weapon_name=str(getattr(profile, "name", "") or "Weapon"),
+        attacker_name=str(getattr(attacker, "name", "") or "Attacker"),
+        target_unit_name=str(getattr(target_unit, "name", "") or "Target"),
+        attacks_rolled=0,
+        attacks_dice_expression=str(getattr(profile, "attacks", "")),
+        attacks_dice_rolls=[],
+        attacks_special_modifiers=[],
+        hit_results=[],
+        wound_results=[],
+        save_results=[],
+        damage_results=[],
+        hazardous_roll=None,
+        hazardous_damage=0,
+        total_hits=0,
+        total_wounds=0,
+        total_saves_failed=0,
+        total_damage_dealt=0,
+        models_killed=0,
+    )
 
 
 def test_ceaseless_cannonade_muster_selection_applies_character_to_titanic_units():
@@ -310,6 +350,18 @@ def test_steel_hammer_adamantine_behemoth_descriptor_registered():
     assert descriptor.effect == "move_through_terrain_horizontally"
     assert descriptor.effect_params["target_keywords_all"] == ["VEHICLE"]
     assert descriptor.effect_params["movement_types"] == ["move", "advance", "charge"]
+
+
+def test_steel_hammer_engine_of_wrath_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010788002")
+
+    assert descriptor is not None
+    assert descriptor.name == "Engine of Wrath"
+    assert descriptor.cp_cost == 1
+    assert descriptor.effect == "target_locked_melee_attacks_and_ap_bonus"
+    assert descriptor.effect_params["target_keywords_all"] == ["TITANIC"]
+    assert descriptor.effect_params["melee_attacks_bonus"] == 6
+    assert descriptor.effect_params["melee_ap_bonus"] == 2
 
 
 def test_accuracy_under_pressure_grants_hit_rerolls_until_phase_end():
@@ -491,4 +543,99 @@ def test_adamantine_behemoth_rejects_non_vehicle_or_already_selected_units():
     assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=moved_vehicle, phase_name="Movement phase") is False
     assert int(player.command_points or 0) == 10
     assert player.stratagems.use("ADAMANTINE BEHEMOTH", unit=valid, phase_name="Movement phase") is True
+    assert int(player.command_points or 0) == 9
+
+
+def test_engine_of_wrath_locks_titanic_unit_and_improves_melee_until_phase_end():
+    game, player, enemy_player = _make_game()
+    titan = create_unit(
+        "Baneblade",
+        10.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    enemy = create_unit("Enemy One", 10.0, 11.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    other = create_unit("Enemy Two", 11.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    player.army.add_unit(titan)
+    enemy_player.army.add_unit(enemy)
+    enemy_player.army.add_unit(other)
+    game.map = _DummyMap([titan, enemy, other], [(titan, enemy), (titan, other)])
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+
+    assert player.stratagems.use("ENGINE OF WRATH", unit=titan, enemy_unit=enemy, phase_name="Fight phase") is True
+    assert int(player.command_points or 0) == 9
+    assert titan.special_rules.get("steel_hammer_engine_of_wrath_active") is True
+
+    eligible = FightPhaseManager(game)._get_eligible_targets(titan)
+    assert eligible == [enemy]
+
+    profile = _make_melee_profile(attacks="3", ap="-1")
+    attack_result = _attack_result(profile, titan.models[0], enemy)
+    attack_count = profile._resolve_attack_count(enemy, titan.models[0], attack_result, publish_roll_event=False)
+    assert int(attack_count.num_attacks or 0) == 9
+    assert any("ENGINE OF WRATH" in str(item).upper() for item in attack_result.attacks_special_modifiers)
+    assert int(profile.get_effective_ap(titan.models[0], enemy) or 0) == -3
+
+    other_result = _attack_result(profile, titan.models[0], other)
+    other_count = profile._resolve_attack_count(other, titan.models[0], other_result, publish_roll_event=False)
+    assert int(other_count.num_attacks or 0) == 3
+    assert int(profile.get_effective_ap(titan.models[0], other) or 0) == -1
+
+    game.event_system.publish("phase_end", player=player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+    expired_result = _attack_result(profile, titan.models[0], enemy)
+    expired_count = profile._resolve_attack_count(enemy, titan.models[0], expired_result, publish_roll_event=False)
+    assert int(expired_count.num_attacks or 0) == 3
+    assert int(profile.get_effective_ap(titan.models[0], enemy) or 0) == -1
+
+
+def test_engine_of_wrath_rejects_non_titanic_or_already_fought_units():
+    game, player, enemy_player = _make_game()
+    infantry = create_unit(
+        "Infantry Squad",
+        10.0,
+        10.0,
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="1",
+    )
+    fought_titan = create_unit(
+        "Shadowsword",
+        12.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    valid = create_unit(
+        "Baneblade",
+        14.0,
+        10.0,
+        keywords=["VEHICLE", "TITANIC"],
+        faction_keywords=["ASTRA MILITARUM"],
+        wounds="24",
+    )
+    enemy = create_unit("Enemy", 13.0, 10.0, keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    for unit in (infantry, fought_titan, valid):
+        player.army.add_unit(unit)
+    enemy_player.army.add_unit(enemy)
+    game.map = _DummyMap([infantry, fought_titan, valid, enemy], [(infantry, enemy), (fought_titan, enemy), (valid, enemy)])
+    fought_titan.round_state.fought_this_phase = True
+    player.command_points = 10
+    _finalize_game(game, player, enemy_player)
+
+    game.current_player_index = game.players.index(player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+
+    assert player.stratagems.use("ENGINE OF WRATH", unit=infantry, enemy_unit=enemy, phase_name="Fight phase") is False
+    assert player.stratagems.use("ENGINE OF WRATH", unit=fought_titan, enemy_unit=enemy, phase_name="Fight phase") is False
+    assert int(player.command_points or 0) == 10
+    assert player.stratagems.use("ENGINE OF WRATH", unit=valid, enemy_unit=enemy, phase_name="Fight phase") is True
     assert int(player.command_points or 0) == 9

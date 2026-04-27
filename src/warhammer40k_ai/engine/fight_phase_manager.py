@@ -914,6 +914,12 @@ class FightPhaseManager:
                     except Exception:
                         pass
                     try:
+                        lock_check = getattr(fighting_unit, "_astra_militarum_engine_of_wrath_target_locked_to", None)
+                        if callable(lock_check) and not bool(lock_check(enemy_root, game=self.game)):
+                            continue
+                    except Exception:
+                        pass
+                    try:
                         lock_check = getattr(fighting_unit, "_helhunt_merciless_fusillade_target_locked_to", None)
                         if (
                             not bool(ignore_helhunt_target_lock)
@@ -1236,6 +1242,16 @@ class FightPhaseManager:
 
     def _resolve_melee_attacks(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List) -> Dict:
         """Resolve melee attacks with detailed output like shooting."""
+        try:
+            lock_check = getattr(attacking_unit, "_astra_militarum_engine_of_wrath_target_locked_to", None)
+            if callable(lock_check) and not bool(lock_check(target_unit, game=self.game)):
+                logger.info(
+                    "%s can only target the selected Engine of Wrath enemy unit this phase",
+                    getattr(attacking_unit, "name", "Unit"),
+                )
+                return {"hits_by_target": {}, "hit_models_by_target": {}}
+        except Exception:
+            pass
         # AIRCRAFT fight restrictions (defensive guard)
         try:
             if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(attacking_unit, "is_flying", False)):

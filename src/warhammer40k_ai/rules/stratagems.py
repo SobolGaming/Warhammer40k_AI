@@ -1097,6 +1097,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "BURST OF SPEED": {"000010792004"},
     "ACCURACY UNDER PRESSURE": {"000010788007"},
     "ADAMANTINE BEHEMOTH": {"000010788004"},
+    "ENGINE OF WRATH": {"000010788002"},
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
     "OPENING SALVO": {"000010792007"},
@@ -3170,6 +3171,7 @@ class StratagemManager(
             "AERIAL EXTRACTION",
             "ACCURACY UNDER PRESSURE",
             "ADAMANTINE BEHEMOTH",
+            "ENGINE OF WRATH",
             "BURST OF SPEED",
             "COMBINED FIRE",
             "OPENING SALVO",
@@ -8481,6 +8483,15 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your opponent's Movement phase after an enemy ends a Normal, Advance, or Fall Back move within 9\" of one of your eligible PLATOON units"
             return result
+        if name_u == "ENGINE OF WRATH":
+            if self._steel_hammer_engine_of_wrath_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires the Fight phase and a friendly ASTRA MILITARUM TITANIC unit that has not fought and is within Engagement Range of an enemy unit"
+            )
+            return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
                 result["available"] = True
@@ -11833,6 +11844,7 @@ class StratagemManager(
             "ABLATIVE PLATING": "Target: your ASTRA MILITARUM VEHICLE selected as a target after enemy shooting targets are declared; reduces incoming Damage by 1 this phase",
             "ACCURACY UNDER PRESSURE": "Target: your ASTRA MILITARUM unit that has not been selected to shoot; it re-rolls Hit rolls this phase",
             "ADAMANTINE BEHEMOTH": "Target: your ASTRA MILITARUM VEHICLE that has not been selected to move or charge; it moves horizontally through terrain this phase",
+            "ENGINE OF WRATH": "Target: your ASTRA MILITARUM TITANIC unit that has not fought; choose one engaged enemy it must target while melee weapons gain +6 Attacks and +2 AP this phase",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",

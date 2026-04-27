@@ -3955,6 +3955,21 @@ class WargearProfile:
         except Exception:
             pass
         if self.parent_wargear and self.parent_wargear.is_melee():
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "steel_hammer_engine_of_wrath_melee_bonuses", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _attacks_bonus, ap_bonus, _source = bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
+        if self.parent_wargear and self.parent_wargear.is_melee():
             from ..utility.aura_effects import get_aura_melee_ap_bonus
             aura_ap, _ = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self)
             if aura_ap:
@@ -6135,6 +6150,29 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append(f"{source_name} +{int(attacks_bonus)}A")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "steel_hammer_engine_of_wrath_melee_bonuses", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                attacks_bonus, _ap_bonus, source = bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(attacks_bonus or 0):
+                    source_name = str(source or "ENGINE OF WRATH").strip() or "ENGINE OF WRATH"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(attacks_bonus),
+                            source="stratagem:steel_hammer_engine_of_wrath_attacks_add",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(f"{source_name} +{int(attacks_bonus)}A")
         try:
             if self.parent_wargear and not self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)

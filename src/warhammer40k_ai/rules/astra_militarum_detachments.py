@@ -1557,6 +1557,14 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                     else:
                         sr.pop("bearer_unit_phase_move_terrain_only_types", None)
                     self._clear_prefixed_special_rules(sr, "steel_hammer_adamantine_behemoth")
+            if bool(sr.get("steel_hammer_engine_of_wrath_active", False)):
+                marked_round = self._safe_int(sr.get("steel_hammer_engine_of_wrath_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("steel_hammer_engine_of_wrath_phase", "") or "")
+                marked_owner = str(sr.get("steel_hammer_engine_of_wrath_owner", "") or "")
+                if (not marked_round or not round_now or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    self._clear_prefixed_special_rules(sr, "steel_hammer_engine_of_wrath")
             root.special_rules = sr
 
     def _steel_hammer_phase_effect_state(self, unit, *, prefix: str, game=None):
@@ -1694,6 +1702,100 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         )
         root.special_rules = sr
         return True
+
+    def activate_steel_hammer_engine_of_wrath(
+        self,
+        unit,
+        enemy_unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        root = self._unit_root(unit)
+        target_root = self._unit_root(enemy_unit)
+        if root is None or target_root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root) or not self._unit_is_titanic(root):
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            return False
+        enemy_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if enemy_army is None or enemy_army is self.army:
+            return False
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        if phase_key and phase_key != "FIGHT_PHASE":
+            return False
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if callable(engagement) and not bool(engagement(root, target_root)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["steel_hammer_engine_of_wrath_active"] = True
+        sr["steel_hammer_engine_of_wrath_round"] = round_now
+        sr["steel_hammer_engine_of_wrath_turn"] = round_now
+        sr["steel_hammer_engine_of_wrath_phase"] = "FIGHT_PHASE"
+        sr["steel_hammer_engine_of_wrath_owner"] = owner_id
+        sr["steel_hammer_engine_of_wrath_turn_owner"] = self._current_player_id(game=game_obj) or owner_id
+        sr["steel_hammer_engine_of_wrath_target_id"] = self._entity_id(target_root)
+        sr["steel_hammer_engine_of_wrath_attacks_bonus"] = 6
+        sr["steel_hammer_engine_of_wrath_ap_bonus"] = 2
+        sr["steel_hammer_engine_of_wrath_source"] = (
+            str(source or "ENGINE OF WRATH").strip() or "ENGINE OF WRATH"
+        )
+        root.special_rules = sr
+        return True
+
+    def steel_hammer_engine_of_wrath_target_locked_to(self, unit, target_unit, *, game=None) -> bool:
+        root, sr = self._steel_hammer_phase_effect_state(
+            unit,
+            prefix="steel_hammer_engine_of_wrath",
+            game=game,
+        )
+        if root is None or target_unit is None or not isinstance(sr, dict):
+            return True
+        target_root = self._unit_root(target_unit)
+        current_id = self._entity_id(target_root) if target_root is not None else ""
+        expected_id = str(sr.get("steel_hammer_engine_of_wrath_target_id", "") or "")
+        return bool((not expected_id) or (current_id and current_id == expected_id))
+
+    def steel_hammer_engine_of_wrath_melee_bonuses(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, int, str]:
+        if attacker_model is None or target_unit is None:
+            return 0, 0, ""
+        is_melee = getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", None)
+        if callable(is_melee) and not bool(is_melee()):
+            return 0, 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._steel_hammer_phase_effect_state(
+            unit,
+            prefix="steel_hammer_engine_of_wrath",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return 0, 0, ""
+        if not self.steel_hammer_engine_of_wrath_target_locked_to(root, target_unit, game=game):
+            return 0, 0, ""
+        attacks_bonus = self._safe_int(sr.get("steel_hammer_engine_of_wrath_attacks_bonus", 0) or 0, 0)
+        ap_bonus = self._safe_int(sr.get("steel_hammer_engine_of_wrath_ap_bonus", 0) or 0, 0)
+        source = (
+            str(sr.get("steel_hammer_engine_of_wrath_source", "") or "ENGINE OF WRATH").strip()
+            or "ENGINE OF WRATH"
+        )
+        return int(max(0, attacks_bonus)), int(max(0, ap_bonus)), source
 
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):

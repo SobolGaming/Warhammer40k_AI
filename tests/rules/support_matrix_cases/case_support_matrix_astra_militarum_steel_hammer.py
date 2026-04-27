@@ -79,3 +79,29 @@ def test_adamantine_behemoth_stratagem_is_supported():
     assert "vehicle" in notes_l
     assert "move horizontally through terrain" in notes_l
     assert "end of phase" in notes_l
+
+
+def test_engine_of_wrath_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010788002"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Steel Hammer",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "ENGINE OF WRATH"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "titanic" in notes_l
+    assert "engagement range" in notes_l
+    assert "melee weapons gain +6 attacks" in notes_l
+    assert "improve ap by 2" in notes_l
