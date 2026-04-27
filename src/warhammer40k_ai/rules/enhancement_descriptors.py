@@ -9486,6 +9486,68 @@ _ORKS_KULT_OF_SPEED_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_KULT_OF_SPEED_DESCRIPTORS.values()
 }
 
+_ORKS_BLITZ_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010799002": EnhancementToolDescriptor(
+        enhancement_id="000010799002",
+        name="Runnin' Boots",
+        timing="charge_roll",
+        target="bearer_unit",
+        duration="conditional_turn",
+        effect="charge_roll_bonus_if_disembarked_from_transport_this_turn",
+        effect_params={
+            "charge_roll_bonus": 1,
+            "requires_disembarked_from_transport_this_turn": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010799003": EnhancementToolDescriptor(
+        enhancement_id="000010799003",
+        name="Blitzkaptin",
+        timing="after_deployment",
+        target="friendly_orks_vehicle_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("ORKS", "VEHICLE"),
+            "requires_source_on_battlefield": True,
+            "allow_embarked_transport_on_battlefield": True,
+            "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
+    "000010799004": EnhancementToolDescriptor(
+        enhancement_id="000010799004",
+        name="Supercharged Squig Oil",
+        timing="after_mekaniak_resolves",
+        target="selected_friendly_orks_vehicle_model_unit",
+        duration="until_end_of_turn",
+        effect="charge_reroll_for_mekaniak_selected_vehicle_unit",
+        effect_params={
+            "requires_bearer_alive": True,
+            "requires_target_vehicle": True,
+            "requires_target_orks": True,
+            "charge_reroll": True,
+        },
+    ),
+    "000010799005": EnhancementToolDescriptor(
+        enhancement_id="000010799005",
+        name="Tuff Git",
+        timing="phase_end",
+        target="bearer_unit",
+        duration="instant",
+        effect="clear_battleshock_if_disembarked_from_transport_this_phase",
+        effect_params={
+            "requires_disembarked_from_transport_this_phase": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_ORKS_BLITZ_BRIGADE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_BLITZ_BRIGADE_DESCRIPTORS.values()
+}
+
 _ORKS_MORE_DAKKA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009991002": EnhancementToolDescriptor(
         enhancement_id="000009991002",
@@ -10393,6 +10455,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_KULT_OF_SPEED_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_BLITZ_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _ORKS_MORE_DAKKA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10592,6 +10657,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
         or _ORKS_GREEN_TIDE_BY_NAME.get(key)
         or _ORKS_KULT_OF_SPEED_BY_NAME.get(key)
+        or _ORKS_BLITZ_BRIGADE_BY_NAME.get(key)
         or _ORKS_MORE_DAKKA_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME.get(key)

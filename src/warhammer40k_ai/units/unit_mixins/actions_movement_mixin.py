@@ -14118,6 +14118,18 @@ class ActionsMovementMixin:
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Motive Imperative")))
 
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        orks_runnin_boots_bonus_fn = (
+            getattr(orks_mgr, "blitz_brigade_runnin_boots_charge_roll_bonus", None)
+            if orks_mgr is not None
+            else None
+        )
+        if callable(orks_runnin_boots_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = orks_runnin_boots_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Runnin' Boots")))
+
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         gsc_bonus_fn = (
             getattr(gsc_mgr, "hypermorphic_fury_charge_roll_bonus", None)

@@ -27098,6 +27098,17 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         tsr["master_of_mechanisms_source"] = ability_name
         tsr["master_of_mechanisms_expires_phase"] = str(expires_phase or "COMMAND_PHASE")
         target_root.special_rules = tsr
+        ability_key = re.sub(r"[^a-z0-9]+", " ", str(ability_name or "").lower()).strip()
+        if ability_key == "mekaniak":
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            orks_mgr = getattr(source_army, "orks_detachments", None) if source_army is not None else None
+            squig_oil_fn = (
+                getattr(orks_mgr, "apply_blitz_brigade_supercharged_squig_oil_on_mekaniak", None)
+                if orks_mgr is not None
+                else None
+            )
+            if callable(squig_oil_fn):
+                squig_oil_fn(source_root, target_root, game=game)
         if limit_once_per_turn and limit_scope == "model" and target_model is not None:
             target_msr = getattr(target_model, "special_rules", None)
             if not isinstance(target_msr, dict):

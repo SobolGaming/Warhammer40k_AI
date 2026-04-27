@@ -21,6 +21,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _SPEEDWAAAGH_MOBILE_DAKKASTORM_SOURCE = "MOBILE DAKKASTORM"
     _SPEEDWAAAGH_MOBILE_DAKKASTORM_STRENGTH_BONUS = 2
     _BLITZ_BRIGADE_EAGER_SOURCE = "Eager for the Fight"
+    _BLITZ_BRIGADE_RUNNIN_BOOTS_SOURCE = "Runnin' Boots"
+    _BLITZ_BRIGADE_SQUIG_OIL_SOURCE = "Supercharged Squig Oil"
+    _BLITZ_BRIGADE_TUFF_GIT_SOURCE = "Tuff Git"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
     _WAZDAKKA_GUTSMEK_NAMED_UNITS = ("wazdakka gutsmek",)
@@ -881,6 +884,235 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if isinstance(cache, dict):
             cache.clear()
         return True
+
+    def _attached_unit_disembarked_from_transport_this_turn(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        if not transport_id:
+            return False
+        if game is None and self.army is not None:
+            player_obj = getattr(self.army, "player", None)
+            game = getattr(player_obj, "game", None) if player_obj is not None else None
+        if game is None:
+            return True
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return True
+        try:
+            disembark_round = int(sr.get("voice_of_command_disembark_round", 0) or 0)
+        except (TypeError, ValueError):
+            disembark_round = 0
+        if disembark_round > 0:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round > 0 and current_round != disembark_round:
+                return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        disembark_owner = str(sr.get("voice_of_command_disembark_owner", "") or "").strip()
+        if current_owner and disembark_owner and current_owner != disembark_owner:
+            return False
+        return True
+
+    def _attached_unit_disembarked_from_transport_this_phase(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        game=None,
+    ) -> bool:
+        if not self._attached_unit_disembarked_from_transport_this_turn(unit, game=game):
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        expected_phase = str(phase_name or "").strip().upper()
+        if not expected_phase:
+            expected_phase = self._phase_key_from_game(game)
+        if not expected_phase:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        disembark_phase = str(sr.get("voice_of_command_disembark_phase", "") or "").strip().upper()
+        return bool(disembark_phase and disembark_phase == expected_phase)
+
+    def blitz_brigade_runnin_boots_charge_roll_bonus(
+        self,
+        unit,
+        *,
+        target_units=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del target_units
+        if not self.is_blitz_brigade():
+            return 0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return 0, ""
+        if not self._unit_has_keyword_or_faction(root, "ORKS", faction_id=self.faction_id):
+            return 0, ""
+        if not self._attached_unit_disembarked_from_transport_this_turn(root, game=game):
+            return 0, ""
+        sources = self._collect_active_enhancement_source_units(
+            root,
+            flag_key="enhancement_blitz_brigade_runnin_boots",
+        )
+        if not sources:
+            return 0, ""
+        source_unit = sources[0]
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_blitz_brigade_runnin_boots_charge_roll_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        source = self._enhancement_source_name(
+            source_unit,
+            source_key="enhancement_blitz_brigade_runnin_boots_source",
+            default=self._BLITZ_BRIGADE_RUNNIN_BOOTS_SOURCE,
+        )
+        return int(max(0, bonus)), source
+
+    def apply_blitz_brigade_supercharged_squig_oil_on_mekaniak(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        game=None,
+    ) -> bool:
+        if not self.is_blitz_brigade():
+            return False
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if not self._unit_belongs_to_army(source_root) or not self._unit_belongs_to_army(target_root):
+            return False
+        if not self._unit_has_keyword_or_faction(target_root, "ORKS", faction_id=self.faction_id):
+            return False
+        if not self._unit_contains_keyword(target_root, "VEHICLE"):
+            return False
+        sources = self._collect_active_enhancement_source_units(
+            source_root,
+            flag_key="enhancement_blitz_brigade_supercharged_squig_oil",
+        )
+        if not sources:
+            return False
+        source_member = sources[0]
+        if game is None and self.army is not None:
+            player_obj = getattr(self.army, "player", None)
+            game = getattr(player_obj, "game", None) if player_obj is not None else None
+        player = None
+        if game is not None:
+            get_current = getattr(game, "get_current_player", None)
+            player = get_current() if callable(get_current) else None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        source = self._enhancement_source_name(
+            source_member,
+            source_key="enhancement_blitz_brigade_supercharged_squig_oil_source",
+            default=self._BLITZ_BRIGADE_SQUIG_OIL_SOURCE,
+        )
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        effect_prefix = "enhancement:blitz_brigade:supercharged_squig_oil"
+        source_id = self._unit_root_id(source_root)
+        target_id = self._unit_root_id(target_root)
+        temp_effects = [
+            dict(entry)
+            for entry in list(sr.get("orks_temp_effects", []) or [])
+            if isinstance(entry, dict)
+            and not str(entry.get("id", "") or "").startswith(f"{effect_prefix}:{source_id}:")
+        ]
+        temp_effects.append(
+            {
+                "id": f"{effect_prefix}:{source_id}:{target_id}",
+                "detachment": "blitz_brigade",
+                "source": source,
+                "effect": "charge_reroll",
+                "attack_type": "any",
+                "expires_mode": "turn",
+                "turn_owner_id": owner_id,
+                "turn": int(turn),
+            }
+        )
+        temp_effects.sort(key=lambda entry: str(entry.get("id", "") or ""))
+        sr["orks_temp_effects"] = temp_effects
+        sr["enhancement_blitz_brigade_supercharged_squig_oil_active"] = True
+        sr["enhancement_blitz_brigade_supercharged_squig_oil_turn_owner"] = owner_id
+        sr["enhancement_blitz_brigade_supercharged_squig_oil_turn"] = int(turn)
+        sr["enhancement_blitz_brigade_supercharged_squig_oil_source"] = source
+        sr["enhancement_blitz_brigade_supercharged_squig_oil_source_unit_id"] = source_id
+        target_root.special_rules = sr
+        cache = getattr(target_root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+        return True
+
+    def resolve_blitz_brigade_tuff_git_phase_end(
+        self,
+        *,
+        phase_name: str,
+        game=None,
+    ) -> list[dict]:
+        if not self.is_blitz_brigade() or self.army is None:
+            return []
+        results: list[dict] = []
+        for root in self._iter_unique_army_unit_roots():
+            if root is None:
+                continue
+            if not self._unit_is_battle_shocked(root):
+                continue
+            if not self._attached_unit_disembarked_from_transport_this_phase(
+                root,
+                phase_name=phase_name,
+                game=game,
+            ):
+                continue
+            sources = self._collect_active_enhancement_source_units(
+                root,
+                flag_key="enhancement_blitz_brigade_tuff_git",
+            )
+            if not sources:
+                continue
+            clear_fn = getattr(root, "clear_battle_shock", None)
+            if not callable(clear_fn):
+                continue
+            cleared = bool(clear_fn())
+            if not cleared:
+                continue
+            source_unit = sources[0]
+            results.append(
+                {
+                    "unit_id": self._unit_root_id(root),
+                    "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+                    "source": self._enhancement_source_name(
+                        source_unit,
+                        source_key="enhancement_blitz_brigade_tuff_git_source",
+                        default=self._BLITZ_BRIGADE_TUFF_GIT_SOURCE,
+                    ),
+                }
+            )
+        return results
 
     def _more_dakka_unit_is_eligible(self, unit) -> bool:
         if not self.is_more_dakka():

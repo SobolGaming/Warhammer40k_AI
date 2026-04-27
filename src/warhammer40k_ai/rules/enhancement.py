@@ -1912,6 +1912,9 @@ class Enhancement:
         is_kult_of_speed = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_kult_of_speed", None)) and orks_mgr.is_kult_of_speed()
         )
+        is_blitz_brigade = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_blitz_brigade", None)) and orks_mgr.is_blitz_brigade()
+        )
         is_more_dakka = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_more_dakka", None)) and orks_mgr.is_more_dakka()
         )
@@ -15068,6 +15071,109 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_kult_of_speed_wazblasta_bearer_model_id"] = bearer_id
+
+        if name == "runnin' boots" or enh_id == "000010799002":
+            if not is_blitz_brigade:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("ORKS")) or not bool(has_any_keyword("INFANTRY")) or not bool(has_any_keyword("CHARACTER")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Runnin' Boots").strip() or "Runnin' Boots"
+            bonus = _coerce_int(params.get("charge_roll_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_blitz_brigade_runnin_boots"] = True
+            unit.special_rules["enhancement_blitz_brigade_runnin_boots_source"] = source
+            unit.special_rules["enhancement_blitz_brigade_runnin_boots_charge_roll_bonus"] = int(max(0, bonus))
+            unit.special_rules["enhancement_blitz_brigade_runnin_boots_requires_disembarked_from_transport_this_turn"] = bool(
+                params.get("requires_disembarked_from_transport_this_turn", True)
+            )
+            unit.special_rules["enhancement_blitz_brigade_runnin_boots_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blitz_brigade_runnin_boots_bearer_model_id"] = bearer_id
+
+        if name == "blitzkaptin" or enh_id == "000010799003":
+            if not is_blitz_brigade:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("ORKS")) or not bool(has_any_keyword("CHARACTER")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Blitzkaptin").strip() or "Blitzkaptin"
+            unit.special_rules["enhancement_blitz_brigade_blitzkaptin"] = True
+            unit.special_rules["enhancement_blitz_brigade_blitzkaptin_source"] = source
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                max_units=_coerce_int(params.get("max_units", 3) or 3, default=3),
+                can_place_in_reserves=bool(params.get("allow_strategic_reserves", True)),
+                redeploy_filters=list(params.get("redeploy_filters", ("ORKS", "VEHICLE")) or ()),
+                requires_source_on_battlefield=bool(params.get("requires_source_on_battlefield", True)),
+                allow_embarked_transport_on_battlefield=bool(
+                    params.get("allow_embarked_transport_on_battlefield", True)
+                ),
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", True)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blitz_brigade_blitzkaptin_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "supercharged squig oil" or enh_id == "000010799004":
+            if not is_blitz_brigade:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("ORKS")) or not bool(has_any_keyword("MEK")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Supercharged Squig Oil").strip() or "Supercharged Squig Oil"
+            unit.special_rules["enhancement_blitz_brigade_supercharged_squig_oil"] = True
+            unit.special_rules["enhancement_blitz_brigade_supercharged_squig_oil_source"] = source
+            unit.special_rules["enhancement_blitz_brigade_supercharged_squig_oil_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blitz_brigade_supercharged_squig_oil_bearer_model_id"] = bearer_id
+
+        if name == "tuff git" or enh_id == "000010799005":
+            if not is_blitz_brigade:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("ORKS")) or not bool(has_any_keyword("INFANTRY")) or not bool(has_any_keyword("CHARACTER")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tuff Git").strip() or "Tuff Git"
+            unit.special_rules["enhancement_blitz_brigade_tuff_git"] = True
+            unit.special_rules["enhancement_blitz_brigade_tuff_git_source"] = source
+            unit.special_rules["enhancement_blitz_brigade_tuff_git_requires_disembarked_from_transport_this_phase"] = bool(
+                params.get("requires_disembarked_from_transport_this_phase", True)
+            )
+            unit.special_rules["enhancement_blitz_brigade_tuff_git_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blitz_brigade_tuff_git_bearer_model_id"] = bearer_id
 
         if name == "big gob" or enh_id == "000008885002":
             if not is_bully_boyz:

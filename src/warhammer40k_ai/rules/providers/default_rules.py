@@ -331,6 +331,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "phase_handlers._on_phase_end_shooting_phase_disrupt_cleanup"),
                 ("phase_end", "phase_handlers._on_phase_end_aeldari_strength_from_death_lethal_intent"),
                 ("phase_end", "phase_handlers._on_phase_end_movement_phase_mortal_table"),
+                ("phase_end", "phase_handlers._on_phase_end_orks_blitz_brigade_enhancements"),
                 ("phase_end", "phase_handlers._on_phase_end_orks_da_jump"),
                 ("phase_end", "phase_handlers._on_phase_end_ds8_support_turret"),
                 ("phase_end", "phase_handlers._on_phase_end_flickerjump_mortal_wounds"),

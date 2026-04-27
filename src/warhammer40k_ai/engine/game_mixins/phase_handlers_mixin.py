@@ -4836,6 +4836,24 @@ class GamePhaseHandlersMixin:
                 self.request_decision(request)
                 pending_source_ids.add(root_id)
 
+    def _on_phase_end_orks_blitz_brigade_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Orks Blitz Brigade phase-end enhancement hooks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        for active_player in list(getattr(self, "players", []) or []):
+            if active_player is None:
+                continue
+            army = active_player.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "orks_detachments", None)
+            if mgr is None:
+                continue
+            resolve_tuff_git = getattr(mgr, "resolve_blitz_brigade_tuff_git_phase_end", None)
+            if callable(resolve_tuff_git):
+                resolve_tuff_git(phase_name=pname, game=self)
+
     def _on_phase_end_orks_da_jump(self, player=None, phase=None, **_kwargs) -> None:
         """End of Movement phase: one Weirdboy from the active Orks army can use Da Jump."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
