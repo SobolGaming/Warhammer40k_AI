@@ -5149,11 +5149,6 @@ class ShootingMixin:
     def _apply_aggressive_deployment_scouts(self, transport_unit: Optional['Unit'] = None) -> None:
         if transport_unit is None:
             return
-        try:
-            if not transport_unit.is_dedicated_transport:
-                return
-        except Exception:
-            return
         has_aggressive_deployment = self._attached_unit_has_enhancement_flag(
             "enhancement_aggressive_deployment",
             enhancement_id="000010086003",
@@ -5169,8 +5164,37 @@ class ShootingMixin:
             enhancement_id="000009781002",
             enhancement_name="archraider",
         )
-        if not (has_aggressive_deployment or has_herald_of_sacred_slaughter or has_reapers_wager_archraider):
+        has_tip_of_the_spear = self._attached_unit_has_enhancement_flag(
+            "enhancement_armoured_speartip_tip_of_the_spear",
+            enhancement_id="000010779003",
+            enhancement_name="tip of the spear",
+        )
+        if not (
+            has_aggressive_deployment
+            or has_herald_of_sacred_slaughter
+            or has_reapers_wager_archraider
+            or has_tip_of_the_spear
+        ):
             return
+        if has_tip_of_the_spear:
+            transport_has_keyword = getattr(transport_unit, "has_any_keyword", None)
+            if callable(transport_has_keyword):
+                if not bool(transport_has_keyword("TRANSPORT")):
+                    return
+            else:
+                keywords = {
+                    str(value or "").strip().upper()
+                    for value in list(getattr(transport_unit, "keywords", []) or [])
+                    + list(getattr(transport_unit, "faction_keywords", []) or [])
+                }
+                if "TRANSPORT" not in keywords:
+                    return
+        else:
+            try:
+                if not transport_unit.is_dedicated_transport:
+                    return
+            except Exception:
+                return
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -5198,6 +5222,13 @@ class ShootingMixin:
                 val = max(val, float(sr.get("enhancement_reapers_wager_archraider_scouts_distance", 0) or 0))
             except Exception:
                 pass
+            try:
+                val = max(
+                    val,
+                    float(sr.get("enhancement_armoured_speartip_tip_of_the_spear_scouts_distance", 0) or 0),
+                )
+            except Exception:
+                pass
             if val > scouts_distance:
                 scouts_distance = val
         if scouts_distance <= 0:
@@ -5217,6 +5248,9 @@ class ShootingMixin:
         if has_reapers_wager_archraider:
             sr["enhancement_reapers_wager_archraider_active"] = True
             sr["enhancement_reapers_wager_archraider_distance"] = scouts_distance
+        if has_tip_of_the_spear:
+            sr["enhancement_armoured_speartip_tip_of_the_spear_active"] = True
+            sr["enhancement_armoured_speartip_tip_of_the_spear_distance"] = scouts_distance
         transport_unit.special_rules = sr
 
     def disembark(

@@ -2176,6 +2176,26 @@ class PositioningAttackBonusesMixin:
                     )
         atype = str(attack_type or "").strip().lower()
         is_melee_attack = atype in ("", "any", "melee")
+        is_ranged_attack = atype in ("", "any", "ranged")
+        if is_ranged_attack and model is not None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            sustained_fn = (
+                getattr(sm_mgr, "armoured_speartip_shock_deployment_sustained_hits_value", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(sustained_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sustained_value, source = sustained_fn(model, weapon_profile=weapon_profile, game=game)
+                if int(sustained_value or 0) > 0:
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": str(source or "Shock Deployment").strip() or "Shock Deployment",
+                        }
+                    )
         if (
             is_melee_attack
             and model is not None

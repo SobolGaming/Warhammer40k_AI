@@ -1054,6 +1054,470 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             },
         )
 
+    def armoured_speartip_shock_deployment_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_armoured_speartip():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            attacker_unit,
+            "enhancement_armoured_speartip_shock_deployment",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0, ""
+        except (AttributeError, TypeError, ValueError):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        model_root = self._attached_unit_root(attacker_unit)
+        if model_root is not root and str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+            return 0, ""
+        if bool(sr.get("enhancement_armoured_speartip_shock_deployment_requires_bearer_alive", True)):
+            if not self._company_of_hunters_member_has_live_bearer(member, sr):
+                return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            is_shooting_phase = getattr(game_obj, "is_shooting_phase", None)
+            if callable(is_shooting_phase):
+                if not bool(is_shooting_phase()):
+                    return 0, ""
+            else:
+                phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                if phase_name and phase_name != "SHOOTING_PHASE":
+                    return 0, ""
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            current_player = game_obj.get_current_player() if hasattr(game_obj, "get_current_player") else None
+            if player is not None and current_player is not player:
+                return 0, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent_wargear is not None:
+            is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(is_ranged) and not bool(is_ranged()):
+                return 0, ""
+        round_state = getattr(root, "round_state", None)
+        if round_state is None or not bool(getattr(round_state, "disembarked_this_round", False)):
+            return 0, ""
+        if not str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip():
+            return 0, ""
+        try:
+            value = int(sr.get("enhancement_armoured_speartip_shock_deployment_sustained_hits_value", 1) or 1)
+        except (TypeError, ValueError):
+            value = 1
+        if value <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_armoured_speartip_shock_deployment_source", "") or "Shock Deployment").strip()
+        return int(value), source or "Shock Deployment"
+
+    def _armoured_speartip_armoured_commander_turn_key(self, *, game=None, player=None) -> str:
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        owner = player if player is not None else getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "").strip()
+        if not owner_id and game_obj is not None:
+            try:
+                current = game_obj.get_current_player()
+            except (AttributeError, TypeError):
+                current = None
+            owner_id = str(getattr(current, "id", "") or "").strip()
+        return f"{int(turn)}:{owner_id}"
+
+    def _armoured_speartip_armoured_commander_source_ready(self, source_unit, *, game=None, player=None) -> tuple[bool, str]:
+        if not self.is_armoured_speartip():
+            return False, "Armoured Commander requires the Armoured Speartip detachment."
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            source_unit,
+            "enhancement_armoured_speartip_armoured_commander",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False, "Armoured Commander source enhancement is not active."
+        try:
+            if root.get_parent_army() is not self.army:
+                return False, "Armoured Commander source is not in this army."
+        except (AttributeError, TypeError, ValueError):
+            return False, "Armoured Commander source is not in this army."
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, "Armoured Commander source must be an ADEPTUS ASTARTES unit."
+        if bool(sr.get("enhancement_armoured_speartip_armoured_commander_requires_source_on_battlefield", True)):
+            if not self._unit_is_on_battlefield(root):
+                return False, "Armoured Commander source must be on the battlefield."
+        if bool(sr.get("enhancement_armoured_speartip_armoured_commander_requires_bearer_alive", True)):
+            if not self._company_of_hunters_member_has_live_bearer(member, sr):
+                return False, "Armoured Commander bearer must be alive."
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            if not self._is_army_turn(game=game_obj):
+                return False, "Armoured Commander can only be used in your turn."
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "MOVEMENT_PHASE":
+                return False, "Armoured Commander can only be used in your Movement phase."
+        turn_key = self._armoured_speartip_armoured_commander_turn_key(game=game, player=player)
+        if str(sr.get("enhancement_armoured_speartip_armoured_commander_used_turn_key", "") or "") == turn_key:
+            return False, "Armoured Commander has already been resolved this turn."
+        return True, ""
+
+    def armoured_speartip_armoured_commander_target_eligible(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+    ) -> bool:
+        ready, _reason = self._armoured_speartip_armoured_commander_source_ready(
+            source_unit,
+            game=game,
+            player=player,
+        )
+        if not ready:
+            return False
+        source_root, source_member, source_sr = self._company_of_hunters_enhancement_source_member(
+            source_unit,
+            "enhancement_armoured_speartip_armoured_commander",
+        )
+        target_root = self._attached_unit_root(target_unit)
+        if source_root is None or source_member is None or not isinstance(source_sr, dict) or target_root is None:
+            return False
+        if target_root is source_root:
+            return False
+        if not self._attached_unit_belongs_to_army(target_root):
+            return False
+        target_keywords = [
+            str(value or "").strip().upper()
+            for value in list(
+                source_sr.get(
+                    "enhancement_armoured_speartip_armoured_commander_target_keywords_all",
+                    ("ADEPTUS ASTARTES", "TRANSPORT"),
+                )
+                or ()
+            )
+            if str(value or "").strip()
+        ]
+        if not target_keywords:
+            target_keywords = ["ADEPTUS ASTARTES", "TRANSPORT"]
+        for keyword in target_keywords:
+            if not self._attached_unit_has_keyword(target_root, keyword):
+                return False
+        in_strategic_fn = getattr(target_root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            return bool(in_strategic_fn())
+        return str(getattr(target_root, "reserve_status", "") or "").strip().lower() == "strategic_reserves"
+
+    def _pending_armoured_speartip_armoured_commander_request(
+        self,
+        game,
+        *,
+        player_id: str = "",
+        source_unit_id: str = "",
+        exclude_decision_id: str = "",
+    ) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_id", "") or "") == str(exclude_decision_id or ""):
+                continue
+            if str(getattr(request, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            if player_id and str(getattr(request, "player_id", "") or "") != str(player_id):
+                continue
+            context = dict(getattr(request, "context", {}) or {})
+            if str(context.get("ability", "") or "").strip() != "space_marines_armoured_speartip_armoured_commander":
+                continue
+            if source_unit_id and str(context.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            return True
+        return False
+
+    def queue_armoured_speartip_armoured_commander_requests(
+        self,
+        *,
+        game=None,
+        player=None,
+        exclude_decision_id: str = "",
+    ) -> bool:
+        if not self.is_armoured_speartip() or self.army is None:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None or owner is not getattr(self.army, "player", None):
+            return False
+        if not self._is_army_turn(game=game_obj):
+            return False
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return False
+        player_id = str(getattr(owner, "id", "") or "")
+        if self._pending_armoured_speartip_armoured_commander_request(
+            game_obj,
+            player_id=player_id,
+            exclude_decision_id=exclude_decision_id,
+        ):
+            return True
+
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except ImportError:
+            return False
+
+        army_roots = list(self._iter_unique_army_roots() or [])
+        army_roots.sort(key=lambda root: str(get_entity_id(root) or ""))
+        for source_root in army_roots:
+            source_ready, _reason = self._armoured_speartip_armoured_commander_source_ready(
+                source_root,
+                game=game_obj,
+                player=owner,
+            )
+            if not source_ready:
+                continue
+            _source_root, source_member, source_sr = self._company_of_hunters_enhancement_source_member(
+                source_root,
+                "enhancement_armoured_speartip_armoured_commander",
+            )
+            if source_member is None or not isinstance(source_sr, dict):
+                continue
+            source_unit_id = str(get_entity_id(source_member) or "")
+            source_root_id = str(get_entity_id(source_root) or "")
+            if not source_unit_id:
+                continue
+            if self._pending_armoured_speartip_armoured_commander_request(
+                game_obj,
+                player_id=player_id,
+                source_unit_id=source_unit_id,
+                exclude_decision_id=exclude_decision_id,
+            ):
+                return True
+            candidate_ids: list[str] = []
+            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+            for target_root in army_roots:
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id:
+                    continue
+                if not self.armoured_speartip_armoured_commander_target_eligible(
+                    source_member,
+                    target_root,
+                    game=game_obj,
+                    player=owner,
+                ):
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "action": "use",
+                            "source_unit_id": source_unit_id,
+                            "source_root_unit_id": source_root_id,
+                            "target_unit_id": target_id,
+                        },
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            ability_name = (
+                str(source_sr.get("enhancement_armoured_speartip_armoured_commander_source", "") or "Armoured Commander").strip()
+                or "Armoured Commander"
+            )
+            game_obj.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one friendly ADEPTUS ASTARTES TRANSPORT in Strategic Reserves (or None).",
+                    player_id=player_id,
+                    options=options,
+                    context={
+                        "ability": "space_marines_armoured_speartip_armoured_commander",
+                        "ability_name": ability_name,
+                        "phase": "Reinforcements step (Movement phase)",
+                        "optional": True,
+                        "source_unit_id": source_unit_id,
+                        "source_root_unit_id": source_root_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": sorted(set(candidate_ids)),
+                        "turn_owner": player_id,
+                        "turn": int(getattr(game_obj, "turn", 0) or 0),
+                    },
+                )
+            )
+            return True
+        return False
+
+    def mark_armoured_speartip_armoured_commander_resolved(self, source_unit, *, game=None, player=None) -> None:
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            source_unit,
+            "enhancement_armoured_speartip_armoured_commander",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return
+        sr["enhancement_armoured_speartip_armoured_commander_used_turn_key"] = (
+            self._armoured_speartip_armoured_commander_turn_key(game=game, player=player)
+        )
+        member.special_rules = sr
+
+    def apply_armoured_speartip_armoured_commander(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        if not self.armoured_speartip_armoured_commander_target_eligible(
+            source_unit,
+            target_unit,
+            game=game,
+            player=player,
+        ):
+            return {"ok": False, "reason": "Armoured Commander target is no longer eligible."}
+        source_root, source_member, source_sr = self._company_of_hunters_enhancement_source_member(
+            source_unit,
+            "enhancement_armoured_speartip_armoured_commander",
+        )
+        target_root = self._attached_unit_root(target_unit)
+        if source_root is None or source_member is None or target_root is None or not isinstance(source_sr, dict):
+            return {"ok": False, "reason": "Armoured Commander source or target was not found."}
+        try:
+            round_bonus = int(source_sr.get("enhancement_armoured_speartip_armoured_commander_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            round_bonus = 1
+        game_obj = self._resolve_game_context(game=game)
+        owner = player if player is not None else getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        try:
+            turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr["enhancement_armoured_speartip_armoured_commander_active"] = True
+        target_sr["enhancement_armoured_speartip_armoured_commander_round_bonus"] = int(max(0, round_bonus))
+        target_sr["enhancement_armoured_speartip_armoured_commander_turn"] = int(turn)
+        target_sr["enhancement_armoured_speartip_armoured_commander_turn_owner"] = owner_id
+        target_sr["enhancement_armoured_speartip_armoured_commander_expires_phase"] = "MOVEMENT_PHASE"
+        target_sr["enhancement_armoured_speartip_armoured_commander_source"] = (
+            str(source_sr.get("enhancement_armoured_speartip_armoured_commander_source", "") or "Armoured Commander").strip()
+            or "Armoured Commander"
+        )
+        target_sr["enhancement_armoured_speartip_armoured_commander_source_unit_id"] = str(
+            get_entity_id(source_member) or ""
+        )
+        target_sr["enhancement_armoured_speartip_armoured_commander_target_unit_id"] = str(
+            get_entity_id(target_root) or ""
+        )
+        target_root.special_rules = target_sr
+        invalidate = getattr(target_root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+        self.mark_armoured_speartip_armoured_commander_resolved(source_member, game=game_obj, player=owner)
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(source_member) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "round_bonus": int(max(0, round_bonus)),
+        }
+
+    def armoured_speartip_armoured_commander_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_armoured_speartip():
+            return 0
+        root = self._attached_unit_root(unit)
+        if root is None or not self._attached_unit_belongs_to_army(root):
+            return 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_armoured_speartip_armoured_commander_active")):
+            return 0
+        in_strategic_fn = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            if not bool(in_strategic_fn()):
+                return 0
+        elif str(getattr(root, "reserve_status", "") or "").strip().lower() != "strategic_reserves":
+            return 0
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_player = game_obj.get_current_player() if hasattr(game_obj, "get_current_player") else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            effect_owner = str(sr.get("enhancement_armoured_speartip_armoured_commander_turn_owner", "") or "")
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get("enhancement_armoured_speartip_armoured_commander_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return 0
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            effect_phase = str(sr.get("enhancement_armoured_speartip_armoured_commander_expires_phase", "") or "").strip().upper()
+            if effect_phase and current_phase and effect_phase != current_phase:
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_armoured_speartip_armoured_commander_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return int(max(0, bonus))
+
+    def clear_armoured_speartip_armoured_commander_effect(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "enhancement_armoured_speartip_armoured_commander_active",
+            "enhancement_armoured_speartip_armoured_commander_round_bonus",
+            "enhancement_armoured_speartip_armoured_commander_turn",
+            "enhancement_armoured_speartip_armoured_commander_turn_owner",
+            "enhancement_armoured_speartip_armoured_commander_expires_phase",
+            "enhancement_armoured_speartip_armoured_commander_source",
+            "enhancement_armoured_speartip_armoured_commander_source_unit_id",
+            "enhancement_armoured_speartip_armoured_commander_target_unit_id",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def clear_armoured_speartip_armoured_commander_effects_for_phase(self, phase, active_player=None, *, game=None) -> None:
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        active_owner = str(getattr(active_player, "id", "") or "")
+        game_obj = self._resolve_game_context(game=game)
+        for root in list(self._iter_unique_army_roots() or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_armoured_speartip_armoured_commander_active")):
+                continue
+            owner = str(sr.get("enhancement_armoured_speartip_armoured_commander_turn_owner", "") or "")
+            if owner and active_owner and owner != active_owner:
+                continue
+            try:
+                effect_turn = int(sr.get("enhancement_armoured_speartip_armoured_commander_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                continue
+            self.clear_armoured_speartip_armoured_commander_effect(root)
+
     def grim_resolve_target_is_eligible(self, unit, *, game=None) -> bool:
         if not self.is_unforgiven_task_force():
             return False
@@ -3310,6 +3774,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def on_phase_end(self, phase, active_player=None, *, game=None) -> None:
         self.heroes_all_handle_phase_end(phase=phase, active_player=active_player, game=game)
+        self.clear_armoured_speartip_armoured_commander_effects_for_phase(
+            phase,
+            active_player=active_player,
+            game=game,
+        )
 
     def librarius_divination_reroll_hit_wound_ones(self, attacker_model, *, game=None) -> tuple[bool, bool, str]:
         if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_DIVINATION, game=game):

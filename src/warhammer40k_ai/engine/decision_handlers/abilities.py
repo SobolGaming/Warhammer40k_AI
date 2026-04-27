@@ -11778,6 +11778,58 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(getattr(target_root, "is_in_reserves", lambda: False)()):
             return ("High King of Fenris target must currently be in Reserves.",)
         return ()
+    if ability == "space_marines_armoured_speartip_armoured_commander":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Armoured Commander source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Armoured Commander source unit was not found.",)
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_armoured_speartip", lambda: False)()):
+            return ("Armoured Commander requires the Armoured Speartip detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ready_fn = getattr(mgr, "_armoured_speartip_armoured_commander_source_ready", None)
+        if not callable(ready_fn):
+            return ("Armoured Commander source eligibility is unavailable.",)
+        ready, reason = ready_fn(source_unit, game=game, player=player)
+        if not ready:
+            return (reason or "Armoured Commander source is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Armoured Commander target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("Armoured Commander target unit was not found.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "").strip()
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Armoured Commander target is not an eligible Strategic Reserves transport.",)
+        eligible_fn = getattr(mgr, "armoured_speartip_armoured_commander_target_eligible", None)
+        if not callable(eligible_fn) or not bool(
+            eligible_fn(source_unit, target_root, game=game, player=player)
+        ):
+            return ("Armoured Commander target must be a friendly ADEPTUS ASTARTES TRANSPORT in Strategic Reserves.",)
+        return ()
     if ability == "multiwave_system_jammer":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -27275,6 +27327,83 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return target_root
+    if str(ctx.get("ability", "") or "") == "space_marines_armoured_speartip_armoured_commander":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if army is None:
+            return None
+        mgr = getattr(army, "space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Armoured Commander").strip() or "Armoured Commander"
+
+        outcome = {"action": "skip", "source": ability_name}
+        if is_skip_choice(request, result):
+            mark_resolved = getattr(mgr, "mark_armoured_speartip_armoured_commander_resolved", None)
+            if callable(mark_resolved):
+                mark_resolved(source_unit, game=game, player=player)
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        else:
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return None
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+            if target_root is None:
+                return None
+            apply_fn = getattr(mgr, "apply_armoured_speartip_armoured_commander", None)
+            if not callable(apply_fn):
+                return None
+            applied = apply_fn(source_unit, target_root, game=game, player=player)
+            if not isinstance(applied, dict) or not bool(applied.get("ok", False)):
+                reason = str(applied.get("reason", "") or "Armoured Commander could not be applied.") if isinstance(applied, dict) else "Armoured Commander could not be applied."
+                raise RuntimeError(reason)
+            target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+            round_bonus = int(applied.get("round_bonus", 1) or 1)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {target_name} treats the current battle round as 1 higher for Reserves setup this phase.",
+            )
+            outcome = {
+                "action": "use",
+                "source": ability_name,
+                "target_unit_id": str(get_entity_id(target_root) or ""),
+                "target_unit_name": target_name,
+                "round_bonus": int(round_bonus),
+            }
+
+        queue_more = getattr(mgr, "queue_armoured_speartip_armoured_commander_requests", None)
+        queued_more = bool(
+            callable(queue_more)
+            and queue_more(
+                game=game,
+                player=player,
+                exclude_decision_id=str(getattr(request, "decision_id", "") or ""),
+            )
+        )
+        if not queued_more:
+            queue_standard = getattr(game, "_queue_movement_phase_reinforcements_selection", None)
+            if callable(queue_standard):
+                queue_standard(player=player)
+        return outcome
     if str(ctx.get("ability", "") or "") == "multiwave_system_jammer":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(

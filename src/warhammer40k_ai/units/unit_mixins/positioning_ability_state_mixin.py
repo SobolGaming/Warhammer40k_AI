@@ -796,9 +796,31 @@ class PositioningAbilityStateMixin:
 
 
     def _command_phase_sticky_objective_rule_is_active(self, root, member, rule: dict[str, object]) -> bool:
-        if not bool(rule.get("requires_bearer_leading", False)):
+        if bool(rule.get("requires_bearer_leading", False)):
+            if not (bool(getattr(member, "is_leader", False)) and getattr(member, "attached_to", None) is root):
+                return False
+        if not bool(rule.get("requires_bearer_alive", False)):
             return True
-        return bool(getattr(member, "is_leader", False)) and getattr(member, "attached_to", None) is root
+        source_model_id = str(rule.get("source_model_id", "") or "").strip()
+        source_model = None
+        if source_model_id:
+            get_model = getattr(member, "get_attached_unit_model_by_id", None)
+            if callable(get_model):
+                source_model = get_model(source_model_id)
+            if source_model is None:
+                for model in list(getattr(member, "models", []) or []):
+                    entity_id = str(get_entity_id(model) or "").strip()
+                    local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                    if source_model_id in (entity_id, local_id):
+                        source_model = model
+                        break
+        if source_model is None:
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            source_model = get_bearer() if callable(get_bearer) else None
+        if source_model is None:
+            return False
+        alive = getattr(source_model, "is_alive", True)
+        return bool(alive() if callable(alive) else alive)
 
 
     def _iter_command_phase_sticky_objective_rules(self) -> list[tuple["Unit", dict[str, object]]]:
@@ -808,7 +830,7 @@ class PositioningAbilityStateMixin:
             key=lambda unit: str(get_entity_id(unit) or ""),
         )
         entries: list[tuple["Unit", dict[str, object]]] = []
-        seen: set[tuple[str, str, str, str, bool, bool]] = set()
+        seen: set[tuple[str, str, str, str, bool, str, bool, bool]] = set()
 
         for member in members:
             sr = getattr(member, "special_rules", None)
@@ -823,6 +845,10 @@ class PositioningAbilityStateMixin:
                     "source": str(raw_entry.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip()
                     or "unit_sticky_objective",
                     "allow_embarked_transport": bool(raw_entry.get("allow_embarked_transport", False)),
+                    "requires_embarked_transport_keyword": str(
+                        raw_entry.get("requires_embarked_transport_keyword", "") or ""
+                    ).strip().upper(),
+                    "requires_bearer_alive": bool(raw_entry.get("requires_bearer_alive", False)),
                     "requires_bearer_leading": bool(raw_entry.get("requires_bearer_leading", False)),
                     "source_model_id": str(raw_entry.get("source_model_id", "") or "").strip(),
                 }
@@ -836,6 +862,8 @@ class PositioningAbilityStateMixin:
                     str(entry["source_model_id"]),
                     str(entry["source"]).lower(),
                     bool(entry["allow_embarked_transport"]),
+                    str(entry["requires_embarked_transport_keyword"]),
+                    bool(entry["requires_bearer_alive"]),
                     bool(entry["requires_bearer_leading"]),
                 )
                 if dedupe_key in seen:
@@ -850,6 +878,8 @@ class PositioningAbilityStateMixin:
                 "source_scope": "unit",
                 "source": "unit_sticky_objective",
                 "allow_embarked_transport": bool(scan.get("allow_embarked_transport", False)),
+                "requires_embarked_transport_keyword": "",
+                "requires_bearer_alive": False,
                 "requires_bearer_leading": bool(scan.get("requires_leading_unit", False)),
                 "source_model_id": "",
             }
@@ -861,6 +891,8 @@ class PositioningAbilityStateMixin:
                 "",
                 "unit_sticky_objective",
                 bool(entry["allow_embarked_transport"]),
+                "",
+                False,
                 bool(entry["requires_bearer_leading"]),
             )
             if dedupe_key in seen:
@@ -887,6 +919,18 @@ class PositioningAbilityStateMixin:
         if not bool(rule.get("allow_embarked_transport", False)):
             return False
         transport = getattr(root, "embarked_in", None)
+        required_keyword = str(rule.get("requires_embarked_transport_keyword", "") or "").strip().upper()
+        if required_keyword and transport is not None:
+            has_keyword = getattr(transport, "has_any_keyword", None)
+            if callable(has_keyword):
+                if not bool(has_keyword(required_keyword)):
+                    return False
+            elif required_keyword not in {
+                str(value or "").strip().upper()
+                for value in list(getattr(transport, "keywords", []) or [])
+                + list(getattr(transport, "faction_keywords", []) or [])
+            }:
+                return False
         return bool(transport is not None and transport.is_within_objective_range(objective_point))
 
 

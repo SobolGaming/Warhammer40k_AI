@@ -1425,6 +1425,8 @@ def _append_enhancement_sticky_objective_rule(
     source_scope: str,
     source: str,
     allow_embarked_transport: bool = False,
+    requires_embarked_transport_keyword: str = "",
+    requires_bearer_alive: bool = False,
     requires_bearer_leading: bool = False,
     source_model_id: str = "",
 ) -> None:
@@ -1432,6 +1434,8 @@ def _append_enhancement_sticky_objective_rule(
         "source_scope": _normalize_enhancement_sticky_objective_source_scope(source_scope),
         "source": str(source or "unit_sticky_objective").strip() or "unit_sticky_objective",
         "allow_embarked_transport": bool(allow_embarked_transport),
+        "requires_embarked_transport_keyword": str(requires_embarked_transport_keyword or "").strip().upper(),
+        "requires_bearer_alive": bool(requires_bearer_alive),
         "requires_bearer_leading": bool(requires_bearer_leading),
     }
     if source_model_id:
@@ -1445,6 +1449,8 @@ def _append_enhancement_sticky_objective_rule(
             str(value.get("source_model_id", "") or ""),
             str(value.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip().lower(),
             bool(value.get("allow_embarked_transport", False)),
+            str(value.get("requires_embarked_transport_keyword", "") or "").strip().upper(),
+            bool(value.get("requires_bearer_alive", False)),
             bool(value.get("requires_bearer_leading", False)),
         ),
         sort_key=lambda value: (
@@ -1452,6 +1458,8 @@ def _append_enhancement_sticky_objective_rule(
             str(value.get("source_model_id", "") or ""),
             str(value.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip().lower(),
             int(bool(value.get("allow_embarked_transport", False))),
+            str(value.get("requires_embarked_transport_keyword", "") or "").strip().upper(),
+            int(bool(value.get("requires_bearer_alive", False))),
             int(bool(value.get("requires_bearer_leading", False))),
         ),
     )
@@ -1463,6 +1471,8 @@ def _apply_enhancement_sticky_objective_control(
     source_scope: str,
     source: str,
     allow_embarked_transport: bool = False,
+    requires_embarked_transport_keyword: str = "",
+    requires_bearer_alive: bool = False,
     requires_bearer_leading: bool = False,
     source_model_id: str = "",
 ) -> None:
@@ -1474,6 +1484,8 @@ def _apply_enhancement_sticky_objective_control(
         source_scope=source_scope,
         source=source,
         allow_embarked_transport=allow_embarked_transport,
+        requires_embarked_transport_keyword=requires_embarked_transport_keyword,
+        requires_bearer_alive=requires_bearer_alive,
         requires_bearer_leading=requires_bearer_leading,
         source_model_id=source_model_id,
     )
@@ -1866,6 +1878,9 @@ class Enhancement:
         )
         is_orbital_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_orbital_assault_force", lambda: False)()
+        )
+        is_armoured_speartip = bool(
+            sm_mgr and getattr(sm_mgr, "is_armoured_speartip", lambda: False)()
         )
         is_reclamation_force = bool(
             sm_mgr and getattr(sm_mgr, "is_reclamation_force", lambda: False)()
@@ -7222,6 +7237,138 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_liberatum_bearer_model_id"] = bearer_id
+
+        if name == "liberator" or enh_id == "000010779002":
+            if not is_armoured_speartip:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("ADEPTUS ASTARTES")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Liberator").strip() or "Liberator"
+            unit.special_rules["enhancement_armoured_speartip_liberator"] = True
+            unit.special_rules["enhancement_armoured_speartip_liberator_source"] = source_name
+            _apply_enhancement_sticky_objective_control(
+                unit,
+                source_scope=str(params.get("source_scope", "unit") or "unit"),
+                source=str(params.get("sticky_source", "armoured_speartip_liberator") or "armoured_speartip_liberator"),
+                allow_embarked_transport=bool(params.get("allow_embarked_transport", True)),
+                requires_embarked_transport_keyword=str(
+                    params.get("requires_embarked_transport_keyword", "HEAVY TRANSPORT") or "HEAVY TRANSPORT"
+                ),
+                requires_bearer_alive=bool(params.get("requires_bearer_alive", True)),
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armoured_speartip_liberator_bearer_model_id"] = bearer_id
+
+        if name == "tip of the spear" or enh_id == "000010779003":
+            if not is_armoured_speartip:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("ADEPTUS ASTARTES")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_float(params.get("scouts_distance", 9.0) or 9.0, default=9.0)
+            target_keywords = [
+                str(value or "").strip().upper()
+                for value in list(params.get("transport_keywords_all", ("TRANSPORT",)) or ("TRANSPORT",))
+                if str(value or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["TRANSPORT"]
+            source_name = str(getattr(desc, "name", "") or "Tip of the Spear").strip() or "Tip of the Spear"
+            unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear"] = True
+            unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear_scouts_distance"] = float(
+                max(0.0, scout_distance)
+            )
+            unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear_transport_keywords_all"] = list(
+                target_keywords
+            )
+            unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armoured_speartip_tip_of_the_spear_bearer_model_id"] = bearer_id
+
+        if name == "shock deployment" or enh_id == "000010779004":
+            if not is_armoured_speartip:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("ADEPTUS ASTARTES")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            required_keywords = [
+                str(value or "").strip().upper()
+                for value in list(params.get("required_bearer_keywords_any", ("TERMINATOR", "GRAVIS")) or ())
+                if str(value or "").strip()
+            ]
+            if required_keywords and not any(bool(has_any_keyword(keyword)) for keyword in required_keywords):
+                return
+            sustained_hits = _coerce_int(params.get("sustained_hits_value", 1) or 1, default=1)
+            source_name = str(getattr(desc, "name", "") or "Shock Deployment").strip() or "Shock Deployment"
+            unit.special_rules["enhancement_armoured_speartip_shock_deployment"] = True
+            unit.special_rules["enhancement_armoured_speartip_shock_deployment_sustained_hits_value"] = int(
+                max(0, sustained_hits)
+            )
+            unit.special_rules["enhancement_armoured_speartip_shock_deployment_required_keywords_any"] = list(
+                required_keywords
+            )
+            unit.special_rules["enhancement_armoured_speartip_shock_deployment_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_armoured_speartip_shock_deployment_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armoured_speartip_shock_deployment_bearer_model_id"] = bearer_id
+
+        if name == "armoured commander" or enh_id == "000010779005":
+            if not is_armoured_speartip:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("ADEPTUS ASTARTES")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            target_keywords = [
+                str(value or "").strip().upper()
+                for value in list(params.get("target_keywords_all", ("ADEPTUS ASTARTES", "TRANSPORT")) or ())
+                if str(value or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["ADEPTUS ASTARTES", "TRANSPORT"]
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            source_name = str(getattr(desc, "name", "") or "Armoured Commander").strip() or "Armoured Commander"
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander"] = True
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_round_bonus"] = int(
+                max(0, round_bonus)
+            )
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_target_keywords_all"] = list(
+                target_keywords
+            )
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_target_reserve_status"] = str(
+                params.get("target_reserve_status", "strategic_reserves") or "strategic_reserves"
+            ).strip().lower()
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_requires_source_on_battlefield"] = bool(
+                params.get("requires_source_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_armoured_speartip_armoured_commander_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armoured_speartip_armoured_commander_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

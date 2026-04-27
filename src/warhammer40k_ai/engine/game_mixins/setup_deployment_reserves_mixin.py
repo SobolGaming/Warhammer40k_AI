@@ -2085,6 +2085,14 @@ class GameSetupDeploymentReservesMixin:
             ]
 
         self._queue_necrons_eternity_gate_requests(player)
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        queue_sm_requests = (
+            getattr(sm_mgr, "queue_armoured_speartip_armoured_commander_requests", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(queue_sm_requests) and bool(queue_sm_requests(game=self, player=player)):
+            return units_arrived
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
         queue_lov_requests = (
             getattr(lov_mgr, "queue_delve_assault_shift_reinforcements_requests", None)

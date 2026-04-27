@@ -4769,6 +4769,71 @@ _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_ARMOURED_SPEARTIP_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010779002": EnhancementToolDescriptor(
+        enhancement_id="000010779002",
+        name="Liberator",
+        timing="end_of_command_phase",
+        target="controlled_objective_markers_within_bearer_unit_or_heavy_transport",
+        duration="until_opponent_level_of_control_greater_end_phase",
+        effect="sticky_objective_control",
+        effect_params={
+            "allow_embarked_transport": True,
+            "requires_embarked_transport_keyword": "HEAVY TRANSPORT",
+            "source_scope": "unit",
+            "sticky_source": "armoured_speartip_liberator",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010779003": EnhancementToolDescriptor(
+        enhancement_id="000010779003",
+        name="Tip of the Spear",
+        timing="declare_battle_formations",
+        target="transport_with_bearer_embarked",
+        duration="scout_step",
+        effect="grant_scouts_if_bearer_starts_embarked",
+        effect_params={
+            "scouts_distance": 9.0,
+            "transport_keywords_all": ("TRANSPORT",),
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010779004": EnhancementToolDescriptor(
+        enhancement_id="000010779004",
+        name="Shock Deployment",
+        timing="selected_to_shoot_after_disembarking",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="grant_ranged_sustained_hits_if_disembarked_from_transport_this_turn",
+        effect_params={
+            "required_bearer_keywords_any": ("TERMINATOR", "GRAVIS"),
+            "sustained_hits_value": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010779005": EnhancementToolDescriptor(
+        enhancement_id="000010779005",
+        name="Armoured Commander",
+        timing="your_movement_phase_once_per_turn",
+        target="friendly_adeptus_astartes_transport_in_strategic_reserves",
+        duration="until_end_of_phase",
+        effect="selected_transport_strategic_reserves_setup_round_bonus",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "target_keywords_all": ("ADEPTUS ASTARTES", "TRANSPORT"),
+            "target_reserve_status": "strategic_reserves",
+            "optional": True,
+            "once_per_turn": True,
+            "requires_bearer_alive": True,
+            "requires_source_on_battlefield": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_ARMOURED_SPEARTIP_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ARMOURED_SPEARTIP_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008376002": EnhancementToolDescriptor(
         enhancement_id="000008376002",
@@ -10261,6 +10326,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_ARMOURED_SPEARTIP_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -10634,6 +10702,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_WRATH_OF_THE_ROCK_BY_NAME.get(key)
         or _SPACE_MARINES_WRATHFUL_PROCESSION_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
+        or _SPACE_MARINES_ARMOURED_SPEARTIP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)

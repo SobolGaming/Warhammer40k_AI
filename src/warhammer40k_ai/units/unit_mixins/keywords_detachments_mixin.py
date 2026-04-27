@@ -12115,6 +12115,18 @@ class KeywordsDetachmentsMixin:
                 wrath_of_the_rock_deathwing_assault_bonus = 0
         if wrath_of_the_rock_deathwing_assault_bonus > 0:
             total_bonus += int(wrath_of_the_rock_deathwing_assault_bonus)
+        armoured_commander_bonus_fn = (
+            getattr(sm_mgr, "armoured_speartip_armoured_commander_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(armoured_commander_bonus_fn):
+            try:
+                armoured_commander_bonus = int(armoured_commander_bonus_fn(root, game=game) or 0)
+            except (TypeError, ValueError):
+                armoured_commander_bonus = 0
+            if armoured_commander_bonus > 0:
+                total_bonus += int(armoured_commander_bonus)
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         lord_of_walking_pox_bonus_fn = (
             getattr(dg_mgr, "shamblerot_lord_of_the_walking_pox_strategic_reserves_round_bonus", None)
