@@ -30,6 +30,7 @@ class _Datasheet:
         faction_keywords=None,
         abilities=None,
         wounds: int = 6,
+        transport: str = "",
     ):
         self.id = f"ds-{name.lower().replace(' ', '-')}"
         self.name = name
@@ -64,7 +65,7 @@ class _Datasheet:
             for ability in list(abilities or [])
         ]
         self.loadout = "This model is equipped with: nothing"
-        self.transport = ""
+        self.transport = str(transport or "")
         self.attached_to = []
         self.attached_to_names = []
 
@@ -80,6 +81,7 @@ def _make_unit(
     faction_keywords=None,
     abilities=None,
     wounds: int = 6,
+    transport: str = "",
 ) -> Unit:
     unit = Unit(
         _Datasheet(
@@ -88,6 +90,7 @@ def _make_unit(
             faction_keywords=faction_keywords,
             abilities=abilities,
             wounds=wounds,
+            transport=transport,
         )
     )
     unit.deployed = True
@@ -163,6 +166,20 @@ def _engine_speaker() -> Enhancement:
     )
 
 
+def _assault_hatches() -> Enhancement:
+    return Enhancement(
+        id="000010787005",
+        name="Assault Hatches",
+        faction_id="AM",
+        detachment="Steel Hammer",
+        points=15,
+        description=(
+            "Astra Militarum Titanic Character Transport model only. Each time a unit disembarks from the bearer after "
+            "it has made a Normal move, that unit is still eligible to declare a charge this turn."
+        ),
+    )
+
+
 def _find_request(game: Game, decision_type: str, *, ability: str | None = None):
     for req in list(game.decision_queue.list() or []):
         if str(getattr(req, "decision_type", "") or "") != decision_type:
@@ -204,6 +221,7 @@ def test_steel_hammer_enhancement_descriptors_exist():
     battalion = get_enhancement_tool_descriptor(enhancement_id="000010787002")
     titan_killer = get_enhancement_tool_descriptor(enhancement_id="000010787003")
     engine_speaker = get_enhancement_tool_descriptor(enhancement_id="000010787004")
+    assault_hatches = get_enhancement_tool_descriptor(enhancement_id="000010787005")
 
     assert battalion is not None
     assert battalion.name == "Battalion Commander"
@@ -216,6 +234,9 @@ def test_steel_hammer_enhancement_descriptors_exist():
     assert engine_speaker.name == "Engine Speaker"
     assert engine_speaker.effect == "omnissiahs_blessing_vehicle_move_bonus"
     assert engine_speaker.effect_params["move_bonus"] == 3
+    assert assault_hatches is not None
+    assert assault_hatches.name == "Assault Hatches"
+    assert assault_hatches.effect == "allow_charge_after_normal_move_disembark"
 
 
 def test_battalion_commander_grants_voice_and_two_titanic_or_squadron_orders():
@@ -426,3 +447,122 @@ def test_engine_speaker_is_detachment_gated_for_omnissiahs_blessing_move_bonus()
     assert bool(getattr(result, "ok", False)) is True
     assert int(tank.movement) == base_move
     assert not bool((getattr(tank, "special_rules", {}) or {}).get("master_of_mechanisms_move_bonus_active", False))
+
+
+def test_assault_hatches_allows_passengers_to_charge_after_bearer_normal_move():
+    game, army, enemy_army = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    transport = _make_unit(
+        "Stormlord Commander",
+        keywords=["VEHICLE", "TITANIC", "CHARACTER", "TRANSPORT", "ASTRA MILITARUM"],
+        wounds=24,
+        transport="Transport Capacity 40",
+    )
+    passenger = _make_unit("Kasrkin", keywords=["INFANTRY", "ASTRA MILITARUM"])
+    enemy = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    enemy_army.add_unit(enemy)
+    _assault_hatches().apply_to_unit(transport)
+    _place_unit(game, transport, 10.0, 10.0)
+    _place_unit(game, enemy, 30.0, 10.0)
+    game.rebuild_entity_registry()
+
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.round_state.moved_this_round = True
+    transport.round_state.remained_stationary_this_round = False
+
+    with patch.object(
+        passenger,
+        "_find_disembark_positions",
+        return_value=[(12.0, 10.0, 0.0, 0.0)],
+    ), patch.object(game.map, "place_unit", return_value=True):
+        disembarked = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=game.turn)
+
+    assert disembarked is True
+    if passenger not in game.map.units:
+        game.map.units.append(passenger)
+    assert bool(passenger.round_state.disembarked_from_moved_transport) is True
+    assert bool(passenger.round_state.disembarked_cannot_charge) is False
+    assert passenger.can_declare_charge_against(enemy, game) is True
+
+
+def test_assault_hatches_is_detachment_and_bearer_keyword_gated():
+    game, army, enemy_army = _build_game(detachment_type="Combined Arms")
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    transport = _make_unit(
+        "Stormlord Commander",
+        keywords=["VEHICLE", "TITANIC", "CHARACTER", "TRANSPORT", "ASTRA MILITARUM"],
+        wounds=24,
+        transport="Transport Capacity 40",
+    )
+    passenger = _make_unit("Kasrkin", keywords=["INFANTRY", "ASTRA MILITARUM"])
+    enemy = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    enemy_army.add_unit(enemy)
+    _assault_hatches().apply_to_unit(transport)
+    _place_unit(game, transport, 10.0, 10.0)
+    _place_unit(game, enemy, 30.0, 10.0)
+    game.rebuild_entity_registry()
+
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.round_state.moved_this_round = True
+    transport.round_state.remained_stationary_this_round = False
+
+    with patch.object(
+        passenger,
+        "_find_disembark_positions",
+        return_value=[(12.0, 10.0, 0.0, 0.0)],
+    ), patch.object(game.map, "place_unit", return_value=True):
+        disembarked = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=game.turn)
+
+    assert disembarked is True
+    if passenger not in game.map.units:
+        game.map.units.append(passenger)
+    assert bool(passenger.round_state.disembarked_cannot_charge) is True
+    assert passenger.can_declare_charge_against(enemy, game) is False
+
+    steel_game, steel_army, steel_enemy_army = _build_game(detachment_type="Steel Hammer")
+    steel_game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    non_titanic_transport = _make_unit(
+        "Chimera Commander",
+        keywords=["VEHICLE", "CHARACTER", "TRANSPORT", "ASTRA MILITARUM"],
+        transport="Transport Capacity 12",
+    )
+    second_passenger = _make_unit("Cadians", keywords=["INFANTRY", "ASTRA MILITARUM"])
+    second_enemy = _make_unit("Second Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    steel_army.add_unit(non_titanic_transport)
+    steel_army.add_unit(second_passenger)
+    steel_enemy_army.add_unit(second_enemy)
+    _assault_hatches().apply_to_unit(non_titanic_transport)
+    _place_unit(steel_game, non_titanic_transport, 10.0, 10.0)
+    _place_unit(steel_game, second_enemy, 30.0, 10.0)
+    steel_game.rebuild_entity_registry()
+
+    non_titanic_transport.transport_passengers = [second_passenger]
+    second_passenger.embarked_in = non_titanic_transport
+    second_passenger.reserve_status = "embarked"
+    non_titanic_transport.round_state.moved_this_round = True
+    non_titanic_transport.round_state.remained_stationary_this_round = False
+
+    with patch.object(
+        second_passenger,
+        "_find_disembark_positions",
+        return_value=[(12.0, 10.0, 0.0, 0.0)],
+    ), patch.object(steel_game.map, "place_unit", return_value=True):
+        second_disembarked = second_passenger.disembark(
+            game_map=steel_game.map,
+            transport_unit=non_titanic_transport,
+            current_turn=steel_game.turn,
+        )
+
+    assert second_disembarked is True
+    if second_passenger not in steel_game.map.units:
+        steel_game.map.units.append(second_passenger)
+    assert bool(second_passenger.round_state.disembarked_cannot_charge) is True
+    assert second_passenger.can_declare_charge_against(second_enemy, steel_game) is False

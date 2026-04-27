@@ -537,6 +537,19 @@ _STEEL_HAMMER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "requires_bearer_alive": True,
         },
     ),
+    "000010787005": EnhancementToolDescriptor(
+        enhancement_id="000010787005",
+        name="Assault Hatches",
+        timing="after_disembark_from_bearer_after_normal_move",
+        target="disembarked_unit",
+        duration="until_end_of_turn",
+        effect="allow_charge_after_normal_move_disembark",
+        effect_params={
+            "allow_charge_after_normal_move_disembark": True,
+            "requires_bearer_keywords": ("ASTRA MILITARUM", "TITANIC", "CHARACTER", "TRANSPORT"),
+            "requires_bearer_alive": True,
+        },
+    ),
 }
 
 _STEEL_HAMMER_BY_NAME = {

@@ -5320,6 +5320,20 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_engine_speaker_bearer_model_id"] = bearer_id
 
+        if name == "assault hatches" or enh_id == "000010787005":
+            if not is_steel_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_assault_hatches"] = True
+            unit.special_rules["enhancement_assault_hatches_allow_charge_after_normal_move_disembark"] = bool(
+                params.get("allow_charge_after_normal_move_disembark", True)
+            )
+            unit.special_rules["enhancement_assault_hatches_source"] = "Assault Hatches"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_assault_hatches_bearer_model_id"] = bearer_id
+
         if name in ("bombast-class vox-array", "bombast class vox array") or enh_id == "000009801002":
             if not is_bridgehead_strike:
                 return

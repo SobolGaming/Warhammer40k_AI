@@ -4929,6 +4929,18 @@ class ShootingMixin:
             army = self.get_parent_army()
         except Exception:
             army = None
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        assault_hatches_fn = (
+            getattr(am_mgr, "steel_hammer_assault_hatches_allows_charge_after_normal_move_disembark", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(assault_hatches_fn) and transport_unit is not None:
+            try:
+                if bool(assault_hatches_fn(transport_unit, game=game)):
+                    overrides["allow_charge_after_normal_move"] = True
+            except (TypeError, ValueError, AttributeError):
+                pass
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         raid_leader_apply_fn = (
             getattr(csm_mgr, "hurons_marauders_raid_leader_allows_charge_after_normal_move_disembark", None)

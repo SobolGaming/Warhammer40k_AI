@@ -1782,6 +1782,31 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             bonus = 3
         return int(max(0, bonus))
 
+    def steel_hammer_assault_hatches_allows_charge_after_normal_move_disembark(self, unit, *, game=None) -> bool:
+        if not self.is_steel_hammer():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        if not self._unit_is_titanic(root):
+            return False
+        if not self._unit_has_keyword(root, "CHARACTER"):
+            return False
+        if not self._unit_is_transport_unit(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_assault_hatches", False)):
+            return False
+        if not bool(sr.get("enhancement_assault_hatches_allow_charge_after_normal_move_disembark", True)):
+            return False
+        if not self._enhancement_bearer_alive(root, sr, bearer_key="enhancement_assault_hatches_bearer_model_id"):
+            return False
+        return True
+
     def combined_arms_reactive_command_trigger_spec(self, unit) -> dict | None:
         if not self.is_combined_arms():
             return None
