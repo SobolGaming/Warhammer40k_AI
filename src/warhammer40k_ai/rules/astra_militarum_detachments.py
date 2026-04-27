@@ -1215,6 +1215,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "armoured_infantry_combined_fire",
             "armoured_infantry_opening_salvo",
             "armoured_infantry_order_the_advance",
+            "armoured_infantry_supporting_ordnance",
         )
         for root in self._iter_game_unit_roots(game=game_obj):
             sr = getattr(root, "special_rules", None)
@@ -1429,6 +1430,88 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             game=game,
         )
         return bool(root is not None)
+
+    def activate_armoured_infantry_supporting_ordnance(
+        self,
+        unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_armoured_infantry():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root):
+            return False
+        if not (self._unit_has_keyword(root, "ARMOURED") and self._unit_has_keyword(root, "SKIRMISHER")):
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        if phase_key and phase_key != "SHOOTING_PHASE":
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["armoured_infantry_supporting_ordnance_active"] = True
+        sr["armoured_infantry_supporting_ordnance_round"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["armoured_infantry_supporting_ordnance_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["armoured_infantry_supporting_ordnance_phase"] = "SHOOTING_PHASE"
+        sr["armoured_infantry_supporting_ordnance_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["armoured_infantry_supporting_ordnance_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["armoured_infantry_supporting_ordnance_source"] = (
+            str(source or "SUPPORTING ORDNANCE").strip() or "SUPPORTING ORDNANCE"
+        )
+        root.special_rules = sr
+        return True
+
+    def armoured_infantry_supporting_ordnance_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+        game_map=None,
+        target_visible=None,
+    ) -> dict:
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        if attacker_model is None or target_unit is None:
+            return {}
+        root, sr = self._armoured_infantry_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="armoured_infantry_supporting_ordnance",
+            game=game,
+        )
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None or not isinstance(sr, dict):
+            return {}
+        if not (self._unit_has_keyword(target_root, "MONSTER") or self._unit_has_keyword(target_root, "VEHICLE")):
+            return {}
+        game_obj = game if game is not None else self._current_game()
+        visible = True
+        if target_visible is None:
+            local_map = game_map if game_map is not None else getattr(game_obj, "map", None)
+            los_checker = getattr(root, "_has_line_of_sight_to_target", None)
+            if local_map is not None and callable(los_checker):
+                visible = bool(los_checker(attacker_model, target_root, local_map))
+        else:
+            visible = bool(target_visible)
+        if not visible:
+            return {}
+        source = (
+            str(sr.get("armoured_infantry_supporting_ordnance_source", "") or "SUPPORTING ORDNANCE").strip()
+            or "SUPPORTING ORDNANCE"
+        )
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Hit roll vs visible MONSTER/VEHICLE",),
+        }
 
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):

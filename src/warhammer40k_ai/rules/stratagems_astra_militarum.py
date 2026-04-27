@@ -3302,6 +3302,19 @@ class AstraMilitarumStratagemMixin:
         out.sort(key=lambda candidate: str(candidate.get("officer_unit_id", "") or ""))
         return out
 
+    def _armoured_infantry_supporting_ordnance_candidates(self) -> list[Any]:
+        if not self._is_armoured_infantry():
+            return []
+        candidates: list[Any] = []
+        for unit in self._am_battlefield_units(require_not_shot=True):
+            root = self._am_root(unit)
+            if root is None:
+                continue
+            if not (self._am_has_keyword(root, "ARMOURED") and self._am_has_keyword(root, "SKIRMISHER")):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._am_sort_key)
+
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
         attacker_unit=None,
@@ -4912,6 +4925,69 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_armoured_infantry_supporting_ordnance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SUPPORTING ORDNANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SUPPORTING ORDNANCE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._armoured_infantry_supporting_ordnance_candidates()
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: SUPPORTING ORDNANCE: no ARMOURED SKIRMISHER unit provided")
+            return False
+        eligible = [self._am_root(candidate) for candidate in candidates if self._am_root(candidate) is not None]
+        if not eligible:
+            eligible = self._armoured_infantry_supporting_ordnance_candidates()
+        if root not in list(eligible or []):
+            logger.error("ERROR: SUPPORTING ORDNANCE: selected unit is not eligible")
+            return False
+        if not self._am_on_battlefield(root):
+            logger.error("ERROR: SUPPORTING ORDNANCE: target must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(root):
+            logger.error("ERROR: SUPPORTING ORDNANCE: target must be ASTRA MILITARUM")
+            return False
+        if not (self._am_has_keyword(root, "ARMOURED") and self._am_has_keyword(root, "SKIRMISHER")):
+            logger.error("ERROR: SUPPORTING ORDNANCE: target must be ARMOURED SKIRMISHER")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: SUPPORTING ORDNANCE: target has already been selected to shoot")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_armoured_infantry_supporting_ordnance", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: SUPPORTING ORDNANCE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "SUPPORTING ORDNANCE"),
+            )
+        ):
+            logger.error("ERROR: SUPPORTING ORDNANCE: failed to activate hit rerolls")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUPPORTING ORDNANCE: %s can re-roll Hit rolls against visible MONSTER/VEHICLE targets.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_mechanised_assault():
             return False
@@ -5865,6 +5941,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_bridgehead_servo_designators(stratagem, **kwargs)
         if name_u == "STALWART PROTECTOR":
             return self._use_combined_arms_stalwart_protector(stratagem, **kwargs)
+        if name_u == "SUPPORTING ORDNANCE":
+            return self._use_armoured_infantry_supporting_ordnance(stratagem, **kwargs)
         if name_u == "SWIFT INTERCEPTION":
             return self._use_mechanised_swift_interception(stratagem, **kwargs)
         if name_u == "TANGLEFOOT GRENADES":

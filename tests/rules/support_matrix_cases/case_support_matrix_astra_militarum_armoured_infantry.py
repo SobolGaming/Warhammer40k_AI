@@ -156,3 +156,28 @@ def test_order_the_advance_stratagem_is_supported():
     assert "officer" in notes_l
     assert "within 6" in notes_l
     assert "re-roll advance rolls" in notes_l
+
+
+def test_supporting_ordnance_stratagem_is_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010792005"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Armoured Infantry",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert canonical_name == "SUPPORTING ORDNANCE"
+    assert status in {"Implemented", "Supported"}
+    notes_l = str(notes or "").lower()
+    assert "armoured skirmisher" in notes_l
+    assert "monster or vehicle" in notes_l
+    assert "re-roll hit rolls" in notes_l

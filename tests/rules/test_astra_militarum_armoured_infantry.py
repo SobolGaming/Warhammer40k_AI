@@ -353,6 +353,17 @@ def test_armoured_infantry_order_the_advance_descriptor_registered():
     assert by_id.effect_params["reroll_advance_rolls"] is True
 
 
+def test_armoured_infantry_supporting_ordnance_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792005")
+
+    assert by_id is not None
+    assert by_id.name == "Supporting Ordnance"
+    assert by_id.effect == "visible_monster_vehicle_hit_reroll"
+    assert by_id.effect_params["requires_not_selected_to_shoot_this_phase"] is True
+    assert by_id.effect_params["target_keywords_any"] == ["MONSTER", "VEHICLE"]
+    assert by_id.effect_params["requires_visibility"] is True
+
+
 def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
     game, am_player, _enemy_player, army, enemy_army = _build_game()
     moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
@@ -865,6 +876,84 @@ def test_armoured_infantry_order_the_advance_rejects_non_officer_or_out_of_range
     ) is True
     assert int(am_player.command_points or 0) == 9
     assert near_target.can_reroll_advance_roll() is True
+
+
+def test_armoured_infantry_supporting_ordnance_grants_visible_monster_vehicle_hit_rerolls_until_phase_end():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    other_sentinel = _make_unit("Second Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    enemy_vehicle = _make_unit("Enemy Vehicle", keywords=["VEHICLE"], faction_keywords=["ENEMY"], wounds=10)
+    enemy_infantry = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds=1)
+    for unit in (sentinel, other_sentinel):
+        army.add_unit(unit)
+    for unit in (enemy_vehicle, enemy_infantry):
+        enemy_army.add_unit(unit)
+    _place_unit(game, sentinel, 10.0, 10.0)
+    _place_unit(game, other_sentinel, 12.0, 10.0)
+    _place_unit(game, enemy_vehicle, 20.0, 10.0)
+    _place_unit(game, enemy_infantry, 22.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert am_player.stratagems.use("SUPPORTING ORDNANCE", unit=sentinel, phase_name="Shooting phase") is True
+    assert int(am_player.command_points or 0) == 9
+    assert sentinel.special_rules.get("armoured_infantry_supporting_ordnance_active") is True
+
+    mods = sentinel.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy_vehicle,
+        attacker_model=sentinel.models[0],
+    )
+    assert mods.get("reroll_hit_full") is True
+    assert any("SUPPORTING ORDNANCE" in str(item).upper() for item in mods.get("reroll_hit_full_reasons", ()))
+
+    infantry_mods = sentinel.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy_infantry,
+        attacker_model=sentinel.models[0],
+    )
+    assert infantry_mods.get("reroll_hit_full") is False
+    other_mods = other_sentinel.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy_vehicle,
+        attacker_model=other_sentinel.models[0],
+    )
+    assert other_mods.get("reroll_hit_full") is False
+
+    game.event_system.publish("phase_end", player=am_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    expired_mods = sentinel.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy_vehicle,
+        attacker_model=sentinel.models[0],
+    )
+    assert expired_mods.get("reroll_hit_full") is False
+
+
+def test_armoured_infantry_supporting_ordnance_rejects_non_skirmisher_or_already_shot_units():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    infantry = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    already_shot = _make_unit("Second Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    for unit in (sentinel, infantry, already_shot):
+        army.add_unit(unit)
+        _place_unit(game, unit, 10.0 + len(game.map.units), 10.0)
+    already_shot.round_state.shot_this_round = True
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    assert am_player.stratagems.use("SUPPORTING ORDNANCE", unit=infantry, phase_name="Shooting phase") is False
+    assert am_player.stratagems.use("SUPPORTING ORDNANCE", unit=already_shot, phase_name="Shooting phase") is False
+    assert int(am_player.command_points or 0) == 10
+    assert am_player.stratagems.use("SUPPORTING ORDNANCE", unit=sentinel, phase_name="Shooting phase") is True
+    assert int(am_player.command_points or 0) == 9
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

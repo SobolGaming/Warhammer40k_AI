@@ -3698,6 +3698,23 @@ _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "reroll_advance_rolls": True,
         },
     ),
+    "000010792005": StratagemToolDescriptor(
+        stratagem_id="000010792005",
+        name="Supporting Ordnance",
+        timing="your_shooting_phase",
+        target="armoured_skirmisher_unit_that_has_not_been_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="visible_monster_vehicle_hit_reroll",
+        cp_cost=1,
+        effect_params={
+            "friendly_target_keywords_all": ["ARMOURED", "SKIRMISHER"],
+            "requires_not_selected_to_shoot_this_phase": True,
+            "target_keywords_any": ["MONSTER", "VEHICLE"],
+            "requires_visibility": True,
+            "reroll_hit_full": True,
+            "attack_type": "ranged",
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {
