@@ -3683,6 +3683,21 @@ _ARMOURED_INFANTRY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "attack_type": "ranged",
         },
     ),
+    "000010792002": StratagemToolDescriptor(
+        stratagem_id="000010792002",
+        name="Order the Advance",
+        timing="start_of_your_movement_phase",
+        target="astra_militarum_officer_and_one_or_more_friendly_astra_militarum_units_within_6",
+        duration="until_end_of_phase",
+        effect="selected_units_reroll_advance_rolls",
+        cp_cost=1,
+        effect_params={
+            "source_keywords_all": ["OFFICER"],
+            "target_faction_keywords_all": ["ASTRA MILITARUM"],
+            "target_range_in": 6,
+            "reroll_advance_rolls": True,
+        },
+    ),
 }
 
 _ARMOURED_INFANTRY_STRATAGEM_BY_NAME = {

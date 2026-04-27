@@ -11124,6 +11124,16 @@ class ActionsMovementMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if reroll_fn(self, game=game):
                 return True
+        astra_militarum_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        order_the_advance_reroll = (
+            getattr(astra_militarum_mgr, "armoured_infantry_order_the_advance_reroll_advance_applies", None)
+            if astra_militarum_mgr is not None
+            else None
+        )
+        if callable(order_the_advance_reroll):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if order_the_advance_reroll(self, game=game):
+                return True
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_advance"):

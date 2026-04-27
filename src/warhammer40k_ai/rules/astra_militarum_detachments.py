@@ -1214,6 +1214,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         prefixes = (
             "armoured_infantry_combined_fire",
             "armoured_infantry_opening_salvo",
+            "armoured_infantry_order_the_advance",
         )
         for root in self._iter_game_unit_roots(game=game_obj):
             sr = getattr(root, "special_rules", None)
@@ -1360,6 +1361,74 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return 0, ""
         source = str(sr.get("armoured_infantry_opening_salvo_source", "") or "OPENING SALVO").strip()
         return int(bonus), source or "OPENING SALVO"
+
+    def activate_armoured_infantry_order_the_advance(
+        self,
+        officer_unit,
+        target_units,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_armoured_infantry():
+            return False
+        officer_root = self._unit_root(officer_unit)
+        if officer_root is None or not self._unit_in_army(officer_root):
+            return False
+        if not self._unit_is_astra_militarum(officer_root):
+            return False
+        if not self.unit_is_officer(officer_root):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        if phase_key and phase_key != "MOVEMENT_PHASE":
+            return False
+        selected_roots = []
+        seen: set[str] = set()
+        values = list(target_units or []) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        for value in values:
+            root = self._unit_root(value)
+            if root is None:
+                continue
+            unit_id = self._entity_id(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._unit_in_army(root):
+                return False
+            if not self._unit_is_astra_militarum(root):
+                return False
+            selected_roots.append(root)
+        if not selected_roots:
+            return False
+        officer_id = self._entity_id(officer_root)
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        source_name = str(source or "ORDER THE ADVANCE").strip() or "ORDER THE ADVANCE"
+        for root in selected_roots:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["armoured_infantry_order_the_advance_active"] = True
+            sr["armoured_infantry_order_the_advance_round"] = round_now
+            sr["armoured_infantry_order_the_advance_turn"] = round_now
+            sr["armoured_infantry_order_the_advance_phase"] = "MOVEMENT_PHASE"
+            sr["armoured_infantry_order_the_advance_owner"] = owner_id
+            sr["armoured_infantry_order_the_advance_turn_owner"] = owner_id
+            sr["armoured_infantry_order_the_advance_source"] = source_name
+            sr["armoured_infantry_order_the_advance_officer_id"] = officer_id
+            root.special_rules = sr
+        return True
+
+    def armoured_infantry_order_the_advance_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        root, _sr = self._armoured_infantry_phase_effect_state(
+            unit,
+            prefix="armoured_infantry_order_the_advance",
+            game=game,
+        )
+        return bool(root is not None)
 
     def armoured_infantry_mobile_firebase_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
         if not self._weapon_profile_is_ranged(profile):

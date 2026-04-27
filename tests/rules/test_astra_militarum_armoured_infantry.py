@@ -343,6 +343,16 @@ def test_armoured_infantry_opening_salvo_descriptor_registered():
     assert by_id.effect_params["wound_bonus"] == 1
 
 
+def test_armoured_infantry_order_the_advance_descriptor_registered():
+    by_id = get_stratagem_tool_descriptor(stratagem_id="000010792002")
+
+    assert by_id is not None
+    assert by_id.name == "Order the Advance"
+    assert by_id.effect == "selected_units_reroll_advance_rolls"
+    assert by_id.effect_params["target_range_in"] == 6
+    assert by_id.effect_params["reroll_advance_rolls"] is True
+
+
 def test_armoured_infantry_burst_of_speed_queues_end_movement_phase_reactive_move():
     game, am_player, _enemy_player, army, enemy_army = _build_game()
     moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
@@ -768,6 +778,93 @@ def test_armoured_infantry_opening_salvo_rejects_non_disembarked_or_already_shot
     assert int(am_player.command_points or 0) == 10
     assert am_player.stratagems.use("OPENING SALVO", unit=unit, phase_name="Shooting phase") is True
     assert int(am_player.command_points or 0) == 9
+
+
+def test_armoured_infantry_order_the_advance_grants_selected_advance_rerolls_until_phase_end():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    officer = _officer()
+    near_infantry = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    near_sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    far_infantry = _make_unit("Far Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (officer, near_infantry, near_sentinel, far_infantry):
+        army.add_unit(unit)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, near_infantry, 14.0, 10.0)
+    _place_unit(game, near_sentinel, 16.0, 10.0)
+    _place_unit(game, far_infantry, 20.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.event_system.publish("phase_start", player=am_player, phase=game.phase)
+
+    pending = _pending_by_name(am_player.stratagems, "ORDER THE ADVANCE")
+    assert pending is not None
+    assert pending.get("unit") is officer
+    assert set(pending.get("target_units") or []) == {officer, near_infantry, near_sentinel}
+    assert near_infantry.can_reroll_advance_roll() is False
+    assert near_sentinel.can_reroll_advance_roll() is False
+
+    assert am_player.stratagems.use(
+        "ORDER THE ADVANCE",
+        unit=officer,
+        target_units=[near_infantry, near_sentinel],
+        phase_name="Movement phase",
+        dequeue=True,
+    ) is True
+    assert int(am_player.command_points or 0) == 9
+    assert near_infantry.can_reroll_advance_roll() is True
+    assert near_sentinel.can_reroll_advance_roll() is True
+    assert officer.can_reroll_advance_roll() is False
+    assert far_infantry.can_reroll_advance_roll() is False
+
+    game.event_system.publish("phase_end", player=am_player, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+    assert near_infantry.can_reroll_advance_roll() is False
+    assert near_sentinel.can_reroll_advance_roll() is False
+
+
+def test_armoured_infantry_order_the_advance_rejects_non_officer_or_out_of_range_targets():
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    officer = _officer()
+    non_officer = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    near_target = _make_unit("Second Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    far_target = _make_unit("Far Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (officer, non_officer, near_target, far_target):
+        army.add_unit(unit)
+    _place_unit(game, officer, 10.0, 10.0)
+    _place_unit(game, non_officer, 12.0, 10.0)
+    _place_unit(game, near_target, 14.0, 10.0)
+    _place_unit(game, far_target, 20.0, 10.0)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+    assert am_player.stratagems.use(
+        "ORDER THE ADVANCE",
+        unit=non_officer,
+        target_units=[near_target],
+        phase_name="Movement phase",
+    ) is False
+    assert am_player.stratagems.use(
+        "ORDER THE ADVANCE",
+        unit=officer,
+        target_units=[far_target],
+        phase_name="Movement phase",
+    ) is False
+    assert int(am_player.command_points or 0) == 10
+    assert am_player.stratagems.use(
+        "ORDER THE ADVANCE",
+        unit=officer,
+        target_units=[near_target],
+        phase_name="Movement phase",
+    ) is True
+    assert int(am_player.command_points or 0) == 9
+    assert near_target.can_reroll_advance_roll() is True
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

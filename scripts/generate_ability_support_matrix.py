@@ -20673,6 +20673,7 @@ def _stratagem_support(
         "000010792006": "Your Shooting phase after an ARMOURED SKIRMISHER unit shoots: select one enemy unit hit by those attacks; until end of phase it cannot have Benefit of Cover, and friendly ARMOURED SKIRMISHER ranged attacks against it gain +2 Strength.",
         "000010792003": "Your Movement phase after an ARMOURED SKIRMISHER unit Advances or Falls Back: that unit remains eligible to shoot with ranged weapons this turn.",
         "000010792007": "Your Shooting phase: the selected ASTRA MILITARUM unit that disembarked from a Transport this turn and has not shot adds 1 to ranged Wound rolls until end of phase.",
+        "000010792002": "Start of your Movement phase: select one ASTRA MILITARUM OFFICER and one or more friendly ASTRA MILITARUM units within 6\" of it; selected units can re-roll Advance rolls until end of phase.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21667,6 +21668,7 @@ def _stratagem_support(
         "000010792006",
         "000010792003",
         "000010792007",
+        "000010792002",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

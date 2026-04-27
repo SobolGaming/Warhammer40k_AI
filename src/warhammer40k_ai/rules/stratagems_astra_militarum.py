@@ -2737,6 +2737,46 @@ class AstraMilitarumStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_armoured_infantry_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_armoured_infantry():
+            return
+        if player is not self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ORDER THE ADVANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._armoured_infantry_order_the_advance_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() == name_u:
+                return
+        payload = {
+            "event": "phase_start",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0].get("officer_unit")
+            payload["officer_unit"] = candidates[0].get("officer_unit")
+            payload["target_units"] = list(candidates[0].get("target_units") or [])
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _queue_armoured_infantry_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_armoured_infantry():
             return
@@ -3221,6 +3261,46 @@ class AstraMilitarumStratagemMixin:
                     continue
             candidates.append(root)
         return sorted(candidates, key=self._am_sort_key)
+
+    def _armoured_infantry_order_the_advance_target_candidates(self, officer_unit: Any) -> list[Any]:
+        officer_root = self._am_root(officer_unit)
+        if officer_root is None:
+            return []
+        candidates: list[Any] = []
+        for target in self._am_battlefield_units():
+            root = self._am_root(target)
+            if root is None:
+                continue
+            if root is officer_root:
+                candidates.append(root)
+                continue
+            distance = self._am_distance_between_units(officer_root, root)
+            if distance is None or float(distance) > 6.0:
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._am_sort_key)
+
+    def _armoured_infantry_order_the_advance_candidates(self) -> list[dict[str, Any]]:
+        if not self._is_armoured_infantry():
+            return []
+        out: list[dict[str, Any]] = []
+        for officer in self._am_battlefield_units(require_officer=True):
+            officer_root = self._am_root(officer)
+            if officer_root is None:
+                continue
+            targets = self._armoured_infantry_order_the_advance_target_candidates(officer_root)
+            if not targets:
+                continue
+            out.append(
+                {
+                    "officer_unit": officer_root,
+                    "officer_unit_id": self._am_sort_key(officer_root),
+                    "target_units": list(targets),
+                    "target_unit_ids": [self._am_sort_key(target) for target in targets],
+                }
+            )
+        out.sort(key=lambda candidate: str(candidate.get("officer_unit_id", "") or ""))
+        return out
 
     def _on_unit_shooting_resolved_armoured_infantry_combined_fire(
         self,
@@ -4652,6 +4732,114 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_armoured_infantry_order_the_advance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: ORDER THE ADVANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ORDER THE ADVANCE: not your Movement phase")
+            return False
+        officer = kwargs.get("officer_unit") or kwargs.get("source_unit") or kwargs.get("unit")
+        raw_target_units = (
+            kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("affected_units")
+        )
+        target_units = self._am_resolve_unit_list(raw_target_units)
+        candidates = [
+            dict(candidate)
+            for candidate in list(kwargs.get("candidates") or [])
+            if isinstance(candidate, dict)
+        ]
+        if officer is None or not target_units or not candidates:
+            pending = self._am_pending_reaction_by_names("ORDER THE ADVANCE")
+            if pending is not None:
+                officer = officer or pending.get("officer_unit") or pending.get("unit")
+                if not target_units:
+                    target_units = self._am_resolve_unit_list(pending.get("target_units"))
+                if not candidates:
+                    candidates = [
+                        dict(candidate)
+                        for candidate in list(pending.get("candidates") or [])
+                        if isinstance(candidate, dict)
+                    ]
+        if officer is None and len(candidates) == 1:
+            officer = candidates[0].get("officer_unit")
+        officer_root = self._am_root(officer)
+        if officer_root is None:
+            logger.error("ERROR: ORDER THE ADVANCE: no Officer unit provided")
+            return False
+        if not target_units:
+            maybe_target = kwargs.get("target_unit")
+            maybe_target_root = self._am_root(maybe_target)
+            if maybe_target_root is not None and maybe_target_root is not officer_root:
+                target_units = [maybe_target_root]
+        selected_targets = self._am_resolve_unit_list(target_units)
+        if not selected_targets:
+            logger.error("ERROR: ORDER THE ADVANCE: select one or more friendly ASTRA MILITARUM units")
+            return False
+        if not self._am_on_battlefield(officer_root):
+            logger.error("ERROR: ORDER THE ADVANCE: Officer must be on the battlefield")
+            return False
+        if not self._is_astra_militarum_unit(officer_root) or not self._is_officer_unit(officer_root):
+            logger.error("ERROR: ORDER THE ADVANCE: target must be an ASTRA MILITARUM OFFICER")
+            return False
+        eligible_targets = self._armoured_infantry_order_the_advance_target_candidates(officer_root)
+        eligible_ids = {self._am_sort_key(target) for target in eligible_targets}
+        selected_ids = [self._am_sort_key(target) for target in selected_targets]
+        if any(unit_id not in eligible_ids for unit_id in selected_ids):
+            logger.error("ERROR: ORDER THE ADVANCE: selected units must be friendly ASTRA MILITARUM units within 6\"")
+            return False
+        if candidates:
+            officer_id = self._am_sort_key(officer_root)
+            group = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if str(candidate.get("officer_unit_id", "") or "") == officer_id
+                ),
+                None,
+            )
+            if group is None:
+                logger.error("ERROR: ORDER THE ADVANCE: selected Officer is not eligible")
+                return False
+            candidate_target_ids = {
+                str(unit_id or "")
+                for unit_id in list(group.get("target_unit_ids") or [])
+                if str(unit_id or "")
+            }
+            if any(unit_id not in candidate_target_ids for unit_id in selected_ids):
+                logger.error("ERROR: ORDER THE ADVANCE: selected units are not in the pending target list")
+                return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_armoured_infantry_order_the_advance", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: ORDER THE ADVANCE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=officer_root):
+            return False
+        if not bool(
+            activate(
+                officer_root,
+                selected_targets,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "ORDER THE ADVANCE"),
+            )
+        ):
+            logger.error("ERROR: ORDER THE ADVANCE: failed to activate Advance rerolls")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ORDER THE ADVANCE: %d unit(s) can re-roll Advance rolls until end of phase.",
+            len(selected_targets),
+        )
+        return True
+
     def _use_armoured_infantry_opening_salvo(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_armoured_infantry():
             return False
@@ -5659,6 +5847,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_mechanised_move_out(stratagem, **kwargs)
         if name_u == "OPENING SALVO":
             return self._use_armoured_infantry_opening_salvo(stratagem, **kwargs)
+        if name_u == "ORDER THE ADVANCE":
+            return self._use_armoured_infantry_order_the_advance(stratagem, **kwargs)
         if name_u == "ON MY POSITION":
             return self._use_bridgehead_on_my_position(stratagem, **kwargs)
         if name_u == "OVER THE TOP":

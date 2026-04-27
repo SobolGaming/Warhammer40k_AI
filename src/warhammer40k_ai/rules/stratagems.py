@@ -1098,6 +1098,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "COMBINED FIRE": {"000010792006"},
     "MOBILE FIREBASE": {"000010792003"},
     "OPENING SALVO": {"000010792007"},
+    "ORDER THE ADVANCE": {"000010792002"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -3167,6 +3168,7 @@ class StratagemManager(
             "BURST OF SPEED",
             "COMBINED FIRE",
             "OPENING SALVO",
+            "ORDER THE ADVANCE",
             "WRAITHLIKE RETREAT",
             "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
@@ -11829,6 +11831,7 @@ class StratagemManager(
             "COMBINED FIRE": "Target: ARMOURED SKIRMISHER unit that just shot; choose one enemy unit it hit so that enemy loses cover and friendly ARMOURED SKIRMISHER attacks against it gain +2 Strength this phase",
             "MOBILE FIREBASE": "Target: ARMOURED SKIRMISHER unit that just Advanced or Fell Back; it can shoot this turn after advancing or falling back",
             "OPENING SALVO": "Target: ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; add 1 to Wound rolls this phase",
+            "ORDER THE ADVANCE": "Target: ASTRA MILITARUM OFFICER at the start of your Movement phase; select one or more friendly ASTRA MILITARUM units within 6\" to re-roll Advance rolls until end of phase",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
             "COURAGEOUS DIVERSION": "Target: one of your ASTRA MILITARUM INFANTRY or MOUNTED units at the start of your opponent's Shooting phase; it gains Feel No Pain 6+, and enemy attacks suffer -1 to hit if it is the closest eligible target until end of phase",
             "CRACK SHOTS": "Target: your PLATOON unit that has not been selected to shoot this phase; its ranged weapons gain [PRECISION] until end of phase",
@@ -12896,6 +12899,10 @@ class StratagemManager(
             raise
         try:
             self._queue_recon_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_armoured_infantry_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
