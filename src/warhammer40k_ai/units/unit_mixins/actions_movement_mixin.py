@@ -9212,6 +9212,21 @@ class ActionsMovementMixin:
                     reroll_wound_reasons.append(
                         f"{source_name}: re-roll Wound rolls of 1 against CHARACTER, MONSTER or VEHICLE targets"
                     )
+            headhunter_fn = getattr(sm_mgr, "headhunter_kill_shot_wound_reroll_mode", None) if sm_mgr is not None else None
+            if atype in ("any", "ranged") and callable(headhunter_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                mode, source = headhunter_fn(root, target, weapon_profile=weapon_profile, game=game)
+                source_name = str(source or "Kill Shot").strip() or "Kill Shot"
+                if mode == "full":
+                    mods["reroll_wound_full"] = True
+                    reroll_wound_full_reasons.append(
+                        f"{source_name}: re-roll Wound rolls against MONSTER or VEHICLE targets below Starting Strength"
+                    )
+                elif mode == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(
+                        f"{source_name}: re-roll Wound rolls of 1 against MONSTER or VEHICLE targets"
+                    )
         except Exception:
             pass
 
@@ -20829,6 +20844,11 @@ class ActionsMovementMixin:
             if callable(spearpoint_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if spearpoint_fn(self, weapon_profile=profile, game=game):
+                    return True
+            headhunter_fn = getattr(mgr, "headhunter_rapid_gunnery_shoot_after_fall_back_applies", None) if mgr is not None else None
+            if callable(headhunter_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if headhunter_fn(self, weapon_profile=profile, game=game):
                     return True
             castellum_fn = getattr(mgr, "castellum_omnivox_shoot_after_fall_back_applies", None) if mgr is not None else None
             if callable(castellum_fn):

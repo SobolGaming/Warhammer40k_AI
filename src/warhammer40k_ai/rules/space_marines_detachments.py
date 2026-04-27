@@ -813,6 +813,146 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         player = getattr(self.army, "player", None) if self.army is not None else None
         return player is not None and current_player is player
 
+    def _headhunter_stratagem_effect_state(self, unit, base_key: str, *, game=None):
+        if not self.is_headhunter_task_force():
+            return None, None
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None
+        if not self._attached_unit_belongs_to_army(root):
+            return None, None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        key = str(base_key or "").strip()
+        if not key or not bool(sr.get(f"{key}_active", False)):
+            return None, None
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            expires_phase = str(sr.get(f"{key}_expires_phase", "") or "").strip().upper()
+            if expires_phase and current_phase and current_phase != expires_phase:
+                return None, None
+            try:
+                effect_turn = int(sr.get(f"{key}_turn", 0) or 0)
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return None, None
+            effect_owner_id = str(sr.get(f"{key}_turn_owner", "") or "").strip()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if effect_owner_id and current_player_id and effect_owner_id != current_player_id:
+                return None, None
+        return root, sr
+
+    def _headhunter_target_is_monster_or_vehicle(self, target_unit) -> bool:
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return False
+        return self._attached_unit_has_keyword(target_root, "MONSTER") or self._attached_unit_has_keyword(
+            target_root,
+            "VEHICLE",
+        )
+
+    @staticmethod
+    def _headhunter_target_below_starting_strength(target_unit) -> bool:
+        if target_unit is None:
+            return False
+        checker = getattr(target_unit, "is_below_starting_strength", None)
+        if callable(checker):
+            return bool(checker())
+        return bool(getattr(target_unit, "below_starting_strength", False))
+
+    @staticmethod
+    def _weapon_profile_is_ranged(weapon_profile) -> bool:
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent_wargear is None:
+            return True
+        is_ranged = getattr(parent_wargear, "is_ranged", None)
+        return bool(is_ranged()) if callable(is_ranged) else True
+
+    def headhunter_kill_shot_wound_reroll_mode(
+        self,
+        unit,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[str, str]:
+        root, sr = self._headhunter_stratagem_effect_state(
+            unit,
+            "space_marines_headhunter_kill_shot",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return "", ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return "", ""
+        if not self._headhunter_target_is_monster_or_vehicle(target_unit):
+            return "", ""
+        source = str(sr.get("space_marines_headhunter_kill_shot_source", "") or "Kill Shot").strip() or "Kill Shot"
+        target_root = self._attached_unit_root(target_unit)
+        if bool(sr.get("space_marines_headhunter_kill_shot_reroll_wound_full_if_below_starting", True)):
+            if self._headhunter_target_below_starting_strength(target_root):
+                return "full", source
+        if bool(sr.get("space_marines_headhunter_kill_shot_reroll_wound_ones", True)):
+            return "ones", source
+        return "", ""
+
+    def headhunter_target_weak_point_ranged_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        root, sr = self._headhunter_stratagem_effect_state(
+            attacker_unit,
+            "space_marines_headhunter_target_weak_point",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return 0, ""
+        if not self._headhunter_target_is_monster_or_vehicle(target_unit):
+            return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_headhunter_target_weak_point_ranged_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("space_marines_headhunter_target_weak_point_source", "") or "Target Weak Point"
+        ).strip()
+        return int(bonus), source or "Target Weak Point"
+
+    def headhunter_rapid_gunnery_shoot_after_fall_back_applies(
+        self,
+        unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        root, sr = self._headhunter_stratagem_effect_state(
+            unit,
+            "space_marines_headhunter_rapid_gunnery",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("space_marines_headhunter_rapid_gunnery_shoot_after_fall_back", True)):
+            return False
+        return self._weapon_profile_is_ranged(weapon_profile)
+
     def _headhunter_tank_ace_character_candidates(self) -> list:
         if not self.is_headhunter_task_force():
             return []

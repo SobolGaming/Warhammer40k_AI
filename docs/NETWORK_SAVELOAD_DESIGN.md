@@ -363,6 +363,7 @@ Movement:
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
 - rapid_deployment_post_disembark_move_dialog: MOVE_UNIT {unit_id, model_positions | skip} (context `ability="space_marines_armoured_speartip_rapid_deployment"`, `ability_name="Rapid Deployment"`, `movement_type="move"`, `reactive_move_kind="armoured_speartip_rapid_deployment"`, `rapid_deployment_transport_unit_id`, `rapid_deployment_heavy_transport`, `rapid_deployment_distance_roll`, `max_distance`, `enforce_max_distance=true`, `allow_skip=true`)
+- headhunter_reactive_repositioning_dialog: MOVE_UNIT {unit_id, model_positions | skip} (context `ability="space_marines_headhunter_reactive_repositioning"`, `ability_name="Reactive Repositioning"`, `movement_type="reactive"`, `reactive_move_kind="headhunter_reactive_repositioning"`, `distance_roll="D6"`, `max_distance`, `range_value=9`, `enforce_max_distance=true`, `allow_skip=true`)
 - battle_focus_opportunity_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="opportunity"`)
 - battle_focus_fade_back_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="fade_back"`)
 - battle_focus_lethal_surge_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="aeldari_strength_from_death_lethal_surge"`, `unit_id`, `attacker_unit_id`, `turn`, `turn_owner_id`)
@@ -419,6 +420,7 @@ Burst of Speed queues `MOVE_UNIT` with `movement_type="move"` and `reactive_move
 Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Martial Philosopher uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="martial_philosopher"` and `reactive_move_kind="martial_philosopher"`.
 Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.
+Machine Vengeance uses setup reactive shooting with `DECLARE_SHOTS`, `out_of_phase=true`, `force_target_unit_id`, and `machine_vengeance_*` context so declarations remain locked to the attacking unit.
 
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}

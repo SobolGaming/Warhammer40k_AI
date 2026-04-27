@@ -10633,6 +10633,91 @@ _IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HEADHUNTER_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010784004": StratagemToolDescriptor(
+        stratagem_id="000010784004",
+        name="Kill Shot",
+        timing="your_shooting_phase",
+        target="tank_ace_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_wound_rerolls_against_monster_or_vehicle_targets",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "TANK ACE"],
+            "attack_type": "ranged",
+            "target_required_keywords_any": ["MONSTER", "VEHICLE"],
+            "reroll_wound": "ones",
+            "reroll_wound_if_target_below_starting_strength": "full",
+            "exclusive_same_unit_same_phase": ["Target Weak Point"],
+        },
+    ),
+    "000010784005": StratagemToolDescriptor(
+        stratagem_id="000010784005",
+        name="Rapid Gunnery",
+        timing="your_shooting_phase",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="eligible_to_shoot_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "shoot_after_fall_back": True,
+        },
+    ),
+    "000010784003": StratagemToolDescriptor(
+        stratagem_id="000010784003",
+        name="Target Weak Point",
+        timing="your_shooting_phase",
+        target="tank_ace_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_ap_bonus_against_monster_or_vehicle_targets",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "TANK ACE"],
+            "attack_type": "ranged",
+            "target_required_keywords_any": ["MONSTER", "VEHICLE"],
+            "ap_bonus": 1,
+            "exclusive_same_unit_same_phase": ["Kill Shot"],
+        },
+    ),
+    "000010784007": StratagemToolDescriptor(
+        stratagem_id="000010784007",
+        name="Machine Vengeance",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="tank_ace_unit_selected_as_attack_target_excluding_wounds_16_plus",
+        duration="immediate",
+        effect="reactive_shooting_restricted_to_attacker",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "TANK ACE"],
+            "excluded_model_wounds_characteristic_at_least": 16,
+            "requires_selected_as_attack_target": True,
+            "requires_visible_attacker": True,
+            "force_target_attacking_unit": True,
+        },
+    ),
+    "000010784006": StratagemToolDescriptor(
+        stratagem_id="000010784006",
+        name="Reactive Repositioning",
+        timing="opponent_movement_phase_after_enemy_move_ends",
+        target="tank_ace_unit_within_9_excluding_wounds_16_plus",
+        duration="immediate",
+        effect="reactive_normal_move_d6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "TANK ACE"],
+            "excluded_model_wounds_characteristic_at_least": 16,
+            "distance_roll": "D6",
+            "movement_type": "normal_move",
+        },
+    ),
+}
+
+_HEADHUNTER_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HEADHUNTER_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008775004": StratagemToolDescriptor(
         stratagem_id="000008775004",
@@ -15875,6 +15960,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HEADHUNTER_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -16200,6 +16288,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME.get(key)
         or _IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
+        or _HEADHUNTER_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _LIBERATOR_ASSAULT_GROUP_STRATAGEM_BY_NAME.get(key)
         or _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _LIBRARIUS_CONCLAVE_STRATAGEM_BY_NAME.get(key)

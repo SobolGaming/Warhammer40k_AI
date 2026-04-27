@@ -67,6 +67,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_ironstorm_spearhead", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_headhunter_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_headhunter_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_bastion_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
@@ -727,6 +732,37 @@ class SpaceMarinesStratagemMixin:
             return bool(has_keyword(target))
         return False
 
+    def _sm_is_tank_ace_unit(self, unit: Any) -> bool:
+        return self._sm_has_keyword(unit, "TANK ACE")
+
+    def _sm_unit_has_model_wounds_at_least(self, unit: Any, threshold: int) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        try:
+            required = int(threshold)
+        except (TypeError, ValueError):
+            required = 0
+        if required <= 0:
+            return False
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "_attached_unit_has_model_with_wounds_at_least", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root, required))
+        for model in self._sm_unit_models(root):
+            for attr in ("_base_wounds", "base_wounds", "max_wounds", "wounds"):
+                value = getattr(model, attr, None)
+                if callable(value):
+                    value = value()
+                if value is None:
+                    continue
+                try:
+                    if int(value) >= required:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+        return False
+
     def _sm_is_psyker_unit(self, unit: Any) -> bool:
         return self._sm_has_keyword(unit, "PSYKER")
 
@@ -1211,6 +1247,16 @@ class SpaceMarinesStratagemMixin:
             return snapshots
         snapshots = {}
         setattr(self, "_space_marines_ironstorm_power_shooting_snapshots_cache", snapshots)
+        return snapshots
+
+    def _space_marines_headhunter_machine_vengeance_shooting_snapshots(
+        self,
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        snapshots = getattr(self, "_space_marines_headhunter_machine_vengeance_shooting_snapshots_cache", None)
+        if isinstance(snapshots, dict):
+            return snapshots
+        snapshots = {}
+        setattr(self, "_space_marines_headhunter_machine_vengeance_shooting_snapshots_cache", snapshots)
         return snapshots
 
     def _space_marines_reclamation_marching_snapshots(self) -> dict[str, list[str]]:
@@ -6794,6 +6840,310 @@ class SpaceMarinesStratagemMixin:
             "cp_cost": stratagem.cp_cost,
             "enemy_unit": attacker_root,
             "attacking_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _space_marines_headhunter_current_phase_key(self) -> str:
+        if self.game is None:
+            return ""
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        current_player = getattr(self.game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "")
+        return f"{battle_round}:{phase_name}:{current_player_id}"
+
+    def _space_marines_headhunter_opposing_shooting_stratagem_used(self, unit: Any, stratagem_name: str) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        phase_key = self._space_marines_headhunter_current_phase_key()
+        if not phase_key:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u == "KILL SHOT":
+            opposite_key = "space_marines_headhunter_target_weak_point_used_phase_key"
+        elif name_u == "TARGET WEAK POINT":
+            opposite_key = "space_marines_headhunter_kill_shot_used_phase_key"
+        else:
+            return False
+        sr = getattr(root, "special_rules", None)
+        return isinstance(sr, dict) and str(sr.get(opposite_key, "") or "") == phase_key
+
+    def _space_marines_headhunter_shooting_candidates(self, *, require_tank_ace: bool, stratagem_name: str) -> list[Any]:
+        if not self._is_headhunter_task_force_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if require_tank_ace and not self._sm_is_tank_ace_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if self._space_marines_headhunter_opposing_shooting_stratagem_used(root, stratagem_name):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._sm_sort_key)
+        return candidates
+
+    def _space_marines_headhunter_reactive_reposition_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_headhunter_task_force_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_tank_ace_unit(root):
+                continue
+            if self._sm_unit_has_model_wounds_at_least(root, 16):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._sm_sort_key)
+        return candidates
+
+    def _queue_space_marines_headhunter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_headhunter_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if player is not self.player or active_player is not self.player:
+            return
+
+        planned: tuple[tuple[str, bool], ...] = (
+            ("KILL SHOT", True),
+            ("RAPID GUNNERY", False),
+            ("TARGET WEAK POINT", True),
+        )
+        for stratagem_name, require_tank_ace in planned:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            candidates = self._space_marines_headhunter_shooting_candidates(
+                require_tank_ace=bool(require_tank_ace),
+                stratagem_name=stratagem_name,
+            )
+            if not candidates:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _capture_space_marines_headhunter_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_headhunter_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacking_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("MACHINE VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_id = self._sm_sort_key(attacker_root)
+        if not attacker_id:
+            return
+
+        snapshot_by_unit: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_tank_ace_unit(root):
+                continue
+            if self._sm_unit_has_model_wounds_at_least(root, 16):
+                continue
+            snapshot_by_unit[uid] = {"unit": root}
+        if not snapshot_by_unit:
+            return
+        self._space_marines_headhunter_machine_vengeance_shooting_snapshots()[attacker_id] = snapshot_by_unit
+
+    def _queue_space_marines_headhunter_shooting_resolved_reactions(self, *, attacker_unit: Any) -> None:
+        if not self._is_headhunter_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("MACHINE VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_id = self._sm_sort_key(attacker_root)
+        if not attacker_id:
+            return
+
+        snapshots = self._space_marines_headhunter_machine_vengeance_shooting_snapshots()
+        snapshot_by_unit = dict(snapshots.pop(attacker_id, {}) or {})
+        if not snapshot_by_unit:
+            return
+
+        can_shoot_fn = getattr(getattr(self, "game", None), "_setup_reactive_can_shoot_target", None)
+        if not callable(can_shoot_fn):
+            return
+
+        candidates: list[Any] = []
+        for unit_id in sorted(snapshot_by_unit):
+            entry = snapshot_by_unit.get(unit_id)
+            if not isinstance(entry, dict):
+                continue
+            root = self._sm_root(entry.get("unit"))
+            if root is None:
+                continue
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_tank_ace_unit(root):
+                continue
+            if self._sm_unit_has_model_wounds_at_least(root, 16):
+                continue
+            if not self._sm_unit_visible_to_unit(root, attacker_root):
+                continue
+            if not bool(can_shoot_fn(root, attacker_root)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._sm_sort_key)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_headhunter_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_headhunter_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None:
+            return
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            return
+        stratagem = self.get_by_name("REACTIVE REPOSITIONING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_headhunter_reactive_reposition_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "moving_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": action_key,
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -19312,6 +19662,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_vengeful_animus(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_headhunter_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_headhunter_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "KILL SHOT":
+            return self._use_space_marines_headhunter_kill_shot(stratagem, **kwargs)
+        if name_u == "RAPID GUNNERY":
+            return self._use_space_marines_headhunter_rapid_gunnery(stratagem, **kwargs)
+        if name_u == "TARGET WEAK POINT":
+            return self._use_space_marines_headhunter_target_weak_point(stratagem, **kwargs)
+        if name_u == "MACHINE VENGEANCE":
+            return self._use_space_marines_headhunter_machine_vengeance(stratagem, **kwargs)
+        if name_u == "REACTIVE REPOSITIONING":
+            return self._use_space_marines_headhunter_reactive_repositioning(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_liberator_assault_group_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -25765,6 +26133,389 @@ class SpaceMarinesStratagemMixin:
             "INFO: POWER OF THE MACHINE SPIRIT: %s can make a reactive shooting attack against %s.",
             getattr(root, "name", "Unit"),
             getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_space_marines_headhunter_kill_shot(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: KILL SHOT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: KILL SHOT: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, from_pending = self._sm_stormlance_context(
+            "KILL SHOT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: KILL SHOT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: KILL SHOT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: KILL SHOT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: KILL SHOT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_tank_ace_unit(root):
+            logger.error("ERROR: KILL SHOT: target must be a TANK ACE unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: KILL SHOT: target has already been selected to shoot")
+            return False
+        if self._space_marines_headhunter_opposing_shooting_stratagem_used(root, "KILL SHOT"):
+            logger.error("ERROR: KILL SHOT: target already used Target Weak Point this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_headhunter_shooting_candidates(
+            require_tank_ace=True,
+            stratagem_name="KILL SHOT",
+        )
+        if (valid_candidates or not from_pending) and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: KILL SHOT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_player_id = str(getattr(active_player, "id", "") or "")
+        phase_key = self._space_marines_headhunter_current_phase_key()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_headhunter_kill_shot_active"] = True
+        sr["space_marines_headhunter_kill_shot_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_headhunter_kill_shot_turn_owner"] = current_player_id
+        sr["space_marines_headhunter_kill_shot_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_headhunter_kill_shot_source"] = str(getattr(stratagem, "name", "") or "KILL SHOT")
+        sr["space_marines_headhunter_kill_shot_target_keywords_any"] = ["MONSTER", "VEHICLE"]
+        sr["space_marines_headhunter_kill_shot_reroll_wound_ones"] = True
+        sr["space_marines_headhunter_kill_shot_reroll_wound_full_if_below_starting"] = True
+        sr["space_marines_headhunter_kill_shot_used_phase_key"] = phase_key
+        root.special_rules = sr
+        self._sm_clear_ability_cache(root, "unit_attack_roll_rules", "unit_wound_reroll_modifiers")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: KILL SHOT: %s re-rolls Wound rolls of 1 against MONSTER/VEHICLE targets, upgrading to full Wound re-rolls against targets below Starting Strength.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_headhunter_target_weak_point(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: TARGET WEAK POINT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TARGET WEAK POINT: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, from_pending = self._sm_stormlance_context(
+            "TARGET WEAK POINT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: TARGET WEAK POINT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: TARGET WEAK POINT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: TARGET WEAK POINT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: TARGET WEAK POINT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_tank_ace_unit(root):
+            logger.error("ERROR: TARGET WEAK POINT: target must be a TANK ACE unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: TARGET WEAK POINT: target has already been selected to shoot")
+            return False
+        if self._space_marines_headhunter_opposing_shooting_stratagem_used(root, "TARGET WEAK POINT"):
+            logger.error("ERROR: TARGET WEAK POINT: target already used Kill Shot this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_headhunter_shooting_candidates(
+            require_tank_ace=True,
+            stratagem_name="TARGET WEAK POINT",
+        )
+        if (valid_candidates or not from_pending) and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: TARGET WEAK POINT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_player_id = str(getattr(active_player, "id", "") or "")
+        phase_key = self._space_marines_headhunter_current_phase_key()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_headhunter_target_weak_point_active"] = True
+        sr["space_marines_headhunter_target_weak_point_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_headhunter_target_weak_point_turn_owner"] = current_player_id
+        sr["space_marines_headhunter_target_weak_point_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_headhunter_target_weak_point_source"] = str(
+            getattr(stratagem, "name", "") or "TARGET WEAK POINT"
+        )
+        sr["space_marines_headhunter_target_weak_point_target_keywords_any"] = ["MONSTER", "VEHICLE"]
+        sr["space_marines_headhunter_target_weak_point_ranged_ap_bonus"] = 1
+        sr["space_marines_headhunter_target_weak_point_used_phase_key"] = phase_key
+        root.special_rules = sr
+        self._sm_clear_ability_cache(root, "unit_attack_roll_rules")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TARGET WEAK POINT: %s improves ranged AP by 1 against MONSTER/VEHICLE targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_headhunter_rapid_gunnery(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: RAPID GUNNERY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RAPID GUNNERY: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, from_pending = self._sm_stormlance_context(
+            "RAPID GUNNERY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RAPID GUNNERY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RAPID GUNNERY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RAPID GUNNERY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RAPID GUNNERY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: RAPID GUNNERY: target has already been selected to shoot")
+            return False
+        valid_candidates = candidates or self._space_marines_headhunter_shooting_candidates(
+            require_tank_ace=False,
+            stratagem_name="RAPID GUNNERY",
+        )
+        if (valid_candidates or not from_pending) and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: RAPID GUNNERY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_player_id = str(getattr(active_player, "id", "") or "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_headhunter_rapid_gunnery_active"] = True
+        sr["space_marines_headhunter_rapid_gunnery_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_headhunter_rapid_gunnery_turn_owner"] = current_player_id
+        sr["space_marines_headhunter_rapid_gunnery_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_headhunter_rapid_gunnery_source"] = str(getattr(stratagem, "name", "") or "RAPID GUNNERY")
+        sr["space_marines_headhunter_rapid_gunnery_shoot_after_fall_back"] = True
+        root.special_rules = sr
+        self._sm_clear_ability_cache(root, "fall_back_shoot_extended_rule_data")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RAPID GUNNERY: %s remains eligible to shoot after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_headhunter_machine_vengeance(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: MACHINE VENGEANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: MACHINE VENGEANCE: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, attacking_unit, _target_model, _model_candidates, from_pending = self._sm_ironstorm_context(
+            "MACHINE VENGEANCE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: MACHINE VENGEANCE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: MACHINE VENGEANCE: missing attacking unit context")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MACHINE VENGEANCE: target unit is not yours")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: MACHINE VENGEANCE: attacking unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: MACHINE VENGEANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: MACHINE VENGEANCE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_tank_ace_unit(root):
+            logger.error("ERROR: MACHINE VENGEANCE: target must be a TANK ACE unit")
+            return False
+        if self._sm_unit_has_model_wounds_at_least(root, 16):
+            logger.error("ERROR: MACHINE VENGEANCE: target cannot contain a model with Wounds characteristic 16+")
+            return False
+        if candidates:
+            if not self._sm_unit_in_candidates(root, candidates):
+                logger.error("ERROR: MACHINE VENGEANCE: selected unit is not currently eligible")
+                return False
+        elif not from_pending:
+            logger.error("ERROR: MACHINE VENGEANCE: missing targeted-by-attacker trigger context")
+            return False
+        if not self._sm_unit_visible_to_unit(root, attacker_root):
+            logger.error("ERROR: MACHINE VENGEANCE: attacking unit is not visible to target")
+            return False
+        setup_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None) if self.game is not None else None
+        if not callable(setup_can_shoot) or not bool(setup_can_shoot(root, attacker_root)):
+            logger.error("ERROR: MACHINE VENGEANCE: target cannot shoot the attacking unit")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        request = None
+        if self.game is not None:
+            request = self.game._queue_setup_reactive_shooting_decision(
+                player=self.player,
+                unit=root,
+                target_unit=attacker_root,
+                source=str(getattr(stratagem, "name", "") or "MACHINE VENGEANCE"),
+            )
+        if request is None:
+            logger.error("ERROR: MACHINE VENGEANCE: failed to queue reactive shooting decision")
+            return False
+        request.context["machine_vengeance_flow"] = True
+        request.context["machine_vengeance_source"] = str(getattr(stratagem, "name", "") or "MACHINE VENGEANCE")
+        request.context["machine_vengeance_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
+        request.context["machine_vengeance_unit_id"] = str(get_entity_id(root) or "")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MACHINE VENGEANCE: %s can make a reactive shooting attack against %s.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_space_marines_headhunter_reactive_repositioning(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: REACTIVE REPOSITIONING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: REACTIVE REPOSITIONING: not opponent's Movement phase")
+            return False
+
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_stormlance_context(
+            "REACTIVE REPOSITIONING",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: REACTIVE REPOSITIONING: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: REACTIVE REPOSITIONING: missing enemy movement trigger")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: REACTIVE REPOSITIONING: invalid trigger action")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: REACTIVE REPOSITIONING: trigger unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: REACTIVE REPOSITIONING: trigger unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: REACTIVE REPOSITIONING: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: REACTIVE REPOSITIONING: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: REACTIVE REPOSITIONING: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_tank_ace_unit(root):
+            logger.error("ERROR: REACTIVE REPOSITIONING: target must be a TANK ACE unit")
+            return False
+        if self._sm_unit_has_model_wounds_at_least(root, 16):
+            logger.error("ERROR: REACTIVE REPOSITIONING: target cannot contain a model with Wounds characteristic 16+")
+            return False
+        distance = self._sm_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: REACTIVE REPOSITIONING: target must be within 9\" of the enemy unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_headhunter_reactive_reposition_candidates(enemy_unit=enemy_root)
+        if (valid_candidates or not from_pending) and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: REACTIVE REPOSITIONING: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: REACTIVE REPOSITIONING: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = int(dice_module.get_roll("D6"))
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=max_distance,
+            kind="headhunter_reactive_repositioning",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "REACTIVE REPOSITIONING"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_skip=True,
+            extra_context={
+                "ability": "space_marines_headhunter_reactive_repositioning",
+                "ability_name": "Reactive Repositioning",
+                "distance_roll": "D6",
+                "enforce_max_distance": True,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: REACTIVE REPOSITIONING: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REACTIVE REPOSITIONING: %s can make a Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            max_distance,
         )
         return True
 

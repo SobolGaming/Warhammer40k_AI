@@ -3882,6 +3882,17 @@ class WargearProfile:
                 )
                 if int(ap_bonus or 0) > 0:
                     ap_val -= int(ap_bonus)
+            headhunter_ap_bonus_fn = getattr(sm_mgr, "headhunter_target_weak_point_ranged_ap_bonus", None) if sm_mgr is not None else None
+            if callable(headhunter_ap_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = headhunter_ap_bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
             weapon_lookup_name = self._temporary_weapon_lookup_name()
             if weapon_lookup_name:
                 temp_ap_bonus, _temp_ap_reasons = getattr(attacker, "get_temporary_weapon_ap_bonus", lambda _n: (0, []))(

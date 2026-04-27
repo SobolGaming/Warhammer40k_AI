@@ -114,6 +114,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COORDINATED ACTION",
     "COURAGEOUS DIVERSION",
     "CHAOS BANE",
+    "KILL SHOT",
+    "MACHINE VENGEANCE",
+    "RAPID GUNNERY",
+    "REACTIVE REPOSITIONING",
+    "TARGET WEAK POINT",
     "CIRCLE OF SANCTUARY",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
@@ -2698,6 +2703,7 @@ class StratagemManager(
             "UNRESTRAINED RAGE",
             "PRESERVE THE IDOLS",
             "STEEL HEART",
+            "REACTIVE REPOSITIONING",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2868,6 +2874,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_adeptus_mechanicus)
         if "POWER OF THE MACHINE SPIRIT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
+        if "MACHINE VENGEANCE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_headhunter_task_force)
         if "GRIM RETRIBUTION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_unforgiven_task_force)
         if "IMPETUOSITY" in names:
@@ -3149,7 +3157,7 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
-        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS", "STUNNING FUSILLADE"}:
+        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "MACHINE VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS", "STUNNING FUSILLADE"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
         if names & {"DESPERATION'S PRICE", "PSYCHIC ABOMINATIONS"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected_adeptus_custodes_null_maiden)
@@ -13017,6 +13025,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_headhunter_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_inner_circle_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -16693,6 +16705,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_headhunter_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_agents_ordo_malleus_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_spearpoint_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_shadowmark_move_end_reactions(unit=unit, action=action)
@@ -17562,6 +17575,9 @@ class StratagemManager(
     def _on_unit_shooting_resolved_space_marines_ironstorm_spearhead(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_ironstorm_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_space_marines_headhunter_task_force(self, attacker_unit=None, **_kwargs):
+        self._queue_space_marines_headhunter_shooting_resolved_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_space_marines_unforgiven_task_force(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_unforgiven_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
@@ -18126,6 +18142,10 @@ class StratagemManager(
             )
             if owner_player is self.player:
                 return  # only opponent can react
+            self._capture_space_marines_headhunter_shooting_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -26030,6 +26050,9 @@ class StratagemManager(
         ironstorm_result = self._use_space_marines_ironstorm_spearhead_stratagem(s, **kwargs)
         if ironstorm_result is not None:
             return ironstorm_result
+        headhunter_result = self._use_space_marines_headhunter_task_force_stratagem(s, **kwargs)
+        if headhunter_result is not None:
+            return headhunter_result
         inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
         if inner_circle_result is not None:
             return inner_circle_result
