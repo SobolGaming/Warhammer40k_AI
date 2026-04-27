@@ -2393,6 +2393,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"requires_not_in_engagement_range": True, "reserve_status": "strategic_reserves"},
     ),
+    "000010796006": StratagemToolDescriptor(
+        stratagem_id="000010796006",
+        name="DUST TRAILS",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="orks_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_benefit_of_cover",
+        cp_cost=1,
+        effect_params={"cover_attack_type": "ranged"},
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

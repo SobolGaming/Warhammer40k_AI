@@ -85,3 +85,27 @@ def test_speedwaaagh_evasive_manoova_stratagem_is_supported():
     assert "strategic reserves" in notes_l
     assert "speed freeks" in notes_l
     assert "trukk" in notes_l
+
+
+def test_speedwaaagh_dust_trails_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010796006"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Speedwaaagh!",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "DUST TRAILS"
+    notes_l = str(notes or "").lower()
+    assert "benefit of cover" in notes_l
+    assert "opponent shooting" in notes_l
+    assert "orks" in notes_l

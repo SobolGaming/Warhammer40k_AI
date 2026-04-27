@@ -2187,6 +2187,17 @@ class OrksStratagemMixin:
             }
         ]
 
+    def _orks_dust_trails_defensive_effects(self, *, source_name: str) -> list[dict]:
+        return [
+            {
+                "key": "defensive_cover_bonuses",
+                "value": 1,
+                "attack_type": "ranged",
+                "duration": "phase",
+                "source": source_name,
+            }
+        ]
+
     def _orks_apply_defensive_reaction_effects(
         self,
         unit: Any,
@@ -2453,6 +2464,14 @@ class OrksStratagemMixin:
                 stratagem_names=("EXTRA GUBBINZ",),
                 detachment_check=self._is_dread_mob_detachment,
                 target_matcher=self._orks_is_walker_or_grots_vehicle_not_titanic,
+            )
+            self._queue_single_orks_target_selected_defensive_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                stratagem_names=("DUST TRAILS",),
+                detachment_check=self._is_speedwaaagh_detachment,
+                target_matcher=self._is_orks_unit,
             )
 
         self._queue_single_orks_target_selected_defensive_reaction(
@@ -4225,6 +4244,8 @@ class OrksStratagemMixin:
             return self._use_orks_speediest_freeks(stratagem, **kwargs)
         if name_u == "EXTRA GUBBINZ":
             return self._use_orks_extra_gubbinz(stratagem, **kwargs)
+        if name_u == "DUST TRAILS":
+            return self._use_orks_dust_trails(stratagem, **kwargs)
         if name_norm == "where d ya fink you re going":
             return self._use_orks_where_dya_fink_youre_going(stratagem, **kwargs)
         if name_u == "KRUMP AND RUN":
@@ -6127,6 +6148,18 @@ class OrksStratagemMixin:
             target_matcher=self._orks_is_walker_or_grots_vehicle_not_titanic,
             target_error="target must be an Orks Walker or Grots Vehicle unit (excluding TITANIC)",
             effect_builder=lambda _unit, *, source_name: self._orks_extra_gubbinz_defensive_effects(source_name=source_name),
+            **kwargs,
+        )
+
+    def _use_orks_dust_trails(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_target_selected_defensive_reaction(
+            stratagem,
+            stratagem_name="DUST TRAILS",
+            expected_phases=("Shooting phase",),
+            detachment_check=self._is_speedwaaagh_detachment,
+            target_matcher=self._is_orks_unit,
+            target_error="target must be an ORKS unit",
+            effect_builder=lambda _unit, *, source_name: self._orks_dust_trails_defensive_effects(source_name=source_name),
             **kwargs,
         )
 

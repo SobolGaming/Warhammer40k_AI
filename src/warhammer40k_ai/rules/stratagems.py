@@ -847,6 +847,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CALL DAT DAKKA?",
     "MOBILE DAKKASTORM",
     "EVASIVE MANOOVA",
+    "DUST TRAILS",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1110,6 +1111,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "SUPPORTING ORDNANCE": {"000010792005"},
     "MOBILE DAKKASTORM": {"000010796003"},
     "EVASIVE MANOOVA": {"000010796007"},
+    "DUST TRAILS": {"000010796006"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -1145,6 +1147,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "COMBINED FIRE",
     "MOBILE DAKKASTORM",
     "EVASIVE MANOOVA",
+    "DUST TRAILS",
     "MOBILE FIREBASE",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
@@ -2969,6 +2972,7 @@ class StratagemManager(
             "CAPRICIOUS REACTIONS",
             "CALL DAT DAKKA?",
             "PRAISE THE FALLEN",
+            "DUST TRAILS",
             "THE EMPEROR'S AUSPICE",
             "THE FOE FORESEEN",
             "LET DUTY BE YOUR SHIELD",
@@ -11202,6 +11206,14 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Charge phase trigger after a SPEED FREEKS unit ends a Charge move"
             return result
+        if name_u == "DUST TRAILS":
+            candidates = list(context.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a targeted friendly ORKS unit"
+            return result
         if name_u == "TOO ARROGANT TO DIE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -12099,6 +12111,7 @@ class StratagemManager(
             "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
+            "DUST TRAILS": "Target: ORKS unit selected by the enemy shooter's targets; it gains Benefit of Cover until end of phase",
             "EVASIVE MANOOVA": "Target: SPEED FREEKS or TRUKK unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
             "WHERE DÃ¢â‚¬â„¢YA FINK YOUÃ¢â‚¬â„¢RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",

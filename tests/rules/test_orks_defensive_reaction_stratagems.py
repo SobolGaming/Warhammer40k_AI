@@ -427,6 +427,75 @@ def test_speediest_freeks_grants_5plusplus_for_non_vehicle_target_in_fight_phase
     assert int(save.get("final_save", 0) or 0) == 5
 
 
+def test_dust_trails_grants_targeted_orks_unit_benefit_of_cover():
+    target = _make_unit(
+        "Boyz",
+        keywords=["ORKS", "INFANTRY"],
+        faction_keywords=["ORKS"],
+        save="4",
+    )
+    enemy = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Speedwaaagh!",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[target])
+    assert _pending_has_stratagem(ork_player, "DUST TRAILS")
+
+    assert ork_player.stratagems.use(
+        _resolve_available_stratagem_name(ork_player, "DUST TRAILS"),
+        unit=target,
+        attacking_unit=enemy,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+
+    profile = _make_ranged_profile(ap="-1")
+    save_instance = {
+        "attacker_model": enemy.models[0],
+        "attacker_unit": enemy,
+        "target_unit": target,
+        "target_model": target.models[0],
+        "mortal_wound": False,
+    }
+    profile._save_with_tracking(target.models[0], save_instance, -1)
+    assert bool(save_instance.get("benefit_of_cover", False)) is True
+    assert "DUST TRAILS" in str(save_instance.get("benefit_of_cover_source", "") or "").upper()
+
+
+def test_dust_trails_rejects_unit_not_selected_by_attacker():
+    target = _make_unit("Trukk", keywords=["ORKS", "VEHICLE", "TRUKK"], faction_keywords=["ORKS"])
+    untargeted = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Speedwaaagh!",
+        ork_units=[target, untargeted],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, untargeted, 14.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[target])
+    assert _pending_has_stratagem(ork_player, "DUST TRAILS")
+
+    ok = ork_player.stratagems.use(
+        _resolve_available_stratagem_name(ork_player, "DUST TRAILS"),
+        unit=untargeted,
+        attacking_unit=enemy,
+        candidates=[target],
+        phase_name="Shooting phase",
+    )
+    assert ok is False
+    assert int(ork_player.command_points or 0) == 20
+
+
 def test_extra_gubbinz_reduces_allocated_damage():
     target = _make_unit(
         "Deff Dread",
@@ -528,6 +597,7 @@ def test_orks_defensive_stratagem_descriptors_present():
     stalkin = get_stratagem_tool_descriptor(stratagem_id="000008869006", name="STALKIN' TAKTIKS")
     speediest = get_stratagem_tool_descriptor(stratagem_id="000008873002", name="SPEEDIEST FREEKS")
     extra = get_stratagem_tool_descriptor(stratagem_id="000008878007", name="EXTRA GUBBINZ")
+    dust_trails = get_stratagem_tool_descriptor(stratagem_id="000010796006", name="DUST TRAILS")
 
     assert stalkin is not None
     assert str(stalkin.effect) == "defensive_cover_and_conditional_stealth"
@@ -535,3 +605,5 @@ def test_orks_defensive_stratagem_descriptors_present():
     assert str(speediest.effect) == "defensive_conditional_invulnerable_save"
     assert extra is not None
     assert str(extra.effect) == "defensive_damage_reduction"
+    assert dust_trails is not None
+    assert str(dust_trails.effect) == "defensive_benefit_of_cover"
