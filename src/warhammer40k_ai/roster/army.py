@@ -706,6 +706,14 @@ class Army:
         apply_fn = getattr(orks_mgr, "apply_wazdakka_warbikers_battleline_keywords", None) if orks_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        am_mgr = getattr(self, "astra_militarum_detachments", None)
+        apply_fn = (
+            getattr(am_mgr, "apply_armoured_infantry_armoured_skirmisher_keywords", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(apply_fn):
+            apply_fn(unit)
         cd_mgr = getattr(self, "chaos_daemons_detachments", None)
         apply_fn = getattr(cd_mgr, "apply_shadow_legion_keywords", None) if cd_mgr is not None else None
         if callable(apply_fn):

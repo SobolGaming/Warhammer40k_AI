@@ -6022,6 +6022,25 @@ class KeywordsDetachmentsMixin:
                 "max_distance": int(max(1, normal_move)),
             }
 
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("voice_of_command_on_my_signal_active", False)):
+            try:
+                trigger_range = int(sr.get("voice_of_command_on_my_signal_range", 9) or 9)
+            except (TypeError, ValueError):
+                trigger_range = 9
+            source_name = str(sr.get("voice_of_command_on_my_signal_source", "") or "On My Signal").strip()
+            actions = [
+                str(action or "").strip().lower()
+                for action in list(sr.get("voice_of_command_on_my_signal_allowed_move_actions", ["move", "advance"]) or [])
+                if str(action or "").strip()
+            ]
+            rule = {
+                "range": int(max(1, trigger_range)),
+                "source": source_name or "On My Signal",
+                "distance_roll": "D6",
+                "allowed_move_actions": tuple(actions or ["move", "advance"]),
+            }
+
         seen = set()
         try:
             members = list(root.get_attached_unit_members() or [])

@@ -58,6 +58,11 @@ ORDER_MOVE_TO_SHADOWS = Order(
     name="Move to the Shadows",
     summary="Each time a ranged attack targets this unit, it has Stealth for those attacks.",
 )
+ORDER_ON_MY_SIGNAL = Order(
+    key="ON_MY_SIGNAL",
+    name="On My Signal",
+    summary='When an enemy unit ends a Normal or Advance move within 9", this unit can make a Normal move of up to D6".',
+)
 
 ORDER_LIST: tuple[Order, ...] = (
     ORDER_MOVE,
@@ -67,7 +72,7 @@ ORDER_LIST: tuple[Order, ...] = (
     ORDER_TAKE_COVER,
     ORDER_DUTY_HONOUR,
 )
-ORDER_BY_KEY = {o.key: o for o in (ORDER_LIST + (ORDER_TARGET_WEAK_SPOT, ORDER_MOVE_TO_SHADOWS))}
+ORDER_BY_KEY = {o.key: o for o in (ORDER_LIST + (ORDER_TARGET_WEAK_SPOT, ORDER_MOVE_TO_SHADOWS, ORDER_ON_MY_SIGNAL))}
 
 TRIGGER_MECHANISED_SPEARHEAD = "mechanised_spearhead"
 
@@ -479,6 +484,32 @@ class VoiceOfCommandManager:
     def _officer_has_laud_hailer(self, officer_unit) -> bool:
         return self._unit_has_enhancement_flag(officer_unit, "enhancement_laud_hailer")
 
+    def _armoured_infantry_manager(self):
+        if self.army is None:
+            return None
+        return getattr(self.army, "astra_militarum_detachments", None)
+
+    def _army_has_armoured_infantry(self) -> bool:
+        mgr = self._armoured_infantry_manager()
+        check = getattr(mgr, "is_armoured_infantry", None) if mgr is not None else None
+        return bool(callable(check) and check())
+
+    def _target_matches_armoured_skirmisher(self, target_unit) -> bool:
+        return self._target_has_keyword(target_unit, "ARMOURED") and self._target_has_keyword(target_unit, "SKIRMISHER")
+
+    @staticmethod
+    def _invalidate_unit_ability_cache(unit) -> None:
+        if unit is None:
+            return
+        invalidate = getattr(unit, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(unit, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+            unit._ability_cache = cache
+
     def _officer_has_bombast_class_vox_array(self, officer_unit) -> bool:
         return self._unit_has_enhancement_flag(officer_unit, "enhancement_bombast_class_vox_array")
 
@@ -538,6 +569,13 @@ class VoiceOfCommandManager:
         extra_target_keywords_fn = getattr(mgr, "combined_arms_flexible_command_target_keywords", None) if mgr is not None else None
         if callable(extra_target_keywords_fn):
             keywords.extend(list(extra_target_keywords_fn(officer_unit, game=game) or ()))
+        armoured_infantry_keywords_fn = (
+            getattr(mgr, "armoured_infantry_squadron_command_target_keywords", None)
+            if mgr is not None
+            else None
+        )
+        if callable(armoured_infantry_keywords_fn):
+            keywords.extend(list(armoured_infantry_keywords_fn(officer_unit, game=game) or ()))
         seen_keywords = set()
         deduped_keywords: list[str] = []
         for kw in keywords:
@@ -816,6 +854,10 @@ class VoiceOfCommandManager:
             else:
                 sr.pop("voice_of_command_temp_order_keys", None)
             sr.pop("voice_of_command_take_cover_cap", None)
+            sr.pop("voice_of_command_on_my_signal_active", None)
+            sr.pop("voice_of_command_on_my_signal_range", None)
+            sr.pop("voice_of_command_on_my_signal_source", None)
+            sr.pop("voice_of_command_on_my_signal_allowed_move_actions", None)
             member.special_rules = sr
             try:
                 member.remove_characteristic_modifiers_by_source("voice_of_command:")
@@ -831,6 +873,7 @@ class VoiceOfCommandManager:
                 self._apply_order_modifiers(member, extra_key, source_prefix="voice_of_command:")
             for temp_key in temp_keys:
                 self._apply_order_modifiers(member, temp_key, source_prefix="voice_of_command_temp:")
+            self._invalidate_unit_ability_cache(member)
 
     def _set_temp_order_keys_on_unit_and_attached(self, unit, order_keys: list[str]) -> None:
         root = self._attached_unit_root(unit)
@@ -1947,6 +1990,16 @@ class VoiceOfCommandManager:
                 extra.append(ORDER_MOVE_TO_SHADOWS)
         return extra
 
+    def _get_officer_detachment_orders(self, officer_unit) -> list[Order]:
+        extra: list[Order] = []
+        if (
+            self._army_has_armoured_infantry()
+            and self._unit_is_astra_militarum(officer_unit)
+            and self._unit_is_officer(officer_unit)
+        ):
+            extra.append(ORDER_ON_MY_SIGNAL)
+        return extra
+
     def _officer_order_range(self, officer_unit, *, order_key: str = "") -> float:
         max_range = 6.0
         battle_round = self._battle_round()
@@ -2178,6 +2231,8 @@ class VoiceOfCommandManager:
                         continue
                 except Exception:
                     continue
+            if str(order_key or "").strip().upper() == ORDER_ON_MY_SIGNAL.key and not self._target_matches_armoured_skirmisher(root):
+                continue
             ignore_range = bool(vox_relay_transport_target or siege_over_the_top_active or pending_siege)
             if not ignore_range:
                 try:
@@ -2403,6 +2458,10 @@ class VoiceOfCommandManager:
                 "voice_of_command_additional_order_keys",
                 "voice_of_command_temp_order_keys",
                 "voice_of_command_take_cover_cap",
+                "voice_of_command_on_my_signal_active",
+                "voice_of_command_on_my_signal_range",
+                "voice_of_command_on_my_signal_source",
+                "voice_of_command_on_my_signal_allowed_move_actions",
             ):
                 sr.pop(k, None)
         try:
@@ -2433,6 +2492,7 @@ class VoiceOfCommandManager:
                 battle_round = 0
         _, _, allowed = self._parse_orders_profile(officer_unit)
         enhancement_orders = self._get_officer_enhancement_orders(officer_unit)
+        detachment_orders = self._get_officer_detachment_orders(officer_unit)
         if not allowed:
             base = list(ORDER_LIST)
         else:
@@ -2440,6 +2500,13 @@ class VoiceOfCommandManager:
         seen = {order.key for order in base}
         out: list[Order] = []
         out.extend(base)
+        for order in detachment_orders:
+            if allowed and order.key not in allowed:
+                continue
+            if order.key in seen:
+                continue
+            seen.add(order.key)
+            out.append(order)
         for order in enhancement_orders:
             if order.key in seen:
                 continue
@@ -2501,6 +2568,16 @@ class VoiceOfCommandManager:
             unit.add_characteristic_modifier(
                 "objective_control", Modifier(ModifierOp.ADD, 1, source=f"{source_prefix}{order_key}")
             )
+        elif order_key == ORDER_ON_MY_SIGNAL.key:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["voice_of_command_on_my_signal_active"] = True
+            sr["voice_of_command_on_my_signal_range"] = 9
+            sr["voice_of_command_on_my_signal_source"] = ORDER_ON_MY_SIGNAL.name
+            sr["voice_of_command_on_my_signal_allowed_move_actions"] = ["move", "advance"]
+            unit.special_rules = sr
+            self._invalidate_unit_ability_cache(unit)
 
     def _apply_order_to_unit_and_attached(self, unit, order_key: str, owner_id: str, source_id: str) -> None:
         if unit is None:
@@ -2689,7 +2766,10 @@ class VoiceOfCommandManager:
             return False
         allowed = self._parse_orders_profile(officer_unit)[2]
         enhancement_order_keys = {order.key for order in self._get_officer_enhancement_orders(officer_unit)}
+        detachment_order_keys = {order.key for order in self._get_officer_detachment_orders(officer_unit)}
         if order_key in (ORDER_TARGET_WEAK_SPOT.key, ORDER_MOVE_TO_SHADOWS.key) and order_key not in enhancement_order_keys:
+            return False
+        if order_key == ORDER_ON_MY_SIGNAL.key and ORDER_ON_MY_SIGNAL.key not in detachment_order_keys:
             return False
         if allowed and order_key not in allowed and order_key not in enhancement_order_keys:
             return False

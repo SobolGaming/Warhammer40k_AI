@@ -458,6 +458,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in the muster armies step you can select one or more astra militarum titanic units from your army to gain the character keyword",
             r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
         ),
+        "Squadron Command": (
+            r"add squadron to the list of units each officer unit from your army can issue orders to",
+            r"add the order below to those listed in the voice of command ability",
+            r"this order can only be issued to armoured skirmisher units see below",
+            r"each time an enemy unit ends a normal or advance move within 9 of this unit this unit can make a normal move of up to d6",
+            r"each unit can only move in this way once per turn",
+            r"astra militarum squadron units from your army have the armoured skirmisher keyword excluding artillery units and units containing one or more models with a wounds characteristic of 13 or higher",
+        ),
         "Adaptive Defence": (
             r"each time an adeptus astartes model from your army makes an attack if that models? unit is within a terrain feature re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
             r"adeptus astartes units from your army gain the entrenched keyword while all of the following are true",
@@ -6121,6 +6129,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000010786": (
             "Supported",
             "Steel Hammer: ASTRA MILITARUM TITANIC/SQUADRON units can target enemy units within their own Engagement Range, including with Blast weapons, when no other friendly unit is also engaged with that enemy; non-Indirect attacks made this way ignore Big Guns Never Tire hit penalties, and muster selection can give CHARACTER to ASTRA MILITARUM TITANIC units.",
+        ),
+        "000010790": (
+            "Supported",
+            "Armoured Infantry: Squadron Command lets ASTRA MILITARUM OFFICERS issue Orders to SQUADRON units, adds the On My Signal order for ARMOURED SKIRMISHER targets, grants ARMOURED/SKIRMISHER keywords to eligible non-Artillery SQUADRON units under 13 Wounds, and uses the existing optional reactive-move decision chain for the D6 Normal move after enemy Normal/Advance moves within 9\".",
         ),
     }
 

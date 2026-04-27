@@ -79,6 +79,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Siege Regiment")
 
+    def is_armoured_infantry(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Armoured Infantry")
+
     def is_steel_hammer(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -1040,6 +1045,72 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
 
     def _unit_is_titanic(self, unit) -> bool:
         return self._unit_has_keyword(unit, "TITANIC")
+
+    def _unit_is_artillery(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "ARTILLERY")
+
+    @staticmethod
+    def _model_wounds_characteristic(model) -> int:
+        for attr in ("_base_wounds", "base_wounds", "max_wounds", "wounds"):
+            value = getattr(model, attr, None)
+            if value is None:
+                continue
+            try:
+                wounds = int(value)
+            except (TypeError, ValueError):
+                continue
+            if wounds > 0:
+                return int(wounds)
+        return 0
+
+    def _unit_has_model_with_wounds_at_least(self, unit, threshold: int) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except (AttributeError, TypeError, ValueError):
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if self._model_wounds_characteristic(model) >= int(threshold):
+                return True
+        return False
+
+    def _unit_is_armoured_infantry_skirmisher_candidate(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_astra_militarum(root):
+            return False
+        if not self._unit_is_squadron(root):
+            return False
+        if self._unit_is_artillery(root):
+            return False
+        return not self._unit_has_model_with_wounds_at_least(root, 13)
+
+    def apply_armoured_infantry_armoured_skirmisher_keywords(self, unit=None) -> None:
+        if not self.is_armoured_infantry():
+            return
+        units = self._iter_unique_army_roots() if unit is None else [unit]
+        for entry in list(units or []):
+            root = self._unit_root(entry)
+            if not self._unit_is_armoured_infantry_skirmisher_candidate(root):
+                continue
+            self._add_keyword_once(root, "Armoured")
+            self._add_keyword_once(root, "Skirmisher")
+
+    def armoured_infantry_squadron_command_target_keywords(self, officer_unit, *, game=None) -> tuple[str, ...]:
+        if not self.is_armoured_infantry():
+            return ()
+        if officer_unit is None:
+            return ()
+        if not self._unit_has_keyword(officer_unit, "OFFICER"):
+            return ()
+        if not self._unit_is_astra_militarum(officer_unit):
+            return ()
+        return ("SQUADRON",)
 
     def _steel_hammer_titanic_character_candidates(self) -> list:
         if not self.is_steel_hammer():

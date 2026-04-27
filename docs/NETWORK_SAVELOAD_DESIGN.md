@@ -388,9 +388,10 @@ Battle-shock:
 - fear_made_manifest_dialog: CHOOSE_QUARRY {destroy_count | destroy_count_roll} (context `ability="fear_made_manifest"`, `target_unit_id`, `source_unit_id`, `source_model_id`, optional `once_key`, optional `once_roll`, optional `can_use_once`)
 - fear_made_manifest_model_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="fear_made_manifest_destroy"`, `target_unit_id`, `source_unit_id`, `ability_name`, `destroy_remaining`)
 - worthless_chattel_model_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="worthless_chattel_destroy"`, `target_unit_id`, `ability_name`, `destroy_remaining`)
-Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use `CONFIRM_YES_NO` with
-`reactive_move_*` context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`
-(rolled or fixed).
+Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors / On My Signal) use
+`CONFIRM_YES_NO` with `reactive_move_*` context, followed by `MOVE_UNIT` with
+`movement_type="loping_speed"` and `max_distance` (rolled or fixed). On My Signal uses
+`reactive_move_source="On My Signal"` and only queues from enemy Normal or Advance move-end events.
 Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
 Brazen Fury uses the same pattern with `reactive_move_kind="brazen_fury"` and `movement_type="brazen_fury"`.
 Horde Move uses the same pattern with `reactive_move_kind="horde_move"` and `movement_type="horde_move"`.

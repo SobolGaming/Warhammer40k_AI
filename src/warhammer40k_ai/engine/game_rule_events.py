@@ -3705,6 +3705,13 @@ class GameRuleEventService(GameServiceBase):
                 rule = root.get_loping_speed_rule()
                 if not rule:
                     continue
+                allowed_actions = {
+                    str(entry or "").strip().lower()
+                    for entry in list(rule.get("allowed_move_actions", ("move", "advance", "fall_back")) or ())
+                    if str(entry or "").strip()
+                }
+                if allowed_actions and action_key not in allowed_actions:
+                    continue
                 rng = int(rule.get("range", 9) or 9)
                 if not root.can_loping_speed(game=self, game_map=self.map, moving_unit=moving_root, range_override=rng):
                     continue
