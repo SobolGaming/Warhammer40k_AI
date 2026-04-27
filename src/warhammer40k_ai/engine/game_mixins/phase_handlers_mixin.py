@@ -21587,6 +21587,25 @@ class GamePhaseHandlersMixin:
                         "post_shoot_no_cover_owner",
                         "post_shoot_no_cover_turn",
                     ):
+                            sr.pop(k, None)
+                exp = str(sr.get("post_shoot_keyword_strength_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_keyword_strength_bonus_active",
+                        "post_shoot_keyword_strength_bonus_owner",
+                        "post_shoot_keyword_strength_bonus_turn",
+                        "post_shoot_keyword_strength_bonus_source",
+                        "post_shoot_keyword_strength_bonus_phrase",
+                        "post_shoot_keyword_strength_bonus_phrases",
+                        "post_shoot_keyword_strength_bonus_value",
+                        "post_shoot_keyword_strength_bonus_marked_state",
+                        "post_shoot_keyword_strength_bonus_expires_phase",
+                        "speedwaaagh_mobile_dakkastorm_active",
+                        "speedwaaagh_mobile_dakkastorm_owner",
+                        "speedwaaagh_mobile_dakkastorm_turn",
+                        "speedwaaagh_mobile_dakkastorm_phase",
+                        "speedwaaagh_mobile_dakkastorm_source",
+                    ):
                         sr.pop(k, None)
                 exp = str(sr.get("bridgehead_fire_and_relocate_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
@@ -22232,8 +22251,10 @@ class GamePhaseHandlersMixin:
                                 "post_shoot_keyword_strength_bonus_turn",
                                 "post_shoot_keyword_strength_bonus_source",
                                 "post_shoot_keyword_strength_bonus_phrase",
+                                "post_shoot_keyword_strength_bonus_phrases",
                                 "post_shoot_keyword_strength_bonus_value",
                                 "post_shoot_keyword_strength_bonus_marked_state",
+                                "post_shoot_keyword_strength_bonus_expires_phase",
                             ):
                                 sr.pop(k, None)
                     owner = str(sr.get("tactical_acumen_no_charge_turn_owner", "") or "")

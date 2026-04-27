@@ -2368,6 +2368,21 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         range_in=9.0,
         effect_params={"sustained_hits": 1, "sustained_hits_within_range": 2, "range_in": 9.0},
     ),
+    "000010796003": StratagemToolDescriptor(
+        stratagem_id="000010796003",
+        name="MOBILE DAKKASTORM",
+        timing="shooting_phase_after_speed_freeks_or_trukk_shoots",
+        target="speed_freeks_or_trukk_unit_just_shot",
+        duration="until_end_of_phase",
+        effect="post_shoot_hit_enemy_non_indirect_speed_freeks_trukk_strength_bonus",
+        cp_cost=1,
+        effect_params={
+            "source_keywords_any": ["SPEED FREEKS", "TRUKK"],
+            "selected_enemy_hit_excludes_indirect_fire": True,
+            "friendly_attacker_keywords_any": ["SPEED FREEKS", "TRUKK"],
+            "strength_bonus": 2,
+        },
+    ),
     "000008873006": StratagemToolDescriptor(
         stratagem_id="000008873006",
         name="FULL THROTTLE!",

@@ -79,6 +79,11 @@ class OrksStratagemMixin:
         checker = getattr(mgr, "is_taktikal_brigade", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_speedwaaagh_detachment(self) -> bool:
+        mgr = self._orks_detachment_mgr()
+        checker = getattr(mgr, "is_speedwaaagh", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _orks_normalize_name(text: str) -> str:
         value = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
@@ -1932,6 +1937,177 @@ class OrksStratagemMixin:
             return True
         return self._orks_unit_name_contains(root, "trukk")
 
+    def _orks_normalize_weapon_key(self, source_unit: Any, value: str) -> str:
+        root = self._orks_root(source_unit)
+        normalizer = getattr(root, "_normalize_keyword_phrase", None) if root is not None else None
+        if callable(normalizer):
+            try:
+                return str(normalizer(value) or "")
+            except Exception:
+                return ""
+        text = str(value or "").lower()
+        text = re.sub(r"[^a-z0-9]+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _orks_weapon_key_matches(candidate_key: str, key_set: set[str]) -> bool:
+        key = str(candidate_key or "").strip()
+        if not key:
+            return False
+        if key in key_set:
+            return True
+        if key.endswith("s") and key[:-1] in key_set:
+            return True
+        return f"{key}s" in key_set
+
+    def _orks_indirect_weapon_keys(self, source_unit: Any) -> set[str]:
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return set()
+        keys: set[str] = set()
+        for model in list(getattr(source_root, "models", []) or []):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if callable(is_ranged) and not bool(is_ranged()):
+                    continue
+                profiles = getattr(wargear, "profiles", None)
+                if not isinstance(profiles, dict):
+                    continue
+                for profile in list(profiles.values()):
+                    is_indirect = getattr(profile, "is_indirect_fire", None)
+                    if not callable(is_indirect) or not bool(is_indirect()):
+                        continue
+                    parent = getattr(profile, "parent_wargear", None)
+                    weapon_name = str(getattr(parent, "name", "") or getattr(profile, "name", "") or "")
+                    key = self._orks_normalize_weapon_key(source_root, weapon_name)
+                    if key:
+                        keys.add(key)
+        return keys
+
+    @staticmethod
+    def _orks_hit_count(value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value)
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _speedwaaagh_mobile_dakkastorm_target_hit_by_non_indirect(
+        self,
+        source_unit: Any,
+        target_unit: Any,
+        hit_models_by_target_weapon: Any,
+    ) -> bool:
+        if not isinstance(hit_models_by_target_weapon, dict):
+            return True
+        target_root = self._orks_root(target_unit)
+        target_map = hit_models_by_target_weapon.get(target_unit)
+        if target_map is None and target_root is not None:
+            target_map = hit_models_by_target_weapon.get(target_root)
+        if not isinstance(target_map, dict):
+            return False
+        indirect_keys = self._orks_indirect_weapon_keys(source_unit)
+        for raw_key, models in list(target_map.items()):
+            if not models:
+                continue
+            key = self._orks_normalize_weapon_key(source_unit, str(raw_key or ""))
+            if not key:
+                continue
+            if not self._orks_weapon_key_matches(key, indirect_keys):
+                return True
+        return False
+
+    def _speedwaaagh_mobile_dakkastorm_hit_candidates(
+        self,
+        source_unit: Any,
+        hits_by_target: Any,
+        hit_models_by_target_weapon: Any = None,
+    ) -> list[Any]:
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            target_root = self._orks_root(target_unit)
+            if target_root is None:
+                continue
+            if self._orks_hit_count(hits) <= 0:
+                continue
+            if not self._orks_on_battlefield(target_root, require_targetable=False):
+                continue
+            if self._orks_owned_by_player(target_root, self.player):
+                continue
+            if not self._speedwaaagh_mobile_dakkastorm_target_hit_by_non_indirect(
+                source_root,
+                target_root,
+                hit_models_by_target_weapon,
+            ):
+                continue
+            uid = self._orks_sort_key(target_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            candidates.append(target_root)
+        return sorted(candidates, key=self._orks_sort_key)
+
+    def _queue_speedwaaagh_mobile_dakkastorm_target_decision(
+        self,
+        *,
+        stratagem: Any,
+        source_unit: Any,
+        candidates: list[Any],
+    ) -> bool:
+        if self.game is None:
+            return False
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return False
+        candidate_units = [
+            self._orks_root(candidate)
+            for candidate in list(candidates or [])
+            if self._orks_root(candidate) is not None
+        ]
+        candidate_units = sorted(candidate_units, key=self._orks_sort_key)
+        if not candidate_units:
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(candidate)},
+            )
+            for candidate in candidate_units
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "MOBILE DAKKASTORM: select an enemy unit hit by non-Indirect Fire attacks.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "orks_mobile_dakkastorm",
+                "ability_name": str(getattr(stratagem, "name", "") or "MOBILE DAKKASTORM"),
+                "attacker_unit_id": get_entity_id(source_root),
+                "candidate_unit_ids": [get_entity_id(candidate) for candidate in candidate_units],
+                "keyword_phrases": ["SPEED FREEKS", "TRUKK"],
+                "strength_bonus": 2,
+                "expires_phase": "SHOOTING_PHASE",
+                "expires_timing": "PHASE_END",
+            },
+        )
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        return False
+
     def _orks_is_walker_or_grots_vehicle_not_titanic(self, unit: Any) -> bool:
         root = self._orks_root(unit)
         if root is None:
@@ -2672,6 +2848,80 @@ class OrksStratagemMixin:
 
             if changed:
                 root.special_rules = sr
+
+    def _on_unit_shooting_resolved_speedwaaagh_mobile_dakkastorm(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self._is_speedwaaagh_detachment():
+            return
+        if self._orks_current_phase_key() != "SHOOTING_PHASE":
+            return
+        if not self._orks_is_players_turn():
+            return
+        source_root = self._orks_root(attacker_unit)
+        if source_root is None:
+            return
+        if not self._orks_owned_by_player(source_root, self.player):
+            return
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+        if not self._is_orks_unit(source_root):
+            return
+        if not self._orks_is_speed_freeks_or_trukk(source_root):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names("MOBILE DAKKASTORM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        candidates = self._speedwaaagh_mobile_dakkastorm_hit_candidates(
+            source_root,
+            hits_by_target,
+            hit_models_by_target_weapon,
+        )
+        if not candidates:
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=str(getattr(stratagem, "name", "") or "MOBILE DAKKASTORM"),
+            unit=source_root,
+        ):
+            return
+        if not bool(
+            stratagem.can_use(
+                self.player,
+                self.game,
+                target_unit=source_root,
+                unit=source_root,
+                candidates=candidates,
+                phase_name="Shooting phase",
+            )
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_shooting_resolved",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": str(getattr(stratagem, "name", "") or "MOBILE DAKKASTORM"),
+                "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "unit": source_root,
+                "target_unit": source_root,
+                "candidates": list(candidates),
+            },
+            use_timer=False,
+        )
 
     def _on_unit_shooting_resolved_orks_green_tide(self, attacker_unit=None, **_kwargs) -> None:
         if not self._is_green_tide_detachment():
@@ -3775,6 +4025,108 @@ class OrksStratagemMixin:
         )
         return True
 
+    def _use_orks_mobile_dakkastorm(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_speedwaaagh_detachment():
+            return False
+        phase_label = self._orks_phase_label(kwargs.get("phase_name") or self._orks_current_phase_label())
+        if phase_label != "shooting phase":
+            logger.error("ERROR: MOBILE DAKKASTORM: wrong phase")
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: MOBILE DAKKASTORM: not your Shooting phase")
+            return False
+
+        source_unit = kwargs.get("unit") or kwargs.get("source_unit") or kwargs.get("target_unit")
+        pending = None
+        if source_unit is None or not list(kwargs.get("candidates") or []):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != "mobile dakkastorm":
+                    continue
+                pending = reaction
+                break
+        if source_unit is None and pending is not None:
+            source_unit = pending.get("unit") or pending.get("target_unit") or pending.get("source_unit")
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            logger.error("ERROR: MOBILE DAKKASTORM: no source unit provided")
+            return False
+        if not self._orks_owned_by_player(source_root, self.player):
+            logger.error("ERROR: MOBILE DAKKASTORM: source unit is not yours")
+            return False
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: MOBILE DAKKASTORM: source unit must be on the battlefield")
+            return False
+        if not self._is_orks_unit(source_root):
+            logger.error("ERROR: MOBILE DAKKASTORM: source unit must be ORKS")
+            return False
+        if not self._orks_is_speed_freeks_or_trukk(source_root):
+            logger.error("ERROR: MOBILE DAKKASTORM: source unit must be SPEED FREEKS or TRUKK")
+            return False
+        if pending is None and not bool(getattr(getattr(source_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: MOBILE DAKKASTORM: source unit has not shot")
+            return False
+
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if not candidates:
+            candidates = self._speedwaaagh_mobile_dakkastorm_hit_candidates(
+                source_root,
+                kwargs.get("hits_by_target") or {},
+                kwargs.get("hit_models_by_target_weapon"),
+            )
+        candidates = [self._orks_root(candidate) for candidate in candidates if self._orks_root(candidate) is not None]
+        candidates = sorted(candidates, key=self._orks_sort_key)
+        if not candidates:
+            logger.error("ERROR: MOBILE DAKKASTORM: no eligible enemy units were hit by non-Indirect Fire attacks")
+            return False
+
+        direct_target = kwargs.get("enemy_unit") or kwargs.get("quarry") or kwargs.get("selected_unit")
+        if direct_target is not None:
+            target_root = self._orks_root(direct_target)
+            if target_root not in candidates:
+                logger.error("ERROR: MOBILE DAKKASTORM: selected enemy unit is not eligible")
+                return False
+            mgr = self._orks_detachment_mgr()
+            marker = getattr(mgr, "mark_speedwaaagh_mobile_dakkastorm_target", None) if mgr is not None else None
+            if not callable(marker):
+                logger.error("ERROR: MOBILE DAKKASTORM: detachment manager unavailable")
+                return False
+            if not self._orks_spend_cp(stratagem, target_unit=source_root):
+                return False
+            if not bool(
+                marker(
+                    target_root,
+                    game=self.game,
+                    player=self.player,
+                    phase_name="SHOOTING_PHASE",
+                    source=str(getattr(stratagem, "name", "") or "MOBILE DAKKASTORM"),
+                )
+            ):
+                logger.error("ERROR: MOBILE DAKKASTORM: failed to mark target")
+                return False
+            self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: MOBILE DAKKASTORM: %s is vulnerable to SPEED FREEKS/TRUKK attacks.",
+                getattr(target_root, "name", "Unit"),
+            )
+            return True
+
+        request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+        if self.game is None or not callable(request_decision):
+            logger.error("ERROR: MOBILE DAKKASTORM: no decision queue available")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=source_root):
+            return False
+        if not self._queue_speedwaaagh_mobile_dakkastorm_target_decision(
+            stratagem=stratagem,
+            source_unit=source_root,
+            candidates=candidates,
+        ):
+            logger.error("ERROR: MOBILE DAKKASTORM: failed to queue target selection")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: MOBILE DAKKASTORM: choose a hit enemy unit to mark.")
+        return True
+
     def _use_orks_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -3840,6 +4192,8 @@ class OrksStratagemMixin:
             return self._use_orks_is_still_orks(stratagem, **kwargs)
         if name_u == "SPESHUL SHELLS":
             return self._use_orks_speshul_shells(stratagem, **kwargs)
+        if name_norm == "mobile dakkastorm":
+            return self._use_orks_mobile_dakkastorm(stratagem, **kwargs)
         if name_norm == "dat one s even bigga":
             return self._use_orks_dat_ones_even_bigga(stratagem, **kwargs)
         if name_u == "DAT'S OURS":

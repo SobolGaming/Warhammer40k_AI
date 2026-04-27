@@ -845,6 +845,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
+    "MOBILE DAKKASTORM",
     "CACHED ACQUISITION",
     "DAKKASTORM",
     "FULL THROTTLE!",
@@ -1106,6 +1107,7 @@ IMPLEMENTED_STRATAGEM_NAME_IDS = {
     "OPENING SALVO": {"000010792007"},
     "ORDER THE ADVANCE": {"000010792002"},
     "SUPPORTING ORDNANCE": {"000010792005"},
+    "MOBILE DAKKASTORM": {"000010796003"},
 }
 
 IMPLEMENTED_STRATAGEM_IDS_ALLOW_DEFENSIVE_PARSE = {
@@ -1139,6 +1141,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
     "COMBINED FIRE",
+    "MOBILE DAKKASTORM",
     "MOBILE FIREBASE",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
@@ -2901,6 +2904,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bridgehead_servo_designators)
         if "COMBINED FIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armoured_infantry_combined_fire)
+        if "MOBILE DAKKASTORM" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_speedwaaagh_mobile_dakkastorm)
         if "SHATTERING SALVO" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_steel_hammer_shattering_salvo)
         if "WITHERING FIREPOWER" in names:
@@ -3375,6 +3380,7 @@ class StratagemManager(
             "RAID AND FADE",
             "TAILORED TOXINS",
             "TAKEN ALIVE",
+            "MOBILE DAKKASTORM",
             "ALWAYS LOOKIN' FER A FIGHT",
             "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT",
             "CUT'EM DOWN",
@@ -8545,6 +8551,29 @@ class StratagemManager(
                 "Requires your Shooting phase just after a friendly ASTRA MILITARUM VEHICLE unit has shot and hit one or more enemy units"
             )
             return result
+        if name_u == "MOBILE DAKKASTORM":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "MOBILE DAKKASTORM":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            unit = context.get("target_unit") or context.get("unit")
+            hits_by_target = context.get("hits_by_target") or {}
+            hit_models_by_target_weapon = context.get("hit_models_by_target_weapon")
+            if unit is not None and self._speedwaaagh_mobile_dakkastorm_hit_candidates(
+                unit,
+                hits_by_target,
+                hit_models_by_target_weapon,
+            ):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase just after a friendly SPEED FREEKS or TRUKK unit has shot and hit one or more enemy units with non-Indirect Fire attacks"
+            )
+            return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
                 result["available"] = True
@@ -11905,6 +11934,7 @@ class StratagemManager(
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
             "COMBINED FIRE": "Target: ARMOURED SKIRMISHER unit that just shot; choose one enemy unit it hit so that enemy loses cover and friendly ARMOURED SKIRMISHER attacks against it gain +2 Strength this phase",
+            "MOBILE DAKKASTORM": "Target: SPEED FREEKS or TRUKK unit that just shot; choose one enemy unit hit by non-Indirect Fire attacks so friendly SPEED FREEKS/TRUKK attacks against it gain +2 Strength this phase",
             "MOBILE FIREBASE": "Target: ARMOURED SKIRMISHER unit that just Advanced or Fell Back; it can shoot this turn after advancing or falling back",
             "OPENING SALVO": "Target: ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; add 1 to Wound rolls this phase",
             "ORDER THE ADVANCE": "Target: ASTRA MILITARUM OFFICER at the start of your Movement phase; select one or more friendly ASTRA MILITARUM units within 6\" to re-roll Advance rolls until end of phase",

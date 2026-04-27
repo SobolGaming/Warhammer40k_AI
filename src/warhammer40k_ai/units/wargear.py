@@ -2362,12 +2362,34 @@ class WargearProfile:
                 current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
                 if current_turn and current_turn != marked_turn:
                     apply_bonus = False
-        keyword_phrase = str(sr.get("post_shoot_keyword_strength_bonus_phrase", "") or "").strip()
-        if apply_bonus and keyword_phrase:
-            try:
-                if not attacker_unit._unit_matches_keyword_phrase(attacker_unit, keyword_phrase, use_effective=True):
+        if apply_bonus:
+            expires_phase = str(sr.get("post_shoot_keyword_strength_bonus_expires_phase", "") or "").strip().upper()
+            if expires_phase:
+                game = None
+                try:
+                    game = attacker_unit.get_parent_army().player.game
+                except Exception:
+                    game = None
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if current_phase and current_phase != expires_phase:
                     apply_bonus = False
-            except Exception:
+        keyword_phrases = []
+        raw_phrases = sr.get("post_shoot_keyword_strength_bonus_phrases")
+        if isinstance(raw_phrases, (list, tuple, set)):
+            keyword_phrases.extend(str(phrase or "").strip() for phrase in raw_phrases if str(phrase or "").strip())
+        keyword_phrase = str(sr.get("post_shoot_keyword_strength_bonus_phrase", "") or "").strip()
+        if keyword_phrase:
+            keyword_phrases.append(keyword_phrase)
+        if apply_bonus and keyword_phrases:
+            matched_keyword_phrase = False
+            for phrase in keyword_phrases:
+                try:
+                    if attacker_unit._unit_matches_keyword_phrase(attacker_unit, phrase, use_effective=True):
+                        matched_keyword_phrase = True
+                        break
+                except Exception:
+                    continue
+            if not matched_keyword_phrase:
                 apply_bonus = False
         if not apply_bonus:
             return (0, "")

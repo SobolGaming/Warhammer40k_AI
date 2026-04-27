@@ -20681,6 +20681,7 @@ def _stratagem_support(
         "000010788003": "Your Movement phase Reinforcements step from battle round 2 onwards: selected ASTRA MILITARUM TITANIC unit in Reserves is set up wholly within 8\" of a battlefield edge and more than 6\" horizontally away from enemies.",
         "000010788005": "Your Shooting phase after an ASTRA MILITARUM TITANIC unit shoots: select one enemy unit hit by those attacks; until end of phase that enemy cannot have Benefit of Cover.",
         "000010788006": "Your Shooting phase after an ASTRA MILITARUM VEHICLE unit shoots: select one enemy unit hit by those attacks; that enemy must take a Battle-shock test with a -1 modifier.",
+        "000010796003": "Your Shooting phase after a SPEED FREEKS or TRUKK unit shoots: select one enemy unit hit by non-Indirect Fire attacks; until end of phase friendly SPEED FREEKS/TRUKK attacks against it gain +2 Strength.",
         "000009870002": "Your Shooting phase: the selected PLATOON unit that has not yet shot gains [PRECISION] on ranged weapons until end of phase.",
         "000009870005": "Start of your opponent's Shooting phase: the selected ASTRA MILITARUM INFANTRY or MOUNTED unit gains Feel No Pain 6+, and enemy attacks suffer -1 to hit while it is the closest eligible target until end of phase.",
         "000009870003": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: the selected eligible PLATOON unit within 9\" and not in Engagement Range can make a reactive Normal move of up to 6\".",
@@ -21683,6 +21684,7 @@ def _stratagem_support(
         "000010788003",
         "000010788005",
         "000010788006",
+        "000010796003",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

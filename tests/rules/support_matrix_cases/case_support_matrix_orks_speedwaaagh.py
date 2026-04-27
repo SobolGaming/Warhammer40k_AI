@@ -37,3 +37,27 @@ def test_speedwaaagh_turbo_boostas_detachment_ability_is_supported():
     assert "assault" in notes_l
     assert "no-pivot" in notes_l or "no pivot" in notes_l
     assert "no-charge" in notes_l or "blocking charges" in notes_l
+
+
+def test_speedwaaagh_mobile_dakkastorm_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000010796003"
+    )
+
+    status, notes, canonical_name = gsm._stratagem_support(
+        row.get("name", ""),
+        row.get("description", ""),
+        detachment_name="Speedwaaagh!",
+        stratagem_id=row.get("id", ""),
+    )
+
+    assert status in {"Implemented", "Supported"}
+    assert canonical_name == "MOBILE DAKKASTORM"
+    notes_l = str(notes or "").lower()
+    assert "non-indirect" in notes_l
+    assert "speed freeks" in notes_l
+    assert "+2 strength" in notes_l

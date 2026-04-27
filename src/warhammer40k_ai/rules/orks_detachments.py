@@ -18,6 +18,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _SPEEDWAAAGH_TURBO_BOOSTAS_SOURCE = "Turbo Boostas"
     _SPEEDWAAAGH_TURBO_BOOSTAS_MOVE_CHARACTERISTIC = 24
     _SPEEDWAAAGH_TRUKK_KEYWORD = "TRUKK"
+    _SPEEDWAAAGH_MOBILE_DAKKASTORM_SOURCE = "MOBILE DAKKASTORM"
+    _SPEEDWAAAGH_MOBILE_DAKKASTORM_STRENGTH_BONUS = 2
     _BLITZ_BRIGADE_EAGER_SOURCE = "Eager for the Fight"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
@@ -738,6 +740,60 @@ class OrksDetachmentManager(DetachmentManagerBase):
         root = self._unit_root(unit)
         sr = getattr(root, "special_rules", None) if root is not None else None
         return bool(isinstance(sr, dict) and sr.get("speedwaaagh_turbo_boostas_no_charge"))
+
+    def mark_speedwaaagh_mobile_dakkastorm_target(
+        self,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_speedwaaagh():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        if game is None and self.army is not None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        phase_key = self._phase_key_from_game(game) or str(phase_name or "").strip().upper()
+        source_name = str(source or self._SPEEDWAAAGH_MOBILE_DAKKASTORM_SOURCE).strip()
+        if not source_name:
+            source_name = self._SPEEDWAAAGH_MOBILE_DAKKASTORM_SOURCE
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["post_shoot_keyword_strength_bonus_active"] = True
+        sr["post_shoot_keyword_strength_bonus_owner"] = owner_id
+        sr["post_shoot_keyword_strength_bonus_turn"] = int(turn or 0)
+        sr["post_shoot_keyword_strength_bonus_source"] = source_name
+        sr["post_shoot_keyword_strength_bonus_phrase"] = self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD
+        sr["post_shoot_keyword_strength_bonus_phrases"] = [
+            self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD,
+            self._SPEEDWAAAGH_TRUKK_KEYWORD,
+        ]
+        sr["post_shoot_keyword_strength_bonus_value"] = int(
+            self._SPEEDWAAAGH_MOBILE_DAKKASTORM_STRENGTH_BONUS
+        )
+        sr["post_shoot_keyword_strength_bonus_expires_phase"] = "SHOOTING_PHASE"
+        sr["speedwaaagh_mobile_dakkastorm_active"] = True
+        sr["speedwaaagh_mobile_dakkastorm_turn"] = int(turn or 0)
+        sr["speedwaaagh_mobile_dakkastorm_phase"] = phase_key or "SHOOTING_PHASE"
+        sr["speedwaaagh_mobile_dakkastorm_owner"] = owner_id
+        sr["speedwaaagh_mobile_dakkastorm_source"] = source_name
+        target_root.special_rules = sr
+        return True
 
     def blitz_brigade_eager_for_the_fight_eligible(self, unit, *, transport_unit=None) -> bool:
         if not self.is_blitz_brigade():
