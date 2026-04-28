@@ -25,6 +25,43 @@ from .decision_kinds import DECISION_CONFIRM_YES_NO
 import logging
 logger = logging.getLogger(__name__)
 
+
+def _fight_entity_id(entity: object | None) -> str:
+    if entity is None:
+        return ""
+    try:
+        return str(get_entity_id(entity) or "")
+    except ValueError:
+        return ""
+
+
+def _melee_declaration_diagnostic(
+    *,
+    target_unit: object | None,
+    model: object | None,
+    weapon_profile: object | None,
+    reason: str = "",
+    attacks_executed: int | None = None,
+    damage_dealt: int | None = None,
+    models_killed: int | None = None,
+) -> dict:
+    row = {
+        "target_unit_id": _fight_entity_id(target_unit),
+        "model_id": _fight_entity_id(model),
+        "model_name": str(getattr(model, "name", "") or ""),
+        "weapon_profile_id": _fight_entity_id(weapon_profile),
+        "weapon_profile_name": str(getattr(weapon_profile, "name", "") or ""),
+        "reason": str(reason or ""),
+    }
+    if attacks_executed is not None:
+        row["attacks_executed"] = int(attacks_executed or 0)
+    if damage_dealt is not None:
+        row["damage_dealt"] = int(damage_dealt or 0)
+    if models_killed is not None:
+        row["models_killed"] = int(models_killed or 0)
+    return row
+
+
 if TYPE_CHECKING:
     from .game import Game
 
@@ -1011,6 +1048,11 @@ class FightPhaseManager:
                             hit_models_by_target=attack_summary.get("hit_models_by_target"),
                             hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                             killing_models_by_target=attack_summary.get("killing_models_by_target"),
+                            damage_by_target=attack_summary.get("damage_by_target"),
+                            successful_attacks=int(attack_summary.get("successful_attacks", 0) or 0),
+                            declaration_count=int(attack_summary.get("declaration_count", 0) or 0),
+                            executed_declarations=list(attack_summary.get("executed_declarations") or []),
+                            skipped_declarations=list(attack_summary.get("skipped_declarations") or []),
                         )
                 except Exception:
                     pass
@@ -1290,13 +1332,18 @@ class FightPhaseManager:
         hit_models_by_target = {}
         hit_models_by_target_psychic = {}
         killing_models_by_target = {}
+        damage_by_target = {}
+        executed_declarations = []
+        skipped_declarations = []
         attack_context = {
+            "attack_type": "melee",
             "pending_mortal_wounds": {},
             "defer_mortal_wounds": True,
             "hit_tracker": hit_tracker,
             "hit_models_by_target": hit_models_by_target,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
+            "damage_by_target": damage_by_target,
         }
         base_provider = get_decision_provider(self.game, "damage_allocation_provider")
 
@@ -1309,9 +1356,25 @@ class FightPhaseManager:
             wound_target = declaration.get('wound_target')
 
             if not model or not weapon_profile:
+                skipped_declarations.append(
+                    _melee_declaration_diagnostic(
+                        target_unit=target_unit,
+                        model=model,
+                        weapon_profile=weapon_profile,
+                        reason="missing_model_or_weapon_profile",
+                    )
+                )
                 continue
             if eligible_models is not None and model not in eligible_models:
                 logger.info(f"{getattr(model, 'name', 'Model')} is not eligible to fight {getattr(target_unit, 'name', 'Target')}")
+                skipped_declarations.append(
+                    _melee_declaration_diagnostic(
+                        target_unit=target_unit,
+                        model=model,
+                        weapon_profile=weapon_profile,
+                        reason="model_not_eligible_to_fight_target",
+                    )
+                )
                 continue
 
             logger.info(f"{model.name} attacks with {weapon_profile.name}")
@@ -1326,7 +1389,7 @@ class FightPhaseManager:
                 self.game.install_decision_providers(damage_allocation_provider=_forced_provider)
                 provider_reset = True
             try:
-                weapon_profile.attack(
+                attack_result = weapon_profile.attack(
                     target_unit,
                     model,
                     game_map=game_map,
@@ -1334,6 +1397,17 @@ class FightPhaseManager:
                     attacks_override=attacks_override,
                     attacks_override_modifiers=attacks_override_modifiers,
                     attacks_override_note=attacks_override_note,
+                )
+                executed_declarations.append(
+                    _melee_declaration_diagnostic(
+                        target_unit=target_unit,
+                        model=model,
+                        weapon_profile=weapon_profile,
+                        reason="executed",
+                        attacks_executed=int(getattr(attack_result, "attacks_rolled", 0) or 0),
+                        damage_dealt=int(getattr(attack_result, "total_damage_dealt", 0) or 0),
+                        models_killed=int(getattr(attack_result, "models_killed", 0) or 0),
+                    )
                 )
             finally:
                 if provider_reset:
@@ -1363,6 +1437,11 @@ class FightPhaseManager:
             "hit_models_by_target": hit_models_by_target,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
+            "damage_by_target": damage_by_target,
+            "successful_attacks": sum(int(row.get("attacks_executed", 0) or 0) for row in executed_declarations),
+            "declaration_count": len(list(weapon_declarations or [])),
+            "executed_declarations": executed_declarations,
+            "skipped_declarations": skipped_declarations,
         }
 
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:

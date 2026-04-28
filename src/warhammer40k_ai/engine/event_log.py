@@ -149,9 +149,12 @@ class DeterministicEventLog:
         event_system.subscribe_group(EVENT_LOG_GROUP, "decision_resolved", self._on_decision_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_move_started", self._on_unit_move_started)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_move_ended", self._on_unit_move_ended)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "model_damage_resolved", self._on_model_damage_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed", self._on_model_destroyed)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_destroyed", self._on_unit_destroyed)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_shooting_resolved", self._on_unit_shooting_resolved)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "fight_attacks_resolved", self._on_fight_attacks_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "phase_start", self._on_phase_start)
         event_system.subscribe_group(EVENT_LOG_GROUP, "phase_end", self._on_phase_end)
         event_system.subscribe_group(EVENT_LOG_GROUP, "battle_round_started", self._on_battle_round_started)
@@ -425,6 +428,91 @@ class DeterministicEventLog:
             payload["model_positions"] = positions
         self.record("unit_move_ended", actor_id=None, payload=payload, validate_payload=True)
 
+    def _unit_count_map(self, values: Any) -> dict[str, int]:
+        if not isinstance(values, dict):
+            return {}
+        result: dict[str, int] = {}
+        for unit, count in values.items():
+            unit_id = maybe_entity_id(unit) or str(unit or "")
+            try:
+                result[str(unit_id)] = int(count or 0)
+            except (TypeError, ValueError):
+                result[str(unit_id)] = 0
+        return result
+
+    def _unit_model_ids_map(self, values: Any) -> dict[str, list[str]]:
+        if not isinstance(values, dict):
+            return {}
+        result: dict[str, list[str]] = {}
+        for unit, models in values.items():
+            unit_id = maybe_entity_id(unit) or str(unit or "")
+            model_ids = []
+            for model in list(models or []):
+                model_id = maybe_entity_id(model)
+                if model_id:
+                    model_ids.append(str(model_id))
+            result[str(unit_id)] = sorted(set(model_ids))
+        return result
+
+    def _unit_nested_model_ids_map(self, values: Any) -> dict[str, dict[str, list[str]]]:
+        if not isinstance(values, dict):
+            return {}
+        result: dict[str, dict[str, list[str]]] = {}
+        for unit, by_key in values.items():
+            unit_id = maybe_entity_id(unit) or str(unit or "")
+            nested: dict[str, list[str]] = {}
+            if isinstance(by_key, dict):
+                for key, models in by_key.items():
+                    model_ids = []
+                    for model in list(models or []):
+                        model_id = maybe_entity_id(model)
+                        if model_id:
+                            model_ids.append(str(model_id))
+                    nested[str(key or "")] = sorted(set(model_ids))
+            result[str(unit_id)] = nested
+        return result
+
+    def _unit_id_list(self, units: Any) -> list[str]:
+        ids = []
+        for unit in list(units or []):
+            unit_id = maybe_entity_id(unit)
+            if unit_id:
+                ids.append(str(unit_id))
+        return sorted(set(ids))
+
+    def _diagnostic_rows(self, rows: Any) -> list[dict[str, Any]]:
+        result = []
+        for row in list(rows or []):
+            if not isinstance(row, dict):
+                continue
+            result.append(
+                {
+                    str(key): encode_refs(value)
+                    for key, value in sorted(row.items(), key=lambda item: str(item[0]))
+                }
+            )
+        return result
+
+    def _on_model_damage_resolved(self, **kwargs: Any) -> None:
+        payload = {
+            "attacker_model_id": maybe_entity_id(kwargs.get("attacker_model")),
+            "attacker_unit_id": maybe_entity_id(kwargs.get("attacker_unit")),
+            "target_model_id": maybe_entity_id(kwargs.get("target_model")),
+            "target_unit_id": maybe_entity_id(kwargs.get("target_unit")),
+            "weapon_profile_id": maybe_entity_id(kwargs.get("weapon_profile")),
+            "weapon_profile_name": getattr(kwargs.get("weapon_profile"), "name", None),
+            "damage_source": str(kwargs.get("damage_source") or ""),
+            "attack_type": str(kwargs.get("attack_type") or ""),
+            "requested_damage": int(kwargs.get("requested_damage", 0) or 0),
+            "applied_damage": int(kwargs.get("applied_damage", 0) or 0),
+            "prevented_damage": int(kwargs.get("prevented_damage", 0) or 0),
+            "wounds_before": int(kwargs.get("wounds_before", 0) or 0),
+            "wounds_after": int(kwargs.get("wounds_after", 0) or 0),
+            "model_destroyed": bool(kwargs.get("model_destroyed", False)),
+            "is_mortal": bool(kwargs.get("is_mortal", False)),
+        }
+        self.record("model_damage_resolved", actor_id=payload.get("attacker_unit_id"), payload=payload, validate_payload=True)
+
     def _on_model_destroyed(self, **kwargs: Any) -> None:
         payload = {
             "attacker_model_id": maybe_entity_id(kwargs.get("attacker_model")),
@@ -454,6 +542,42 @@ class DeterministicEventLog:
             "weapon_profile_name": getattr(kwargs.get("destroyed_by_weapon_profile"), "name", None),
         }
         self.record("unit_destroyed", actor_id=payload.get("destroyed_by_unit_id"), payload=payload, validate_payload=True)
+
+    def _on_unit_shooting_resolved(self, **kwargs: Any) -> None:
+        attacker = kwargs.get("attacker_unit")
+        payload = {
+            "attacker_unit_id": maybe_entity_id(attacker),
+            "declared_target_unit_ids": self._unit_id_list(kwargs.get("declared_targets")),
+            "successful_attacks": int(kwargs.get("successful_attacks", 0) or 0),
+            "declaration_count": int(kwargs.get("declaration_count", 0) or 0),
+            "hits_by_target": self._unit_count_map(kwargs.get("hits_by_target")),
+            "hit_models_by_target": self._unit_model_ids_map(kwargs.get("hit_models_by_target")),
+            "hit_models_by_target_weapon": self._unit_nested_model_ids_map(kwargs.get("hit_models_by_target_weapon")),
+            "hit_models_by_target_psychic": self._unit_model_ids_map(kwargs.get("hit_models_by_target_psychic")),
+            "killing_models_by_target": self._unit_model_ids_map(kwargs.get("killing_models_by_target")),
+            "damage_by_target": self._unit_count_map(kwargs.get("damage_by_target")),
+            "damage_by_target_while_engaged": self._unit_count_map(kwargs.get("damage_by_target_while_engaged")),
+            "executed_declarations": self._diagnostic_rows(kwargs.get("executed_declarations")),
+            "skipped_declarations": self._diagnostic_rows(kwargs.get("skipped_declarations")),
+        }
+        self.record("unit_shooting_resolved", actor_id=payload.get("attacker_unit_id"), payload=payload, validate_payload=True)
+
+    def _on_fight_attacks_resolved(self, **kwargs: Any) -> None:
+        unit = kwargs.get("unit")
+        payload = {
+            "unit_id": maybe_entity_id(unit),
+            "target_unit_id": maybe_entity_id(kwargs.get("target_unit")),
+            "successful_attacks": int(kwargs.get("successful_attacks", 0) or 0),
+            "declaration_count": int(kwargs.get("declaration_count", 0) or 0),
+            "hits_by_target": self._unit_count_map(kwargs.get("hits_by_target")),
+            "hit_models_by_target": self._unit_model_ids_map(kwargs.get("hit_models_by_target")),
+            "hit_models_by_target_psychic": self._unit_model_ids_map(kwargs.get("hit_models_by_target_psychic")),
+            "killing_models_by_target": self._unit_model_ids_map(kwargs.get("killing_models_by_target")),
+            "damage_by_target": self._unit_count_map(kwargs.get("damage_by_target")),
+            "executed_declarations": self._diagnostic_rows(kwargs.get("executed_declarations")),
+            "skipped_declarations": self._diagnostic_rows(kwargs.get("skipped_declarations")),
+        }
+        self.record("fight_attacks_resolved", actor_id=payload.get("unit_id"), payload=payload, validate_payload=True)
 
     def _phase_label(self, phase: object) -> str:
         if phase is None:

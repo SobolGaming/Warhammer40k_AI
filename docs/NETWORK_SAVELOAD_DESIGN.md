@@ -95,6 +95,7 @@ Events are serialized state transitions and random outcomes. Examples:
 - decision_requested, decision_resolved
 - dice_roll, roll_made, roll_rerolled
 - unit_move_started, unit_move_ended
+- model_damage_resolved, unit_shooting_resolved, fight_attacks_resolved
 - model_destroyed, model_destroyed_before_removal, unit_destroyed
 - phase_start, phase_end, battle_round_started
 - objective_control_changed

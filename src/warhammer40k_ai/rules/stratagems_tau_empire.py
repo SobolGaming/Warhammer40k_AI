@@ -5804,42 +5804,55 @@ class TauEmpireStratagemMixin:
     def _use_tau_aggressive_mobility(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
+        selection_probe = bool(
+            kwargs.get("probe")
+            or kwargs.get("diagnostic_probe")
+            or kwargs.get("availability_probe")
+            or candidates
+        )
+
+        def _aggressive_mobility_validation_log(message: str) -> None:
+            if selection_probe:
+                logger.debug(message)
+            else:
+                logger.error(message)
+
         if target_unit is None and len(candidates) == 1:
             target_unit = candidates[0]
         if target_unit is None:
-            logger.error("ERROR: AGGRESSIVE MOBILITY: no target unit provided")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: no target unit provided")
             return False
 
         root = self._tau_root(target_unit)
         if root is None:
             return False
         if not self._tau_owned_by_player(root, self.player):
-            logger.error("ERROR: AGGRESSIVE MOBILITY: target unit is not yours")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: target unit is not yours")
             return False
         if not self._tau_on_battlefield(root, require_targetable=True):
             return False
         if not self._is_tau_empire_unit(root):
-            logger.error("ERROR: AGGRESSIVE MOBILITY: target must be a T'AU EMPIRE unit")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: target must be a T'AU EMPIRE unit")
             return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
         if phase_name != "movement phase":
-            logger.error("ERROR: AGGRESSIVE MOBILITY: wrong phase")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is not self.player:
-            logger.error("ERROR: AGGRESSIVE MOBILITY: not your turn")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: not your turn")
             return False
 
         eligible = candidates or self._tau_aggressive_mobility_candidates()
         if eligible and not self._tau_unit_in_candidates(root, eligible):
-            logger.error("ERROR: AGGRESSIVE MOBILITY: target is not currently eligible")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: target is not currently eligible")
             return False
         if self._tau_selected_to_move_this_phase(root):
-            logger.error("ERROR: AGGRESSIVE MOBILITY: target has already been selected to move this phase")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: target has already been selected to move this phase")
             return False
         if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
-            logger.error("ERROR: AGGRESSIVE MOBILITY: cannot be used in current state")
+            _aggressive_mobility_validation_log("ERROR: AGGRESSIVE MOBILITY: cannot be used in current state")
             return False
         if not self._tau_spend_cp(stratagem, target_unit=root):
             return False
@@ -5966,6 +5979,20 @@ class TauEmpireStratagemMixin:
         )
         friendly_candidates = list(kwargs.get("friendly_candidates") or [])
         enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        selection_probe = bool(
+            kwargs.get("probe")
+            or kwargs.get("diagnostic_probe")
+            or kwargs.get("availability_probe")
+            or (selected_units is None and enemy_unit is None)
+            or ((selected_units is None or enemy_unit is None) and (friendly_candidates or enemy_candidates))
+        )
+
+        def _focused_fire_validation_log(message: str) -> None:
+            if selection_probe:
+                logger.debug(message)
+            else:
+                logger.error(message)
+
         if not friendly_candidates or not enemy_candidates or selected_units is None or enemy_unit is None:
             for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
                 if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
@@ -5988,55 +6015,55 @@ class TauEmpireStratagemMixin:
 
         selected_roots = self._tau_resolve_unit_list(selected_units)
         if not selected_roots:
-            logger.error("ERROR: FOCUSED FIRE: no friendly target units provided")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: no friendly target units provided")
             return False
         if len(selected_roots) != 2:
-            logger.error("ERROR: FOCUSED FIRE: must select exactly two friendly T'AU EMPIRE units")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: must select exactly two friendly T'AU EMPIRE units")
             return False
         enemy_root = self._tau_root(enemy_unit)
         if enemy_root is None:
             if len(enemy_candidates) == 1:
                 enemy_root = self._tau_root(enemy_candidates[0])
             else:
-                logger.error("ERROR: FOCUSED FIRE: no enemy target unit provided")
+                _focused_fire_validation_log("ERROR: FOCUSED FIRE: no enemy target unit provided")
                 return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
         if phase_name != "shooting phase":
-            logger.error("ERROR: FOCUSED FIRE: wrong phase")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is not self.player:
-            logger.error("ERROR: FOCUSED FIRE: not your Shooting phase")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: not your Shooting phase")
             return False
         if self._tau_current_battle_round() >= 4:
-            logger.error("ERROR: FOCUSED FIRE: cannot be used in battle rounds 4 or 5")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: cannot be used in battle rounds 4 or 5")
             return False
 
         eligible_friendly = friendly_candidates or self._tau_focused_fire_friendly_candidates()
         if len(eligible_friendly) < 2:
-            logger.error("ERROR: FOCUSED FIRE: requires two eligible friendly units that have not been selected to shoot")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: requires two eligible friendly units that have not been selected to shoot")
             return False
         for root in list(selected_roots):
             if not self._tau_unit_in_candidates(root, eligible_friendly):
-                logger.error("ERROR: FOCUSED FIRE: one or more selected friendly units are not eligible")
+                _focused_fire_validation_log("ERROR: FOCUSED FIRE: one or more selected friendly units are not eligible")
                 return False
             if not self._tau_owned_by_player(root, self.player):
-                logger.error("ERROR: FOCUSED FIRE: selected friendly unit is not yours")
+                _focused_fire_validation_log("ERROR: FOCUSED FIRE: selected friendly unit is not yours")
                 return False
             if not self._is_tau_empire_unit(root):
-                logger.error("ERROR: FOCUSED FIRE: selected friendly units must be T'AU EMPIRE")
+                _focused_fire_validation_log("ERROR: FOCUSED FIRE: selected friendly units must be T'AU EMPIRE")
                 return False
             if self._tau_has_shot_this_phase(root):
-                logger.error("ERROR: FOCUSED FIRE: selected friendly units must not have been selected to shoot")
+                _focused_fire_validation_log("ERROR: FOCUSED FIRE: selected friendly units must not have been selected to shoot")
                 return False
 
         if self._tau_owned_by_player(enemy_root, self.player):
-            logger.error("ERROR: FOCUSED FIRE: enemy target is invalid")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: enemy target is invalid")
             return False
         eligible_enemy = enemy_candidates or self._tau_focused_fire_enemy_candidates()
         if eligible_enemy and not self._tau_unit_in_candidates(enemy_root, eligible_enemy):
-            logger.error("ERROR: FOCUSED FIRE: enemy target is not currently eligible")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: enemy target is not currently eligible")
             return False
         if not self._tau_on_battlefield(enemy_root, require_targetable=True):
             return False
@@ -6049,7 +6076,7 @@ class TauEmpireStratagemMixin:
             target_unit=enemy_root,
             phase_name="Shooting phase",
         ):
-            logger.error("ERROR: FOCUSED FIRE: cannot be used in current state")
+            _focused_fire_validation_log("ERROR: FOCUSED FIRE: cannot be used in current state")
             return False
         if not self._tau_spend_cp(stratagem, target_unit=first):
             return False

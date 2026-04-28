@@ -14,6 +14,7 @@ from ..utility.profiling_sections import profiled_section
 
 
 _VISIBILITY_CONTEXT_CACHE_MAX = 8192
+_SEGMENT_BLOCK_CACHE_MAX = 65536
 
 
 def _json_safe(value: Any) -> Any:
@@ -173,8 +174,38 @@ def _unit_visibility_key(unit: object | None) -> tuple[Any, ...]:
 
 
 def _terrain_visibility_signature(game_map: object) -> tuple[Any, ...]:
+    terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+    terrain_cache_key = []
+    for terrain in terrain_features:
+        terrain_cache_key.append(
+            (
+                id(terrain),
+                id(getattr(terrain, "footprint", None)),
+                len(list(getattr(terrain, "walls", []) or [])),
+                len(list(getattr(terrain, "openings", []) or [])),
+                bool(getattr(terrain, "obscuring", False)),
+                round(float(getattr(terrain, "height", 0.0) or 0.0), 4),
+                round(float(getattr(terrain, "rim_height", 0.0) or 0.0), 4),
+            )
+        )
+    area_cache_key = []
+    for area in iter_terrain_areas(game_map):
+        area_cache_key.append(
+            (
+                id(area),
+                id(getattr(area, "footprint", None)),
+                bool(getattr(area, "obscuring", False)),
+                getattr(area, "detection_range", None),
+                tuple(sorted(str(tag or "") for tag in list(getattr(area, "effect_tags", []) or []))),
+            )
+        )
+    cache_key = (tuple(terrain_cache_key), tuple(area_cache_key))
+    cached = getattr(game_map, "_terrain_visibility_signature_cache", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == cache_key:
+        return cached[1]
+
     rows: list[tuple[Any, ...]] = []
-    for terrain in list(getattr(game_map, "terrain_features", []) or []):
+    for terrain in terrain_features:
         footprint = getattr(terrain, "footprint", None)
         wall_rows: list[tuple[Any, ...]] = []
         for wall in list(getattr(terrain, "walls", []) or []):
@@ -227,7 +258,109 @@ def _terrain_visibility_signature(game_map: object) -> tuple[Any, ...]:
             )
         )
     area_rows.sort(key=lambda item: str(item[0]))
-    return (tuple(rows), tuple(area_rows))
+    result = (tuple(rows), tuple(area_rows))
+    try:
+        setattr(game_map, "_terrain_visibility_signature_cache", (cache_key, result))
+    except (AttributeError, TypeError):
+        pass
+    return result
+
+
+def _terrain_feature_visibility_key(terrain: object) -> tuple[Any, ...]:
+    footprint = getattr(terrain, "footprint", None)
+    wall_rows: list[tuple[Any, ...]] = []
+    for wall in list(getattr(terrain, "walls", []) or []):
+        if not isinstance(wall, dict):
+            continue
+        wall_rows.append(
+            (
+                _rounded_bounds(wall.get("polygon")),
+                round(float(wall.get("z_bottom", 0.0) or 0.0), 4),
+                round(float(wall.get("z_top", wall.get("z_bottom", 0.0)) or 0.0), 4),
+            )
+        )
+    opening_rows: list[tuple[Any, ...]] = []
+    for opening in list(getattr(terrain, "openings", []) or []):
+        if not isinstance(opening, dict):
+            continue
+        opening_rows.append(
+            (
+                _rounded_bounds(opening.get("polygon")),
+                round(float(opening.get("z_bottom", 0.0) or 0.0), 4),
+                round(float(opening.get("z_top", 0.0) or 0.0), 4),
+                bool(opening.get("allows_los", False)),
+            )
+        )
+    wall_rows.sort(key=lambda item: str(item))
+    opening_rows.sort(key=lambda item: str(item))
+    return (
+        str(getattr(terrain, "id", "") or id(terrain)),
+        str(getattr(getattr(terrain, "terrain_type", None), "name", "") or ""),
+        _rounded_bounds(footprint),
+        bool(getattr(terrain, "obscuring", False)),
+        round(float(getattr(terrain, "height", 0.0) or 0.0), 4),
+        round(float(getattr(terrain, "rim_height", 0.0) or 0.0), 4),
+        tuple(wall_rows),
+        tuple(opening_rows),
+    )
+
+
+def _rounded_point3(value: tuple[float, float, float]) -> tuple[float, float, float]:
+    return (
+        round(float(value[0]), 4),
+        round(float(value[1]), 4),
+        round(float(value[2]), 4),
+    )
+
+
+def _segment_block_cache(terrain: object) -> OrderedDict:
+    cache = getattr(terrain, "_segment_block_cache", None)
+    if isinstance(cache, OrderedDict):
+        return cache
+    cache = OrderedDict()
+    try:
+        setattr(terrain, "_segment_block_cache", cache)
+    except (AttributeError, TypeError):
+        pass
+    return cache
+
+
+def _segment_block_cache_key(
+    p0: tuple[float, float, float],
+    p1: tuple[float, float, float],
+    terrain: object,
+    shooter_model: object,
+    target_model: object,
+) -> tuple[Any, ...]:
+    shooter_unit = getattr(shooter_model, "parent_unit", None)
+    target_unit = getattr(target_model, "parent_unit", None)
+    return (
+        "segment_blocked_v1",
+        _rounded_point3(p0),
+        _rounded_point3(p1),
+        str(getattr(terrain, "id", "") or id(terrain)),
+        _model_visibility_key(shooter_model),
+        _model_visibility_key(target_model),
+        _unit_visibility_key(shooter_unit),
+        _unit_visibility_key(target_unit),
+    )
+
+
+def _segment_block_cache_get(terrain: object, key: tuple[Any, ...]) -> bool | None:
+    cache = _segment_block_cache(terrain)
+    if key not in cache:
+        return None
+    value = bool(cache[key])
+    cache.move_to_end(key)
+    return value
+
+
+def _segment_block_cache_set(terrain: object, key: tuple[Any, ...], result: bool) -> None:
+    cache = _segment_block_cache(terrain)
+    cache[key] = bool(result)
+    cache.move_to_end(key)
+    while len(cache) > _SEGMENT_BLOCK_CACHE_MAX:
+        cache.popitem(last=False)
 
 
 def _visibility_context_cache_key(game_map: object, shooter_model: object, target_model: object) -> tuple[Any, ...]:
@@ -279,6 +412,22 @@ def _visibility_context_cache_set(game_map: object, key: tuple[Any, ...], result
 
 @profiled_section("los.segment_blocked_by_terrain")
 def segment_blocked_by_terrain_feature(
+    p0: tuple[float, float, float],
+    p1: tuple[float, float, float],
+    terrain: object,
+    shooter_model: object,
+    target_model: object,
+) -> bool:
+    cache_key = _segment_block_cache_key(p0, p1, terrain, shooter_model, target_model)
+    cached = _segment_block_cache_get(terrain, cache_key)
+    if cached is not None:
+        return bool(cached)
+    result = _segment_blocked_by_terrain_feature_uncached(p0, p1, terrain, shooter_model, target_model)
+    _segment_block_cache_set(terrain, cache_key, bool(result))
+    return bool(result)
+
+
+def _segment_blocked_by_terrain_feature_uncached(
     p0: tuple[float, float, float],
     p1: tuple[float, float, float],
     terrain: object,

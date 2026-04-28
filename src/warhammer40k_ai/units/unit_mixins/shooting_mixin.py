@@ -9,6 +9,37 @@ logger = logging.getLogger(__name__)
 _SHOOTING_LOS_CACHE_MAX = 8192
 
 
+def _shooting_entity_id(entity: object | None) -> str:
+    if entity is None:
+        return ""
+    try:
+        return str(get_entity_id(entity) or "")
+    except ValueError:
+        return ""
+
+
+def _shooting_declaration_diagnostic(
+    *,
+    target_unit: object | None,
+    weapon_profile: object | None,
+    models: object,
+    reason: str = "",
+    attacks_executed: int | None = None,
+) -> dict:
+    model_list = list(models or [])
+    row = {
+        "target_unit_id": _shooting_entity_id(target_unit),
+        "weapon_profile_id": _shooting_entity_id(weapon_profile),
+        "weapon_profile_name": str(getattr(weapon_profile, "name", "") or ""),
+        "model_count": len(model_list),
+        "model_ids": [_shooting_entity_id(model) for model in model_list if model is not None],
+        "reason": str(reason or ""),
+    }
+    if attacks_executed is not None:
+        row["attacks_executed"] = int(attacks_executed or 0)
+    return row
+
+
 def _shooting_los_entity_key(entity: object | None) -> str:
     if entity is None:
         return ""
@@ -464,6 +495,8 @@ class ShootingMixin:
         attack_tracker = {}
         damage_by_target = {}
         damage_by_target_while_engaged = {}
+        executed_declarations = []
+        skipped_declarations = []
         touched_targets = []
         try:
             seen_targets = set()
@@ -643,6 +676,15 @@ class ShootingMixin:
                     weapon_instance=weapon_instance,
                 )
                 successful_attacks += weapon_attacks
+                executed_declarations.append(
+                    _shooting_declaration_diagnostic(
+                        target_unit=target_unit,
+                        weapon_profile=weapon_profile,
+                        models=models_with_weapon,
+                        reason="plasma_warhead",
+                        attacks_executed=int(weapon_attacks or 0),
+                    )
+                )
                 continue
             try:
                 within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
@@ -660,6 +702,14 @@ class ShootingMixin:
                 )
                 if not validation['valid']:
                     logger.info(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
+                    skipped_declarations.append(
+                        _shooting_declaration_diagnostic(
+                            target_unit=target_unit,
+                            weapon_profile=weapon_profile,
+                            models=models_with_weapon,
+                            reason=str(validation.get("reason", "") or ""),
+                        )
+                    )
                     continue
 
                 # Execute attacks with this weapon
@@ -678,6 +728,15 @@ class ShootingMixin:
                     target_was_within_attacker_engagement=target_was_within_attacker_engagement,
                 )
                 successful_attacks += weapon_attacks
+                executed_declarations.append(
+                    _shooting_declaration_diagnostic(
+                        target_unit=target_unit,
+                        weapon_profile=weapon_profile,
+                        models=models_with_weapon,
+                        reason="executed",
+                        attacks_executed=int(weapon_attacks or 0),
+                    )
+                )
                 if (
                     int(weapon_attacks or 0) > 0
                     and (not sorrowsyphon_triggered)
@@ -784,6 +843,10 @@ class ShootingMixin:
                     damage_by_target=dict(damage_by_target),
                     damage_by_target_while_engaged=dict(damage_by_target_while_engaged),
                     declared_targets=list(declared_targets),
+                    successful_attacks=int(successful_attacks or 0),
+                    declaration_count=len(list(weapon_declarations or [])),
+                    executed_declarations=list(executed_declarations),
+                    skipped_declarations=list(skipped_declarations),
                 )
         except Exception:
             pass
@@ -804,7 +867,29 @@ class ShootingMixin:
                 if not target_unit.is_alive():
                     logger.info(f"{target_unit.name} has been destroyed!")
         else:
-            logger.warning(f"{self.name} resolved shooting with no executable attacks")
+            reason_counts = {}
+            for row in list(skipped_declarations or []):
+                reason = str(row.get("reason", "") or "unknown")
+                reason_counts[reason] = int(reason_counts.get(reason, 0) or 0) + 1
+            if reason_counts:
+                logger.warning(
+                    "%s resolved shooting with no executable attacks; skipped declarations by reason: %s",
+                    self.name,
+                    reason_counts,
+                )
+            elif executed_declarations:
+                zero_attack_weapons = [
+                    str(row.get("weapon_profile_name", "") or "unknown")
+                    for row in list(executed_declarations or [])
+                    if int(row.get("attacks_executed", 0) or 0) <= 0
+                ]
+                logger.warning(
+                    "%s resolved shooting with no executable attacks; zero-attack declarations: %s",
+                    self.name,
+                    zero_attack_weapons,
+                )
+            else:
+                logger.warning(f"{self.name} resolved shooting with no executable attacks")
             
         # End attack resolution window(s) and resolve pending separations (now that this unit is done attacking).
         try:

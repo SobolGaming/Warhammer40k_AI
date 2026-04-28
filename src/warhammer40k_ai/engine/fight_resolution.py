@@ -137,6 +137,7 @@ def _accumulate_attack_summary(totals, attack_summary) -> None:
     hit_models_by_target_total = totals["hit_models_by_target"]
     hit_models_by_target_psychic_total = totals["hit_models_by_target_psychic"]
     killing_models_by_target_total = totals["killing_models_by_target"]
+    damage_by_target_total = totals["damage_by_target"]
     for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
         hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
     for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
@@ -160,6 +161,12 @@ def _accumulate_attack_summary(totals, attack_summary) -> None:
             killing_models_by_target_total[unit].update(set(models or []))
         except Exception:
             pass
+    for unit, damage in (attack_summary.get("damage_by_target") or {}).items():
+        damage_by_target_total[unit] = int(damage_by_target_total.get(unit, 0) or 0) + int(damage or 0)
+    totals["successful_attacks"] = int(totals.get("successful_attacks", 0) or 0) + int(attack_summary.get("successful_attacks", 0) or 0)
+    totals["declaration_count"] = int(totals.get("declaration_count", 0) or 0) + int(attack_summary.get("declaration_count", 0) or 0)
+    totals["executed_declarations"].extend(list(attack_summary.get("executed_declarations") or []))
+    totals["skipped_declarations"].extend(list(attack_summary.get("skipped_declarations") or []))
 
 
 def _publish_attack_summary(manager, fighting_unit, target_unit, attack_summary) -> None:
@@ -173,6 +180,11 @@ def _publish_attack_summary(manager, fighting_unit, target_unit, attack_summary)
                 hit_models_by_target=attack_summary.get("hit_models_by_target"),
                 hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                 killing_models_by_target=attack_summary.get("killing_models_by_target"),
+                damage_by_target=attack_summary.get("damage_by_target"),
+                successful_attacks=int(attack_summary.get("successful_attacks", 0) or 0),
+                declaration_count=int(attack_summary.get("declaration_count", 0) or 0),
+                executed_declarations=list(attack_summary.get("executed_declarations") or []),
+                skipped_declarations=list(attack_summary.get("skipped_declarations") or []),
             )
     except Exception:
         pass
@@ -183,6 +195,7 @@ def _finalize_attack_totals(manager, fighting_unit, totals) -> None:
     hit_models_by_target_total = totals["hit_models_by_target"]
     hit_models_by_target_psychic_total = totals["hit_models_by_target_psychic"]
     killing_models_by_target_total = totals["killing_models_by_target"]
+    damage_by_target_total = totals["damage_by_target"]
     if hits_by_target_total:
         manager.game._maybe_trigger_daemonic_poisons(
             attacker_unit=manager._as_attached_view(fighting_unit),
@@ -208,6 +221,11 @@ def _finalize_attack_totals(manager, fighting_unit, totals) -> None:
                 hit_models_by_target=hit_models_by_target_total,
                 hit_models_by_target_psychic=hit_models_by_target_psychic_total,
                 killing_models_by_target=killing_models_by_target_total,
+                damage_by_target=damage_by_target_total,
+                successful_attacks=int(totals.get("successful_attacks", 0) or 0),
+                declaration_count=int(totals.get("declaration_count", 0) or 0),
+                executed_declarations=list(totals.get("executed_declarations") or []),
+                skipped_declarations=list(totals.get("skipped_declarations") or []),
             )
     except Exception:
         pass
@@ -224,6 +242,11 @@ def _resolve_target_declaration_attacks(manager, fighting_unit, target_declarati
         "hit_models_by_target": {},
         "hit_models_by_target_psychic": {},
         "killing_models_by_target": {},
+        "damage_by_target": {},
+        "successful_attacks": 0,
+        "declaration_count": 0,
+        "executed_declarations": [],
+        "skipped_declarations": [],
     }
     for target_unit, attacking_models in target_declarations.items():
         decls = list(decl_source or [])
@@ -247,6 +270,11 @@ def _resolve_allocated_melee_attacks(manager, fighting_unit, ordered_target_unit
         "hit_models_by_target": {},
         "hit_models_by_target_psychic": {},
         "killing_models_by_target": {},
+        "damage_by_target": {},
+        "successful_attacks": 0,
+        "declaration_count": 0,
+        "executed_declarations": [],
+        "skipped_declarations": [],
     }
     for target_unit in list(ordered_target_units or []):
         decls = list(grouped.get(target_unit, []) or [])

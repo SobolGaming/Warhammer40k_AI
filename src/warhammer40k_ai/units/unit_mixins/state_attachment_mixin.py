@@ -85,6 +85,74 @@ def _split_named_unit_list(value: str) -> list[str]:
     return [re.sub(r"\s+", " ", part).strip() for part in parts if str(part or "").strip()]
 
 
+def _effective_keyword_entity_id(entity: object | None) -> str:
+    if entity is None:
+        return ""
+    value = getattr(entity, "id", None) or getattr(entity, "_id", None)
+    return str(value or id(entity))
+
+
+def _effective_keyword_alive(entity: object) -> bool:
+    alive_attr = getattr(entity, "is_alive", True)
+    return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+
+def _effective_keyword_cache_signature(root: object, members: list[object]) -> tuple:
+    map_generation = 0
+    try:
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        map_generation = int(getattr(game_map, "state_generation", 0) or 0)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        map_generation = 0
+
+    member_rows = []
+    for u in list(members or []):
+        sr = getattr(u, "special_rules", None)
+        if isinstance(sr, dict):
+            added_keywords = tuple(sorted(str(value or "") for value in list(sr.get("ability_added_keywords", []) or [])))
+            removed_keywords = tuple(sorted(str(value or "") for value in list(sr.get("ability_removed_keywords", []) or [])))
+            special_row = (
+                added_keywords,
+                removed_keywords,
+                str(sr.get("canticles_of_the_omnissiah_selected_mode_key", "") or ""),
+                bool(sr.get("enhancement_hero_of_the_chapter", False)),
+                str(sr.get("enhancement_hero_of_the_chapter_keyword", "") or ""),
+                str(sr.get("enhancement_bearer_model_id", "") or ""),
+            )
+        else:
+            special_row = ((), (), "", False, "", "")
+        round_state = getattr(u, "round_state", None)
+        model_rows = []
+        for model in list(getattr(u, "models", []) or []):
+            model_rows.append(
+                (
+                    _effective_keyword_entity_id(model),
+                    _effective_keyword_alive(model),
+                    bool(getattr(model, "_pending_placement", False)),
+                )
+            )
+        member_rows.append(
+            (
+                _effective_keyword_entity_id(u),
+                int(getattr(u, "_ability_structure_generation", 0) or 0),
+                int(getattr(u, "_ability_activity_generation", 0) or 0),
+                bool(getattr(u, "hover_mode", False)),
+                bool(getattr(round_state, "fell_back_this_round", False)),
+                tuple(model_rows),
+                special_row,
+            )
+        )
+    return (
+        "effective_keywords_v1",
+        int(getattr(root, "_ability_structure_generation", 0) or 0),
+        int(getattr(root, "_ability_activity_generation", 0) or 0),
+        map_generation,
+        tuple(member_rows),
+    )
+
+
 class StateAttachmentMixin:
     def add_model(self, model: Model) -> None:
         assert model not in self.models
@@ -2871,6 +2939,18 @@ class StateAttachmentMixin:
             members = root.get_attached_unit_members()
         except Exception:
             members = [self]
+        cache = getattr(root, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            try:
+                root._ability_cache = cache
+            except (AttributeError, TypeError):
+                cache = None
+        cache_key = _effective_keyword_cache_signature(root, list(members or []))
+        if isinstance(cache, dict):
+            cached = cache.get(cache_key)
+            if isinstance(cached, tuple):
+                return list(cached)
         kws: list[str] = []
         seen: set[str] = set()
         for u in members:
@@ -2991,6 +3071,8 @@ class StateAttachmentMixin:
                         kws.append("ENTRENCHED")
             except Exception:
                 continue
+        if isinstance(cache, dict):
+            cache[cache_key] = tuple(kws)
         return kws
 
     def get_effective_faction_keywords(self) -> List[str]:

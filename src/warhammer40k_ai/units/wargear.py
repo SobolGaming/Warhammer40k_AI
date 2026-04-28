@@ -9095,6 +9095,27 @@ class WargearProfile:
                             hit_models_by_target_psychic.setdefault(target, set()).add(attacker)
                 except Exception:
                     pass
+        if isinstance(attack_context, dict) and str(attack_context.get("attack_type", "") or "").lower() == "melee":
+            try:
+                kills = int(getattr(attack_result, "models_killed", 0) or 0)
+            except (TypeError, ValueError):
+                kills = 0
+            if kills > 0:
+                kill_map = attack_context.get("killing_models_by_target")
+                if not isinstance(kill_map, dict):
+                    kill_map = {}
+                    attack_context["killing_models_by_target"] = kill_map
+                kill_map.setdefault(target, set()).add(attacker)
+            try:
+                damage = int(getattr(attack_result, "total_damage_dealt", 0) or 0)
+            except (TypeError, ValueError):
+                damage = 0
+            if damage > 0:
+                damage_map = attack_context.get("damage_by_target")
+                if not isinstance(damage_map, dict):
+                    damage_map = {}
+                    attack_context["damage_by_target"] = damage_map
+                damage_map[target] = int(damage_map.get(target, 0) or 0) + damage
 
         return attack_result
 
@@ -29477,11 +29498,56 @@ class WargearProfile:
         # Apply the final damage
         result['damage_applied'] = final_damage
         target_has_wounds = hasattr(target_model, "wounds")
+        wounds_before = int(getattr(target_model, "wounds", 0) or 0) if target_has_wounds else 0
         if target_has_wounds:
             try:
                 target_model.wounds -= final_damage
             except Exception:
                 pass
+        wounds_after = int(getattr(target_model, "wounds", 0) or 0) if target_has_wounds else wounds_before
+        target_unit = getattr(target_model, "parent_unit", None)
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        game = None
+        for candidate_unit in (target_unit, attacker_unit):
+            if game is not None or candidate_unit is None:
+                continue
+            get_army = getattr(candidate_unit, "get_parent_army", None)
+            if not callable(get_army):
+                continue
+            try:
+                army = get_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except (AttributeError, RuntimeError, ValueError):
+                game = None
+        if game is not None and hasattr(game, "event_system"):
+            parent_wargear = getattr(self, "parent_wargear", None)
+            is_melee = getattr(parent_wargear, "is_melee", None)
+            is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(is_melee) and bool(is_melee()):
+                attack_type = "melee"
+            elif callable(is_ranged) and bool(is_ranged()):
+                attack_type = "shooting"
+            else:
+                attack_type = "attack"
+            alive_attr = getattr(target_model, "is_alive", True)
+            model_destroyed = bool(not (alive_attr() if callable(alive_attr) else alive_attr))
+            game.event_system.publish(
+                "model_damage_resolved",
+                attacker_model=attacker,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                target_unit=target_unit,
+                weapon_profile=self,
+                damage_source="attack",
+                attack_type=attack_type,
+                requested_damage=int(damage_amount or 0),
+                applied_damage=int(final_damage or 0),
+                prevented_damage=max(0, int(damage_amount or 0) - int(final_damage or 0)),
+                wounds_before=wounds_before,
+                wounds_after=wounds_after,
+                model_destroyed=model_destroyed,
+                is_mortal=bool(is_mortal),
+            )
 
         # Stratagem trigger support: publish an event whenever a mortal wound is allocated.
         if is_mortal:

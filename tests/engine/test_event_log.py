@@ -16,6 +16,12 @@ from warhammer40k_ai.utility.game_context import game_context
 from warhammer40k_ai.utility.reroll_tracker import prepare_reroll_event
 
 
+class _Entity:
+    def __init__(self, entity_id: str, name: str = ""):
+        self.id = entity_id
+        self.name = name
+
+
 def test_dice_roll_replay_from_event_log():
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1
@@ -151,6 +157,95 @@ def test_destroy_events_logged():
     assert unit_payload["unit_id"] == "tu1"
     assert unit_payload["destroyed_by_unit_id"] == "au1"
     assert unit_payload["weapon_profile_id"] == "wp1"
+
+
+def test_combat_diagnostic_events_logged():
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+    attacker_unit = _Entity("attacker-unit", "Attacker")
+    attacker_model = _Entity("attacker-model", "Attacker Model")
+    target_unit = _Entity("target-unit", "Target")
+    target_model = _Entity("target-model", "Target Model")
+    weapon_profile = _Entity("weapon-profile", "Test Rifle")
+
+    game.event_system.publish(
+        "model_damage_resolved",
+        attacker_model=attacker_model,
+        attacker_unit=attacker_unit,
+        target_model=target_model,
+        target_unit=target_unit,
+        weapon_profile=weapon_profile,
+        damage_source="attack",
+        attack_type="shooting",
+        requested_damage=3,
+        applied_damage=2,
+        prevented_damage=1,
+        wounds_before=4,
+        wounds_after=2,
+        model_destroyed=False,
+        is_mortal=False,
+    )
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=attacker_unit,
+        declared_targets=[target_unit],
+        successful_attacks=3,
+        declaration_count=2,
+        hits_by_target={target_unit: 2},
+        hit_models_by_target={target_unit: {attacker_model}},
+        hit_models_by_target_weapon={target_unit: {"test rifle": {attacker_model}}},
+        hit_models_by_target_psychic={},
+        killing_models_by_target={},
+        damage_by_target={target_unit: 2},
+        damage_by_target_while_engaged={},
+        executed_declarations=[
+            {
+                "target_unit_id": target_unit.id,
+                "weapon_profile_id": weapon_profile.id,
+                "weapon_profile_name": weapon_profile.name,
+                "model_count": 1,
+                "attacks_executed": 3,
+                "reason": "executed",
+            }
+        ],
+        skipped_declarations=[
+            {
+                "target_unit_id": target_unit.id,
+                "weapon_profile_id": weapon_profile.id,
+                "weapon_profile_name": weapon_profile.name,
+                "model_count": 1,
+                "reason": "out_of_range",
+            }
+        ],
+    )
+    game.event_system.publish(
+        "fight_attacks_resolved",
+        unit=attacker_unit,
+        target_unit=target_unit,
+        successful_attacks=1,
+        declaration_count=1,
+        hits_by_target={target_unit: 1},
+        hit_models_by_target={target_unit: {attacker_model}},
+        hit_models_by_target_psychic={},
+        killing_models_by_target={},
+        damage_by_target={target_unit: 2},
+        executed_declarations=[{"model_id": attacker_model.id, "attacks_executed": 1, "reason": "executed"}],
+        skipped_declarations=[],
+    )
+
+    damage_event = [e for e in game.event_log.events if e.event_type == "model_damage_resolved"][-1]
+    shooting_event = [e for e in game.event_log.events if e.event_type == "unit_shooting_resolved"][-1]
+    fight_event = [e for e in game.event_log.events if e.event_type == "fight_attacks_resolved"][-1]
+
+    assert damage_event.payload["target_model_id"] == target_model.id
+    assert damage_event.payload["applied_damage"] == 2
+    assert shooting_event.payload["declared_target_unit_ids"] == [target_unit.id]
+    assert shooting_event.payload["hits_by_target"] == {target_unit.id: 2}
+    assert shooting_event.payload["hit_models_by_target_weapon"] == {target_unit.id: {"test rifle": [attacker_model.id]}}
+    assert shooting_event.payload["executed_declarations"][0]["attacks_executed"] == 3
+    assert shooting_event.payload["skipped_declarations"][0]["reason"] == "out_of_range"
+    assert fight_event.payload["damage_by_target"] == {target_unit.id: 2}
+    assert fight_event.payload["successful_attacks"] == 1
 
 
 def test_replay_helper_consumes_event_tail():

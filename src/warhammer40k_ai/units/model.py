@@ -19,6 +19,19 @@ logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
 
 
+def _damage_attack_type(weapon_profile: Optional['WargearProfile'], *, is_mortal: bool, damage_source: str) -> str:
+    if weapon_profile is None:
+        return "mortal" if is_mortal else str(damage_source or "non_attack")
+    parent = getattr(weapon_profile, "parent_wargear", None)
+    is_melee = getattr(parent, "is_melee", None)
+    if callable(is_melee) and bool(is_melee()):
+        return "melee"
+    is_ranged = getattr(parent, "is_ranged", None)
+    if callable(is_ranged) and bool(is_ranged()):
+        return "shooting"
+    return "attack"
+
+
 class Model:
     """Represents a Warhammer 40k model with its attributes and wargear."""
 
@@ -2147,6 +2160,8 @@ class Model:
         attack_context: Optional[dict] = None,
         damage_source: Optional[str] = None,
     ) -> int:
+        requested_damage = int(amount or 0)
+        wounds_before = int(getattr(self, "wounds", 0) or 0)
         try:
             if damage_source is None:
                 damage_source = "attack" if weapon_profile is not None else "non_attack"
@@ -2236,6 +2251,43 @@ class Model:
         
         self.wounds -= amount
         logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
+        applied_damage = int(amount or 0)
+        wounds_after = int(getattr(self, "wounds", 0) or 0)
+        atk_ctx = attack_context if isinstance(attack_context, dict) else {}
+        attacker_model = atk_ctx.get("attacker_model")
+        attacker_unit = atk_ctx.get("attacker_unit")
+        target_unit = getattr(self, "parent_unit", None)
+        game = getattr(game_map, "game", None) if game_map is not None else None
+        if game is None and target_unit is not None:
+            get_army = getattr(target_unit, "get_parent_army", None)
+            if callable(get_army):
+                try:
+                    army = get_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except (AttributeError, RuntimeError, ValueError):
+                    game = None
+        if game is not None and hasattr(game, "event_system"):
+            game.event_system.publish(
+                "model_damage_resolved",
+                attacker_model=attacker_model,
+                attacker_unit=attacker_unit,
+                target_model=self,
+                target_unit=target_unit,
+                weapon_profile=weapon_profile,
+                damage_source=str(damage_source or ""),
+                attack_type=_damage_attack_type(
+                    weapon_profile,
+                    is_mortal=bool(is_mortal),
+                    damage_source=str(damage_source or ""),
+                ),
+                requested_damage=requested_damage,
+                applied_damage=applied_damage,
+                prevented_damage=max(0, requested_damage - applied_damage),
+                wounds_before=wounds_before,
+                wounds_after=wounds_after,
+                model_destroyed=not self.is_alive,
+                is_mortal=bool(is_mortal),
+            )
         excess_damage = 0
         if not self.is_alive:
             self.die(game_map=game_map)
