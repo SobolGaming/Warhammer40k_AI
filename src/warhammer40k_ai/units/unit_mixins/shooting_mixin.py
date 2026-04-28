@@ -1353,13 +1353,7 @@ class ShootingMixin:
                     continue
 
             # Check if this model has the weapon
-            has_weapon = False
-            for wargear in model.wargear:
-                if weapon_profile.parent_wargear == wargear:
-                    has_weapon = True
-                    break
-
-            if not has_weapon:
+            if not self._model_has_weapon_profile(model, weapon_profile):
                 continue
 
             # ONE SHOT: weapons with this keyword can only be used once per battle (per model).
@@ -1373,9 +1367,9 @@ class ShootingMixin:
                 # If anything goes wrong, do not block the shot.
                 pass
 
-        # Check range and line of sight (use origin unit for Linked Fire/Infernal Puppeteer if provided)
-        if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
-            models_in_range.append(model)
+            # Check range and line of sight (use origin unit for Linked Fire/Infernal Puppeteer if provided)
+            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
+                models_in_range.append(model)
 
         if not models_in_range:
             return {"valid": False, "reason": "No models in range or line of sight"}
@@ -1909,9 +1903,29 @@ class ShootingMixin:
 
     def _model_has_weapon_profile(self, model, weapon_profile) -> bool:
         """Return True if the model has the specified weapon profile equipped."""
+        selected_profile_id = _shooting_entity_id(weapon_profile)
+        selected_profile_name = str(getattr(weapon_profile, "name", "") or "").strip().casefold()
+        selected_parent = getattr(weapon_profile, "parent_wargear", None)
+        selected_parent_id = _shooting_entity_id(selected_parent)
+        selected_parent_name = str(getattr(selected_parent, "name", "") or "").strip().casefold()
         for wargear in list(getattr(model, "wargear", []) or []):
-            for profile in (getattr(wargear, "profiles", {}) or {}).values():
+            carried_parent_id = _shooting_entity_id(wargear)
+            carried_parent_name = str(getattr(wargear, "name", "") or "").strip().casefold()
+            parent_matches = (
+                bool(selected_parent_id and carried_parent_id == selected_parent_id)
+                or bool(selected_parent_name and carried_parent_name == selected_parent_name)
+            )
+            for profile_name, profile in (getattr(wargear, "profiles", {}) or {}).items():
                 if profile is weapon_profile:
+                    return True
+                carried_profile_id = _shooting_entity_id(profile)
+                if selected_profile_id and carried_profile_id == selected_profile_id:
+                    return True
+                carried_profile_names = {
+                    str(profile_name or "").strip().casefold(),
+                    str(getattr(profile, "name", "") or "").strip().casefold(),
+                }
+                if parent_matches and selected_profile_name and selected_profile_name in carried_profile_names:
                     return True
         return False
 
