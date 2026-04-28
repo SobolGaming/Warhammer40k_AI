@@ -97,6 +97,14 @@ def _effective_keyword_alive(entity: object) -> bool:
     return bool(alive_attr() if callable(alive_attr) else alive_attr)
 
 
+def _effective_keyword_list_signature(entity: object, attr_name: str) -> tuple[str, ...]:
+    return tuple(str(value or "") for value in list(getattr(entity, attr_name, []) or []))
+
+
+def _effective_keyword_path_signature(model: object) -> tuple[str, ...]:
+    return tuple(str(value or "") for value in list(getattr(model, "last_move_path", []) or []))
+
+
 def _effective_keyword_cache_signature(root: object, members: list[object]) -> tuple:
     map_generation = 0
     try:
@@ -131,6 +139,8 @@ def _effective_keyword_cache_signature(root: object, members: list[object]) -> t
                     _effective_keyword_entity_id(model),
                     _effective_keyword_alive(model),
                     bool(getattr(model, "_pending_placement", False)),
+                    _effective_keyword_list_signature(model, "keywords"),
+                    _effective_keyword_path_signature(model),
                 )
             )
         member_rows.append(
@@ -140,6 +150,7 @@ def _effective_keyword_cache_signature(root: object, members: list[object]) -> t
                 int(getattr(u, "_ability_activity_generation", 0) or 0),
                 bool(getattr(u, "hover_mode", False)),
                 bool(getattr(round_state, "fell_back_this_round", False)),
+                _effective_keyword_list_signature(u, "keywords"),
                 tuple(model_rows),
                 special_row,
             )
