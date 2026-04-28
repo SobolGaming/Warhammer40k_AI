@@ -14,7 +14,6 @@ from ..utility.profiling_sections import profiled_section
 
 
 _VISIBILITY_CONTEXT_CACHE_MAX = 8192
-_SEGMENT_BLOCK_CACHE_MAX = 65536
 
 
 def _json_safe(value: Any) -> Any:
@@ -266,103 +265,6 @@ def _terrain_visibility_signature(game_map: object) -> tuple[Any, ...]:
     return result
 
 
-def _terrain_feature_visibility_key(terrain: object) -> tuple[Any, ...]:
-    footprint = getattr(terrain, "footprint", None)
-    wall_rows: list[tuple[Any, ...]] = []
-    for wall in list(getattr(terrain, "walls", []) or []):
-        if not isinstance(wall, dict):
-            continue
-        wall_rows.append(
-            (
-                _rounded_bounds(wall.get("polygon")),
-                round(float(wall.get("z_bottom", 0.0) or 0.0), 4),
-                round(float(wall.get("z_top", wall.get("z_bottom", 0.0)) or 0.0), 4),
-            )
-        )
-    opening_rows: list[tuple[Any, ...]] = []
-    for opening in list(getattr(terrain, "openings", []) or []):
-        if not isinstance(opening, dict):
-            continue
-        opening_rows.append(
-            (
-                _rounded_bounds(opening.get("polygon")),
-                round(float(opening.get("z_bottom", 0.0) or 0.0), 4),
-                round(float(opening.get("z_top", 0.0) or 0.0), 4),
-                bool(opening.get("allows_los", False)),
-            )
-        )
-    wall_rows.sort(key=lambda item: str(item))
-    opening_rows.sort(key=lambda item: str(item))
-    return (
-        str(getattr(terrain, "id", "") or id(terrain)),
-        str(getattr(getattr(terrain, "terrain_type", None), "name", "") or ""),
-        _rounded_bounds(footprint),
-        bool(getattr(terrain, "obscuring", False)),
-        round(float(getattr(terrain, "height", 0.0) or 0.0), 4),
-        round(float(getattr(terrain, "rim_height", 0.0) or 0.0), 4),
-        tuple(wall_rows),
-        tuple(opening_rows),
-    )
-
-
-def _rounded_point3(value: tuple[float, float, float]) -> tuple[float, float, float]:
-    return (
-        round(float(value[0]), 4),
-        round(float(value[1]), 4),
-        round(float(value[2]), 4),
-    )
-
-
-def _segment_block_cache(terrain: object) -> OrderedDict:
-    cache = getattr(terrain, "_segment_block_cache", None)
-    if isinstance(cache, OrderedDict):
-        return cache
-    cache = OrderedDict()
-    try:
-        setattr(terrain, "_segment_block_cache", cache)
-    except (AttributeError, TypeError):
-        pass
-    return cache
-
-
-def _segment_block_cache_key(
-    p0: tuple[float, float, float],
-    p1: tuple[float, float, float],
-    terrain: object,
-    shooter_model: object,
-    target_model: object,
-) -> tuple[Any, ...]:
-    shooter_unit = getattr(shooter_model, "parent_unit", None)
-    target_unit = getattr(target_model, "parent_unit", None)
-    return (
-        "segment_blocked_v1",
-        _rounded_point3(p0),
-        _rounded_point3(p1),
-        str(getattr(terrain, "id", "") or id(terrain)),
-        _model_visibility_key(shooter_model),
-        _model_visibility_key(target_model),
-        _unit_visibility_key(shooter_unit),
-        _unit_visibility_key(target_unit),
-    )
-
-
-def _segment_block_cache_get(terrain: object, key: tuple[Any, ...]) -> bool | None:
-    cache = _segment_block_cache(terrain)
-    if key not in cache:
-        return None
-    value = bool(cache[key])
-    cache.move_to_end(key)
-    return value
-
-
-def _segment_block_cache_set(terrain: object, key: tuple[Any, ...], result: bool) -> None:
-    cache = _segment_block_cache(terrain)
-    cache[key] = bool(result)
-    cache.move_to_end(key)
-    while len(cache) > _SEGMENT_BLOCK_CACHE_MAX:
-        cache.popitem(last=False)
-
-
 def _visibility_context_cache_key(game_map: object, shooter_model: object, target_model: object) -> tuple[Any, ...]:
     target_unit = getattr(target_model, "parent_unit", None)
     shooter_unit = getattr(shooter_model, "parent_unit", None)
@@ -417,14 +319,25 @@ def segment_blocked_by_terrain_feature(
     terrain: object,
     shooter_model: object,
     target_model: object,
+    *,
+    visibility_flags: tuple[bool, bool, bool] | None = None,
+    line2d: LineString | None = None,
+    line_length: float | None = None,
+    line_bounds: tuple[float, float, float, float] | None = None,
+    footprint_bounds: tuple[float, float, float, float] | None = None,
 ) -> bool:
-    cache_key = _segment_block_cache_key(p0, p1, terrain, shooter_model, target_model)
-    cached = _segment_block_cache_get(terrain, cache_key)
-    if cached is not None:
-        return bool(cached)
-    result = _segment_blocked_by_terrain_feature_uncached(p0, p1, terrain, shooter_model, target_model)
-    _segment_block_cache_set(terrain, cache_key, bool(result))
-    return bool(result)
+    return _segment_blocked_by_terrain_feature_uncached(
+        p0,
+        p1,
+        terrain,
+        shooter_model,
+        target_model,
+        visibility_flags=visibility_flags,
+        line2d=line2d,
+        line_length=line_length,
+        line_bounds=line_bounds,
+        footprint_bounds=footprint_bounds,
+    )
 
 
 def _segment_blocked_by_terrain_feature_uncached(
@@ -433,22 +346,34 @@ def _segment_blocked_by_terrain_feature_uncached(
     terrain: object,
     shooter_model: object,
     target_model: object,
+    *,
+    visibility_flags: tuple[bool, bool, bool] | None = None,
+    line2d: LineString | None = None,
+    line_length: float | None = None,
+    line_bounds: tuple[float, float, float, float] | None = None,
+    footprint_bounds: tuple[float, float, float, float] | None = None,
 ) -> bool:
     """Return True if the segment is blocked by this terrain feature."""
     footprint = getattr(terrain, "footprint", None)
     if footprint is None:
         return False
-    line_bounds = _segment_bounds_2d(p0, p1)
-    footprint_bounds = tuple(getattr(footprint, "bounds", ()) or ())
+    if line_bounds is None:
+        line_bounds = _segment_bounds_2d(p0, p1)
+    if footprint_bounds is None:
+        footprint_bounds = tuple(getattr(footprint, "bounds", ()) or ())
     if len(footprint_bounds) == 4 and not _bounds_overlap(line_bounds, footprint_bounds):
         return False
 
-    line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
-    if line2d.length == 0:
-        return False
+    if line2d is None:
+        line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
+        line_length = float(line2d.length)
+        if line_length == 0:
+            return False
+    elif line_length is None:
+        line_length = float(line2d.length)
 
-    def z_at_fraction(fraction: float) -> float:
-        return float(p0[2]) + fraction * (float(p1[2]) - float(p0[2]))
+    z0 = float(p0[2])
+    z_delta = float(p1[2]) - z0
 
     is_ruins = hasattr(terrain, "walls") and hasattr(terrain, "openings")
     if is_ruins:
@@ -458,11 +383,14 @@ def _segment_blocked_by_terrain_feature_uncached(
             shooter_inside_any = bool(footprint.intersects(shooter_shape))
             target_inside_any = bool(footprint.intersects(target_shape))
             shooter_wholly_within = bool(footprint.covers(shooter_shape))
-            shooter_unit = getattr(shooter_model, "parent_unit", None)
-            target_unit = getattr(target_model, "parent_unit", None)
-            shooter_is_aircraft = bool(getattr(shooter_unit, "is_aircraft", False))
-            target_is_aircraft = bool(getattr(target_unit, "is_aircraft", False))
-            shooter_is_towering = bool(getattr(shooter_unit, "is_towering", False))
+            if visibility_flags is None:
+                shooter_unit = getattr(shooter_model, "parent_unit", None)
+                target_unit = getattr(target_model, "parent_unit", None)
+                shooter_is_aircraft = bool(getattr(shooter_unit, "is_aircraft", False))
+                target_is_aircraft = bool(getattr(target_unit, "is_aircraft", False))
+                shooter_is_towering = bool(getattr(shooter_unit, "is_towering", False))
+            else:
+                shooter_is_aircraft, target_is_aircraft, shooter_is_towering = visibility_flags
 
             if not (shooter_is_aircraft or target_is_aircraft):
                 if not shooter_inside_any and not target_inside_any and line2d.intersects(footprint):
@@ -481,10 +409,10 @@ def _segment_blocked_by_terrain_feature_uncached(
             intersection_point = _line_intersection_point(line2d, wall_polygon)
             if intersection_point is None:
                 continue
-            fraction = line2d.project(intersection_point) / line2d.length if line2d.length > 0 else 0.0
+            fraction = line2d.project(intersection_point) / line_length if line_length > 0 else 0.0
             if fraction <= 1e-6 or fraction >= 1.0 - 1e-6:
                 continue
-            z_here = z_at_fraction(fraction)
+            z_here = z0 + fraction * z_delta
             z_bottom = float(wall.get("z_bottom", 0.0) or 0.0)
             z_top = float(wall.get("z_top", z_bottom) or z_bottom)
             if z_here < z_bottom or z_here > z_top:
@@ -512,10 +440,10 @@ def _segment_blocked_by_terrain_feature_uncached(
     intersection_point = _line_intersection_point(line2d, footprint)
     if intersection_point is None:
         return False
-    fraction = line2d.project(intersection_point) / line2d.length if line2d.length > 0 else 0.0
+    fraction = line2d.project(intersection_point) / line_length if line_length > 0 else 0.0
     if fraction <= 1e-6 or fraction >= 1.0 - 1e-6:
         return False
-    z_here = z_at_fraction(fraction)
+    z_here = z0 + fraction * z_delta
 
     min_z = 0.0
     max_z = 0.0
@@ -719,6 +647,13 @@ def get_visibility_context_for_models(
     if shooter_shape is None or target_shape is None:
         _append_reason(reason_trace, "INVALID_MODEL_GEOMETRY", "Shooter or target model lacks base geometry.")
         return _cache_and_return()
+    shooter_unit = getattr(shooter_model, "parent_unit", None)
+    target_unit = getattr(target_model, "parent_unit", None)
+    segment_visibility_flags = (
+        bool(getattr(shooter_unit, "is_aircraft", False)),
+        bool(getattr(target_unit, "is_aircraft", False)),
+        bool(getattr(shooter_unit, "is_towering", False)),
+    )
 
     target_areas = _target_areas_for_model(game_map, target_model)
     if result["preview_visibility_semantics_enabled"]:
@@ -784,14 +719,48 @@ def get_visibility_context_for_models(
         _append_reason(reason_trace, "NO_SAMPLE_POINTS", "Visibility sampling could not resolve model points.")
         return _cache_and_return()
 
-    terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+    terrain_features: list[tuple[object, tuple[float, float, float, float] | None]] = []
+    for terrain in list(getattr(game_map, "terrain_features", []) or []):
+        terrain_footprint = getattr(terrain, "footprint", None)
+        terrain_footprint_bounds: tuple[float, float, float, float] | None = None
+        if terrain_footprint is not None:
+            try:
+                raw_bounds = tuple(getattr(terrain_footprint, "bounds", ()) or ())
+            except (GEOSException, TypeError, ValueError):
+                raw_bounds = ()
+            if len(raw_bounds) == 4:
+                terrain_footprint_bounds = (
+                    float(raw_bounds[0]),
+                    float(raw_bounds[1]),
+                    float(raw_bounds[2]),
+                    float(raw_bounds[3]),
+                )
+        terrain_features.append((terrain, terrain_footprint_bounds))
     first_blocking_terrain_id = ""
     for target_point in target_points:
         for shooter_point in shooter_points:
+            segment_line2d = LineString([(shooter_point[0], shooter_point[1]), (target_point[0], target_point[1])])
+            segment_line_length = float(segment_line2d.length)
+            if segment_line_length == 0:
+                result["visible"] = True
+                _append_reason(reason_trace, "LEGACY_LOS_CLEAR", "A sampled line of sight path is clear.")
+                return _cache_and_return()
+            segment_line_bounds = _segment_bounds_2d(shooter_point, target_point)
             blocked = False
-            for terrain in terrain_features:
+            for terrain, terrain_footprint_bounds in terrain_features:
                 try:
-                    if segment_blocked_by_terrain_feature(shooter_point, target_point, terrain, shooter_model, target_model):
+                    if segment_blocked_by_terrain_feature(
+                        shooter_point,
+                        target_point,
+                        terrain,
+                        shooter_model,
+                        target_model,
+                        visibility_flags=segment_visibility_flags,
+                        line2d=segment_line2d,
+                        line_length=segment_line_length,
+                        line_bounds=segment_line_bounds,
+                        footprint_bounds=terrain_footprint_bounds,
+                    ):
                         blocked = True
                         first_blocking_terrain_id = str(getattr(terrain, "id", "") or "")
                         break
