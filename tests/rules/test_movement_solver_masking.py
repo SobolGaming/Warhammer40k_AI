@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
-from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.movement_intent import MovementIntent
 from warhammer40k_ai.engine.movement_solver import generate_move_unit_candidates
 from warhammer40k_ai.engine.path_witness import PathWitnessStore
@@ -230,3 +230,81 @@ def test_move_solver_replaces_illegal_reserves_arrival_candidate_with_freeform_c
     )
     assert "model_positions" not in dict(confirm_candidate.params or {})
     assert str(dict(confirm_candidate.metadata or {}).get("candidate_kind", "") or "") == "freeform_confirm"
+
+
+def _charge_move_game_and_request():
+    army = _ArmyStub()
+    player = _PlayerStub("player:one", army)
+    army.player = player
+    charger = _UnitStub("unit:charger", army=army, reserve_status="deployed")
+    army.units.append(charger)
+    game = SimpleNamespace(players=[player])
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge move",
+        player_id=player.id,
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": charger.id, "movement_type": "charge", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": charger.id, "movement_type": "charge", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": charger.id,
+            "movement_type": "charge",
+            "target_unit_ids": ["unit:target"],
+            "max_distance": 7,
+            "allow_skip": True,
+        },
+    )
+    return game, request
+
+
+def test_charge_move_solver_does_not_offer_skip_when_legal_charge_exists(monkeypatch) -> None:
+    import warhammer40k_ai.engine.movement_solver as movement_solver
+
+    game, request = _charge_move_game_and_request()
+
+    def _charge_candidate(_game, *, request, confirm_option, **_kwargs):
+        return CandidateAction(
+            action_id=request.action_id_for_option_id(confirm_option.option_id),
+            params={
+                "unit_id": "unit:charger",
+                "movement_type": "charge",
+                "action": "confirm",
+                "model_positions": [],
+            },
+            metadata={"candidate_kind": "charge"},
+        )
+
+    monkeypatch.setattr(movement_solver, "_charge_candidate", _charge_candidate)
+    monkeypatch.setattr(movement_solver, "validate_move_unit_payload", lambda *_args, **_kwargs: ())
+
+    candidates, mask = movement_solver._solver_candidates(game, request, MovementIntent())
+
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["confirm"]
+
+
+def test_charge_move_solver_uses_skip_only_for_failed_charge_move(monkeypatch) -> None:
+    import warhammer40k_ai.engine.movement_solver as movement_solver
+
+    game, request = _charge_move_game_and_request()
+
+    monkeypatch.setattr(movement_solver, "_charge_candidate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(movement_solver, "validate_move_unit_payload", lambda *_args, **_kwargs: ())
+
+    candidates, mask = movement_solver._solver_candidates(game, request, MovementIntent())
+
+    assert mask == [True]
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert dict(candidate.params or {})["action"] == "skip"
+    assert dict(candidate.params or {})["skipped"] is True
+    assert dict(candidate.params or {})["charge_move_failed"] is True
+    assert dict(candidate.params or {})["failure_reason"] == "no_legal_charge_move"
+    assert dict(candidate.metadata or {})["candidate_kind"] == "charge_failed_no_legal_move"

@@ -159,6 +159,180 @@ def test_destroy_events_logged():
     assert unit_payload["weapon_profile_id"] == "wp1"
 
 
+def test_destroy_events_include_coherency_removal_context():
+    attacker_model = SimpleNamespace(id="am1")
+    attacker_unit = SimpleNamespace(id="au1")
+    weapon_profile = SimpleNamespace(id="wp1", name="Test Blade")
+    target_unit = SimpleNamespace(id="tu1")
+    target_model = SimpleNamespace(
+        id="tm1",
+        _removal_reason="post_casualty_coherency",
+        _removal_decision_id="decision-1",
+        _coherency_root_unit_id="tu-root",
+        _coherency_caused_by_destroyed_model_id="tm0",
+        _coherency_damage_source="Allocate wound",
+        _coherency_failure_reason="post_casualty",
+        _coherency_causal_attacker_unit=attacker_unit,
+        _coherency_causal_attacker_model=attacker_model,
+        _coherency_causal_weapon_profile=weapon_profile,
+    )
+
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+    game.event_system.publish("model_destroyed_before_removal", unit=target_unit, model=target_model)
+    game.event_system.publish("unit_destroyed", unit=target_unit, last_model=target_model)
+
+    model_events = [e for e in game.event_log.events if e.event_type == "model_destroyed_before_removal"]
+    unit_events = [e for e in game.event_log.events if e.event_type == "unit_destroyed"]
+    assert model_events
+    assert unit_events
+    for payload in (model_events[-1].payload, unit_events[-1].payload):
+        assert payload["removal_reason"] == "post_casualty_coherency"
+        assert payload["source_decision_id"] == "decision-1"
+        assert payload["coherency_root_unit_id"] == "tu-root"
+        assert payload["coherency_caused_by_destroyed_model_id"] == "tm0"
+        assert payload["coherency_failure_reason"] == "post_casualty"
+        assert payload["causal_attacker_unit_id"] == "au1"
+        assert payload["causal_attacker_model_id"] == "am1"
+        assert payload["causal_weapon_profile_id"] == "wp1"
+        assert payload["causal_weapon_profile_name"] == "Test Blade"
+
+
+def test_charge_move_failed_event_logged():
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+    unit = SimpleNamespace(id="charger")
+
+    game.event_system.publish(
+        "charge_move_failed",
+        unit=unit,
+        target_unit_ids=["target-a", "target-b"],
+        reason="no_legal_charge_move",
+        max_distance=7,
+        movement_type="charge",
+    )
+
+    events = [e for e in game.event_log.events if e.event_type == "charge_move_failed"]
+    assert events
+    payload = events[-1].payload
+    assert payload["unit_id"] == "charger"
+    assert payload["target_unit_ids"] == ["target-a", "target-b"]
+    assert payload["reason"] == "no_legal_charge_move"
+    assert payload["max_distance"] == 7.0
+    assert payload["movement_type"] == "charge"
+
+
+def test_skipped_charge_move_application_logs_failed_charge_move():
+    from warhammer40k_ai.engine.decision_handlers.movement import _apply_move_unit
+    from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+    unit = SimpleNamespace(id="charger", models=[])
+    game.entity_registry.register(unit, kind="unit")
+    skip_option = DecisionOption.create(
+        "Skip",
+        payload={"unit_id": "charger", "movement_type": "charge", "action": "skip"},
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge move",
+        options=[skip_option],
+        context={
+            "unit_id": "charger",
+            "movement_type": "charge",
+            "target_unit_ids": ["target"],
+            "max_distance": 7,
+            "allow_skip": True,
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=None,
+        option_id=skip_option.option_id,
+        payload={},
+    )
+
+    _apply_move_unit(game, request, result)
+
+    events = [e for e in game.event_log.events if e.event_type == "charge_move_failed"]
+    assert events
+    payload = events[-1].payload
+    assert payload["unit_id"] == "charger"
+    assert payload["target_unit_ids"] == ["target"]
+    assert payload["reason"] == "charge_move_skipped"
+    assert payload["max_distance"] == 7.0
+
+
+def test_resolve_coherency_application_stamps_removal_context():
+    from warhammer40k_ai.engine.decision_handlers.movement import _apply_resolve_coherency
+    from warhammer40k_ai.engine.decision_kinds import DECISION_RESOLVE_COHERENCY
+    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+    game.map.game = game
+    attacker_unit = SimpleNamespace(id="attacker-unit")
+    attacker_model = SimpleNamespace(id="attacker-model")
+    weapon_profile = SimpleNamespace(id="weapon-profile", name="Test Rifle")
+
+    class _CoherencyModel:
+        def __init__(self):
+            self.id = "coherency-model"
+            self.wounds = 1
+            self.is_alive = True
+            self.parent_unit = None
+
+        def die(self, *, game_map=None):
+            self.is_alive = False
+            game_map.game.event_system.publish("model_destroyed_before_removal", unit=self.parent_unit, model=self)
+
+    model = _CoherencyModel()
+    unit = SimpleNamespace(
+        id="coherency-unit",
+        models=[model],
+        _last_destroyed_by_unit=attacker_unit,
+        _last_destroyed_by_model=attacker_model,
+        _last_destroyed_by_weapon_profile=weapon_profile,
+    )
+    model.parent_unit = unit
+    game.entity_registry.register(unit, kind="unit")
+    game.entity_registry.register(model, kind="model")
+    option = DecisionOption.create("Remove model", payload={"unit_id": unit.id})
+    request = DecisionRequest.create(
+        DECISION_RESOLVE_COHERENCY,
+        "Resolve coherency",
+        options=[option],
+        context={
+            "unit_id": unit.id,
+            "destroyed_model_id": "initial-casualty",
+            "damage_source": "Allocate wound",
+            "coherency_failure_reason": "post_casualty",
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=None,
+        option_id=option.option_id,
+        payload={"model_ids": [model.id]},
+    )
+
+    _apply_resolve_coherency(game, request, result)
+
+    events = [e for e in game.event_log.events if e.event_type == "model_destroyed_before_removal"]
+    assert events
+    payload = events[-1].payload
+    assert payload["removal_reason"] == "post_casualty_coherency"
+    assert payload["source_decision_id"] == request.decision_id
+    assert payload["coherency_root_unit_id"] == "coherency-unit"
+    assert payload["coherency_caused_by_destroyed_model_id"] == "initial-casualty"
+    assert payload["coherency_damage_source"] == "Allocate wound"
+    assert payload["causal_attacker_unit_id"] == "attacker-unit"
+    assert payload["causal_attacker_model_id"] == "attacker-model"
+    assert payload["causal_weapon_profile_id"] == "weapon-profile"
+
+
 def test_combat_diagnostic_events_logged():
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1

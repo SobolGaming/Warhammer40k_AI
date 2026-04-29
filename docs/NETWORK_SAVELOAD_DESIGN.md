@@ -94,7 +94,7 @@ Events are serialized state transitions and random outcomes. Examples:
 - command_applied, command_rejected
 - decision_requested, decision_resolved
 - dice_roll, roll_made, roll_rerolled
-- unit_move_started, unit_move_ended
+- unit_move_started, unit_move_ended, charge_move_failed
 - model_damage_resolved, unit_shooting_resolved, fight_attacks_resolved
 - model_destroyed, model_destroyed_before_removal, unit_destroyed
 - phase_start, phase_end, battle_round_started
@@ -359,7 +359,7 @@ Movement:
 - spirit_mark_friendly_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="spirit_mark_friendly"`, `source_unit_id`, `model_id`, `range`, `keyword`, `sustained_hits_value`)
 - spirit_mark_enemy_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_mark_enemy"`, `source_unit_id`, `model_id`, `friendly_unit_id`, `sustained_hits_value`, `keyword`)
 - individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"`)
-- coherency_violation_dialog: RESOLVE_COHERENCY {model_ids[1]} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`)
+- coherency_violation_dialog: RESOLVE_COHERENCY {model_ids[1]} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`; coherency removals stamp removal-cause telemetry on `model_destroyed_before_removal`/`unit_destroyed`)
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
@@ -595,8 +595,8 @@ Dice Rolls:
 - REQUEST_DICE_ROLL context includes `roll_spec.roll_explanation` (schema_version=1) with:
   `condition` (kind/op/target/applies_to) and typed modifier contributors for `sum_modifier` and `target_modifier`.
 - dice_roll_dialog (reroll): SELECT_DICE_REROLL {roll_id, action_id, selected_die_ids[]}
-- damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution)
-  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reanimation_restore_wound`, `reanimation_return_model`, `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`, `daemonic_patrons_loss`, `choice_samples`.
+- damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution; direct synchronous attacks use `selection_kind="direct_wound_allocation"` when the defender has a real casualty choice)
+  Selection kinds in use: `wound_allocation`, `direct_wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reanimation_restore_wound`, `reanimation_return_model`, `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`, `daemonic_patrons_loss`, `choice_samples`.
 - overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:

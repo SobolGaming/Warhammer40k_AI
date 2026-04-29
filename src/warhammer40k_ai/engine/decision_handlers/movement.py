@@ -2810,7 +2810,37 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         raise RuntimeError("Move unit: unit not found.")
     movement_type = str(payload.get("movement_type", "") or request.context.get("movement_type", "") or "")
     placement_kind = str(ctx.get("placement_kind", "") or "")
-    if bool(result.payload.get("skipped", False)):
+    result_payload = dict(getattr(result, "payload", {}) or {})
+    action = str(result_payload.get("action", "") or payload.get("action", "") or "").strip().lower()
+    is_skip = bool(
+        result_payload.get("skipped", False)
+        or result_payload.get("skip", False)
+        or payload.get("skipped", False)
+        or payload.get("skip", False)
+        or action in {"skip", "pass"}
+    )
+    if is_skip:
+        if movement_type == "charge":
+            target_unit_ids = [
+                str(value or "")
+                for value in list(ctx.get("target_unit_ids", []) or result_payload.get("target_unit_ids", []) or [])
+                if str(value or "")
+            ]
+            reason = str(
+                result_payload.get("failure_reason", "")
+                or result_payload.get("reason", "")
+                or "charge_move_skipped"
+            )
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "charge_move_failed",
+                    unit=unit,
+                    target_unit_ids=target_unit_ids,
+                    reason=reason,
+                    max_distance=ctx.get("max_distance"),
+                    movement_type="charge",
+                )
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
         if placement_kind in ("reserves_arrival", "hyperphasic_recall", "subterranean_tunnel_network"):
@@ -3543,6 +3573,7 @@ def _validate_resolve_coherency(game: object, request: DecisionRequest, result: 
 def _apply_resolve_coherency(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    ctx = dict(getattr(request, "context", {}) or {})
     unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
     unit = get_unit(game, unit_id)
     if unit is None:
@@ -3552,6 +3583,35 @@ def _apply_resolve_coherency(game: object, request: DecisionRequest, result: Dec
     model = get_model(game, model_id)
     if model is None:
         raise RuntimeError("Coherency resolution: model not found.")
+    failure_reason = str(ctx.get("coherency_failure_reason", "") or "").strip()
+    removal_reason = f"{failure_reason}_coherency" if failure_reason else "coherency"
+    causal_unit = getattr(unit, "_last_destroyed_by_unit", None)
+    causal_model = getattr(unit, "_last_destroyed_by_model", None)
+    causal_weapon_profile = getattr(unit, "_last_destroyed_by_weapon_profile", None)
+    parent_unit = getattr(model, "parent_unit", None)
+    if parent_unit is not None and parent_unit is not unit:
+        causal_unit = causal_unit or getattr(parent_unit, "_last_destroyed_by_unit", None)
+        causal_model = causal_model or getattr(parent_unit, "_last_destroyed_by_model", None)
+        causal_weapon_profile = causal_weapon_profile or getattr(parent_unit, "_last_destroyed_by_weapon_profile", None)
+    removal_attrs = {
+        "_removal_reason": removal_reason,
+        "_removal_decision_id": str(getattr(request, "decision_id", "") or ""),
+        "_coherency_root_unit_id": str(unit_id or ""),
+        "_coherency_caused_by_destroyed_model_id": str(ctx.get("destroyed_model_id", "") or ""),
+        "_coherency_damage_source": str(ctx.get("damage_source", "") or ""),
+        "_coherency_failure_reason": failure_reason,
+        "_coherency_causal_attacker_unit": causal_unit,
+        "_coherency_causal_attacker_model": causal_model,
+        "_coherency_causal_weapon_profile": causal_weapon_profile,
+    }
+    carriers = [model]
+    if parent_unit is not None:
+        carriers.append(parent_unit)
+    if unit is not parent_unit:
+        carriers.append(unit)
+    for carrier in carriers:
+        for attr, value in removal_attrs.items():
+            setattr(carrier, attr, value)
     if hasattr(model, "wounds"):
         model.wounds = 0
     model.die(game_map=getattr(game, "map", None))

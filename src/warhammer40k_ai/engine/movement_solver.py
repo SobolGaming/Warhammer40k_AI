@@ -864,6 +864,36 @@ def _filter_legal_move_candidates(
     return legal_candidates, [True] * len(legal_candidates)
 
 
+def _skip_move_candidate(
+    request: DecisionRequest,
+    skip_option: object,
+    intent: MovementIntent,
+    *,
+    candidate_kind: str = "noop",
+    params: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> CandidateAction:
+    skip_action_id = request.action_id_for_option_id(getattr(skip_option, "option_id", None))
+    skip_payload = dict(getattr(skip_option, "payload", {}) or {})
+    skip_payload.pop("action_id", None)
+    skip_payload["skipped"] = True
+    if params:
+        skip_payload.update(dict(params))
+    candidate_metadata = {
+        "candidate_kind": str(candidate_kind or "noop"),
+        "solver_ms": 0,
+        "fallback_mode": False,
+        "intent_hash": intent.stable_hash(),
+    }
+    if metadata:
+        candidate_metadata.update(dict(metadata))
+    return CandidateAction(
+        action_id=str(skip_action_id),
+        params=skip_payload,
+        metadata=candidate_metadata,
+    )
+
+
 def _solver_candidates(
     game: object,
     request: DecisionRequest,
@@ -886,22 +916,8 @@ def _solver_candidates(
             confirm_option = option
 
     candidates: list[CandidateAction] = []
-    if skip_option is not None:
-        skip_action_id = request.action_id_for_option_id(getattr(skip_option, "option_id", None))
-        skip_payload = dict(getattr(skip_option, "payload", {}) or {})
-        skip_payload.pop("action_id", None)
-        candidates.append(
-            CandidateAction(
-                action_id=str(skip_action_id),
-                params=skip_payload,
-                metadata={
-                    "candidate_kind": "noop",
-                    "solver_ms": 0,
-                    "fallback_mode": False,
-                    "intent_hash": intent.stable_hash(),
-                },
-            )
-        )
+    if skip_option is not None and movement_type != "charge":
+        candidates.append(_skip_move_candidate(request, skip_option, intent))
 
     if confirm_option is not None and unit is not None:
         start_positions = current_model_positions(unit)
@@ -928,6 +944,20 @@ def _solver_candidates(
             )
             if charge_candidate is not None:
                 candidates.append(charge_candidate)
+            elif skip_option is not None:
+                candidates.append(
+                    _skip_move_candidate(
+                        request,
+                        skip_option,
+                        intent,
+                        candidate_kind="charge_failed_no_legal_move",
+                        params={
+                            "charge_move_failed": True,
+                            "failure_reason": "no_legal_charge_move",
+                        },
+                        metadata={"failure_reason": "no_legal_charge_move"},
+                    )
+                )
         elif movement_type in {"pile_in", "consolidate"}:
             confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
             confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})

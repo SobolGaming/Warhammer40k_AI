@@ -53,6 +53,14 @@ def _normalize_ids(value: Any, id_map: dict[str, str], *, key: str | None = None
     return value
 
 
+def _event_entity_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value or None
+    return maybe_entity_id(value)
+
+
 def _default_event_log_limit() -> int:
     raw = str(os.getenv("WH40K_EVENT_LOG_MAX", "10000") or "10000").strip()
     try:
@@ -153,6 +161,7 @@ class DeterministicEventLog:
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed", self._on_model_destroyed)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_destroyed", self._on_unit_destroyed)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "charge_move_failed", self._on_charge_move_failed)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_shooting_resolved", self._on_unit_shooting_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "fight_attacks_resolved", self._on_fight_attacks_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "phase_start", self._on_phase_start)
@@ -480,6 +489,14 @@ class DeterministicEventLog:
                 ids.append(str(unit_id))
         return sorted(set(ids))
 
+    def _event_id_list(self, values: Any) -> list[str]:
+        ids = []
+        for value in list(values or []):
+            value_id = _event_entity_id(value)
+            if value_id:
+                ids.append(str(value_id))
+        return sorted(set(ids))
+
     def _diagnostic_rows(self, rows: Any) -> list[dict[str, Any]]:
         result = []
         for row in list(rows or []):
@@ -525,23 +542,72 @@ class DeterministicEventLog:
         }
         self.record("model_destroyed", actor_id=payload.get("attacker_unit_id"), payload=payload, validate_payload=True)
 
-    def _on_model_destroyed_before_removal(self, **kwargs: Any) -> None:
+    def _removal_context_payload(self, *entities: Any) -> dict[str, Any]:
+        def first_attr(attr: str) -> Any:
+            for entity in entities:
+                if entity is None:
+                    continue
+                value = getattr(entity, attr, None)
+                if value not in (None, ""):
+                    return value
+            return None
+
+        weapon_profile = first_attr("_coherency_causal_weapon_profile")
         payload = {
-            "unit_id": maybe_entity_id(kwargs.get("unit")),
-            "model_id": maybe_entity_id(kwargs.get("model")),
+            "removal_reason": first_attr("_removal_reason"),
+            "source_decision_id": first_attr("_removal_decision_id"),
+            "coherency_root_unit_id": _event_entity_id(first_attr("_coherency_root_unit_id")),
+            "coherency_caused_by_destroyed_model_id": _event_entity_id(
+                first_attr("_coherency_caused_by_destroyed_model_id")
+            ),
+            "coherency_damage_source": first_attr("_coherency_damage_source"),
+            "coherency_failure_reason": first_attr("_coherency_failure_reason"),
+            "causal_attacker_unit_id": _event_entity_id(first_attr("_coherency_causal_attacker_unit")),
+            "causal_attacker_model_id": _event_entity_id(first_attr("_coherency_causal_attacker_model")),
+            "causal_weapon_profile_id": _event_entity_id(weapon_profile),
+            "causal_weapon_profile_name": getattr(weapon_profile, "name", None),
         }
+        return {str(key): value for key, value in payload.items() if value not in (None, "")}
+
+    def _on_model_destroyed_before_removal(self, **kwargs: Any) -> None:
+        unit = kwargs.get("unit")
+        model = kwargs.get("model")
+        payload = {
+            "unit_id": maybe_entity_id(unit),
+            "model_id": maybe_entity_id(model),
+        }
+        payload.update(self._removal_context_payload(model, unit))
         self.record("model_destroyed_before_removal", actor_id=None, payload=payload, validate_payload=True)
 
     def _on_unit_destroyed(self, **kwargs: Any) -> None:
+        unit = kwargs.get("unit")
+        last_model = kwargs.get("last_model")
         payload = {
-            "unit_id": maybe_entity_id(kwargs.get("unit")),
-            "last_model_id": maybe_entity_id(kwargs.get("last_model")),
+            "unit_id": maybe_entity_id(unit),
+            "last_model_id": maybe_entity_id(last_model),
             "destroyed_by_unit_id": maybe_entity_id(kwargs.get("destroyed_by_unit")),
             "destroyed_by_model_id": maybe_entity_id(kwargs.get("destroyed_by_model")),
             "weapon_profile_id": maybe_entity_id(kwargs.get("destroyed_by_weapon_profile")),
             "weapon_profile_name": getattr(kwargs.get("destroyed_by_weapon_profile"), "name", None),
         }
+        payload.update(self._removal_context_payload(last_model, unit))
         self.record("unit_destroyed", actor_id=payload.get("destroyed_by_unit_id"), payload=payload, validate_payload=True)
+
+    def _on_charge_move_failed(self, **kwargs: Any) -> None:
+        max_distance = kwargs.get("max_distance")
+        try:
+            max_distance_value = float(max_distance) if max_distance not in (None, "") else None
+        except (TypeError, ValueError):
+            max_distance_value = None
+        payload = {
+            "unit_id": maybe_entity_id(kwargs.get("unit")),
+            "target_unit_ids": self._event_id_list(kwargs.get("target_unit_ids")),
+            "reason": str(kwargs.get("reason") or ""),
+            "movement_type": str(kwargs.get("movement_type") or "charge"),
+        }
+        if max_distance_value is not None:
+            payload["max_distance"] = max_distance_value
+        self.record("charge_move_failed", actor_id=payload.get("unit_id"), payload=payload, validate_payload=True)
 
     def _on_unit_shooting_resolved(self, **kwargs: Any) -> None:
         attacker = kwargs.get("attacker_unit")

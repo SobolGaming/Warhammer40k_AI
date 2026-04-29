@@ -291,7 +291,8 @@ def test_move_solver_generates_targeted_charge_candidate_reaching_engagement_ran
 
     assert fallback_mode is False
     assert wall_clock_ms >= 0
-    assert mask == [True, True]
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["confirm"]
     confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
     metadata = dict(confirm_candidate.metadata or {})
     assert metadata.get("candidate_kind") == "charge"
@@ -352,7 +353,8 @@ def test_move_solver_charge_prefers_heuristic_endpoint_before_routed_search() ->
 
     assert fallback_mode is False
     assert wall_clock_ms >= 0
-    assert mask == [True, True]
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["confirm"]
     confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
     metadata = dict(confirm_candidate.metadata or {})
     assert metadata.get("candidate_kind") == "charge"
@@ -410,7 +412,8 @@ def test_move_solver_charge_anchors_heuristic_translation_to_closest_model() -> 
 
     assert fallback_mode is False
     assert wall_clock_ms >= 0
-    assert mask == [True, True]
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["confirm"]
     confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
     by_model = {
         str(entry.get("model_id")): list(entry.get("position") or [])

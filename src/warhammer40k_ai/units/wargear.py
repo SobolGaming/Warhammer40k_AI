@@ -1,4 +1,4 @@
-from typing import Any, Union, Dict, List, Optional, Tuple
+from typing import Any, Union, Dict, List, Optional, Tuple, Sequence
 from enum import Enum, auto
 from collections import namedtuple
 import copy
@@ -30072,7 +30072,11 @@ class WargearProfile:
         if not candidates:
             return None
 
-        from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
+        from ..utility.damage_allocation import (
+            DamageAllocationCtx,
+            choose_damage_allocation_model,
+            damage_allocation_choice,
+        )
         try:
             wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "")
         except Exception:
@@ -30082,11 +30086,139 @@ class WargearProfile:
         except Exception:
             aname = ""
 
+        alloc_ctx = DamageAllocationCtx(
+            reason="Allocate wound",
+            damage_source="attack",
+            weapon_name=str(wname or ""),
+            attacker_name=str(aname or ""),
+        )
+        choice = damage_allocation_choice(candidates)
+        if choice.forced_model is not None:
+            return choice.forced_model
+        if choice.choice_models:
+            decision_model = self._request_direct_wound_allocation_decision(
+                target,
+                choice.choice_models,
+                attacker=attacker,
+                game_map=game_map,
+                ctx=alloc_ctx,
+            )
+            if decision_model is not None:
+                return decision_model
+
         return choose_damage_allocation_model(
             target,
             candidates,
-            ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="attack", weapon_name=str(wname or ""), attacker_name=str(aname or "")),
+            ctx=alloc_ctx,
         )
+
+    def _request_direct_wound_allocation_decision(
+        self,
+        target: 'Unit',
+        candidates: Sequence['Model'],
+        *,
+        attacker: Optional['Model'] = None,
+        game_map: Optional['Map'] = None,
+        ctx: Optional['DamageAllocationCtx'] = None,
+    ) -> Optional['Model']:
+        game = getattr(game_map, "game", None) if game_map is not None else None
+        if game is None:
+            get_army = getattr(target, "get_parent_army", None)
+            army = get_army() if callable(get_army) else getattr(target, "parent_army", None)
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is None and attacker is not None:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            get_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_army() if callable(get_army) else getattr(attacker_unit, "parent_army", None)
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is None or not hasattr(game, "request_decision"):
+            return None
+
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_or_reuse_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        def model_sort_key(model: 'Model') -> str:
+            try:
+                return str(get_entity_id(model))
+            except (AttributeError, ValueError):
+                return str(getattr(model, "name", "") or "")
+
+        ordered = sorted(list(candidates or []), key=model_sort_key)
+        options = []
+        allowed_ids = []
+        for model in ordered:
+            try:
+                model_id = get_entity_id(model)
+            except (AttributeError, ValueError):
+                continue
+            allowed_ids.append(str(model_id))
+            options.append(
+                DecisionOption.create(
+                    str(getattr(model, "name", "") or "Model"),
+                    payload={
+                        "model_id": str(model_id),
+                        "action_id": f"{DECISION_ALLOCATE_DAMAGE}:{get_entity_id(target)}:{model_id}",
+                    },
+                )
+            )
+        if not options:
+            return None
+
+        get_army = getattr(target, "get_parent_army", None)
+        army = get_army() if callable(get_army) else getattr(target, "parent_army", None)
+        player_id = getattr(getattr(army, "player", None), "id", None) if army is not None else None
+        attacker_unit = getattr(attacker, "parent_unit", None) if attacker is not None else None
+        attacker_unit_id = ""
+        attacker_model_id = ""
+        try:
+            attacker_model_id = get_entity_id(attacker) if attacker is not None else ""
+        except (AttributeError, ValueError):
+            attacker_model_id = ""
+        try:
+            attacker_unit_id = get_entity_id(attacker_unit) if attacker_unit is not None else ""
+        except (AttributeError, ValueError):
+            attacker_unit_id = ""
+
+        target_unit_id = get_entity_id(target)
+        request = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            str(getattr(ctx, "reason", "") or "Allocate wound"),
+            player_id=player_id,
+            options=options,
+            context={
+                "selection_kind": "direct_wound_allocation",
+                "unit_id": target_unit_id,
+                "target_unit_id": target_unit_id,
+                "attacker_model_id": attacker_model_id,
+                "attacker_unit_id": attacker_unit_id,
+                "allowed_model_ids": list(allowed_ids),
+                "allow_skip": False,
+                "reason": str(getattr(ctx, "reason", "") or "Allocate wound"),
+                "damage_source": str(getattr(ctx, "damage_source", "") or "attack"),
+                "weapon_name": str(getattr(ctx, "weapon_name", "") or ""),
+                "attacker_name": str(getattr(ctx, "attacker_name", "") or ""),
+            },
+        )
+        game.request_decision(request)
+        selected_id = str(allowed_ids[0])
+        value, apply_result = resolve_or_reuse_decision_value(
+            game,
+            request,
+            str(getattr(options[0], "option_id", "") or ""),
+            result_payload={"model_id": selected_id},
+            player_id=player_id,
+        )
+        if apply_result is not None and getattr(apply_result, "ok", False):
+            if value is not None:
+                return value
+            registry = getattr(game, "entity_registry", None)
+            if registry is not None:
+                resolved = registry.get(selected_id, kind="model")
+                if resolved is not None:
+                    return resolved
+        return None
 
     def _assassins_poisons_applies(self, attacker: 'Model') -> bool:
         try:
