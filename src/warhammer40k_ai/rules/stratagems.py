@@ -2609,9 +2609,10 @@ class StratagemManager(
             add("unit_disembarked", self._on_unit_disembarked)
         if "FOCUSED HATRED" in names:
             add("charge_roll_resolved", self._on_charge_roll_resolved)
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "SCINTILLATING TEMPO"}:
+            add("charge_declared", self._on_charge_declared)
         if "SCINTILLATING TEMPO" in names:
             add("unit_move_started", self._on_unit_move_started)
-            add("charge_declared", self._on_charge_declared)
             add("unit_set_up", self._on_unit_set_up)
 
         if names & {
@@ -16760,6 +16761,7 @@ class StratagemManager(
         self._queue_brotherhood_strike_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
+        self._maybe_queue_overwatch(unit, action="charge", when="declare")
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
             unit=unit,
             trigger="charge_declared",
@@ -21172,6 +21174,18 @@ class StratagemManager(
             return False
         return bool(can_shoot(enemy_unit, game_map))
 
+    @staticmethod
+    def _is_fire_overwatch_trigger_window(action: str, when: str) -> bool:
+        action_key = re.sub(r"[^a-z0-9]+", "_", str(action or "").strip().lower()).strip("_")
+        when_key = re.sub(r"[^a-z0-9]+", "_", str(when or "").strip().lower()).strip("_")
+        if action_key in {"move", "normal_move", "advance", "fall_back", "fallback"}:
+            return when_key in {"start", "end"}
+        if action_key == "set_up":
+            return when_key == "end"
+        if action_key == "charge":
+            return when_key in {"declare", "declared", "declaration"}
+        return False
+
     def _build_fire_overwatch_declarations(self, shooter: Any, enemy_unit: Any) -> list[dict[str, Any]]:
         if shooter is None or enemy_unit is None or self.game is None:
             return []
@@ -21236,6 +21250,8 @@ class StratagemManager(
         return declarations
 
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
+        if not self._is_fire_overwatch_trigger_window(action, when):
+            return
         # Only offer to the opponent of the moving unit's owner
         try:
             owner_player = moving_unit.get_parent_army().player
@@ -21269,8 +21285,7 @@ class StratagemManager(
         active_player = getattr(self.game, 'get_current_player', lambda: None)()
         is_active_turn = active_player is self.player
         if not s.is_turn_allowed(is_active_turn):
-            # For Overwatch, it should be opponent's turn
-            pass
+            return
         # QUICK ELIGIBILITY PRECHECKS per Stratagem text:
         # - Your unit must be within 24" of the enemy unit
         # - Cannot target a TITANIC friendly unit to fire Overwatch

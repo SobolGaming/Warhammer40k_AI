@@ -158,7 +158,7 @@ def _support_classification(row: StratagemRow) -> Tuple[str, str]:
     # Implemented/partial set based on current `classes/stratagems.py`.
     implemented = {
         "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player).",
-        "FIRE OVERWATCH": "Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction.",
+        "FIRE OVERWATCH": "Queued when an enemy unit is set up, starts/ends a Normal/Advance/Fall Back move, or declares a charge; resolves shooting with hit-on-6s restriction.",
         "RAPID INGRESS": "Queued at end of opponent Movement phase; places a reserves unit immediately.",
         "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw; once per battle enforced.",
         "TANK SHOCK": "Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6).",
@@ -285,4 +285,3 @@ def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
-

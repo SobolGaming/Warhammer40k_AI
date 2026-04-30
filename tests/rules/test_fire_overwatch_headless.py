@@ -200,6 +200,81 @@ def test_maybe_queue_overwatch_filters_units_without_legal_out_of_phase_shots() 
     assert list(manager._pending_reactions[0].get("candidates", []) or []) == [valid_shooter]
 
 
+def test_fire_overwatch_registers_charge_declared_handler() -> None:
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.available = [SimpleNamespace(name="FIRE OVERWATCH")]
+
+    handlers = manager._compute_required_handlers()
+
+    assert any(
+        getattr(handler, "__name__", "") == "_on_charge_declared"
+        for handler in list(handlers.get("charge_declared", []) or [])
+    )
+
+
+def test_charge_declared_opens_fire_overwatch_window_not_charge_end() -> None:
+    valid_shooter = SimpleNamespace(
+        id="unit:valid",
+        name="Valid Shooter",
+        is_alive=lambda: True,
+        deployed=True,
+        is_titanic=False,
+        is_embarked=False,
+        embarked_in=None,
+        special_rules={},
+        is_battle_shocked=lambda: False,
+        can_shoot_out_of_phase_at_target=lambda _enemy, _game_map: True,
+    )
+    defender_player = SimpleNamespace(
+        id="player:defender",
+        command_points=1,
+        get_army=lambda: SimpleNamespace(units=[valid_shooter]),
+    )
+    attacker_player = SimpleNamespace(id="player:attacker")
+    charging_unit = SimpleNamespace(
+        id="unit:charging",
+        name="Charging Unit",
+        get_parent_army=lambda: SimpleNamespace(player=attacker_player),
+        special_rules={},
+    )
+    charging_unit.is_overwatch_prevented_against = lambda _target, game=None: False
+
+    queued_contexts: list[dict] = []
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = defender_player
+    manager.game = SimpleNamespace(
+        get_current_player=lambda: attacker_player,
+        map=SimpleNamespace(get_distance_between_units=lambda _u1, _u2: 10.0),
+    )
+    manager._used_this_turn = {"OVERWATCH": False}
+    manager._used_stratagems_this_phase = set()
+    manager._current_phase_name = "Charge phase"
+    manager._pending_reactions = []
+    manager._queue_reaction = lambda reaction: manager._pending_reactions.append(reaction)
+    manager._queue_overwatch_decision = lambda **kwargs: queued_contexts.append(dict(kwargs)) or True
+    manager.get_by_name = lambda _name: SimpleNamespace(
+        name="FIRE OVERWATCH",
+        is_phase_allowed=lambda phase: str(phase or "") == "Charge phase",
+        is_turn_allowed=lambda is_active: not bool(is_active),
+        cp_cost=1,
+    )
+
+    manager._maybe_queue_overwatch(charging_unit, action="charge", when="end")
+
+    assert queued_contexts == []
+    assert manager._pending_reactions == []
+
+    manager._on_charge_declared(charging_unit, target_units=[])
+
+    assert len(queued_contexts) == 1
+    assert queued_contexts[0]["action"] == "charge"
+    assert queued_contexts[0]["when"] == "declare"
+    assert queued_contexts[0]["candidates"] == [valid_shooter]
+    assert len(manager._pending_reactions) == 1
+    assert manager._pending_reactions[0]["action"] == "charge"
+    assert manager._pending_reactions[0]["when"] == "declare"
+
+
 def test_build_fire_overwatch_declarations_prefers_best_valid_profile() -> None:
     invalid_profile = SimpleNamespace(
         name="Heavy Invalid",

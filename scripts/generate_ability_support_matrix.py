@@ -20835,7 +20835,7 @@ def _stratagem_support(
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
         "COUNTER-OFFENSIVE": "Fight phase: select a unit to fight next after enemy unit fights.",
         "EPIC CHALLENGE": "Fight phase: selected CHARACTER gains Precision for melee attacks.",
-        "FIRE OVERWATCH": "Queued on enemy movement; resolves shooting on 6s to hit.",
+        "FIRE OVERWATCH": "Queued when an enemy unit is set up, starts/ends a Normal/Advance/Fall Back move, or declares a charge; resolves shooting on 6s to hit.",
         "GO TO GROUND": "Shooting phase: INFANTRY gains cover + 6++ until end of phase.",
         "GRENADE": "Shooting phase: 6D6 vs 4+ for mortal wounds within 8\".",
         "HEROIC INTERVENTION": "Charge phase: select unit to charge after enemy charge ends.",

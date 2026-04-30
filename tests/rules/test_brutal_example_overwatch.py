@@ -176,7 +176,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
             cp_cost=1,
         )
 
-        stratagem_mgr._maybe_queue_overwatch(moving_unit, "charge", "start")
+        stratagem_mgr._maybe_queue_overwatch(moving_unit, "charge", "declare")
         self.assertEqual(len(stratagem_mgr._pending_reactions), 1)
 
     def test_brutal_example_bodyguard_loss_resolves_before_overwatch_shooting(self):
