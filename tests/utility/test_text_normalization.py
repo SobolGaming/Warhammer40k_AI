@@ -29,6 +29,10 @@ def test_normalize_display_text_replaces_wahapedia_punctuation_variants() -> Non
     assert normalize_display_text("\u00e2\u0080\u0098quoted\u00e2\u0080\u0099") == "'quoted'"
 
 
+def test_normalize_display_text_accepts_unhashable_inputs() -> None:
+    assert normalize_display_text(["Juggernaut\u2019s", "horn"]) == "['Juggernaut's', 'horn']"
+
+
 def test_committed_wahapedia_json_has_no_disallowed_text_variants() -> None:
     root = Path(__file__).resolve().parents[2] / "wahapedia_data"
     failures: list[str] = []

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Any
 
 
@@ -69,15 +70,22 @@ DISALLOWED_SOURCE_TEXT_FRAGMENTS: tuple[str, ...] = tuple(
 )
 
 
-def normalize_display_text(text: object) -> str:
+@lru_cache(maxsize=65536)
+def _normalize_display_text_str(value: str) -> str:
     """Return readable text with Wahapedia's unstable punctuation normalized."""
 
-    value = unicodedata.normalize("NFC", str(text or ""))
+    value = unicodedata.normalize("NFC", value)
     for source, replacement in _TEXT_REPLACEMENTS:
         value = value.replace(source, replacement)
     value = re.sub(r"\s+", " ", value).strip()
     value = re.sub(r"\s+([,.])", r"\1", value)
     return value
+
+
+def normalize_display_text(text: object) -> str:
+    """Return readable text with Wahapedia's unstable punctuation normalized."""
+
+    return _normalize_display_text_str(str(text or ""))
 
 
 def canonical_rules_key(text: object) -> str:
