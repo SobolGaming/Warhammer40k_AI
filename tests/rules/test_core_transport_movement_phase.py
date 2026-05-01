@@ -8,10 +8,13 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DISEMBARK,
     DECISION_EMBARK,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_MOVEMENT_ACTION,
+    DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import build_select_movement_action_request
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -25,6 +28,36 @@ from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 pytestmark = pytest.mark.integration
 
 WAHA = WahaHelper("wahapedia_data")
+
+
+class _RecordingTransportRouter:
+    def __init__(self, *, preferred_actions: tuple[str, ...]) -> None:
+        self.preferred_actions = tuple(
+            str(action or "").strip().lower() for action in preferred_actions
+        )
+        self.requests: list[DecisionRequest] = []
+
+    def rank_legal_candidates(self, request: DecisionRequest, fallback_order):
+        self.requests.append(request)
+        remaining = list(fallback_order or [])
+        ordered = []
+        for preferred_action in self.preferred_actions:
+            matches = [
+                candidate
+                for candidate in remaining
+                if str(candidate.params.get("action", "") or "").strip().lower() == preferred_action
+            ]
+            ordered.extend(matches)
+            match_ids = {id(candidate) for candidate in matches}
+            remaining = [candidate for candidate in remaining if id(candidate) not in match_ids]
+        return ordered + remaining
+
+    def requests_of_type(self, decision_type: str) -> list[DecisionRequest]:
+        return [
+            request
+            for request in self.requests
+            if str(getattr(request, "decision_type", "") or "") == str(decision_type or "")
+        ]
 
 
 def _waha_unit(name: str, *, faction_id: str) -> Unit:
@@ -375,3 +408,63 @@ def test_core_destroyed_transport_emergency_disembark_fallback_uses_real_wahaped
     assert find_positions.call_count == 2
     assert find_positions.call_args_list[0].kwargs["max_distance"] == 3.0
     assert find_positions.call_args_list[1].kwargs["max_distance"] == 6.0
+
+
+def test_headless_policy_receives_movement_phase_disembark_choice_with_real_wahapedia_transport() -> None:
+    game, marine_player, rhino, tactical_squad, _boyz = _core_fixture()
+    _start_embarked(rhino, tactical_squad, game)
+    router = _RecordingTransportRouter(preferred_actions=("disembark",))
+    HeadlessPolicyDecisionController(
+        game=game,
+        ai_router=router,
+        skip_decision_types={DECISION_SELECT_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
+        auto_attach=True,
+    )
+
+    pending_transport_choice = game._queue_movement_phase_start_transport_choices(player=marine_player)
+
+    assert pending_transport_choice is False
+    disembark_requests = router.requests_of_type(DECISION_DISEMBARK)
+    assert len(disembark_requests) == 1
+    request = disembark_requests[0]
+    candidate_actions = {str(candidate.params.get("action", "") or "") for candidate in request.candidates}
+    assert {"skip", "disembark"}.issubset(candidate_actions)
+    disembark_candidates = [
+        candidate for candidate in request.candidates if str(candidate.params.get("action", "") or "") == "disembark"
+    ]
+    assert len(disembark_candidates) == 1
+    assert disembark_candidates[0].params["unit_id"] == get_entity_id(tactical_squad)
+    assert disembark_candidates[0].params["transport_id"] == get_entity_id(rhino)
+    assert tactical_squad.embarked_in is None
+    assert tactical_squad in game.map.units
+    assert tactical_squad.round_state.disembarked_this_round is True
+
+
+def test_headless_policy_receives_movement_phase_embark_choice_after_real_move_with_wahapedia_models() -> None:
+    game, marine_player, rhino, tactical_squad, _boyz = _core_fixture()
+    _place_unit_grid(game, tactical_squad, 5.0, 5.0)
+    final_positions = _find_disembark_positions(game, tactical_squad, rhino)
+    router = _RecordingTransportRouter(preferred_actions=("embark",))
+    HeadlessPolicyDecisionController(
+        game=game,
+        ai_router=router,
+        skip_decision_types={DECISION_SELECT_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
+        auto_attach=True,
+    )
+
+    _move_unit_by_decision(game, marine_player, tactical_squad, final_positions)
+
+    embark_requests = router.requests_of_type(DECISION_EMBARK)
+    assert len(embark_requests) == 1
+    request = embark_requests[0]
+    candidate_actions = {str(candidate.params.get("action", "") or "") for candidate in request.candidates}
+    assert {"skip", "embark"}.issubset(candidate_actions)
+    embark_candidates = [
+        candidate for candidate in request.candidates if str(candidate.params.get("action", "") or "") == "embark"
+    ]
+    assert len(embark_candidates) == 1
+    assert embark_candidates[0].params["unit_id"] == get_entity_id(tactical_squad)
+    assert embark_candidates[0].params["transport_id"] == get_entity_id(rhino)
+    assert tactical_squad.embarked_in is rhino
+    assert tactical_squad not in game.map.units
+    assert tactical_squad.round_state.embarked_this_round is True

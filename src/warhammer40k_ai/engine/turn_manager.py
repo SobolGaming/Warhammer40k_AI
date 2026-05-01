@@ -66,6 +66,9 @@ def next_phase(game: "Game") -> None:
         pass
     try:
         if getattr(game.phase, "name", None) == "MOVEMENT_PHASE":
+            queue_transport_choices = getattr(game, "_queue_movement_phase_start_transport_choices", None)
+            if callable(queue_transport_choices) and queue_transport_choices(player=game.get_current_player()):
+                return
             queue_move_units = getattr(game, "_queue_movement_phase_move_units_selection", None)
             if callable(queue_move_units):
                 queue_move_units(player=game.get_current_player())

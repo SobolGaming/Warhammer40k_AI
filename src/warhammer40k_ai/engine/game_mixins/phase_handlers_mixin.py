@@ -113,6 +113,320 @@ class GamePhaseHandlersMixin:
             return True
         return False
 
+    def _movement_phase_has_pending_transport_choice_request(self, *, decision_type: str | None = None) -> bool:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for request in list(queue.list() or []):
+            req_type = str(getattr(request, "decision_type", "") or "").strip()
+            if decision_type is not None and req_type != str(decision_type or "").strip():
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+                continue
+            if str(ctx.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
+                continue
+            if bool(ctx.get("movement_phase_transport_choice", False)):
+                return True
+        return False
+
+    def _decision_result_requests_skip(self, request: DecisionRequest, result: DecisionResult) -> bool:
+        option = next(
+            (
+                opt
+                for opt in list(getattr(request, "options", []) or [])
+                if str(getattr(opt, "option_id", "") or "") == str(getattr(result, "option_id", "") or "")
+            ),
+            None,
+        )
+        option_payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
+        result_payload = dict(getattr(result, "payload", {}) or {})
+        action = str(result_payload.get("action", "") or option_payload.get("action", "") or "").strip().lower()
+        return bool(
+            result_payload.get("skipped", False)
+            or result_payload.get("skip", False)
+            or option_payload.get("skipped", False)
+            or option_payload.get("skip", False)
+            or action in {"skip", "pass"}
+        )
+
+    def _movement_phase_transport_is_active_player_unit(self, transport: object, player: object) -> bool:
+        if transport is None or player is None:
+            return False
+        army = self._get_player_army(player)
+        if army is None:
+            return False
+        get_parent_army = getattr(transport, "get_parent_army", None)
+        transport_army = get_parent_army() if callable(get_parent_army) else getattr(transport, "parent_army", None)
+        return transport_army is army
+
+    def _movement_phase_can_voluntarily_disembark(self, passenger: object, transport: object) -> bool:
+        if passenger is None or transport is None:
+            return False
+        if not bool(getattr(transport, "is_transport", False)):
+            return False
+        if getattr(passenger, "embarked_in", None) is not transport:
+            return False
+        if passenger not in list(getattr(transport, "transport_passengers", []) or []):
+            return False
+        is_alive = getattr(passenger, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        transport_alive = getattr(transport, "is_alive", None)
+        if callable(transport_alive) and not bool(transport_alive()):
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None or transport not in list(getattr(game_map, "units", []) or []):
+            return False
+        if bool(getattr(transport, "is_embarked", False)) or getattr(transport, "embarked_in", None) is not None:
+            return False
+        passenger_state = getattr(passenger, "round_state", None)
+        if bool(getattr(passenger_state, "embarked_this_round", False)):
+            return False
+        if bool(getattr(passenger_state, "disembarked_this_round", False)):
+            return False
+        transport_state = getattr(transport, "round_state", None)
+        if bool(getattr(transport_state, "advanced_this_round", False)):
+            return False
+        if bool(getattr(transport_state, "fell_back_this_round", False)):
+            return False
+        models = list(getattr(transport, "models", []) or [])
+        if not models or not bool(getattr(models[0], "is_alive", False)):
+            return False
+        transport_base = getattr(models[0], "model_base", None)
+        if transport_base is None:
+            return False
+        find_positions = getattr(passenger, "_find_disembark_positions", None)
+        if not callable(find_positions):
+            return False
+        positions = find_positions(
+            transport_base=transport_base,
+            game_map=game_map,
+            max_distance=3.0,
+        )
+        return positions is not None
+
+    def _queue_movement_phase_disembark_choice(
+        self,
+        *,
+        passenger: object,
+        transport: object,
+        player: object | None = None,
+    ):
+        from ..decision_kinds import DECISION_DISEMBARK
+
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or not self._movement_phase_transport_is_active_player_unit(transport, active_player):
+            return None
+        if not self._movement_phase_can_voluntarily_disembark(passenger, transport):
+            return None
+        passenger_id = str(get_entity_id(passenger) or "").strip()
+        transport_id = str(get_entity_id(transport) or "").strip()
+        if not passenger_id or not transport_id:
+            return None
+        if self._movement_phase_has_pending_request(DECISION_DISEMBARK, passenger_id):
+            return None
+
+        options = [
+            DecisionOption.create(
+                "Remain embarked",
+                payload={
+                    "unit_id": passenger_id,
+                    "transport_id": None,
+                    "action": "skip",
+                    "skip": True,
+                    "action_id": f"{DECISION_DISEMBARK}:MOVEMENT_PHASE:MOVE_UNITS:{passenger_id}:SKIP",
+                },
+            ),
+            DecisionOption.create(
+                f"Disembark from {getattr(transport, 'name', 'Transport')}",
+                payload={
+                    "unit_id": passenger_id,
+                    "transport_id": transport_id,
+                    "action": "disembark",
+                    "action_id": f"{DECISION_DISEMBARK}:MOVEMENT_PHASE:MOVE_UNITS:{passenger_id}:{transport_id}",
+                },
+            ),
+        ]
+        request = DecisionRequest.create(
+            DECISION_DISEMBARK,
+            f"Disembark {getattr(passenger, 'name', 'Unit')}",
+            player_id=getattr(active_player, "id", None),
+            options=options,
+            context={
+                "unit_id": passenger_id,
+                "transport_id": transport_id,
+                "allowed_transport_ids": [transport_id],
+                "phase_name": "MOVEMENT_PHASE",
+                "phase_step": "MOVE_UNITS",
+                "selection_purpose": "VOLUNTARY_DISEMBARK",
+                "movement_phase_transport_choice": True,
+                "disembark_max_distance": 3.0,
+            },
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_movement_phase_disembark_choices(
+        self,
+        *,
+        player: object | None = None,
+        transport: object | None = None,
+    ) -> bool:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return False
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return False
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return False
+        army = self._get_player_army(active_player)
+        if army is None:
+            return False
+        transports = [transport] if transport is not None else list(getattr(army, "units", []) or [])
+        queued_any = False
+        for candidate_transport in sorted(
+            [unit for unit in transports if unit is not None],
+            key=lambda unit: str(get_entity_id(unit) or ""),
+        ):
+            if not self._movement_phase_transport_is_active_player_unit(candidate_transport, active_player):
+                continue
+            passengers = [
+                passenger
+                for passenger in list(getattr(candidate_transport, "transport_passengers", []) or [])
+                if passenger is not None
+            ]
+            for passenger in sorted(passengers, key=lambda unit: str(get_entity_id(unit) or "")):
+                request = self._queue_movement_phase_disembark_choice(
+                    passenger=passenger,
+                    transport=candidate_transport,
+                    player=active_player,
+                )
+                queued_any = queued_any or request is not None
+        return queued_any or self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK)
+
+    def _queue_movement_phase_disembark_choices_batched(
+        self,
+        *,
+        player: object | None = None,
+        transport: object | None = None,
+    ) -> bool:
+        self._movement_phase_transport_choice_batching = True
+        try:
+            return self._queue_movement_phase_disembark_choices(player=player, transport=transport)
+        finally:
+            self._movement_phase_transport_choice_batching = False
+
+    def _queue_movement_phase_start_transport_choices(self, *, player: object | None = None) -> bool:
+        from ..decision_kinds import DECISION_DISEMBARK
+
+        self._queue_movement_phase_disembark_choices_batched(player=player)
+        return self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK)
+
+    def _movement_phase_eligible_embark_transports_for_unit(
+        self,
+        unit: object,
+        player: object | None = None,
+    ) -> list[object]:
+        if unit is None:
+            return []
+        if not bool(getattr(self, "is_authoritative", True)):
+            return []
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return []
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return []
+        army = self._get_player_army(active_player)
+        if army is None:
+            return []
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        unit_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        if unit_army is not army:
+            return []
+        if self._decision_unit_is_embarked(unit):
+            return []
+        from ...utility.movement_utils import compute_embark_candidates
+
+        eligible: list[object] = []
+        for transport in sorted(
+            [candidate for candidate in list(getattr(army, "units", []) or []) if candidate is not None],
+            key=lambda candidate: str(get_entity_id(candidate) or ""),
+        ):
+            if transport is unit or not bool(getattr(transport, "is_transport", False)):
+                continue
+            if unit in list(compute_embark_candidates(transport, getattr(self, "map", None)) or []):
+                eligible.append(transport)
+        return eligible
+
+    @staticmethod
+    def _decision_unit_is_embarked(unit: object) -> bool:
+        return bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None
+
+    def _queue_movement_phase_embark_choice(self, unit: object, *, player: object | None = None):
+        from ..decision_kinds import DECISION_EMBARK
+
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None:
+            return None
+        unit_id = str(get_entity_id(unit) or "").strip()
+        if not unit_id:
+            return None
+        if self._movement_phase_has_pending_request(DECISION_EMBARK, unit_id):
+            return None
+        transports = self._movement_phase_eligible_embark_transports_for_unit(unit, player=active_player)
+        if not transports:
+            return None
+        options = [
+            DecisionOption.create(
+                "Do not embark",
+                payload={
+                    "unit_id": unit_id,
+                    "transport_id": None,
+                    "action": "skip",
+                    "skip": True,
+                    "action_id": f"{DECISION_EMBARK}:MOVEMENT_PHASE:MOVE_UNITS:{unit_id}:SKIP",
+                },
+            )
+        ]
+        for transport in transports:
+            transport_id = str(get_entity_id(transport) or "").strip()
+            if not transport_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    f"Embark into {getattr(transport, 'name', 'Transport')}",
+                    payload={
+                        "unit_id": unit_id,
+                        "transport_id": transport_id,
+                        "action": "embark",
+                        "action_id": f"{DECISION_EMBARK}:MOVEMENT_PHASE:MOVE_UNITS:{unit_id}:{transport_id}",
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+        request = DecisionRequest.create(
+            DECISION_EMBARK,
+            f"Embark {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(active_player, "id", None),
+            options=options,
+            context={
+                "unit_id": unit_id,
+                "transport_ids": [
+                    str(get_entity_id(transport) or "")
+                    for transport in transports
+                    if get_entity_id(transport)
+                ],
+                "phase_name": "MOVEMENT_PHASE",
+                "phase_step": "MOVE_UNITS",
+                "selection_purpose": "EMBARK_AFTER_MOVE",
+                "movement_phase_transport_choice": True,
+            },
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_movement_phase_move_units_selection(self, player=None):
         if self._pending_movement_move_units_select_unit_request() is not None:
             return self._pending_movement_move_units_select_unit_request()
@@ -954,6 +1268,8 @@ class GamePhaseHandlersMixin:
         from ..decision_kinds import (
             DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
             DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+            DECISION_DISEMBARK,
+            DECISION_EMBARK,
             DECISION_REQUEST_DICE_ROLL,
             DECISION_SELECT_MOVEMENT_ACTION,
         )
@@ -961,6 +1277,17 @@ class GamePhaseHandlersMixin:
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
         movement_type = ""
         unit_id = ""
+
+        if decision_type == DECISION_DISEMBARK:
+            if bool(getattr(self, "_movement_phase_transport_choice_batching", False)):
+                return
+            if not self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK):
+                self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+            return
+
+        if decision_type == DECISION_EMBARK:
+            self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+            return
 
         if decision_type == DECISION_SELECT_MOVEMENT_ACTION:
             option = next(
@@ -975,14 +1302,58 @@ class GamePhaseHandlersMixin:
             movement_type = str(payload.get("action_type", "") or "").strip().lower()
             unit_id = str(payload.get("unit_id", "") or "").strip()
             if movement_type == "stationary":
-                self._queue_movement_phase_move_units_selection()
+                resolver = getattr(self, "_resolve_unit_by_id", None)
+                selected_unit = resolver(unit_id) if callable(resolver) and unit_id else None
+                if selected_unit is not None:
+                    queued_disembark = self._queue_movement_phase_disembark_choices_batched(
+                        player=self.get_current_player(),
+                        transport=selected_unit,
+                    )
+                    if self._movement_phase_has_pending_transport_choice_request(
+                        decision_type=DECISION_DISEMBARK
+                    ):
+                        return
+                    if queued_disembark:
+                        self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+                        return
+                self._queue_movement_phase_move_units_selection(player=self.get_current_player())
                 return
         elif decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
             if str(ctx.get("phase_name", "") or "").strip().upper() == "MOVEMENT_PHASE" and str(
                 ctx.get("phase_step", "") or ""
             ).strip().upper() == "MOVE_UNITS":
-                self._queue_movement_phase_move_units_selection()
+                if self._decision_result_requests_skip(request, result):
+                    self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+                    return
+                unit_id = self._resolve_request_unit_id(request)
+                resolver = getattr(self, "_resolve_unit_by_id", None)
+                moved_unit = resolver(unit_id) if callable(resolver) and unit_id else None
+                if moved_unit is None:
+                    registry = getattr(self, "entity_registry", None)
+                    if registry is not None and unit_id:
+                        moved_unit = registry.get(unit_id, kind="unit")
+                if moved_unit is not None:
+                    queued_disembark = self._queue_movement_phase_disembark_choices_batched(
+                        player=self.get_current_player(),
+                        transport=moved_unit,
+                    )
+                    if self._movement_phase_has_pending_transport_choice_request(
+                        decision_type=DECISION_DISEMBARK
+                    ):
+                        return
+                    if queued_disembark:
+                        self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+                        return
+                    queued_embark = self._queue_movement_phase_embark_choice(
+                        moved_unit,
+                        player=self.get_current_player(),
+                    )
+                    if queued_embark is not None or self._movement_phase_has_pending_transport_choice_request(
+                        decision_type=DECISION_EMBARK
+                    ):
+                        return
+                self._queue_movement_phase_move_units_selection(player=self.get_current_player())
             return
         elif decision_type == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
             ctx = dict(getattr(request, "context", {}) or {})
@@ -1021,7 +1392,10 @@ class GamePhaseHandlersMixin:
             return
         if self._movement_phase_has_pending_request(DECISION_CHOOSE_MOVE_MODIFIER_IGNORES, unit_id):
             return
-        if movement_type == "advance" and self._movement_phase_has_pending_request(DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES, unit_id):
+        if movement_type == "advance" and self._movement_phase_has_pending_request(
+            DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+            unit_id,
+        ):
             return
         if movement_type == "advance" and self._movement_phase_has_pending_request(DECISION_REQUEST_DICE_ROLL, unit_id):
             return

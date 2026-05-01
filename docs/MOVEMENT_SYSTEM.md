@@ -119,6 +119,13 @@ Movement actions are `MovementAction` values applied through `Unit._execute_acti
 disembark use separate `EMBARK` / `DISEMBARK` decisions and are not exposed as
 movement-action choices.
 
+During the Movement phase, the authoritative phase flow emits those transport choices
+to the same policy-facing decision stream as other movement decisions. Voluntary
+`DISEMBARK` choices are queued before the Move Units selection window and again after
+a transport Remains Stationary or completes a Normal move. `EMBARK` choices are queued
+after a unit completes a qualifying Normal move, Advance, or Fall Back and before the
+next Move Units selection is requested.
+
 The action handler also gates movement due to transport disembark restrictions,
 including immediate disembarks after a reserves transport is set up, and publishes
 movement-start/finish events for reaction windows.
