@@ -32,6 +32,13 @@ def compute_embark_candidates(transport_unit, game_map) -> List[object]:
             continue
         if getattr(unit.round_state, "remained_stationary_this_round", False):
             continue
+        if (
+            getattr(unit.round_state, "reinforced_this_round", False)
+            and not getattr(unit.round_state, "moved_this_round", False)
+            and not getattr(unit.round_state, "advanced_this_round", False)
+            and not getattr(unit.round_state, "fell_back_this_round", False)
+        ):
+            continue
         if getattr(unit.round_state, "disembarked_this_round", False):
             continue
         ok = True

@@ -136,6 +136,7 @@ _UNIT_ROUND_FIELDS = [
     "advance_roll",
     "embarked_this_round",
     "disembarked_this_round",
+    "cannot_remain_stationary_after_disembark",
     "disembarked_from_moved_transport",
     "disembarked_from_destroyed_transport",
     "disembarked_cannot_charge",

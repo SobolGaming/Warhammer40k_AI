@@ -151,12 +151,26 @@ class ActionsMovementMixin:
             actions = [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
 
         movement_lock_mode, _movement_lock_source = self._movement_lock_mode_and_source()
+        cannot_remain_stationary = bool(
+            getattr(
+                getattr(self, "round_state", None),
+                "cannot_remain_stationary_after_disembark",
+                False,
+            )
+        )
         if movement_lock_mode == "remain_stationary":
+            if cannot_remain_stationary:
+                return []
             return [MovementAction.REMAIN_STATIONARY.value]
         if movement_lock_mode == "no_advance_fall_back":
             actions = [
                 action for action in list(actions or [])
                 if action not in (MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value)
+            ]
+        if cannot_remain_stationary:
+            actions = [
+                action for action in list(actions or [])
+                if action != MovementAction.REMAIN_STATIONARY.value
             ]
         return list(actions or [])
 
@@ -317,6 +331,15 @@ class ActionsMovementMixin:
     def remain_stationary(self) -> bool:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot Remain Stationary (AIRCRAFT)")
+            return False
+        if bool(
+            getattr(
+                getattr(self, "round_state", None),
+                "cannot_remain_stationary_after_disembark",
+                False,
+            )
+        ):
+            logger.info(f"{self.name} cannot Remain Stationary after disembarking")
             return False
         # Unit explicitly chose to remain stationary, so mark it as such
         self.round_state.remained_stationary_this_round = True

@@ -9,6 +9,42 @@ logger = logging.getLogger(__name__)
 _SHOOTING_LOS_CACHE_MAX = 8192
 
 
+def _unit_disembarked_in_current_phase(unit: object, game: object | None) -> bool:
+    round_state = getattr(unit, "round_state", None)
+    if not bool(getattr(round_state, "disembarked_this_round", False)):
+        return False
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        return True
+    disembark_phase = str(sr.get("voice_of_command_disembark_phase", "") or "").strip().upper()
+    if not disembark_phase or game is None:
+        return True
+    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    if current_phase and current_phase != disembark_phase:
+        return False
+
+    try:
+        disembark_round = int(sr.get("voice_of_command_disembark_round", 0) or 0)
+    except (TypeError, ValueError):
+        disembark_round = 0
+    if disembark_round > 0:
+        try:
+            current_round = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        if current_round > 0 and current_round != disembark_round:
+            return False
+
+    disembark_owner = str(sr.get("voice_of_command_disembark_owner", "") or "").strip()
+    if disembark_owner:
+        current_player_getter = getattr(game, "get_current_player", None)
+        current_player = current_player_getter() if callable(current_player_getter) else None
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        if current_owner and current_owner != disembark_owner:
+            return False
+    return True
+
+
 def _shooting_entity_id(entity: object | None) -> str:
     if entity is None:
         return ""
@@ -4352,8 +4388,17 @@ class ShootingMixin:
         except Exception:
             pass
 
-        if self.round_state.disembarked_this_round:
-            logger.info(f"{self.name} cannot embark after disembarking this turn")
+        if _unit_disembarked_in_current_phase(self, game):
+            logger.info(f"{self.name} cannot embark after disembarking this phase")
+            return
+
+        if (
+            getattr(self.round_state, "reinforced_this_round", False)
+            and not getattr(self.round_state, "moved_this_round", False)
+            and not getattr(self.round_state, "advanced_this_round", False)
+            and not getattr(self.round_state, "fell_back_this_round", False)
+        ):
+            logger.info(f"{self.name} cannot embark after arriving from Reserves unless it makes a qualifying move")
             return
 
         if not transport_unit.can_transport(self):
@@ -5558,6 +5603,8 @@ class ShootingMixin:
 
                 # Emergency disembarkation from a destroyed transport still applies destroyed-transport effects
                 self.round_state.disembarked_this_round = True
+                self.round_state.cannot_remain_stationary_after_disembark = True
+                self.round_state.remained_stationary_this_round = False
                 self.round_state.disembarked_from_transport_id = get_entity_id(transport_unit)
                 self.round_state.disembarked_from_destroyed_transport = True
                 self.round_state.disembarked_cannot_charge = True
@@ -5653,6 +5700,8 @@ class ShootingMixin:
         transport_unit.remove_passenger(self)
 
         self.round_state.disembarked_this_round = True
+        self.round_state.cannot_remain_stationary_after_disembark = True
+        self.round_state.remained_stationary_this_round = False
         self.round_state.disembarked_from_transport_id = get_entity_id(transport_unit)
         game = None
         army = self.get_parent_army()
@@ -5964,6 +6013,8 @@ class ShootingMixin:
         transport_unit.remove_passenger(self)
 
         self.round_state.disembarked_this_round = True
+        self.round_state.cannot_remain_stationary_after_disembark = True
+        self.round_state.remained_stationary_this_round = False
         self.round_state.disembarked_from_transport_id = get_entity_id(transport_unit)
         game = None
         army = self.get_parent_army()

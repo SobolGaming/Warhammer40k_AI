@@ -66,6 +66,7 @@ class UnitRoundState:
     # Transport / Embark / Disembark tracking
     embarked_this_round: bool = False
     disembarked_this_round: bool = False
+    cannot_remain_stationary_after_disembark: bool = False
     disembarked_from_moved_transport: bool = False  # Counts as Normal move, cannot move further this turn
     disembarked_from_destroyed_transport: bool = False  # Counts as Normal move; typically cannot charge
     disembarked_cannot_charge: bool = False  # Explicit "cannot charge" override after disembark

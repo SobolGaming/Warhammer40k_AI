@@ -3638,6 +3638,14 @@ def _validate_embark(game: object, request: DecisionRequest, result: DecisionRes
         return ("Embark transport not found.",)
     if not bool(getattr(transport, "is_transport", False)):
         return ("Embark requires a transport unit.",)
+    round_state = getattr(unit, "round_state", None)
+    if (
+        bool(getattr(round_state, "reinforced_this_round", False))
+        and not bool(getattr(round_state, "moved_this_round", False))
+        and not bool(getattr(round_state, "advanced_this_round", False))
+        and not bool(getattr(round_state, "fell_back_this_round", False))
+    ):
+        return ("A unit that arrived from Reserves cannot embark only because it counts as having made a Normal move.",)
     try:
         if not transport.can_transport(unit):
             return ("Transport cannot embark selected unit.",)

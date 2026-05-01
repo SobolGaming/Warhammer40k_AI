@@ -123,6 +123,18 @@ The action handler also gates movement due to transport disembark restrictions,
 including immediate disembarks after a reserves transport is set up, and publishes
 movement-start/finish events for reaction windows.
 
+Voluntary disembark uses transport state to decide the passenger's later movement
+rights. A unit that disembarks before its transport moves is still eligible to make
+a later Normal move or Advance, but it cannot choose Remain Stationary and does not
+retain remained-stationary state. A unit that disembarks after its transport made a
+Normal move counts as moved, cannot move again in that Movement phase, and cannot
+declare a charge that turn unless an explicit transport rule overrides that.
+
+Embark candidates require an actual qualifying Normal, Advance, or Fall Back move.
+Reserve arrival state is tracked separately as `reinforced_this_round`; that state
+does not make a unit eligible to embark merely because the unit counts as having made
+a Normal move after being set up.
+
 Destroyed-transport disembark keeps a second safety net: if an initial 3" placement
 passes candidate search but fails final aggregate map validation, the engine retries
 it as an emergency disembark instead of surfacing a terminal placement error.
@@ -156,7 +168,8 @@ it as an emergency disembark instead of surfacing a terminal placement error.
 #### Remain Stationary
 
 `Unit.remain_stationary()` marks the unit as having remained stationary and blocks the
-action for AIRCRAFT. This is a pure state update; no positions change.
+action for AIRCRAFT or for units that disembarked earlier in the phase. This is a pure
+state update; no positions change.
 
 #### Normal Move
 
