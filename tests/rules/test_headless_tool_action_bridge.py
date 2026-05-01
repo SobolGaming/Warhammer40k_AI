@@ -113,14 +113,21 @@ def _build_generic_tool_manager(
     return manager, player, game, stratagem
 
 
-def _core_stratagem(name: str, *, stratagem_id: str, phase: str) -> Stratagem:
+def _core_stratagem(
+    name: str,
+    *,
+    stratagem_id: str,
+    phase: str,
+    turn: str = "Your turn",
+    cp_cost: int = 1,
+) -> Stratagem:
     return Stratagem(
         id=stratagem_id,
         name=name,
         type="Core - Strategic Ploy Stratagem",
         description=f"{name} test",
-        cp_cost=1,
-        turn="Your turn",
+        cp_cost=cp_cost,
+        turn=turn,
         phase=phase,
         detachment="",
         faction_id="",
@@ -162,6 +169,43 @@ def _tool_payloads(request):
         for option in list(getattr(request, "options", []) or [])
         if str((getattr(option, "payload", {}) or {}).get("tool_name", "") or "")
     ]
+
+
+def test_core_stratagems_load_globally_for_headless_army() -> None:
+    army = SimpleNamespace(
+        faction_id="SM",
+        has_detachment_type=lambda *_args, **_kwargs: False,
+    )
+    player = SimpleNamespace(
+        id="player:core",
+        game=None,
+        get_army=lambda: army,
+    )
+
+    manager = StratagemManager(player)
+
+    core_by_name = {
+        str(getattr(stratagem, "name", "") or ""): stratagem
+        for stratagem in manager.available
+        if not str(getattr(stratagem, "faction_id", "") or "").strip()
+    }
+    assert set(core_by_name) == {
+        "COMMAND RE-ROLL",
+        "COUNTER-OFFENSIVE",
+        "EPIC CHALLENGE",
+        "FIRE OVERWATCH",
+        "GO TO GROUND",
+        "GRENADE",
+        "HEROIC INTERVENTION",
+        "INSANE BRAVERY",
+        "NEW ORDERS",
+        "RAPID INGRESS",
+        "SMOKESCREEN",
+        "TANK SHOCK",
+    }
+    assert all(manager._is_implemented_stratagem(stratagem) for stratagem in core_by_name.values())
+    assert all("Boarding Actions" not in stratagem.type for stratagem in core_by_name.values())
+    assert all("Challenger" not in stratagem.type for stratagem in core_by_name.values())
 
 
 def test_queue_headless_tool_action_decision_builds_select_tool_action_request() -> None:
@@ -403,6 +447,196 @@ def test_headless_grenade_is_available_in_shooting_phase_with_cp_and_targets() -
         payload["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == grenadier.id
         for payload in payloads
     )
+
+
+@pytest.mark.parametrize(
+    "name,stratagem_id,phase,turn,cp_cost,active_player_is_self,event",
+    [
+        (
+            "COUNTER-OFFENSIVE",
+            "000008335003",
+            "Fight phase",
+            "Either player's turn",
+            2,
+            False,
+            "fight_sequence_complete",
+        ),
+        (
+            "EPIC CHALLENGE",
+            "000008335004",
+            "Fight phase",
+            "Either player's turn",
+            1,
+            True,
+            "fight_unit_selected",
+        ),
+        (
+            "GO TO GROUND",
+            "000008335010",
+            "Shooting phase",
+            "Opponent's turn",
+            1,
+            False,
+            "shooting_targets_selected",
+        ),
+        (
+            "HEROIC INTERVENTION",
+            "000008335012",
+            "Charge phase",
+            "Opponent's turn",
+            1,
+            False,
+            "heroic_intervention",
+        ),
+        (
+            "INSANE BRAVERY",
+            "000008335005",
+            "Command phase",
+            "Your turn",
+            1,
+            True,
+            "battle_shock_test_started",
+        ),
+        (
+            "RAPID INGRESS",
+            "000008335008",
+            "Movement phase",
+            "Opponent's turn",
+            1,
+            False,
+            "phase_end",
+        ),
+        (
+            "SMOKESCREEN",
+            "000008335011",
+            "Shooting phase",
+            "Opponent's turn",
+            1,
+            False,
+            "shooting_targets_selected",
+        ),
+    ],
+)
+def test_headless_core_reaction_stratagems_emit_tool_actions_with_cp_and_trigger(
+    name: str,
+    stratagem_id: str,
+    phase: str,
+    turn: str,
+    cp_cost: int,
+    active_player_is_self: bool,
+    event: str,
+) -> None:
+    stratagem = _core_stratagem(
+        name,
+        stratagem_id=stratagem_id,
+        phase=phase,
+        turn=turn,
+        cp_cost=cp_cost,
+    )
+    player = SimpleNamespace(id=f"player:{name.lower().replace(' ', '-')}", command_points=cp_cost)
+    enemy_player = SimpleNamespace(id="player:enemy")
+    army = SimpleNamespace(id="army:core", units=[], player=player)
+    enemy_army = SimpleNamespace(id="army:enemy", units=[], player=enemy_player)
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
+    player.has_control = lambda: False
+    player._has_attached_decision_controller = lambda: True
+    player.active_secondaries = []
+
+    target_unit = SimpleNamespace(
+        id=f"unit:{name.lower().replace(' ', '-')}",
+        name=f"{name} Target",
+        deployed=True,
+        is_infantry=True,
+        is_alive=lambda: True,
+        is_embarked=False,
+        embarked_in=None,
+        special_rules={},
+    )
+    target_unit.get_parent_army = lambda: army
+    target_unit.get_attached_unit_root = lambda: target_unit
+    target_unit.is_battle_shocked = lambda: name == "INSANE BRAVERY"
+    target_unit.has_keyword = lambda keyword: str(keyword or "").strip().upper() in {"SMOKE", "INFANTRY"}
+    challenge_model = SimpleNamespace(
+        id=f"model:{name.lower().replace(' ', '-')}",
+        name=f"{name} Model",
+        parent_unit=target_unit,
+        is_character=True,
+    )
+    if name == "EPIC CHALLENGE":
+        target_unit.models = [challenge_model]
+
+    enemy_unit = SimpleNamespace(
+        id=f"unit:enemy-{name.lower().replace(' ', '-')}",
+        name=f"{name} Enemy",
+        is_alive=lambda: True,
+    )
+    enemy_unit.get_parent_army = lambda: enemy_army
+    army.units = [target_unit]
+    enemy_army.units = [enemy_unit]
+
+    game_map = SimpleNamespace(
+        units=[target_unit, enemy_unit],
+        get_enemy_units=lambda unit: [enemy_unit] if unit is target_unit else [target_unit],
+        is_within_engagement_range=lambda _left, _right: True,
+        get_distance_between_units=lambda _left, _right: 3.0,
+    )
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+        get_current_player=lambda: player if active_player_is_self else enemy_player,
+        map=game_map,
+        players=[player, enemy_player],
+        turn=1,
+    )
+    manager = _build_headless_core_manager(
+        stratagem=stratagem,
+        player=player,
+        game=game,
+        phase_name=phase,
+    )
+
+    context = {
+        "event": event,
+        "phase_name": phase,
+        "stratagem": stratagem.name,
+        "cp_cost": stratagem.cp_cost,
+    }
+    if name == "EPIC CHALLENGE":
+        context.update(
+            {
+                "unit": target_unit,
+                "target_unit": target_unit,
+                "eligible_models": [challenge_model],
+                "model_candidates": [challenge_model],
+            }
+        )
+    elif name == "INSANE BRAVERY":
+        context.update({"unit": target_unit, "target_unit": target_unit})
+    else:
+        context["candidates"] = [target_unit]
+    if name in {"GO TO GROUND", "SMOKESCREEN"}:
+        context["attacking_unit"] = enemy_unit
+    if name == "HEROIC INTERVENTION":
+        context["enemy_unit"] = enemy_unit
+    if name == "RAPID INGRESS":
+        context["phase"] = "Movement phase"
+    manager._pending_reactions = [context]
+
+    item = next(
+        item
+        for item in manager.get_phase_stratagem_items()
+        if item["name"] == name and item["is_reaction"] is True
+    )
+    assert item["available"] is True
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = _tool_payloads(request)
+    assert [payload["tool_name"] for payload in payloads] == [name]
+    assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
 
 
 def test_tool_action_sort_key_accepts_string_helper_map_keys() -> None:
