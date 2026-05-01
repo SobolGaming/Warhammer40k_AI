@@ -9,7 +9,7 @@ from warhammer40k_ai.engine.decision_handlers.stratagems import (
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_TOOL_ACTION
 from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
 from warhammer40k_ai.engine.game import Game
-from warhammer40k_ai.rules.stratagems import StratagemManager
+from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 
 
 def _build_remote_tool_manager():
@@ -113,6 +113,57 @@ def _build_generic_tool_manager(
     return manager, player, game, stratagem
 
 
+def _core_stratagem(name: str, *, stratagem_id: str, phase: str) -> Stratagem:
+    return Stratagem(
+        id=stratagem_id,
+        name=name,
+        type="Core - Strategic Ploy Stratagem",
+        description=f"{name} test",
+        cp_cost=1,
+        turn="Your turn",
+        phase=phase,
+        detachment="",
+        faction_id="",
+    )
+
+
+def _build_headless_core_manager(*, stratagem: Stratagem, player, game, phase_name: str) -> StratagemManager:
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.player = player
+    manager.game = game
+    manager.available = [stratagem]
+    manager._current_phase_name = phase_name
+    manager._pending_reactions = []
+    manager._reaction_timeout_s = 5.0
+    manager._skipped_tool_action_signatures = set()
+    manager._tool_action_probe_diagnostics = []
+    manager._tool_action_probe_diagnostic_keys = set()
+    manager._used_once_per_battle = {}
+    manager._used_battle_round = {}
+    manager._used_this_turn = {"OVERWATCH": False}
+    manager._used_stratagems_this_phase = set()
+    manager._command_reroll_units_this_phase = set()
+    manager._grenade_units_this_phase = set()
+    manager._heroic_intervention_units_this_phase = set()
+    manager._rapid_ingress_units_this_phase = set()
+    manager._defensive_reaction_cache = {}
+    manager._charge_melee_ap_cache = {}
+    manager._consolidate_move_cache = {}
+    manager._get_defensive_reaction_spec = lambda _stratagem: None
+    manager._get_consolidate_move_spec = lambda _stratagem: None
+    manager.get_by_name = lambda name: stratagem if str(name or "").strip().upper() == stratagem.name.upper() else None
+    player.stratagems = manager
+    return manager
+
+
+def _tool_payloads(request):
+    return [
+        dict(getattr(option, "payload", {}) or {})
+        for option in list(getattr(request, "options", []) or [])
+        if str((getattr(option, "payload", {}) or {}).get("tool_name", "") or "")
+    ]
+
+
 def test_queue_headless_tool_action_decision_builds_select_tool_action_request() -> None:
     manager, _player, game, target_unit = _build_remote_tool_manager()
 
@@ -195,6 +246,163 @@ def test_queue_headless_tool_action_decision_skips_bespoke_context_stratagems(st
 
     assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
     assert list(game.decision_queue.list() or []) == []
+
+
+def test_headless_tank_shock_is_available_after_vehicle_charge_with_cp() -> None:
+    stratagem = _core_stratagem(
+        "TANK SHOCK",
+        stratagem_id="000008335007",
+        phase="Charge phase",
+    )
+    player = SimpleNamespace(id="player:tank", command_points=1)
+    enemy_player = SimpleNamespace(id="player:enemy")
+    army = SimpleNamespace(id="army:tank", units=[], player=player)
+    enemy_army = SimpleNamespace(id="army:enemy", units=[], player=enemy_player)
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
+    player.has_control = lambda: False
+    player._has_attached_decision_controller = lambda: True
+    player.active_secondaries = []
+
+    charger = SimpleNamespace(
+        id="unit:charger",
+        name="Impulsor",
+        is_vehicle=True,
+        deployed=True,
+        is_alive=lambda: True,
+    )
+    charger.get_parent_army = lambda: army
+    charger.get_attached_unit_root = lambda: charger
+    enemy_a = SimpleNamespace(id="unit:enemy-a", name="Enemy A", is_alive=lambda: True)
+    enemy_b = SimpleNamespace(id="unit:enemy-b", name="Enemy B", is_alive=lambda: True)
+    army.units = [charger]
+    enemy_army.units = [enemy_a, enemy_b]
+
+    game_map = SimpleNamespace(
+        units=[charger, enemy_a, enemy_b],
+        get_enemy_units=lambda unit: [enemy_a, enemy_b] if unit is charger else [],
+        is_within_engagement_range=lambda left, right: left is charger and right in (enemy_a, enemy_b),
+    )
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+        get_current_player=lambda: player,
+        map=game_map,
+        players=[player, enemy_player],
+        turn=1,
+    )
+    manager = _build_headless_core_manager(
+        stratagem=stratagem,
+        player=player,
+        game=game,
+        phase_name="Charge phase",
+    )
+
+    manager._on_unit_move_ended(charger, "charge")
+
+    tank_item = next(item for item in manager.get_phase_stratagem_items() if item["name"] == "TANK SHOCK")
+    assert tank_item["available"] is True
+    assert tank_item["is_reaction"] is True
+    assert tank_item["context"]["eligible_enemy_units"] == [enemy_a, enemy_b]
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = _tool_payloads(request)
+    assert [payload["tool_name"] for payload in payloads] == ["TANK SHOCK", "TANK SHOCK"]
+    assert [
+        payload["resolved_kwargs"]["enemy_unit"]["__entity_ref__"]["id"]
+        for payload in payloads
+    ] == [enemy_a.id, enemy_b.id]
+    assert all(
+        payload["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == charger.id
+        for payload in payloads
+    )
+
+
+def test_headless_grenade_is_available_in_shooting_phase_with_cp_and_targets() -> None:
+    stratagem = _core_stratagem(
+        "GRENADE",
+        stratagem_id="000008335006",
+        phase="Shooting phase",
+    )
+    player = SimpleNamespace(id="player:grenade", command_points=1)
+    enemy_player = SimpleNamespace(id="player:enemy")
+    army = SimpleNamespace(id="army:grenade", units=[], player=player)
+    enemy_army = SimpleNamespace(id="army:enemy", units=[], player=enemy_player)
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
+    player.has_control = lambda: False
+    player._has_attached_decision_controller = lambda: True
+    player.active_secondaries = []
+
+    grenadier_model = SimpleNamespace(id="model:grenadier", name="Grenadier", is_alive=True)
+    enemy_model_a = SimpleNamespace(id="model:enemy-a", name="Enemy A Model", is_alive=True)
+    enemy_model_b = SimpleNamespace(id="model:enemy-b", name="Enemy B Model", is_alive=True)
+    grenadier = SimpleNamespace(
+        id="unit:grenadier",
+        name="Intercessors",
+        deployed=True,
+        is_alive=lambda: True,
+        models=[grenadier_model],
+        round_state=SimpleNamespace(
+            advanced_this_round=False,
+            fell_back_this_round=False,
+            shot_this_round=False,
+        ),
+        special_rules={},
+    )
+    grenadier.get_parent_army = lambda: army
+    grenadier.get_attached_unit_root = lambda: grenadier
+    grenadier.has_keyword = lambda keyword: str(keyword or "").strip().upper() == "GRENADES"
+    enemy_a = SimpleNamespace(id="unit:enemy-a", name="Enemy A", models=[enemy_model_a], is_alive=lambda: True)
+    enemy_b = SimpleNamespace(id="unit:enemy-b", name="Enemy B", models=[enemy_model_b], is_alive=lambda: True)
+    army.units = [grenadier]
+    enemy_army.units = [enemy_a, enemy_b]
+
+    game_map = SimpleNamespace(
+        units=[grenadier, enemy_a, enemy_b],
+        get_enemy_units=lambda unit: [enemy_a, enemy_b] if unit is grenadier else [],
+        is_within_engagement_range=lambda _left, _right: False,
+        get_distance_between_units=lambda _left, _right: 6.0,
+        can_model_see_model=lambda _source, _target: True,
+    )
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+        get_current_player=lambda: player,
+        map=game_map,
+        players=[player, enemy_player],
+        turn=1,
+    )
+    manager = _build_headless_core_manager(
+        stratagem=stratagem,
+        player=player,
+        game=game,
+        phase_name="Shooting phase",
+    )
+
+    grenade_item = next(item for item in manager.get_phase_stratagem_items() if item["name"] == "GRENADE")
+    assert grenade_item["available"] is True
+    assert grenade_item["is_reaction"] is False
+    assert grenade_item["context"]["candidates"] == [grenadier]
+    assert grenade_item["context"]["enemy_candidates"] == [enemy_a, enemy_b]
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=False) is True
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = _tool_payloads(request)
+    assert [payload["tool_name"] for payload in payloads] == ["GRENADE", "GRENADE"]
+    assert [
+        payload["resolved_kwargs"]["enemy_unit"]["__entity_ref__"]["id"]
+        for payload in payloads
+    ] == [enemy_a.id, enemy_b.id]
+    assert all(
+        payload["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == grenadier.id
+        for payload in payloads
+    )
 
 
 def test_tool_action_sort_key_accepts_string_helper_map_keys() -> None:

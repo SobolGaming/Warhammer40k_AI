@@ -7169,6 +7169,68 @@ class StratagemManager(
             "enemy_candidates": enemy_union,
         }
 
+    def _context_enemy_candidates_for_unit(self, context: Dict[str, Any], unit: Any) -> List[Any]:
+        if unit is None:
+            return []
+        unit_id = self._tool_action_sort_key(unit)
+        enemy_by_unit = dict(context.get("enemy_candidates_by_unit") or {})
+        enemies: List[Any] = []
+        for raw_key, raw_enemies in enemy_by_unit.items():
+            if self._tool_action_sort_key(raw_key) != unit_id:
+                continue
+            enemies.extend(list(raw_enemies or []))
+        if not enemies:
+            enemies.extend(list(context.get("eligible_enemy_units") or []))
+        if not enemies:
+            enemies.extend(list(context.get("enemy_candidates") or []))
+        deduped: Dict[str, Any] = {}
+        for enemy in list(enemies or []):
+            if enemy is None:
+                continue
+            enemy_id = self._tool_action_sort_key(enemy)
+            if not enemy_id:
+                continue
+            deduped.setdefault(enemy_id, enemy)
+        return [deduped[key] for key in sorted(deduped.keys())]
+
+    def _candidate_context_has_usable_grenade_action(self, context: Dict[str, Any]) -> bool:
+        explicit_unit = context.get("unit") or context.get("target_unit")
+        units = [explicit_unit] if explicit_unit is not None else list(context.get("candidates") or [])
+        if not units:
+            return False
+        explicit_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+        for unit in list(units or []):
+            enemies = [explicit_enemy] if explicit_enemy is not None else self._context_enemy_candidates_for_unit(context, unit)
+            for enemy in list(enemies or []):
+                probe = {
+                    **context,
+                    "unit": unit,
+                    "target_unit": unit,
+                    "enemy_unit": enemy,
+                    "target_enemy_unit": enemy,
+                }
+                if self.can_use("GRENADE", **probe):
+                    return True
+        return False
+
+    def _candidate_context_has_usable_tank_shock_action(self, context: Dict[str, Any]) -> bool:
+        unit = context.get("unit") or context.get("target_unit")
+        if unit is None:
+            return False
+        explicit_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemies = [explicit_enemy] if explicit_enemy is not None else self._context_enemy_candidates_for_unit(context, unit)
+        for enemy in list(enemies or []):
+            probe = {
+                **context,
+                "unit": unit,
+                "target_unit": unit,
+                "enemy_unit": enemy,
+                "target_enemy_unit": enemy,
+            }
+            if self.can_use("TANK SHOCK", **probe):
+                return True
+        return False
+
     def _evaluate_availability(
         self,
         stratagem: Stratagem,
@@ -11883,6 +11945,20 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires a visible non-TITANIC enemy unit within 36\" of the selected source unit"
+            return result
+        if name_u == "GRENADE":
+            if self._candidate_context_has_usable_grenade_action(context):
+                result["available"] = True
+                result["reason"] = None
+            else:
+                result["reason"] = "Requires eligible GRENADES unit and enemy target"
+            return result
+        if name_u == "TANK SHOCK":
+            if self._candidate_context_has_usable_tank_shock_action(context):
+                result["available"] = True
+                result["reason"] = None
+            else:
+                result["reason"] = "Requires charged enemy in Engagement Range"
             return result
         if self.can_use(stratagem.name, **context):
             result["available"] = True
