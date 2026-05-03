@@ -543,12 +543,19 @@ class DeterministicEventLog:
         self.record("model_destroyed", actor_id=payload.get("attacker_unit_id"), payload=payload, validate_payload=True)
 
     def _removal_context_payload(self, *entities: Any) -> dict[str, Any]:
+        def has_payload_value(value: Any) -> bool:
+            if value is None:
+                return False
+            if isinstance(value, str):
+                return value != ""
+            return True
+
         def first_attr(attr: str) -> Any:
             for entity in entities:
                 if entity is None:
                     continue
                 value = getattr(entity, attr, None)
-                if value not in (None, ""):
+                if has_payload_value(value):
                     return value
             return None
 
@@ -567,7 +574,7 @@ class DeterministicEventLog:
             "causal_weapon_profile_id": _event_entity_id(weapon_profile),
             "causal_weapon_profile_name": getattr(weapon_profile, "name", None),
         }
-        return {str(key): value for key, value in payload.items() if value not in (None, "")}
+        return {str(key): value for key, value in payload.items() if has_payload_value(value)}
 
     def _on_model_destroyed_before_removal(self, **kwargs: Any) -> None:
         unit = kwargs.get("unit")

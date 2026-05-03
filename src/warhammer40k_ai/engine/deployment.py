@@ -93,6 +93,16 @@ class DeploymentDecisionMaker(ABC):
         del unit, deployment_zone, already_deployed, max_candidates
         return []
 
+    def handle_unplaceable_deployment_unit(
+        self,
+        unit: 'Unit',
+        *,
+        player: Player,
+        reason: str,
+    ) -> bool:
+        del unit, player, reason
+        return False
+
     def choose_deployment_move_option(
         self,
         request: DecisionRequest,
@@ -1105,6 +1115,15 @@ class DeploymentManager:
                     max_candidates=candidate_limit,
                 )
                 if not placement_candidates:
+                    recover_unplaceable = getattr(current_decision_maker, "handle_unplaceable_deployment_unit", None)
+                    if callable(recover_unplaceable) and bool(
+                        recover_unplaceable(
+                            unit,
+                            player=current_player,
+                            reason="no placement candidates were generated",
+                        )
+                    ):
+                        continue
                     self._handle_unplaceable_deployment_unit(
                         unit,
                         player=current_player,

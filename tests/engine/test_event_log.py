@@ -198,6 +198,23 @@ def test_destroy_events_include_coherency_removal_context():
         assert payload["causal_weapon_profile_name"] == "Test Blade"
 
 
+def test_removal_context_payload_does_not_compare_model_like_values_to_none():
+    class _ModelLike:
+        id = "model:attacker"
+
+        def __eq__(self, other):
+            if other is None:
+                raise AttributeError("'NoneType' object has no attribute 'id'")
+            return getattr(other, "id", None) == self.id
+
+    model = SimpleNamespace(id="model:victim", _coherency_causal_attacker_model=_ModelLike())
+    log = DeterministicEventLog()
+
+    payload = log._removal_context_payload(model)
+
+    assert payload["causal_attacker_model_id"] == "model:attacker"
+
+
 def test_charge_move_failed_event_logged():
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1

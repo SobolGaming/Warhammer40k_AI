@@ -29,6 +29,7 @@ This document describes deterministic headless placement behavior for deployment
     - `board_affordances`
     - tuned deployment weights/affordances for the current player and zone.
 - Reserve choices in `balanced` mode still obey reserve limits and validation, but candidate ranking now includes teacher reserve preference scoring.
+- Reserve choices in `forced_only` mode still keep ordinary optional units deployed. If an army has more than two oversized/Titanic deployment footprints, the policy may place validated overflow units into Strategic Reserves so crowded headless deployments do not destroy large models before the game starts.
 - Optional imitation/ranking model integration:
   - `DeterministicDeploymentDecisionMaker(..., ranker_model_path=...)` can load a linear deployment ranker model.
   - When loaded, zone, reserves-allocation, next-unit, scout, and deployment-placement choices can be selected directly from request candidates via ranker scores.
@@ -49,9 +50,12 @@ This document describes deterministic headless placement behavior for deployment
 - Units with `Infiltrators`:
   - Candidate anchors are searched in-zone first, then expanded to board-wide candidates.
   - Final legality is still enforced by deployment validation (`enemy zone`, `9"` enemy zone buffer, `9"` enemy model buffer, terrain legality).
-- If a unit still produces no legal deployment placements after candidate generation/validation, the
-  engine logs a warning, skips battlefield placement, and removes the unit from play instead of
-  crashing the whole headless run.
+- If a headless unit still produces no legal deployment placements after candidate
+  generation/validation, `DeterministicDeploymentDecisionMaker` moves it into
+  validated reserve-start state with `reserve_source=deployment_overflow` instead
+  of destroying it during setup. Non-headless decision makers can still decline
+  recovery, in which case the deployment manager logs the existing warning and
+  removes the unit from play instead of crashing the run.
 - Deployment diagnostics are available from `DeterministicDeploymentDecisionMaker.get_deployment_search_metrics()`.
   - Per-unit metrics include deployment order, anchor attempts, quick rejects, validation calls, fast-validation rejects, calls to first valid result, returned candidate count, first-valid anchor source, exhaustive fallback usage, and elapsed wall-clock time.
   - If all normal anchor groups are rejected, deployment runs one deterministic relaxed fallback search that bypasses conservative occupied-unit quick-rejects, still rejects edge-impossible anchors, and caps the relaxed scan. This is intended for crowded deployments where a coarse anchor bounding-box test can be too pessimistic for multi-model units without letting impossible placements dominate runtime.
@@ -75,6 +79,14 @@ This document describes deterministic headless placement behavior for deployment
     - units in Strategic Reserves that can also Deep Strike search edge-band zones first, then battlefield Deep Strike zones.
   - Strategic reserves:
     - edge-biased anchors around preferred edge offsets;
+    - large single-model bases that cannot fit wholly within 6" of a battlefield edge use exact
+      base-touching edge offsets, and along-edge anchors are inset by the model footprint so the
+      generated payload is not clipped by the battlefield boundary;
+    - those large edge-touch arrivals add a bounded dense along-edge scan before staggered fallback
+      so aircraft can find narrow legal gaps around terrain and deployed models;
+    - AIRCRAFT reserve arrivals keep boundary, overlap, enemy-distance, and reserve-edge checks,
+      but do not reject otherwise legal airborne setup solely because the projected base footprint
+      intersects RUINS wall/floor surface geometry;
     - deployment-style row packers over legal edge bands;
     - staggered along-edge scans;
     - sparse fallback edge bands and guaranteed corner anchors.
@@ -107,6 +119,9 @@ This document describes deterministic headless placement behavior for deployment
   controller resolves the same `MOVE_UNIT` request through an explicit `Unable to arrive`
   fallback option. This is not a voluntary pass: the unit remains in reserves and existing
   end-of-battle-round destruction rules handle units that still have not arrived.
+- Before the Reinforcements step is allowed to close, the turn manager rechecks unresolved mandatory
+  reserve arrivals and requeues the deterministic `SELECT_UNIT` request if any remain. Optional reserve
+  passes still end normally; this guard is only for units that must arrive this step.
 
 ## Benchmark Workflow
 

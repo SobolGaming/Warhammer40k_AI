@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -314,6 +315,37 @@ def test_armoured_duellists_rejects_non_vehicle_or_already_shot_targets():
     assert int(ork_player.command_points or 0) == 10
 
 
+def test_armoured_duellists_can_use_filters_candidates_without_logging(caplog):
+    game, army, _enemy_army = _build_game()
+    ork_player = army.player
+    battlewagon = _unit("Battlewagon", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["ORKS"])
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    army.add_unit(battlewagon)
+    army.add_unit(boyz)
+    _place_unit(game, battlewagon, 10.0, 10.0)
+    _place_unit(game, boyz, 16.0, 10.0)
+    ork_player.command_points = 10
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 0
+    game.current_player_idx = 0
+    game.rebuild_entity_registry()
+    caplog.set_level(logging.ERROR)
+
+    assert ork_player.stratagems.can_use(
+        "ARMOURED DUELLISTS",
+        unit=battlewagon,
+        candidates=[battlewagon],
+        phase_name="Shooting phase",
+    ) is True
+    assert ork_player.stratagems.can_use(
+        "ARMOURED DUELLISTS",
+        unit=boyz,
+        candidates=[battlewagon],
+        phase_name="Shooting phase",
+    ) is False
+    assert not [record for record in caplog.records if "ARMOURED DUELLISTS" in record.getMessage()]
+
+
 def test_impervious_queues_and_applies_conditional_wound_penalty():
     game, army, enemy_army = _build_game()
     ork_player = army.player
@@ -589,6 +621,52 @@ def test_mount_up_ladz_rejects_engaged_or_non_infantry_passengers():
         phase_name="Fight phase",
     )
     assert int(ork_player.command_points or 0) == 10
+
+
+def test_mount_up_ladz_can_use_filters_transport_passenger_pairs_without_logging(caplog):
+    game, army, enemy_army = _build_game()
+    ork_player = army.player
+    enemy_player = enemy_army.player
+    trukk = _unit(
+        "Trukk",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=["ORKS"],
+        transport="Transport Capacity 12",
+    )
+    boyz = _unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    buggy = _unit("Warbuggy", keywords=["VEHICLE"], faction_keywords=["ORKS"])
+    trukk.transport_capacity = 12
+    trukk.transport_required_keywords = set()
+    trukk.transport_excluded_keywords = set()
+    army.add_unit(trukk)
+    army.add_unit(boyz)
+    army.add_unit(buggy)
+    ork_player.command_points = 10
+    _place_unit(game, trukk, 10.0, 10.0)
+    _place_unit(game, boyz, 13.0, 10.0)
+    _place_unit(game, buggy, 18.0, 10.0)
+    game.rebuild_entity_registry()
+    _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
+    caplog.set_level(logging.ERROR)
+
+    passenger_map = {get_entity_id(trukk): [boyz]}
+    assert ork_player.stratagems.can_use(
+        "MOUNT UP, LADZ",
+        transport_unit=trukk,
+        passenger_unit=boyz,
+        transport_candidates=[trukk],
+        passenger_candidates_by_transport=passenger_map,
+        phase_name="Fight phase",
+    ) is True
+    assert ork_player.stratagems.can_use(
+        "MOUNT UP, LADZ",
+        transport_unit=trukk,
+        passenger_unit=buggy,
+        transport_candidates=[trukk],
+        passenger_candidates_by_transport=passenger_map,
+        phase_name="Fight phase",
+    ) is False
+    assert not [record for record in caplog.records if "MOUNT UP, LADZ" in record.getMessage()]
 
 
 def test_blitz_brigade_stratagem_tool_descriptors_include_mount_up_ladz():

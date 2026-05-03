@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -427,6 +428,38 @@ def test_armoured_infantry_burst_of_speed_rejects_stationary_or_reserve_arrivals
     assert am_player.stratagems.use("BURST OF SPEED", unit=stationary_unit, phase_name="Movement phase") is False
     assert am_player.stratagems.use("BURST OF SPEED", unit=reserves_unit, phase_name="Movement phase") is False
     assert int(am_player.command_points or 0) == 10
+
+
+def test_armoured_infantry_burst_of_speed_can_use_filters_candidates_without_logging(caplog):
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    moved_unit = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    stationary_unit = _make_unit("Heavy Weapon Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (moved_unit, stationary_unit):
+        army.add_unit(unit)
+        _place_unit(game, unit, 10.0 + len(game.map.units), 10.0)
+    moved_unit.round_state.remained_stationary_this_round = False
+    stationary_unit.round_state.remained_stationary_this_round = True
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    caplog.set_level(logging.ERROR)
+
+    assert am_player.stratagems.can_use(
+        "BURST OF SPEED",
+        unit=moved_unit,
+        candidates=[moved_unit],
+        phase_name="Movement phase",
+    ) is True
+    assert am_player.stratagems.can_use(
+        "BURST OF SPEED",
+        unit=stationary_unit,
+        candidates=[moved_unit],
+        phase_name="Movement phase",
+    ) is False
+    assert not [record for record in caplog.records if "BURST OF SPEED" in record.getMessage()]
 
 
 def test_armoured_infantry_combined_fire_queues_hit_enemy_and_marks_target():
@@ -954,6 +987,53 @@ def test_armoured_infantry_supporting_ordnance_rejects_non_skirmisher_or_already
     assert int(am_player.command_points or 0) == 10
     assert am_player.stratagems.use("SUPPORTING ORDNANCE", unit=sentinel, phase_name="Shooting phase") is True
     assert int(am_player.command_points or 0) == 9
+
+
+def test_armoured_infantry_shooting_tool_action_can_use_filters_candidates_without_logging(caplog):
+    game, am_player, enemy_player, army, enemy_army = _build_game()
+    disembarked = _make_unit("Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    not_disembarked = _make_unit("Second Infantry Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    transport = _make_unit("Chimera", keywords=["VEHICLE", "TRANSPORT"], wounds=10)
+    sentinel = _make_unit("Scout Sentinel", keywords=["VEHICLE", "SQUADRON"], wounds=7)
+    non_skirmisher = _make_unit("Heavy Weapon Squad", keywords=["INFANTRY", "REGIMENT"], wounds=1)
+    for unit in (disembarked, not_disembarked, transport, sentinel, non_skirmisher):
+        army.add_unit(unit)
+        _place_unit(game, unit, 10.0 + len(game.map.units), 10.0)
+    _mark_disembarked(game, am_player, disembarked, transport)
+    am_player.command_points = 10
+    _finalize_game(game, army, enemy_army, players=[am_player, enemy_player])
+
+    game.current_player_index = game.players.index(am_player)
+    game.current_player_idx = game.current_player_index
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    caplog.set_level(logging.ERROR)
+
+    assert am_player.stratagems.can_use(
+        "OPENING SALVO",
+        unit=disembarked,
+        candidates=[disembarked],
+        phase_name="Shooting phase",
+    ) is True
+    assert am_player.stratagems.can_use(
+        "OPENING SALVO",
+        unit=not_disembarked,
+        candidates=[disembarked],
+        phase_name="Shooting phase",
+    ) is False
+    assert am_player.stratagems.can_use(
+        "SUPPORTING ORDNANCE",
+        unit=sentinel,
+        candidates=[sentinel],
+        phase_name="Shooting phase",
+    ) is True
+    assert am_player.stratagems.can_use(
+        "SUPPORTING ORDNANCE",
+        unit=non_skirmisher,
+        candidates=[sentinel],
+        phase_name="Shooting phase",
+    ) is False
+    messages = [record.getMessage() for record in caplog.records]
+    assert not [message for message in messages if "OPENING SALVO" in message or "SUPPORTING ORDNANCE" in message]
 
 
 def test_squadron_command_extends_orders_and_on_my_signal_targeting():

@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
@@ -633,3 +634,38 @@ def test_transcendent_cogitation_grants_both_imperatives_without_native_doctrina
     game.turn = 2
     _phase_start(game, p1, "COMMAND_PHASE")
     assert mgr.get_active_imperative_keys_for_unit(vehicle, game=game) == set()
+
+
+def test_transcendent_cogitation_can_use_filters_candidates_without_logging(caplog):
+    game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    vehicle = _make_unit(
+        "Skorpius Disintegrator",
+        keywords=["VEHICLE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+        movement=10,
+        toughness=10,
+        wounds=10,
+        objective_control=3,
+    )
+    infantry = _make_unit("Skitarii Rangers", keywords=["INFANTRY"], faction_keywords=["ADEPTUS MECHANICUS"])
+    admech_army.add_unit(vehicle)
+    admech_army.add_unit(infantry)
+    _place_unit(game, vehicle, 10.0, 10.0)
+    _place_unit(game, infantry, 18.0, 10.0)
+    game.rebuild_entity_registry()
+    _phase_start(game, p1, "COMMAND_PHASE")
+    caplog.set_level(logging.ERROR)
+
+    assert p1.stratagems.can_use(
+        "TRANSCENDENT COGITATION",
+        unit=vehicle,
+        candidates=[vehicle],
+        phase_name="Command phase",
+    ) is True
+    assert p1.stratagems.can_use(
+        "TRANSCENDENT COGITATION",
+        unit=infantry,
+        candidates=[vehicle],
+        phase_name="Command phase",
+    ) is False
+    assert not [record for record in caplog.records if "TRANSCENDENT COGITATION" in record.getMessage()]

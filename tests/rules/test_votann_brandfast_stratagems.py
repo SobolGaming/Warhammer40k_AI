@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -223,6 +224,59 @@ def _test_profile() -> WargearProfile:
         },
         parent_wargear=parent,
     )
+
+
+def test_brandfast_bastion_running_can_use_filters_candidates_without_logging(caplog):
+    game, p1, _p2, lov_army, _enemy_army = _build_game()
+    hekaton = _make_unit(
+        "Hekaton Land Fortress",
+        keywords=["VEHICLE", "TRANSPORT", "HEKATON LAND FORTRESS"],
+        wounds="16",
+        toughness="12",
+        base_size="80mm",
+    )
+    moved_hekaton = _make_unit(
+        "Second Hekaton Land Fortress",
+        keywords=["VEHICLE", "TRANSPORT", "HEKATON LAND FORTRESS"],
+        wounds="16",
+        toughness="12",
+        base_size="80mm",
+    )
+    sagitaur = _make_unit(
+        "Sagitaur",
+        keywords=["VEHICLE", "TRANSPORT", "SAGITAUR"],
+        wounds="10",
+        toughness="10",
+        base_size="80mm",
+    )
+    for unit, x_coord in ((hekaton, 12.0), (moved_hekaton, 24.0), (sagitaur, 36.0)):
+        lov_army.add_unit(unit)
+        _deploy_unit(game, unit, x_coord, 12.0)
+    moved_hekaton.round_state.moved_this_round = True
+    game.rebuild_entity_registry()
+
+    _set_phase(game, p1, "MOVEMENT_PHASE", 0)
+    caplog.set_level(logging.ERROR)
+
+    assert p1.stratagems.can_use(
+        "BASTION RUNNING",
+        unit=hekaton,
+        candidates=[hekaton],
+        phase_name="Movement phase",
+    ) is True
+    assert p1.stratagems.can_use(
+        "BASTION RUNNING",
+        unit=moved_hekaton,
+        candidates=[hekaton],
+        phase_name="Movement phase",
+    ) is False
+    assert p1.stratagems.can_use(
+        "BASTION RUNNING",
+        unit=sagitaur,
+        candidates=[hekaton],
+        phase_name="Movement phase",
+    ) is False
+    assert not [record for record in caplog.records if "BASTION RUNNING" in record.getMessage()]
 
 
 class TestBrandfastOathbandStratagems(unittest.TestCase):

@@ -855,6 +855,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
     "MOBILE DAKKASTORM",
+    "MOUNT UP, LADZ",
     "EVASIVE MANOOVA",
     "DUST TRAILS",
     "DED KILLY CONSTRUCTION",
@@ -1173,6 +1174,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CLAIMED FOR THE DARK GODS",
     "COMBINED FIRE",
     "MOBILE DAKKASTORM",
+    "MOUNT UP, LADZ",
     "EVASIVE MANOOVA",
     "DUST TRAILS",
     "MOBILE FIREBASE",
@@ -3845,6 +3847,12 @@ class StratagemManager(
             or kwargs.get("battle_shocked_unit")
             or kwargs.get("friendly_support_unit")
         )
+        grouped_target_units = (
+            kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("affected_units")
+            or kwargs.get("units")
+        )
         missing: List[str] = []
         if self._tool_action_descriptor_requires_friendly_unit(target_text) and unit is None:
             missing.append("unit")
@@ -3893,7 +3901,12 @@ class StratagemManager(
                 )
             )
         )
-        if needs_support and support_unit is None:
+        grouped_targets_satisfy_support = (
+            "one_or_more" in target_text
+            and isinstance(grouped_target_units, (list, tuple, set))
+            and bool(grouped_target_units)
+        )
+        if needs_support and support_unit is None and not grouped_targets_satisfy_support:
             missing.append("support_unit")
         return sorted(set(missing))
 
@@ -4012,6 +4025,58 @@ class StratagemManager(
         if entity_id:
             return entity_id
         return str(value)
+
+    @staticmethod
+    def _tool_action_context_entity(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            for key in (
+                "unit",
+                "target_unit",
+                "source_unit",
+                "officer_unit",
+                "transport_unit",
+                "passenger_unit",
+                "selected_unit",
+                "model",
+                "target_model",
+                "objective",
+                "objective_marker",
+                "terrain_feature",
+                "terrain",
+            ):
+                candidate = value.get(key)
+                if candidate is not None:
+                    return StratagemManager._tool_action_context_entity(candidate)
+            return None
+        return value
+
+    @staticmethod
+    def _tool_action_context_entity_id(value: Any) -> str:
+        entity = StratagemManager._tool_action_context_entity(value)
+        if entity is not None:
+            entity_id = str(getattr(entity, "id", None) or getattr(entity, "_id", None) or "")
+            if entity_id:
+                return entity_id
+            return StratagemManager._tool_action_sort_key(entity)
+        if isinstance(value, dict):
+            return str(value.get("id", "") or value.get("_id", "") or StratagemManager._tool_action_sort_key(value))
+        return ""
+
+    @staticmethod
+    def _tool_action_context_map_values(context_map: Any, key_value: Any) -> List[Any]:
+        if not hasattr(context_map, "items"):
+            return []
+        key_id = StratagemManager._tool_action_context_entity_id(key_value)
+        if key_id and hasattr(context_map, "get"):
+            values = context_map.get(key_id)
+            if values:
+                return list(values or [])
+        for raw_key, raw_values in list(context_map.items() or []):
+            if StratagemManager._tool_action_context_entity_id(raw_key) == key_id:
+                return list(raw_values or [])
+        return []
 
     def _tool_action_root_units(self, units: List[Any]) -> List[Any]:
         deduped: Dict[str, Any] = {}
@@ -4437,6 +4502,11 @@ class StratagemManager(
         stratagem = self.get_by_name(str(item.get("name", "") or ""))
         if stratagem is None:
             return []
+        if (
+            str(getattr(stratagem, "name", "") or "").strip().upper() == "MOUNT UP, LADZ"
+            and not bool(item.get("is_reaction", False))
+        ):
+            return []
 
         original_ctx = dict(item.get("context", {}) or {})
         descriptor = getattr(stratagem, "tool_descriptor", None)
@@ -4476,9 +4546,20 @@ class StratagemManager(
         explicit_choice = base_ctx.get("choice_key") or base_ctx.get("override_key")
         explicit_secondary = base_ctx.get("secondary_card")
         explicit_model = base_ctx.get("model") or base_ctx.get("target_model")
+        raw_candidate_contexts = list(original_ctx.get("candidates") or [])
+        structured_candidate_contexts = [
+            dict(candidate)
+            for candidate in raw_candidate_contexts
+            if isinstance(candidate, dict)
+        ]
+        candidate_entities = [
+            entity
+            for entity in (self._tool_action_context_entity(candidate) for candidate in raw_candidate_contexts)
+            if entity is not None
+        ]
 
         friendly_units = self._tool_action_root_units(
-            list(original_ctx.get("candidates") or [])
+            candidate_entities
             or list(original_ctx.get("source_candidates") or [])
             or ([explicit_unit] if explicit_unit is not None else [])
         )
@@ -4527,6 +4608,11 @@ class StratagemManager(
         transport_by_unit = dict(original_ctx.get("transport_candidates_by_unit") or {})
         allowed_choice_keys = self._tool_action_choice_keys(original_ctx)
         support_optional = bool(original_ctx.get("secondary_optional", effect_params.get("secondary_optional", False)))
+        passenger_by_transport = (
+            original_ctx.get("passenger_candidates_by_transport")
+            or original_ctx.get("embark_candidates_by_transport")
+            or {}
+        )
 
         if self._tool_action_base_probe_allowed(
             base_ctx=base_ctx,
@@ -4549,7 +4635,61 @@ class StratagemManager(
                 kwargs=base_ctx,
             )
 
-        if explicit_unit is None and not allowed_choice_keys and not (support_by_unit and not support_optional):
+        for candidate_context in structured_candidate_contexts:
+            candidate_unit = self._tool_action_context_entity(candidate_context)
+            if candidate_unit is None:
+                continue
+            grouped_targets = list(
+                candidate_context.get("target_units")
+                or candidate_context.get("selected_units")
+                or candidate_context.get("affected_units")
+                or []
+            )
+            source_unit = (
+                candidate_context.get("source_unit")
+                or candidate_context.get("officer_unit")
+                or candidate_context.get("unit")
+                or candidate_context.get("target_unit")
+                or candidate_unit
+            )
+            probe_kwargs = {
+                **base_ctx,
+                **candidate_context,
+                "unit": source_unit,
+                "target_unit": source_unit,
+                "source_unit": source_unit,
+            }
+            if candidate_context.get("officer_unit") is not None:
+                probe_kwargs["officer_unit"] = candidate_context.get("officer_unit")
+            if grouped_targets:
+                probe_kwargs["target_units"] = grouped_targets
+                probe_kwargs["selected_units"] = grouped_targets
+                probe_kwargs["affected_units"] = grouped_targets
+                probe_kwargs.setdefault("support_unit", grouped_targets[0])
+                probe_kwargs.setdefault("secondary_unit", grouped_targets[0])
+                probe_kwargs.setdefault("battle_shocked_unit", grouped_targets[0])
+            label_targets = grouped_targets if grouped_targets else candidate_unit
+            label_suffix = self._tool_action_label_value(source_unit)
+            target_label = self._tool_action_label_value(label_targets)
+            if target_label and target_label != label_suffix:
+                label_suffix = f"{label_suffix} -> {target_label}"
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs=probe_kwargs,
+                label_suffix=label_suffix,
+            )
+
+        if (
+            explicit_unit is None
+            and not structured_candidate_contexts
+            and not allowed_choice_keys
+            and not (support_by_unit and not support_optional)
+            and not (requires_objective and (objectives or objective_by_unit))
+            and not (requires_transport and passenger_by_transport)
+        ):
             for unit in friendly_units:
                 label_suffix = self._tool_action_label_value(unit)
                 self._tool_action_add_probe(
@@ -4676,6 +4816,31 @@ class StratagemManager(
                     label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(transport)}",
                 )
 
+        if requires_transport and passenger_by_transport:
+            for transport in transports:
+                passengers = self._tool_action_context_map_values(passenger_by_transport, transport)
+                for passenger in passengers:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": transport,
+                            "target_unit": transport,
+                            "transport_unit": transport,
+                            "transport": transport,
+                            "passenger_unit": passenger,
+                            "selected_embarked_unit": passenger,
+                            "embarked_unit": passenger,
+                        },
+                        label_suffix=(
+                            f"{self._tool_action_label_value(transport)} <- "
+                            f"{self._tool_action_label_value(passenger)}"
+                        ),
+                    )
+
         target_text = descriptor_target.strip().lower()
         needs_enemy = explicit_enemy is None and bool(enemy_units) and (
             bool(original_ctx.get("enemy_candidates") or []) or bool(enemy_by_unit) or "enemy" in target_text or "attacker" in target_text
@@ -4699,14 +4864,15 @@ class StratagemManager(
 
         if needs_objective:
             for objective in objectives:
-                self._tool_action_add_probe(
-                    specs=specs,
-                    seen=seen,
-                    stratagem=stratagem,
-                    item=item,
-                    kwargs={**base_ctx, "objective": objective, "objective_marker": objective},
-                    label_suffix=self._tool_action_label_value(objective),
-                )
+                if not requires_friendly_unit:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={**base_ctx, "objective": objective, "objective_marker": objective},
+                        label_suffix=self._tool_action_label_value(objective),
+                    )
                 for unit in candidate_units:
                     self._tool_action_add_probe(
                         specs=specs,
@@ -4773,18 +4939,19 @@ class StratagemManager(
 
         if needs_transport:
             for transport in transports:
-                self._tool_action_add_probe(
-                    specs=specs,
-                    seen=seen,
-                    stratagem=stratagem,
-                    item=item,
-                    kwargs={
-                        **base_ctx,
-                        "transport_unit": transport,
-                        "transport": transport,
-                    },
-                    label_suffix=self._tool_action_label_value(transport),
-                )
+                if not requires_friendly_unit:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "transport_unit": transport,
+                            "transport": transport,
+                        },
+                        label_suffix=self._tool_action_label_value(transport),
+                    )
             for unit in candidate_units:
                 for transport in transports:
                     self._tool_action_add_probe(
@@ -7295,6 +7462,29 @@ class StratagemManager(
                 return result
         if self._stratagem_once_per_battle_used(stratagem):
             result["reason"] = "Once per battle used"
+            return result
+        if name_u == "HACK AND SLASH":
+            if str(phase_name or "").strip().lower() != "fight phase":
+                result["reason"] = "Requires Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                for unit in self._tool_action_friendly_units():
+                    round_state = getattr(unit, "round_state", None)
+                    if not bool(getattr(round_state, "charged_this_round", False)):
+                        continue
+                    if bool(getattr(round_state, "fought_this_phase", False)):
+                        continue
+                    has_keyword = getattr(unit, "has_any_keyword", None)
+                    if not (callable(has_keyword) and bool(has_keyword("WORLD EATERS"))):
+                        continue
+                    if bool(self._unit_cannot_be_target_of_stratagem(unit)):
+                        continue
+                    candidates.append(unit)
+            if candidates:
+                result["available"] = True
+                return result
+            result["reason"] = "Requires a WORLD EATERS unit that charged and has not fought"
             return result
         if name_u == "OVERWATCH" or name_u == "FIRE OVERWATCH":
             if self._used_this_turn.get("OVERWATCH", False):
@@ -23395,6 +23585,54 @@ class StratagemManager(
                 return True
         return False
 
+    def _can_use_counter_offensive_tool_action(self, kwargs: Dict[str, Any]) -> bool:
+        if (self._current_phase_name or "").strip().lower() != "fight phase":
+            return False
+        target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "COUNTER-OFFENSIVE":
+                    continue
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if target_unit is None and len(candidates) == 1:
+                    target_unit = candidates[0]
+                break
+        if target_unit is None:
+            return bool(candidates)
+        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+        canonicalize = getattr(fight_mgr, "_canonical_unit_for_fight", None) if fight_mgr is not None else None
+        target_root = canonicalize(target_unit) if callable(canonicalize) else target_unit
+        if target_root is None:
+            return False
+        if candidates:
+            target_id = str(get_entity_id(target_root) or "")
+            candidate_ids = {str(get_entity_id(candidate) or "") for candidate in candidates}
+            if target_id and target_id not in candidate_ids:
+                return False
+        try:
+            if target_root.get_parent_army().player is not self.player:
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+        fought_units = list(getattr(fight_mgr, "fought_units", []) or []) if fight_mgr is not None else []
+        target_id_for_fought = str(get_entity_id(target_root) or "")
+        for fought_unit in fought_units:
+            if fought_unit is target_root:
+                return False
+            if target_id_for_fought and str(get_entity_id(fought_unit) or "") == target_id_for_fought:
+                return False
+        if bool(getattr(getattr(target_root, "round_state", None), "fought_this_phase", False)):
+            return False
+        if bool(_unit_cannot_be_target_of_stratagem(target_root)):
+            return False
+        eligible_to_fight = getattr(target_root, "is_eligible_to_fight", None)
+        if callable(eligible_to_fight) and not bool(eligible_to_fight(getattr(self.game, "map", None))):
+            return False
+        return True
+
     def can_use(self, name: str, **kwargs) -> bool:
         s = self.get_by_name(name)
         if not s:
@@ -23415,6 +23653,12 @@ class StratagemManager(
         if name_u == "TANK SHOCK" and not self._can_use_tank_shock(kwargs):
             return False
         if name_u == "WARP SURGE" and not self._can_use_warp_surge(kwargs):
+            return False
+        if name_u == "COUNTER-OFFENSIVE" and not self._can_use_counter_offensive_tool_action(kwargs):
+            return False
+        if name_u == "SKULLS FOR THE SKULL THRONE!" and not (
+            kwargs.get("selected_blessings") or kwargs.get("selected_blessing_keys")
+        ):
             return False
         if name_u in {"DAEMONIC FURY", "DAEMONTIDE"} and not self._we_can_use_khorne_daemonkin_tool_action(name_u, kwargs):
             return False
@@ -23443,6 +23687,12 @@ class StratagemManager(
             return False
         if name_u == "FULL TILT" and not self._imperial_knights_can_use_full_tilt_tool_action(kwargs):
             return False
+        if name_u == "BASTION RUNNING" and not self._votann_can_use_brandfast_bastion_running_tool_action(kwargs):
+            return False
+        if name_u == "ARMOURED DUELLISTS" and not self._orks_can_use_armoured_duellists_tool_action(kwargs):
+            return False
+        if name_u == "MOUNT UP, LADZ" and not self._orks_can_use_mount_up_ladz_tool_action(kwargs):
+            return False
         cult_result = self._cult_can_use_tool_action(name_u, kwargs)
         if cult_result is not None and not cult_result:
             return False
@@ -23452,10 +23702,24 @@ class StratagemManager(
         ia_result = self._ia_can_use_veiled_blade_tool_action(name_u, kwargs)
         if ia_result is not None and not ia_result:
             return False
+        if name_u == "BENEVOLENCE OF THE OMNISSIAH" and not self._admech_can_use_cohort_benevolence_tool_action(kwargs):
+            return False
+        if name_u == "TRANSCENDENT COGITATION" and not self._admech_can_use_cohort_transcendent_cogitation_tool_action(kwargs):
+            return False
+        if name_u == "SHIELD OF FAITH" and not self._as_can_use_army_of_faith_shield_of_faith_tool_action(kwargs):
+            return False
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
             necron_result = self._awakened_dynasty_can_use_undying_legions_tool_action(s, kwargs)
             if necron_result is not None:
                 return bool(necron_result)
+        if name_u == "BURST OF SPEED" and not self._am_can_use_armoured_infantry_burst_of_speed_tool_action(kwargs):
+            return False
+        if name_u == "OPENING SALVO" and not self._am_can_use_armoured_infantry_opening_salvo_tool_action(kwargs):
+            return False
+        if name_u == "ORDER THE ADVANCE" and not self._am_can_use_armoured_infantry_order_the_advance_tool_action(kwargs):
+            return False
+        if name_u == "SUPPORTING ORDNANCE" and not self._am_can_use_armoured_infantry_supporting_ordnance_tool_action(kwargs):
+            return False
         if name_u == "SNAP TO IT" and not self._am_can_use_grizzled_snap_to_it_tool_action(kwargs):
             return False
         if name_u == "PTERRORSHADES" and not self._chaos_knights_can_use_traitoris_pterrorshades_tool_action(kwargs):
@@ -32196,14 +32460,16 @@ class StratagemManager(
             normalized.setdefault("target_model", destroyed_model)
         candidates = list(normalized.get("candidates") or [])
         if len(candidates) == 1:
-            normalized.setdefault("unit", candidates[0])
-            normalized.setdefault("target_unit", candidates[0])
+            candidate_entity = self._tool_action_context_entity(candidates[0])
+            if candidate_entity is not None:
+                normalized.setdefault("unit", candidate_entity)
+                normalized.setdefault("target_unit", candidate_entity)
         eligible_enemy_units = list(normalized.get("eligible_enemy_units") or [])
         if eligible_enemy_units and "enemy_candidates" not in normalized:
             normalized["enemy_candidates"] = list(eligible_enemy_units)
         selected_unit = normalized.get("target_unit") or normalized.get("unit")
         if selected_unit is not None and eligible_enemy_units and "enemy_candidates_by_unit" not in normalized:
-            unit_id = str(get_entity_id(selected_unit) or getattr(selected_unit, "id", getattr(selected_unit, "_id", "")) or "")
+            unit_id = self._tool_action_context_entity_id(selected_unit)
             if unit_id:
                 normalized["enemy_candidates_by_unit"] = {unit_id: list(eligible_enemy_units)}
         model_candidates = list(normalized.get("model_candidates") or normalized.get("eligible_models") or [])
@@ -32214,7 +32480,7 @@ class StratagemManager(
             normalized.setdefault("target_model", model_candidates[0])
         if len(candidates) == 1 and "enemy_unit" not in normalized:
             enemy_candidates_by_unit = dict(normalized.get("enemy_candidates_by_unit") or {})
-            candidate_id = str(get_entity_id(candidates[0]) or getattr(candidates[0], "id", getattr(candidates[0], "_id", "")) or "")
+            candidate_id = self._tool_action_context_entity_id(candidates[0])
             enemy_candidates = list(enemy_candidates_by_unit.get(candidate_id) or normalized.get("enemy_candidates") or [])
             if len(enemy_candidates) == 1:
                 normalized["enemy_unit"] = enemy_candidates[0]
@@ -32293,6 +32559,92 @@ class StratagemManager(
             return dict(self._aeldari_aspect_host_tool_action_context(name_u, phase_name=phase_label) or {})
         if not is_active_turn:
             return {}
+        if name_u == "AUTO-DIVINATORY TARGETING":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            candidates = list(self._cohort_auto_divinatory_primary_candidates() or [])
+            objective_by_unit: dict[str, list[Any]] = {}
+            objective_candidates: list[Any] = []
+            seen_objective_ids: set[str] = set()
+            for unit in candidates:
+                unit_key = self._tool_action_sort_key(unit)
+                objectives = list(self._cohort_auto_divinatory_objective_candidates(unit) or [])
+                objective_by_unit[unit_key] = objectives
+                for objective in objectives:
+                    objective_id = self._tool_action_sort_key(objective)
+                    if objective_id and objective_id in seen_objective_ids:
+                        continue
+                    if objective_id:
+                        seen_objective_ids.add(objective_id)
+                    objective_candidates.append(objective)
+            objective_candidates.sort(key=self._tool_action_sort_key)
+            return {
+                "candidates": candidates,
+                "objective_candidates_by_unit": objective_by_unit,
+                "objective_candidates": objective_candidates,
+            }
+        if name_u == "MOTIVE IMPERATIVE":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            return {"candidates": list(self._cohort_motive_imperative_primary_candidates() or [])}
+        if name_u == "BENEVOLENCE OF THE OMNISSIAH":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            return {"candidates": list(self._cohort_benevolence_primary_candidates() or [])}
+        if name_u == "TRANSCENDENT COGITATION":
+            if phase_label.lower() != "command phase":
+                return {"candidates": []}
+            return {"candidates": list(self._cohort_transcendent_cogitation_primary_candidates() or [])}
+        if name_u == "BURST OF SPEED":
+            if phase_label.lower() != "movement phase":
+                return {"candidates": []}
+            return {"candidates": list(self._armoured_infantry_burst_of_speed_candidates() or [])}
+        if name_u == "OPENING SALVO":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            return {"candidates": list(self._armoured_infantry_opening_salvo_candidates() or [])}
+        if name_u == "ORDER THE ADVANCE":
+            if phase_label.lower() != "movement phase":
+                return {"candidates": []}
+            return {"candidates": list(self._armoured_infantry_order_the_advance_candidates() or [])}
+        if name_u == "SUPPORTING ORDNANCE":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            return {"candidates": list(self._armoured_infantry_supporting_ordnance_candidates() or [])}
+        if name_u == "BASTION RUNNING":
+            if phase_label.lower() != "movement phase":
+                return {"candidates": []}
+            return {"candidates": list(self._brandfast_bastion_running_candidates() or [])}
+        if name_u == "ARMOURED DUELLISTS":
+            if phase_label.lower() != "shooting phase":
+                return {"candidates": []}
+            return {"candidates": list(self._orks_armoured_duellists_candidates() or [])}
+        if name_u == "MOUNT UP, LADZ":
+            if phase_label.lower() != "fight phase":
+                return {"transport_candidates": [], "passenger_candidates_by_transport": {}}
+            transports, passenger_map = self._orks_mount_up_ladz_candidates()
+            return {
+                "transport_candidates": list(transports or []),
+                "passenger_candidates_by_transport": dict(passenger_map or {}),
+            }
+        if name_u == "HACK AND SLASH":
+            if phase_label.lower() != "fight phase":
+                return {"candidates": []}
+            candidates = []
+            for unit in self._tool_action_friendly_units():
+                round_state = getattr(unit, "round_state", None)
+                if not bool(getattr(round_state, "charged_this_round", False)):
+                    continue
+                if bool(getattr(round_state, "fought_this_phase", False)):
+                    continue
+                has_keyword = getattr(unit, "has_any_keyword", None)
+                if not (callable(has_keyword) and bool(has_keyword("WORLD EATERS"))):
+                    continue
+                if bool(self._unit_cannot_be_target_of_stratagem(unit)):
+                    continue
+                candidates.append(unit)
+            candidates.sort(key=self._tool_action_sort_key)
+            return {"candidates": candidates}
         if name_u == "ASSAIL":
             if phase_label.lower() != "shooting phase":
                 return {"candidates": []}

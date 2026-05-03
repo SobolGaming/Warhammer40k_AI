@@ -495,7 +495,8 @@ def _evaluate_reserves_arrival_prospective(
                 radius = float(model_radius(model))
                 distance = distance_to_battlefield_edge((x, y, z), edge, width=width, height=height)
                 max_center = 6.0 - radius
-                if max_center >= 0.0:
+                min_center = radius
+                if max_center + 1e-6 >= min_center:
                     if distance > max_center + 1e-6:
                         ok_all = False
                         break

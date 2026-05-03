@@ -22,6 +22,14 @@ def next_phase(game: "Game") -> None:
             if bool(getattr(game, "reinforcements_step_active", False)):
                 if pending_requests:
                     return
+                queue_mandatory = getattr(game, "_queue_mandatory_reinforcements_selection_if_needed", None)
+                if callable(queue_mandatory):
+                    queued = queue_mandatory(player=game.get_current_player())
+                    pending_after_mandatory = (
+                        list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+                    )
+                    if queued is not None or pending_after_mandatory:
+                        return
                 game.end_reinforcements_step()
             else:
                 game.handle_reserves_arrival_phase()
@@ -29,6 +37,14 @@ def next_phase(game: "Game") -> None:
                 if pending_after:
                     return
                 if bool(getattr(game, "reinforcements_step_active", False)):
+                    queue_mandatory = getattr(game, "_queue_mandatory_reinforcements_selection_if_needed", None)
+                    if callable(queue_mandatory):
+                        queued = queue_mandatory(player=game.get_current_player())
+                        pending_after_mandatory = (
+                            list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+                        )
+                        if queued is not None or pending_after_mandatory:
+                            return
                     game.end_reinforcements_step()
     except Exception:
         pass

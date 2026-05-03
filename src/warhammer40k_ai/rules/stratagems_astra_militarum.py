@@ -464,6 +464,159 @@ class AstraMilitarumStratagemMixin:
             return False
         return self._am_has_voice_prompt_subscriber()
 
+    def _am_can_use_armoured_infantry_order_the_advance_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+
+        officer = kwargs.get("officer_unit") or kwargs.get("source_unit") or kwargs.get("unit")
+        raw_target_units = (
+            kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("affected_units")
+        )
+        target_units = self._am_resolve_unit_list(raw_target_units)
+        candidates = [
+            dict(candidate)
+            for candidate in list(kwargs.get("candidates") or [])
+            if isinstance(candidate, dict)
+        ]
+        if officer is None or not target_units or not candidates:
+            pending = self._am_pending_reaction_by_names("ORDER THE ADVANCE")
+            if pending is not None:
+                officer = officer or pending.get("officer_unit") or pending.get("unit")
+                if not target_units:
+                    target_units = self._am_resolve_unit_list(pending.get("target_units"))
+                if not candidates:
+                    candidates = [
+                        dict(candidate)
+                        for candidate in list(pending.get("candidates") or [])
+                        if isinstance(candidate, dict)
+                    ]
+        if officer is None and not target_units:
+            return bool(candidates)
+        if officer is None and len(candidates) == 1:
+            officer = candidates[0].get("officer_unit")
+        officer_root = self._am_root(officer)
+        if officer_root is None:
+            return False
+        if not target_units:
+            maybe_target = kwargs.get("target_unit")
+            maybe_target_root = self._am_root(maybe_target)
+            if maybe_target_root is not None and maybe_target_root is not officer_root:
+                target_units = [maybe_target_root]
+        selected_targets = self._am_resolve_unit_list(target_units)
+        if not selected_targets:
+            return False
+        if not self._am_on_battlefield(officer_root):
+            return False
+        if not self._is_astra_militarum_unit(officer_root) or not self._is_officer_unit(officer_root):
+            return False
+        eligible_targets = self._armoured_infantry_order_the_advance_target_candidates(officer_root)
+        eligible_ids = {self._am_sort_key(target) for target in eligible_targets}
+        selected_ids = [self._am_sort_key(target) for target in selected_targets]
+        if any(unit_id not in eligible_ids for unit_id in selected_ids):
+            return False
+        if not candidates:
+            return True
+        officer_id = self._am_sort_key(officer_root)
+        group = next(
+            (
+                candidate
+                for candidate in candidates
+                if str(candidate.get("officer_unit_id", "") or "") == officer_id
+            ),
+            None,
+        )
+        if group is None:
+            return False
+        candidate_target_ids = {
+            str(unit_id or "")
+            for unit_id in list(group.get("target_unit_ids") or [])
+            if str(unit_id or "")
+        }
+        return not any(unit_id not in candidate_target_ids for unit_id in selected_ids)
+
+    def _am_can_use_armoured_infantry_candidate_tool_action(
+        self,
+        kwargs: dict[str, Any],
+        *,
+        stratagem_name: str,
+        phase_name: str,
+        candidate_getter_name: str,
+        require_reactive_move_queue: bool = False,
+        activation_name: str = "",
+    ) -> bool:
+        if not self._is_armoured_infantry():
+            return False
+        current_phase = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if current_phase != phase_name:
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        if require_reactive_move_queue:
+            queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+            if not callable(queue_move):
+                return False
+        if activation_name:
+            mgr = self._get_astra_militarum_mgr()
+            activate = getattr(mgr, activation_name, None) if mgr is not None else None
+            if not callable(activate):
+                return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = self._am_resolve_unit_list(kwargs.get("candidates"))
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names(stratagem_name)
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = self._am_resolve_unit_list(pending.get("candidates"))
+        if not candidates:
+            candidate_getter = getattr(self, candidate_getter_name, None)
+            candidates = self._am_resolve_unit_list(candidate_getter() if callable(candidate_getter) else [])
+        if unit is None:
+            return bool(candidates)
+        root = self._am_root(unit)
+        if root is None:
+            return False
+        eligible_ids = {self._am_sort_key(candidate) for candidate in candidates}
+        root_id = self._am_sort_key(root)
+        return bool(root_id and root_id in eligible_ids)
+
+    def _am_can_use_armoured_infantry_burst_of_speed_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        return self._am_can_use_armoured_infantry_candidate_tool_action(
+            kwargs,
+            stratagem_name="BURST OF SPEED",
+            phase_name="movement phase",
+            candidate_getter_name="_armoured_infantry_burst_of_speed_candidates",
+            require_reactive_move_queue=True,
+        )
+
+    def _am_can_use_armoured_infantry_opening_salvo_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        return self._am_can_use_armoured_infantry_candidate_tool_action(
+            kwargs,
+            stratagem_name="OPENING SALVO",
+            phase_name="shooting phase",
+            candidate_getter_name="_armoured_infantry_opening_salvo_candidates",
+            activation_name="activate_armoured_infantry_opening_salvo",
+        )
+
+    def _am_can_use_armoured_infantry_supporting_ordnance_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        return self._am_can_use_armoured_infantry_candidate_tool_action(
+            kwargs,
+            stratagem_name="SUPPORTING ORDNANCE",
+            phase_name="shooting phase",
+            candidate_getter_name="_armoured_infantry_supporting_ordnance_candidates",
+            activation_name="activate_armoured_infantry_supporting_ordnance",
+        )
+
     def _grizzled_no_retreat_objective_candidates(self, unit: Any) -> list[Any]:
         if unit is None:
             return []

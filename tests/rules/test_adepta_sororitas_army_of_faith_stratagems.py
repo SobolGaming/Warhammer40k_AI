@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -650,6 +651,49 @@ def test_shield_of_faith_applies_jump_pack_aura_and_cleans_up():
     game.event_system.publish("phase_end", player=enemy_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
     assert list(sisters.models[0].get_temporary_fnp_entries() or []) == []
     assert list(seraphim.models[0].get_temporary_fnp_entries() or []) == []
+
+
+def test_shield_of_faith_can_use_requires_source_without_logging(caplog):
+    game, sororitas_player, _enemy_player, sororitas_army, enemy_army = _build_game()
+    sisters = _make_unit("Battle Sisters Squad", keywords=["INFANTRY"], faction_keywords=["ADEPTA SORORITAS"])
+    seraphim = _make_unit(
+        "Seraphim Squad",
+        keywords=["INFANTRY", "JUMP PACK"],
+        faction_keywords=["ADEPTA SORORITAS"],
+        movement=12,
+    )
+    enemy = _make_unit("Enemy", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    sororitas_army.add_unit(sisters)
+    sororitas_army.add_unit(seraphim)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, sisters, 10.0, 10.0)
+    _deploy_unit(game, seraphim, 14.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    game.rebuild_entity_registry()
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    caplog.set_level(logging.ERROR)
+
+    assert sororitas_player.stratagems.can_use(
+        "SHIELD OF FAITH",
+        unit=seraphim,
+        source_unit=sisters,
+        candidates=[sisters, seraphim],
+        phase_name="Shooting phase",
+    ) is True
+    assert sororitas_player.stratagems.can_use(
+        "SHIELD OF FAITH",
+        unit=seraphim,
+        candidates=[sisters, seraphim],
+        phase_name="Shooting phase",
+    ) is False
+    assert sororitas_player.stratagems.can_use(
+        "SHIELD OF FAITH",
+        unit=enemy,
+        source_unit=sisters,
+        candidates=[sisters, seraphim],
+        phase_name="Shooting phase",
+    ) is False
+    assert not [record for record in caplog.records if "SHIELD OF FAITH" in record.getMessage()]
 
 
 def test_angelic_descent_queues_at_end_of_opponent_fight_phase_and_enters_strategic_reserves():

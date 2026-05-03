@@ -2039,6 +2039,12 @@ def _validate_placement_positions(
     if not callable(collision_fn):
         collision_fn = getattr(game_map, "check_collision_with_terrain", None)
 
+    has_any_keyword = getattr(unit, "has_any_keyword", None)
+    is_aircraft_reserves_arrival = str(placement_kind or "") == "reserves_arrival" and (
+        (callable(has_any_keyword) and bool(has_any_keyword("AIRCRAFT")))
+        or bool(getattr(unit, "is_aircraft", False))
+    )
+
     for entry in list(model_positions or []):
         mid = str(entry.get("model_id", "") or "")
         if not mid:
@@ -2063,14 +2069,15 @@ def _validate_placement_positions(
             return ("Move unit: placement outside battlefield boundary.",)
         if callable(collision_fn) and collision_fn(model, destination=(x, y)):
             return ("Move unit: placement collides with terrain.",)
-        ruins_validation = validate_ruins_placement(unit, (x, y, z), game_map.terrain_features, moving_model=model)
-        if not ruins_validation.get("valid", False):
-            return (f"Move unit: RUINS placement invalid: {ruins_validation.get('reason', 'invalid')}",)
-        surface_validation_fn = getattr(game_map, "validate_model_surface_placement", None)
-        if callable(surface_validation_fn):
-            surface_validation = surface_validation_fn(model, (x, y, z))
-            if not surface_validation.get("valid", False):
-                return (f"Move unit: {surface_validation.get('reason', 'invalid elevated-surface placement')}",)
+        if not is_aircraft_reserves_arrival:
+            ruins_validation = validate_ruins_placement(unit, (x, y, z), game_map.terrain_features, moving_model=model)
+            if not ruins_validation.get("valid", False):
+                return (f"Move unit: RUINS placement invalid: {ruins_validation.get('reason', 'invalid')}",)
+            surface_validation_fn = getattr(game_map, "validate_model_surface_placement", None)
+            if callable(surface_validation_fn):
+                surface_validation = surface_validation_fn(model, (x, y, z))
+                if not surface_validation.get("valid", False):
+                    return (f"Move unit: {surface_validation.get('reason', 'invalid elevated-surface placement')}",)
 
         if hasattr(unit, "_create_potential_base"):
             base = unit._create_potential_base(x, y, z, facing, model=model)

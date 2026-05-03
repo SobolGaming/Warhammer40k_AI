@@ -142,6 +142,15 @@ class GameSetupDeploymentReservesMixin:
             },
         )
 
+    def _queue_mandatory_reinforcements_selection_if_needed(self, player=None):
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return None
+        _selectable, _allow_pass, must_ids = self._reinforcements_step_selection_state(active_player)
+        if not must_ids:
+            return None
+        return self._queue_movement_phase_reinforcements_selection(player=active_player)
+
     def _reinforcements_step_has_pending_decisions(self) -> bool:
         if not bool(getattr(self, "reinforcements_step_active", False)):
             return False

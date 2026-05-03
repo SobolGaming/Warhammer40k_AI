@@ -2859,8 +2859,11 @@ class Model:
                 f"optional_wargear={self.optional_wargear})\n"
                 f"abilities={self.abilities.keys()})")
 
-    def __eq__(self, other: "Model") -> bool:
-        return self.id == other.id
+    def __eq__(self, other: object) -> bool:
+        other_id = getattr(other, "id", None)
+        if other_id is None:
+            return False
+        return self.id == other_id
 
     def __hash__(self) -> int:
         return hash(self.id)

@@ -174,6 +174,50 @@ def test_forced_only_reserve_policy_keeps_optional_units_deployed() -> None:
     assert army.validated_payload == decisions
 
 
+def test_forced_only_reserve_policy_reserves_oversized_overflow_units() -> None:
+    oversized_units = [
+        _StubUnit(f"unit:oversized:{idx}", must_start_in_reserves=False)
+        for idx in range(3)
+    ]
+    for unit in oversized_units:
+        unit.models[0].model_base = _StubBase(radius=5.0)
+        unit.is_titanic = True
+        unit.get_unit_cost = lambda: 450
+    screen = _StubUnit("unit:screen", must_start_in_reserves=False)
+    army = _StubArmy([*oversized_units, screen])
+    player = _StubPlayer(army)
+
+    maker = DeterministicDeploymentDecisionMaker(game=object(), reserve_policy="forced_only")
+    decisions = maker.declare_reserves(player)
+
+    oversized_decisions = [decisions[unit.id] for unit in oversized_units]
+    assert oversized_decisions.count("strategic_reserves") == 1
+    assert oversized_decisions.count("deploy") == 2
+    assert decisions[screen.id] == "deploy"
+    assert army.validated_payload == decisions
+
+
+def test_headless_unplaceable_deployment_unit_moves_to_reserves() -> None:
+    unit = _StubUnit("unit:unplaceable", must_start_in_reserves=False)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army)
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=object(), reserve_policy="forced_only")
+
+    recovered = maker.handle_unplaceable_deployment_unit(
+        unit,
+        player=player,
+        reason="no placement candidates were generated",
+    )
+
+    assert recovered is True
+    assert unit.reserve_status == "strategic_reserves"
+    assert unit.deployed is False
+    assert unit.reserve_source == "deployment_overflow"
+    assert unit.reserve_latest_arrival_round == 3
+
+
 def test_invalid_reserve_policy_raises_value_error() -> None:
     with pytest.raises(ValueError):
         DeterministicDeploymentDecisionMaker(game=object(), reserve_policy="unknown_policy")
@@ -1337,6 +1381,83 @@ def test_headless_deployment_edge_sweep_source_finds_near_edge_slot(
 
     assert candidates
     assert candidates[0]["source"] == "edge_sweep"
+
+
+def test_headless_deployment_footprint_safe_lattice_finds_large_single_model_edge_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _LargeSingleModelUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model")]
+            self.models[0].model_base = _StubBase(radius=4.0)
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del game_map, avoid_friendly_units, boundary_repulsors, search_context
+            if abs(float(x) - 4.25) > 1e-6 or abs(float(y) - 4.25) > 1e-6:
+                return []
+            return [(float(x), float(y), 0.0, 0.0)]
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    unit = _LargeSingleModelUnit("unit:large_single", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(game_map), placement_candidate_limit=1)
+    monkeypatch.setattr(maker, "_gap_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_packing_row_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_semantic_anchor_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_candidate_positions_exhaustive", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(maker, "_edge_sweep_anchor_candidates", lambda *_args, **_kwargs: [])
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 20.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    assert candidates[0]["source"] == "footprint_safe_lattice"
+    assert candidates[0]["anchor"] == [4.25, 4.25]
 
 
 def test_headless_deployment_relaxed_home_corner_scan_reaches_deeper_band_for_five_model_units(

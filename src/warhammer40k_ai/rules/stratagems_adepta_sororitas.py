@@ -747,6 +747,41 @@ class AdeptaSororitasStratagemMixin:
             out.append(jump_pack_unit)
         return sorted(out, key=self._as_sort_key)
 
+    def _as_can_use_army_of_faith_shield_of_faith_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_army_of_faith():
+            return False
+        source_unit = kwargs.get("source_unit") or kwargs.get("trigger_unit") or kwargs.get("suffering_unit")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (source_unit is None or unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SHIELD OF FAITH":
+                    continue
+                source_unit = source_unit or reaction.get("source_unit") or reaction.get("trigger_unit")
+                unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        source_root = self._as_root(source_unit)
+        if source_root is None:
+            return False
+        if not candidates:
+            candidates = self._army_of_faith_shield_of_faith_candidates(source_unit=source_root)
+        if unit is None:
+            return bool(candidates)
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        if candidates and not self._as_unit_in_candidates(root, candidates):
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return False
+        return self._is_adepta_sororitas_unit(root)
+
     def _army_of_faith_jump_pack_aura_units(self, source_unit: Any) -> list[Any]:
         root = self._as_root(source_unit)
         if root is None:

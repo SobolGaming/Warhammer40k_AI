@@ -1019,11 +1019,7 @@ class VotannStratagemMixin:
                 return
             if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
                 return
-            candidates = [
-                unit
-                for unit in self._votann_candidates(require_targetable=True)
-                if self._votann_is_hekaton_land_fortress_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
-            ]
+            candidates = self._brandfast_bastion_running_candidates()
             if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
                 return
             payload: Dict[str, Any] = {
@@ -1096,6 +1092,47 @@ class VotannStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _brandfast_bastion_running_candidates(self) -> List[Any]:
+        if not self._is_brandfast_oathband_detachment():
+            return []
+        return sorted(
+            [
+                unit
+                for unit in self._votann_candidates(require_targetable=True)
+                if self._votann_is_hekaton_land_fortress_unit(unit)
+                and not self._votann_selected_to_move_this_phase(unit)
+            ],
+            key=self._votann_sort_key,
+        )
+
+    def _votann_can_use_brandfast_bastion_running_tool_action(self, kwargs: Dict[str, Any]) -> bool:
+        if not self._is_brandfast_oathband_detachment():
+            return False
+        context = self._votann_pending_context("BASTION RUNNING", kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return False
+        candidates = [
+            unit
+            for unit in self._votann_resolve_unit_list(
+                context.get("candidates") or self._brandfast_bastion_running_candidates()
+            )
+            if self._votann_is_hekaton_land_fortress_unit(unit)
+            and not self._votann_selected_to_move_this_phase(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        if target_unit is None:
+            return bool(candidates)
+        target_root = self._votann_root(target_unit)
+        if target_root is None:
+            return False
+        candidate_ids = {self._votann_sort_key(unit) for unit in candidates}
+        target_id = self._votann_sort_key(target_root)
+        return bool(target_id and target_id in candidate_ids)
 
     def _brandfast_vengeance_support_candidates(self, infantry_unit: Any, *, allow_hekaton: bool) -> List[Any]:
         source_root = self._votann_root(infantry_unit)
@@ -3819,8 +3856,11 @@ class VotannStratagemMixin:
             return False
         candidates = [
             unit
-            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
-            if self._votann_is_hekaton_land_fortress_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
+            for unit in self._votann_resolve_unit_list(
+                context.get("candidates") or self._brandfast_bastion_running_candidates()
+            )
+            if self._votann_is_hekaton_land_fortress_unit(unit)
+            and not self._votann_selected_to_move_this_phase(unit)
         ]
         target_unit = context.get("unit") or context.get("target_unit")
         target_root = self._votann_root(target_unit) if target_unit is not None else None

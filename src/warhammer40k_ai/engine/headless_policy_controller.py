@@ -2225,16 +2225,31 @@ class HeadlessPolicyDecisionController(DecisionController):
     ) -> list[tuple[str, list[tuple[float, float]]]]:
         along_step = self._strategic_edge_scan_step(unit, width=width, height=height)
         preferred_offset = self._strategic_edge_offset_preference(unit)
-        offsets = self._strategic_edge_offsets(preferred_offset)
         groups: list[tuple[str, list[tuple[float, float]]]] = []
 
         primary: list[tuple[float, float]] = []
+        edge_touch_dense: list[tuple[float, float]] = []
         staggered: list[tuple[float, float]] = []
         fallback: list[tuple[float, float]] = []
+        largest_radius = self._largest_model_radius(unit)
+        along_margin = max(0.0, min(width * 0.5, height * 0.5, largest_radius))
+
+        def _valid_edge_offsets(raw_offsets: list[float]) -> list[float]:
+            if largest_radius <= 0.0:
+                return list(raw_offsets or [])
+            min_offset = float(largest_radius)
+            max_offset = float(largest_radius + 0.25) if largest_radius > 3.0 else float(6.0 - largest_radius)
+            filtered = [
+                float(value)
+                for value in list(raw_offsets or [])
+                if float(value) + 1e-6 >= min_offset and float(value) <= max_offset + 1e-6
+            ]
+            return filtered or [float(preferred_offset)]
 
         def _edge_band(step: float, offset_values: list[float], *, half_step: bool, out: list[tuple[float, float]]) -> None:
-            xs = self._axis_points(0.0, width, step=step, offset=(step / 2.0) if half_step else 0.0)
-            ys = self._axis_points(0.0, height, step=step, offset=(step / 2.0) if half_step else 0.0)
+            axis_offset = (step / 2.0) if half_step else 0.0
+            xs = self._axis_points(along_margin, width - along_margin, step=step, offset=axis_offset)
+            ys = self._axis_points(along_margin, height - along_margin, step=step, offset=axis_offset)
             for edge_offset in list(offset_values or []):
                 for x in xs:
                     out.append((float(x), float(edge_offset)))
@@ -2243,9 +2258,18 @@ class HeadlessPolicyDecisionController(DecisionController):
                     out.append((float(edge_offset), float(y)))
                     out.append((max(0.0, float(width) - float(edge_offset)), float(y)))
 
+        offsets = _valid_edge_offsets(self._strategic_edge_offsets(preferred_offset))
         _edge_band(along_step, offsets[:4], half_step=False, out=primary)
+        if largest_radius > 3.0:
+            _edge_band(1.0, [float(largest_radius)], half_step=False, out=edge_touch_dense)
+            _edge_band(1.0, [float(largest_radius)], half_step=True, out=edge_touch_dense)
         _edge_band(along_step, offsets[:4], half_step=True, out=staggered)
-        _edge_band(max(1.5, along_step * 1.5), self._strategic_edge_offsets(0.0), half_step=False, out=fallback)
+        _edge_band(
+            max(1.5, along_step * 1.5),
+            _valid_edge_offsets(self._strategic_edge_offsets(0.0)),
+            half_step=False,
+            out=fallback,
+        )
         fallback.extend(
             [
                 (0.0, 0.0),
@@ -2255,6 +2279,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             ]
         )
         groups.append(("strategic_edge_band", primary))
+        if edge_touch_dense:
+            groups.append(("strategic_edge_touch_dense", edge_touch_dense))
         groups.append(("strategic_edge_staggered", staggered))
         groups.append(("strategic_edge_exhaustive", fallback[: self._reserves_exhaustive_anchor_limit]))
         return groups
@@ -2484,6 +2510,8 @@ class HeadlessPolicyDecisionController(DecisionController):
     def _strategic_edge_offsets(preferred_offset: float) -> list[float]:
         candidates = [
             float(preferred_offset),
+            float(preferred_offset) + 0.25,
+            float(preferred_offset) - 0.25,
             float(preferred_offset) + 0.5,
             float(preferred_offset) - 0.5,
             float(preferred_offset) + 1.0,
@@ -2497,7 +2525,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         normalized: list[float] = []
         seen: set[float] = set()
         for value in candidates:
-            bounded = float(max(0.0, min(8.0, value)))
+            bounded = float(max(0.0, value))
             key = round(bounded, 3)
             if key in seen:
                 continue
@@ -2556,8 +2584,12 @@ class HeadlessPolicyDecisionController(DecisionController):
             largest_model_radius = max(float(largest_model_radius), float(max(0.0, radius)))
         if largest_model_radius <= 0.0:
             return 1.0
+        if largest_model_radius > 3.0:
+            return float(largest_model_radius)
+        max_wholly_within_offset = max(float(largest_model_radius), 6.0 - float(largest_model_radius))
+        preferred = min(float(largest_model_radius) + 0.25, float(max_wholly_within_offset))
         # Strategic reserves usually need a small but non-zero edge offset to satisfy wholly-on-board placement.
-        return float(max(0.5, min(4.0, largest_model_radius + 0.25)))
+        return float(max(0.5, preferred))
 
     def _build_model_positions_from_anchor(
         self,

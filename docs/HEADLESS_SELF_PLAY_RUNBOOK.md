@@ -91,7 +91,7 @@ By default, this script also applies reward annotation using `dense_vp_delta_v1`
 Throughput controls:
 - `--workers <N>` runs games in parallel processes.
 - `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
-- `--reserve-policy forced_only` avoids optional reserve declarations (default; faster and more stable).
+- `--reserve-policy forced_only` avoids ordinary optional reserve declarations (default; faster and more stable), but can still reserve validated oversized/Titanic overflow units when too many large footprints would otherwise fail deployment.
 - `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
 
 Default shooting policy:
@@ -113,6 +113,7 @@ Pending-placement policy:
 - Headless deployment candidate generation now builds a friendly-aware placement search context, so multi-model pack layouts avoid already deployed friendly units instead of emitting overlap-only payloads that later fail authoritative validation.
 - When the exact deployment anchor cannot synthesize a legal multi-model pack, the headless deployer performs a bounded deterministic local anchor jitter search before giving up on that candidate.
 - Late-game small-unit deployment fallback now searches deeper half-inch home-corner and perimeter bands before giving up, which keeps edge-crowded units up to five models from missing legal deployment slots.
+- Strategic Reserves aircraft and other large single-model bases use base-touching edge offsets when their footprint cannot fit wholly within 6" of an edge. AIRCRAFT reserve arrivals keep boundary/overlap/enemy checks but ignore RUINS wall/floor surface geometry for the airborne setup footprint, and the Movement phase requeues unresolved mandatory reserve arrivals before closing the Reinforcements step.
 - `model_destroyed_before_removal` reaction prompts now normalize `destroyed_model` / `destroyed_unit` into standard tool-action bindings, which keeps destroyed-model stratagems such as `PROTOCOL OF THE ETERNAL REVENANT` available in headless play.
 - The accepted per-model placement payload is recorded in both DecisionRecords and replay storage, so playback and reconstruction can reproduce the completed placement without relying on UI-only state.
 

@@ -253,6 +253,54 @@ class AdeptusMechanicusStratagemMixin:
     def _cohort_transcendent_cogitation_primary_candidates(self) -> list[Any]:
         return self._cohort_cybernetica_primary_candidates(require_vehicle=False, allow_legio=True)
 
+    def _admech_can_use_cohort_transcendent_cogitation_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        candidates = [
+            self._admech_root(candidate)
+            for candidate in list(kwargs.get("candidates") or self._cohort_transcendent_cogitation_primary_candidates() or [])
+            if self._admech_root(candidate) is not None
+        ]
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        if unit is None:
+            return bool(candidates)
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        candidate_ids = {self._admech_sort_key(candidate) for candidate in candidates}
+        root_id = self._admech_sort_key(root)
+        return bool(root_id and root_id in candidate_ids)
+
+    def _admech_can_use_cohort_benevolence_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_cohort_cybernetica():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        candidates = [
+            self._admech_root(candidate)
+            for candidate in list(kwargs.get("candidates") or self._cohort_benevolence_primary_candidates() or [])
+            if self._admech_root(candidate) is not None
+        ]
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        if unit is None:
+            return bool(candidates)
+        root = self._admech_root(unit)
+        if root is None:
+            return False
+        candidate_ids = {self._admech_sort_key(candidate) for candidate in candidates}
+        root_id = self._admech_sort_key(root)
+        return bool(root_id and root_id in candidate_ids)
+
     def _cohort_auto_divinatory_objective_candidates(self, source_unit: Any) -> list[Any]:
         if not self._is_cohort_cybernetica():
             return []

@@ -24,6 +24,7 @@ from .placement_zone_heuristics import (
 )
 from .pregame_deployment_agent import PregameDeploymentAgent
 from .prospective_positions import calculate_prospective_model_positions
+from .reserve_metadata import set_reserve_start_metadata
 from ..roster.player import Player
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.entity_ids import get_entity_id
@@ -172,6 +173,31 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             return option_id
         return self._lookahead_option_id(request)
 
+    def handle_unplaceable_deployment_unit(
+        self,
+        unit: object,
+        *,
+        player: Player,
+        reason: str,
+    ) -> bool:
+        del reason
+        army = player.get_army() if player is not None else None
+        if army is None:
+            return False
+        reserve_status = self._preferred_reserve_status(army, unit)
+        if not reserve_status:
+            return False
+        set_reserve_start_metadata(
+            unit,
+            started=True,
+            reserve_status=reserve_status,
+            source="deployment_overflow",
+            mandatory_start=False,
+            latest_arrival_round=3,
+        )
+        setattr(unit, "deployed", False)
+        return True
+
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
         if army is None:
@@ -187,6 +213,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             decisions[unit_id] = "reserves" if must_start else "deploy"
 
         if self.reserve_policy == "forced_only":
+            decisions = self._apply_forced_policy_oversized_overflow_reserves(army, decisions, roots=roots, player=player)
             return self._finalize_reserves_decisions(army, decisions)
 
         limits_fn = getattr(army, "get_reserve_limits", None)
@@ -254,6 +281,56 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             if enforced:
                 return enforced
         return dict(decisions)
+
+    def _apply_forced_policy_oversized_overflow_reserves(
+        self,
+        army: object,
+        decisions: dict[str, str],
+        *,
+        roots: list[object],
+        player: Player,
+    ) -> dict[str, str]:
+        validate_fn = getattr(army, "validate_reserves_decisions", None)
+        if not callable(validate_fn):
+            return dict(decisions)
+
+        oversized: list[tuple[float, str, object, str]] = []
+        for unit in list(roots or []):
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id or str(decisions.get(unit_id, "deploy") or "") != "deploy":
+                continue
+            reserve_status = self._preferred_reserve_status(army, unit)
+            if not reserve_status:
+                continue
+            footprint = estimate_unit_pack_footprint(unit)
+            is_oversized = (
+                bool(getattr(unit, "is_titanic", False))
+                or float(footprint["radius"]) >= 4.0
+                or float(footprint["width"]) >= 8.0
+                or float(footprint["depth"]) >= 8.0
+            )
+            if not is_oversized:
+                continue
+            score = self._reserve_candidate_score(unit, reserve_status=reserve_status, player=player)
+            oversized.append((float(score), unit_id, unit, reserve_status))
+
+        if len(oversized) <= 2:
+            return dict(decisions)
+
+        next_decisions = dict(decisions)
+        reserved_count = 0
+        oversized.sort(key=lambda item: (-float(item[0]), str(item[1])))
+        for _score, unit_id, _unit, reserve_status in oversized:
+            trial = dict(next_decisions)
+            trial[unit_id] = reserve_status
+            validation = dict(validate_fn(trial) or {})
+            if not bool(validation.get("valid", False)):
+                continue
+            next_decisions = trial
+            reserved_count += 1
+            if len(oversized) - reserved_count <= 2:
+                break
+        return next_decisions
 
     def _preferred_reserve_status(self, army: object, unit: object) -> str:
         if bool(getattr(unit, "is_fortification", False)):
@@ -659,6 +736,14 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             ),
             ("lattice", self._candidate_positions(unit, deployment_zone, already_deployed)),
             (
+                "footprint_safe_lattice",
+                self._footprint_safe_anchor_candidates(
+                    unit,
+                    deployment_zone,
+                    footprint=footprint,
+                ),
+            ),
+            (
                 "edge_sweep",
                 self._edge_sweep_anchor_candidates(
                     unit,
@@ -712,6 +797,21 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             footprint=estimate_unit_pack_footprint(unit),
         )
         for anchor in list(edge_candidates or []):
+            key = (round(float(anchor[0]), 3), round(float(anchor[1]), 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            anchors.append((float(anchor[0]), float(anchor[1])))
+            if len(anchors) >= int(relaxed_limit):
+                return anchors
+
+        footprint_safe_candidates = self._footprint_safe_anchor_candidates(
+            unit,
+            deployment_zone if not self._unit_has_infiltrate(unit) else {"bounds": list(bounds)},
+            footprint=estimate_unit_pack_footprint(unit),
+            anchor_limit=int(relaxed_limit),
+        )
+        for anchor in list(footprint_safe_candidates or []):
             key = (round(float(anchor[0]), 3), round(float(anchor[1]), 3))
             if key in seen:
                 continue
@@ -862,6 +962,56 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             footprint=footprint,
             default_bounds=(0.0, board_width, 0.0, board_height),
         )
+
+    def _footprint_safe_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        footprint: dict[str, float],
+        anchor_limit: int | None = None,
+    ) -> list[tuple[float, float]]:
+        bounds = self._zone_bounds(deployment_zone)
+        if bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = bounds
+        width = max(0.0, float(max_x) - float(min_x))
+        height = max(0.0, float(max_y) - float(min_y))
+        if width <= 0.0 or height <= 0.0:
+            return []
+        largest_radius = max(
+            0.0,
+            float(footprint.get("largest_radius", footprint.get("radius", 0.0)) or 0.0),
+        )
+        margin = min(width * 0.5, height * 0.5, largest_radius + 0.25)
+        step = max(0.5, min(2.0, max(1.0, largest_radius)))
+        limit = int(anchor_limit) if anchor_limit is not None else 768
+
+        xs = self._edge_first_axis_points(min_x, max_x, step=step, margin=margin)
+        ys = self._edge_first_axis_points(min_y, max_y, step=step, margin=margin)
+        center_x, center_y = self._zone_center(deployment_zone)
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for row_idx, y in enumerate(list(ys or [])):
+            x_values = list(xs or [])
+            if row_idx % 2 == 1:
+                x_values.reverse()
+            for x in x_values:
+                anchor = (float(x), float(y))
+                key = (round(anchor[0], 3), round(anchor[1], 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not self._point_in_zone(deployment_zone, anchor[0], anchor[1]):
+                    continue
+                candidates.append(anchor)
+                if len(candidates) >= max(0, limit):
+                    return candidates
+        center_anchor = (float(center_x), float(center_y))
+        center_key = (round(center_anchor[0], 3), round(center_anchor[1], 3))
+        if center_key not in seen and self._point_in_zone(deployment_zone, center_anchor[0], center_anchor[1]):
+            candidates.append(center_anchor)
+        return candidates[: max(0, limit)]
 
     def _edge_sweep_anchor_candidates(
         self,

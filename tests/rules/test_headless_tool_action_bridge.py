@@ -256,6 +256,120 @@ def test_queue_headless_tool_action_decision_normalizes_generic_stratagem_identi
     assert payload["tool_descriptor_id"] == "tool_descriptor:stratagem:000009770006"
 
 
+def test_normalize_phase_context_accepts_structured_singleton_candidate() -> None:
+    manager = StratagemManager.__new__(StratagemManager)
+    target_unit = SimpleNamespace(id="unit:target", name="Target Unit")
+    enemy_unit = SimpleNamespace(id="unit:enemy", name="Enemy Unit")
+
+    context = manager._normalize_phase_item_context(
+        {
+            "candidates": [{"target_unit": target_unit, "target_unit_id": target_unit.id}],
+            "enemy_candidates_by_unit": {target_unit.id: [enemy_unit]},
+        }
+    )
+
+    assert context["unit"] is target_unit
+    assert context["target_unit"] is target_unit
+    assert context["enemy_unit"] is enemy_unit
+    assert context["target_enemy_unit"] is enemy_unit
+
+
+def test_queue_headless_tool_action_decision_preserves_structured_order_the_advance_context() -> None:
+    officer = SimpleNamespace(id="unit:officer", name="Tank Commander")
+    target = SimpleNamespace(id="unit:target", name="Cadian Shock Troops")
+    candidate = {
+        "officer_unit": officer,
+        "officer_unit_id": officer.id,
+        "target_units": [target],
+        "target_unit_ids": [target.id],
+    }
+
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="ORDER THE ADVANCE",
+        descriptor_target="astra_militarum_officer_and_one_or_more_friendly_astra_militarum_units_within_6",
+        context={
+            "phase_name": "Movement phase",
+            "candidates": [candidate],
+        },
+        can_use=lambda name, **kwargs: (
+            str(name).upper() == "ORDER THE ADVANCE"
+            and kwargs.get("officer_unit") is officer
+            and kwargs.get("source_unit") is officer
+            and list(kwargs.get("target_units") or []) == [target]
+        ),
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payload = _tool_payloads(request)[0]
+    resolved = dict(payload["resolved_kwargs"])
+    assert resolved["officer_unit"]["__entity_ref__"]["id"] == officer.id
+    assert resolved["source_unit"]["__entity_ref__"]["id"] == officer.id
+    assert resolved["target_units"][0]["__entity_ref__"]["id"] == target.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_queue_headless_tool_action_decision_pairs_unit_objective_candidates() -> None:
+    unit = SimpleNamespace(id="unit:cybernetica", name="Kastelan Robots")
+    objective = SimpleNamespace(id="objective:alpha", name="Objective Alpha")
+
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="AUTO-DIVINATORY TARGETING",
+        descriptor_target="friendly_unit_and_objective_marker",
+        context={
+            "phase_name": "Command phase",
+            "candidates": [unit],
+            "objective_candidates": [objective],
+            "objective_candidates_by_unit": {unit.id: [objective]},
+        },
+        can_use=lambda name, **kwargs: (
+            str(name).upper() == "AUTO-DIVINATORY TARGETING"
+            and kwargs.get("unit") is unit
+            and kwargs.get("objective") is objective
+        ),
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = _tool_payloads(request)
+    assert len(payloads) == 1
+    resolved = dict(payloads[0]["resolved_kwargs"])
+    assert resolved["unit"]["__entity_ref__"]["id"] == unit.id
+    assert resolved["objective"]["__entity_ref__"]["id"] == objective.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_queue_headless_tool_action_decision_uses_passenger_map_for_mount_up_ladz() -> None:
+    transport = SimpleNamespace(id="unit:trukk", name="Trukk")
+    passenger = SimpleNamespace(id="unit:boyz", name="Boyz")
+
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="MOUNT UP, LADZ",
+        descriptor_target="friendly_transport_with_eligible_orks_infantry_unit",
+        context={
+            "phase_name": "Fight phase",
+            "transport_candidates": [transport],
+            "passenger_candidates_by_transport": {transport.id: [passenger]},
+        },
+        can_use=lambda name, **kwargs: (
+            str(name).upper() == "MOUNT UP, LADZ"
+            and kwargs.get("transport_unit") is transport
+            and kwargs.get("passenger_unit") is passenger
+        ),
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payload = _tool_payloads(request)[0]
+    resolved = dict(payload["resolved_kwargs"])
+    assert resolved["transport_unit"]["__entity_ref__"]["id"] == transport.id
+    assert resolved["passenger_unit"]["__entity_ref__"]["id"] == passenger.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
 def test_queue_headless_tool_action_decision_skips_explicit_command_reroll_bridge() -> None:
     manager, _player, game, _stratagem = _build_generic_tool_manager(
         stratagem_name="COMMAND RE-ROLL",
