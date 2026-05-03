@@ -1764,6 +1764,32 @@ def test_headless_policy_controller_prevalidates_reserves_bruteforce_candidates_
     assert int(metric.get("resolve_attempts", 0) or 0) == 1
 
 
+def test_headless_policy_controller_discards_failed_speculative_reserves_commands() -> None:
+    game, request = _build_reserves_arrival_controller_fixture(
+        include_skip=False,
+        include_confirm_candidate=False,
+        allow_skip=False,
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    def _anchor_groups(*_args, **_kwargs):
+        return [("test", [(1.0, 1.0), (0.0, 0.75)])]
+
+    controller._reserves_arrival_anchor_candidate_groups = _anchor_groups  # type: ignore[method-assign]
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    pos = list(result_payload.get("model_positions", [{}])[0].get("position", []) or [])
+    assert len(pos) >= 2
+    assert abs(float(pos[0]) - 0.0) < 1e-6
+    assert abs(float(pos[1]) - 0.75) < 1e-6
+    metric = controller.get_reserves_arrival_search_metrics()[-1]
+    assert int(metric.get("resolve_attempts", 0) or 0) == 2
+
+
 def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget() -> None:
     class _Model:
         def __init__(self, model_id: str) -> None:

@@ -1481,6 +1481,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                     self._bump_metric_counter(metric, "source_validation_rejects", str(source))
                     continue
                 metric["resolve_attempts"] = int(metric.get("resolve_attempts", 0) or 0) + 1
+                command_count_before = self._speculative_command_count(game)
                 apply_result = self._safe_resolve_decision_command(
                     game,
                     request,
@@ -1503,6 +1504,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                     metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
                     self._record_reserves_metric(metric)
                     return True
+                self._discard_failed_speculative_command(game, command_count_before)
             if time.perf_counter() >= deadline:
                 break
 
@@ -1636,6 +1638,23 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     def _record_reserves_metric(self, metric: dict[str, object]) -> None:
         self._reserves_arrival_search_metrics.append(dict(metric or {}))
+
+    @staticmethod
+    def _speculative_command_count(game: object) -> int | None:
+        commands = getattr(game, "commands", None)
+        if not isinstance(commands, list):
+            return None
+        return int(len(commands))
+
+    @staticmethod
+    def _discard_failed_speculative_command(game: object, command_count_before: int | None) -> None:
+        if command_count_before is None:
+            return
+        commands = getattr(game, "commands", None)
+        if not isinstance(commands, list):
+            return
+        while len(commands) > int(command_count_before):
+            commands.pop()
 
     @staticmethod
     def _record_reserves_arrival_failure(unit: object, *, reason: str, metric: dict[str, object]) -> None:
@@ -2232,7 +2251,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         staggered: list[tuple[float, float]] = []
         fallback: list[tuple[float, float]] = []
         largest_radius = self._largest_model_radius(unit)
-        along_margin = max(0.0, min(width * 0.5, height * 0.5, largest_radius))
+        along_margin = (
+            max(0.0, min(width * 0.5, height * 0.5, largest_radius))
+            if largest_radius > 3.0
+            else 0.0
+        )
 
         def _valid_edge_offsets(raw_offsets: list[float]) -> list[float]:
             if largest_radius <= 0.0:
