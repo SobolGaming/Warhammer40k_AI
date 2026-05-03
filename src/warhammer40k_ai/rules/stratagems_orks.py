@@ -5245,6 +5245,83 @@ class OrksStratagemMixin:
             **kwargs,
         )
 
+    def _orks_can_use_armed_to_dateef_tool_action(self, kwargs: dict[str, Any]) -> bool:
+        if not self._is_bully_boyz_detachment():
+            return False
+        phase_label = self._orks_phase_label(kwargs.get("phase_name") or self._orks_current_phase_label())
+        if phase_label not in {"shooting phase", "fight phase"}:
+            return False
+        if phase_label == "shooting phase" and not self._orks_is_players_turn():
+            return False
+
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        root = self._orks_root(target_unit)
+        if root is None:
+            return False
+        if not self._orks_owned_by_player(root, self.player):
+            return False
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_orks_unit(root):
+            return False
+        if not self._orks_unit_contains_any_keyword(root, ("NOBZ", "MEGANOBZ")):
+            return False
+
+        selected_phase = "Shooting phase" if phase_label == "shooting phase" else "Fight phase"
+        return self._orks_unit_not_selected_for_phase_action(root, phase_key=selected_phase)
+
+    def _build_orks_tool_action_specs_for_item(
+        self,
+        *,
+        item: dict[str, Any],
+        stratagem: Any,
+        base_ctx: dict[str, Any],
+    ) -> Optional[list[dict[str, Any]]]:
+        if str(getattr(stratagem, "name", "") or "").strip().upper() != "ARMED TO DATEEF":
+            return None
+
+        phase_label = self._orks_phase_label(base_ctx.get("phase_name") or self._orks_current_phase_label())
+        if phase_label not in {"shooting phase", "fight phase"}:
+            return []
+        if phase_label == "shooting phase" and not self._orks_is_players_turn():
+            return []
+
+        phase_name = "Shooting phase" if phase_label == "shooting phase" else "Fight phase"
+        explicit_unit = base_ctx.get("unit") or base_ctx.get("target_unit")
+        candidate_units = self._tool_action_root_units([explicit_unit]) if explicit_unit is not None else []
+        if not candidate_units:
+            candidate_units = self._tool_action_friendly_units()
+
+        specs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for unit in candidate_units:
+            root = self._orks_root(unit)
+            kwargs = dict(base_ctx)
+            kwargs.update(
+                {
+                    "phase_name": phase_name,
+                    "unit": root,
+                    "target_unit": root,
+                }
+            )
+            if not self._orks_can_use_armed_to_dateef_tool_action(kwargs):
+                continue
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs=kwargs,
+                label_suffix=str(getattr(root, "name", "") or self._orks_sort_key(root)),
+            )
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("payload", {}).get("tool_name", "") or ""),
+                str(spec.get("label", "") or ""),
+            )
+        )
+        return specs
+
     def _use_orks_armed_to_dateef(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_bully_boyz_detachment():
             return False

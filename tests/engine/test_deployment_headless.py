@@ -1227,6 +1227,83 @@ def test_headless_deployment_local_anchor_jitter_recovers_empty_exact_anchor(
     assert first_pos[:2] != [5.0, 5.0]
 
 
+def test_headless_deployment_large_unit_uses_fast_grid_before_prospective_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _LargeUnit(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(9)]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del x, y, game_map, avoid_friendly_units, boundary_repulsors, search_context
+            raise AssertionError("large headless deployment should validate fast grid before full formation search")
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+            self.seen_model_position_count = 0
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **kwargs) -> bool:
+            self.seen_model_position_count = len(list(kwargs.get("model_positions", []) or []))
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    game = _StubGame(game_map)
+    unit = _LargeUnit("unit:fast_grid", map_obj=game_map)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=game, placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("single_anchor", [(10.0, 10.0)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    payload = list(candidates[0].get("model_positions", []) or [])
+    assert len(payload) == 9
+    assert game.seen_model_position_count == 9
+
+
 def test_headless_deployment_near_edge_anchor_is_not_quick_rejected_when_payload_fits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

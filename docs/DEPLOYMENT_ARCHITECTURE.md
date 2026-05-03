@@ -56,6 +56,10 @@ Key goals:
   during formation placement.
 - Speculative deployment probes snapshot and restore unit model state, so headless candidate generation
   and legality checks do not leak temporary placements into later deployment decisions.
+- For larger headless unit placements, the deterministic controller first probes a coarse grid payload
+  through the same fast and full deployment validators before falling back to the full prospective
+  formation search. This keeps generated-army deployment deterministic while avoiding repeated
+  geometry relaxation stalls when a simple legal pack is available.
 - Deployment candidates include semantic deltas used by replay/telemetry and headless ranking,
   including reserve-denial, screen-integrity, countercharge-coverage, aura-connectivity, and
   enemy-first-turn exposure estimates.

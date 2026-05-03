@@ -4529,6 +4529,17 @@ class StratagemManager(
             if specialized_specs is not None:
                 return specialized_specs
 
+        for specialized_name in (
+            "_build_orks_tool_action_specs_for_item",
+            "_build_astra_militarum_tool_action_specs_for_item",
+            "_build_world_eaters_tool_action_specs_for_item",
+        ):
+            specialized_builder = getattr(self, specialized_name, None)
+            if callable(specialized_builder):
+                specialized_specs = specialized_builder(item=item, stratagem=stratagem, base_ctx=base_ctx)
+                if specialized_specs is not None:
+                    return specialized_specs
+
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
         descriptor_target = str(getattr(descriptor, "target", "") or "")
@@ -9980,11 +9991,12 @@ class StratagemManager(
             result["reason"] = "Requires your Command phase and an embarked ASTRA MILITARUM INFANTRY OFFICER inside a friendly Transport"
             return result
         if name_u == "SNAP TO IT":
-            if self._grizzled_snap_to_it_officer_candidates(phase_name=phase_name):
+            snap_bindings = self._grizzled_snap_to_it_tool_action_bindings(phase_name=phase_name)
+            if snap_bindings:
                 result["available"] = True
                 result["reason"] = None
                 return result
-            result["reason"] = "Requires eligible ASTRA MILITARUM OFFICER that can issue an order"
+            result["reason"] = "Requires eligible ASTRA MILITARUM OFFICER, order and target"
             return result
         if name_u == "STALWART PROTECTOR":
             for reaction in list(getattr(self, "_pending_reactions", []) or []):
@@ -23662,6 +23674,9 @@ class StratagemManager(
             return False
         if name_u in {"DAEMONIC FURY", "DAEMONTIDE"} and not self._we_can_use_khorne_daemonkin_tool_action(name_u, kwargs):
             return False
+        goretrack_result = self._we_can_use_goretrack_tool_action(name_u, kwargs)
+        if goretrack_result is not None and not goretrack_result:
+            return False
         gsc_outlander_result = self._gsc_can_use_outlander_tool_action(name_u, kwargs)
         if gsc_outlander_result is not None and not gsc_outlander_result:
             return False
@@ -23692,6 +23707,8 @@ class StratagemManager(
         if name_u == "ARMOURED DUELLISTS" and not self._orks_can_use_armoured_duellists_tool_action(kwargs):
             return False
         if name_u == "MOUNT UP, LADZ" and not self._orks_can_use_mount_up_ladz_tool_action(kwargs):
+            return False
+        if name_u == "ARMED TO DATEEF" and not self._orks_can_use_armed_to_dateef_tool_action(kwargs):
             return False
         cult_result = self._cult_can_use_tool_action(name_u, kwargs)
         if cult_result is not None and not cult_result:

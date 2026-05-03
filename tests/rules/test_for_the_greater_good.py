@@ -293,6 +293,41 @@ class TestForTheGreaterGood(unittest.TestCase):
         self.assertTrue(target_result.ok)
         self.assertTrue(bool(tau_army.for_the_greater_good.is_spotted(target_unit)))
 
+    def test_visibility_pair_limit_bounds_candidate_probe(self):
+        from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+
+        army = SimpleNamespace(faction_id="TAU", units=[])
+        observer = self._make_unit("Observer", markerlight=True)
+        target = self._make_unit("Target")
+        observer.models = [self._make_unit(f"Observer {idx}").models[0] for idx in range(4)]
+        target.models = [self._make_unit(f"Target {idx}").models[0] for idx in range(4)]
+        for idx, model in enumerate(observer.models):
+            model.parent_unit = observer
+            model.set_location(float(idx), 0.0, 0.0, 0.0)
+        for idx, model in enumerate(target.models):
+            model.parent_unit = target
+            model.set_location(20.0 + float(idx), 0.0, 0.0, 0.0)
+
+        calls = []
+
+        class _Map:
+            @staticmethod
+            def can_model_see_model(observer_model, target_model):
+                calls.append((observer_model, target_model))
+                return False
+
+        mgr = ForTheGreaterGoodManager(army)
+
+        visible = mgr._unit_is_visible_to_unit(
+            observer,
+            target,
+            game=SimpleNamespace(map=_Map()),
+            model_pair_limit=3,
+        )
+
+        self.assertFalse(visible)
+        self.assertEqual(len(calls), 3)
+
     def test_precise_targeting_guided_attack_rerolls_hit(self):
         from warhammer40k_ai.engine.event.system import EventSystem
         from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager

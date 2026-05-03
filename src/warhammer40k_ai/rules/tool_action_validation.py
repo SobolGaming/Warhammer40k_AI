@@ -174,6 +174,9 @@ class ToolActionCandidateValidator:
         if "world_eaters_possessed" in target_text:
             if not self._unit_has_all_keywords(root, ("WORLD EATERS", "POSSESSED")):
                 return self._descriptor_issue("unit_keywords")
+        if "orks_nobz_or_meganobz" in target_text:
+            if not self._unit_has_any_keyword(root, ("NOBZ", "MEGANOBZ")):
+                return self._descriptor_issue("unit_keywords")
         if "aspect_warriors_or_avatar" in target_text:
             if not self._unit_has_any_keyword(root, ("ASPECT WARRIORS", "AVATAR OF KHAINE")):
                 return self._descriptor_issue("unit_keywords")

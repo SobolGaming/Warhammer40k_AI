@@ -464,6 +464,128 @@ class AstraMilitarumStratagemMixin:
             return False
         return self._am_has_voice_prompt_subscriber()
 
+    def _grizzled_snap_to_it_tool_action_bindings(self, *, phase_name: str) -> list[dict[str, Any]]:
+        officers = self._grizzled_snap_to_it_officer_candidates(phase_name=phase_name)
+        if not officers:
+            return []
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        voice = getattr(army, "voice_of_command", None) if army is not None else None
+        if voice is None:
+            return []
+        available_getter = getattr(voice, "get_available_orders", None)
+        target_getter = getattr(voice, "get_eligible_targets", None)
+        if not callable(available_getter) or not callable(target_getter):
+            return []
+
+        bindings: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for officer in officers:
+            officer_root = self._am_root(officer)
+            if officer_root is None:
+                continue
+            orders = sorted(
+                list(available_getter(officer_root) or []),
+                key=lambda order: (
+                    str(getattr(order, "key", order) or "").strip().upper(),
+                    str(getattr(order, "name", "") or ""),
+                ),
+            )
+            for order in orders:
+                order_key = str(getattr(order, "key", order) or "").strip().upper()
+                if not order_key:
+                    continue
+                target_roots: dict[str, Any] = {}
+                for target in list(target_getter(officer_root, game=self.game, order_key=order_key) or []):
+                    target_root = self._am_root(target)
+                    if target_root is None:
+                        continue
+                    target_key = self._am_sort_key(target_root)
+                    if not target_key or target_key in target_roots:
+                        continue
+                    target_roots[target_key] = target_root
+                for target_key in sorted(target_roots.keys()):
+                    target_root = target_roots[target_key]
+                    identity = (self._am_sort_key(officer_root), order_key, target_key)
+                    if identity in seen:
+                        continue
+                    kwargs = {
+                        "phase_name": phase_name,
+                        "officer_unit": officer_root,
+                        "officer": officer_root,
+                        "unit": officer_root,
+                        "target_unit": officer_root,
+                        "order_target_unit": target_root,
+                        "order_target": target_root,
+                        "order_key": order_key,
+                    }
+                    if not self._am_can_use_grizzled_snap_to_it_tool_action(kwargs):
+                        continue
+                    seen.add(identity)
+                    bindings.append(
+                        {
+                            "officer_unit": officer_root,
+                            "order_target_unit": target_root,
+                            "order_key": order_key,
+                            "order_name": str(getattr(order, "name", "") or order_key),
+                        }
+                    )
+        return bindings
+
+    def _build_astra_militarum_tool_action_specs_for_item(
+        self,
+        *,
+        item: dict[str, Any],
+        stratagem: Any,
+        base_ctx: dict[str, Any],
+    ) -> Optional[list[dict[str, Any]]]:
+        if str(getattr(stratagem, "name", "") or "").strip().upper() != "SNAP TO IT":
+            return None
+
+        phase_name = str(base_ctx.get("phase_name") or self._current_phase_name or "").strip()
+        if not phase_name:
+            return []
+
+        specs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for binding in self._grizzled_snap_to_it_tool_action_bindings(phase_name=phase_name):
+            officer = binding["officer_unit"]
+            target = binding["order_target_unit"]
+            order_key = str(binding["order_key"])
+            kwargs = dict(base_ctx)
+            kwargs.update(
+                {
+                    "phase_name": phase_name,
+                    "officer_unit": officer,
+                    "officer": officer,
+                    "unit": officer,
+                    "target_unit": officer,
+                    "order_target_unit": target,
+                    "order_target": target,
+                    "order_key": order_key,
+                }
+            )
+            label_suffix = (
+                f"{getattr(officer, 'name', 'Officer')} -> "
+                f"{getattr(target, 'name', 'Unit')} ({binding.get('order_name', order_key)})"
+            )
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs=kwargs,
+                label_suffix=label_suffix,
+            )
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("payload", {}).get("tool_name", "") or ""),
+                str(spec.get("label", "") or ""),
+            )
+        )
+        return specs
+
     def _am_can_use_armoured_infantry_order_the_advance_tool_action(self, kwargs: dict[str, Any]) -> bool:
         if not self._is_armoured_infantry():
             return False

@@ -1241,6 +1241,119 @@ def test_headless_policy_controller_prunes_move_candidates_without_model_positio
     assert metadata["resolution_strategy"] == "ranked_candidate"
 
 
+def test_headless_policy_controller_synthesizes_forced_redeploy_model_positions(monkeypatch) -> None:
+    class _Model:
+        def __init__(self, model_id: str) -> None:
+            self.id = model_id
+            self._id = model_id
+
+    class _Unit:
+        def __init__(self) -> None:
+            self.id = "unit:jump"
+            self._id = "unit:jump"
+            self.name = "Jump Unit"
+            self.models = [_Model("model:a"), _Model("model:b")]
+            self.deployed = True
+            self.reserve_status = "deployed"
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_parent_army(self):
+            return army
+
+    class _Map:
+        width = 60.0
+        height = 44.0
+        units = []
+
+    class _Game:
+        def __init__(self, unit: _Unit) -> None:
+            self.is_authoritative = True
+            self.map = _Map()
+            self.players = [player]
+            self._unit = unit
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            if str(unit_id) == str(self._unit.id):
+                return self._unit
+            return None
+
+    unit = _Unit()
+    army = type("Army", (), {})()
+    army.units = [unit]
+    player = type("Player", (), {})()
+    player.army = army
+    army.player = player
+    game = _Game(unit)
+
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Set up Jump Unit",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit.id, "movement_type": "move", "action": "confirm"},
+            )
+        ],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "move",
+            "placement_kind": "normal_move_redeploy_9h",
+            "allowed_model_ids": ["model:a", "model:b"],
+            "allow_skip": False,
+            "min_enemy_distance_horiz": 9,
+        },
+    )
+    action_id = request.action_id_for_option_id(request.options[0].option_id)
+    request.candidates = [
+        CandidateAction(
+            action_id=str(action_id),
+            params={"unit_id": unit.id, "movement_type": "move", "action": "confirm"},
+            metadata={"candidate_kind": "confirm"},
+        )
+    ]
+    request.mask = [True]
+
+    def _fake_build_positions(_game, _unit, *, x, y, avoid_friendly_units, search_context):
+        del _game, _unit, avoid_friendly_units, search_context
+        return [
+            {"model_id": "model:a", "position": [float(x), float(y), 0.0], "facing": 0.0},
+            {"model_id": "model:b", "position": [float(x) + 2.0, float(y), 0.0], "facing": 0.0},
+        ]
+
+    resolved_payloads: list[dict[str, object]] = []
+
+    def _fake_resolve_decision_command(
+        _game,
+        _request,
+        _option_id,
+        *,
+        result_payload,
+        player_id,
+        metadata,
+    ):
+        del _game, _request, _option_id, player_id, metadata
+        resolved_payloads.append(dict(result_payload or {}))
+        return _ApplyResult(ok=True)
+
+    monkeypatch.setattr(headless_policy_module, "build_placement_search_context", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(headless_policy_module, "_build_reserves_model_positions_from_anchor", _fake_build_positions)
+    monkeypatch.setattr(headless_policy_module, "validate_move_unit_payload", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(headless_policy_module, "resolve_decision_command", _fake_resolve_decision_command)
+
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    controller.on_decision_requested(game, request)
+
+    assert len(resolved_payloads) == 1
+    resolved = resolved_payloads[0]
+    assert resolved["unit_id"] == "unit:jump"
+    assert resolved["movement_type"] == "move"
+    assert resolved["action"] == "confirm"
+    assert [entry["model_id"] for entry in list(resolved["model_positions"] or [])] == ["model:a", "model:b"]
+
+
 def test_headless_policy_controller_prunes_stale_leader_attachment_candidate() -> None:
     class _Unit:
         def __init__(self, unit_id: str, *, is_leader: bool = False, allowed_targets: set[str] | None = None) -> None:

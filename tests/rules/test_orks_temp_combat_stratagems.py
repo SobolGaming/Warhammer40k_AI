@@ -315,6 +315,37 @@ def test_armed_to_dateef_switches_hit_reroll_mode_with_waaagh():
     assert bool(active_mods.get("reroll_hit_full")) is True
 
 
+def test_armed_to_dateef_headless_builder_filters_invalid_targets_and_turns():
+    nobz = _make_unit("Nobz", keywords=["ORKS", "NOBZ", "INFANTRY"], faction_keywords=["ORKS"])
+    boyz = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[nobz, boyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, nobz, 10.0, 10.0)
+    _deploy_unit(game, boyz, 14.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+
+    item = {
+        "name": "ARMED TO DATEEF",
+        "available": True,
+        "is_reaction": True,
+        "context": {"phase_name": "Shooting phase"},
+    }
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+    specs = ork_player.stratagems._build_tool_action_specs_for_item(item)
+
+    assert len(specs) == 1
+    resolved = dict(specs[0]["payload"]["resolved_kwargs"])
+    assert resolved["target_unit"]["__entity_ref__"]["id"] == get_entity_id(nobz)
+    assert ork_player.stratagems.get_tool_action_probe_diagnostics() == []
+
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=1)
+    assert ork_player.stratagems._build_tool_action_specs_for_item(item) == []
+
+
 def test_get_stuck_in_ladz_applies_unit_scoped_waaagh_without_changing_global_state_and_expires():
     target = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
     other = _make_unit("Nobz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from typing import Iterable, Optional
 
@@ -32,6 +33,7 @@ from ..utility.placement_search import (
     build_placement_search_context,
     deployed_unit_bounds,
     estimate_unit_pack_footprint,
+    model_longest_radius,
     stable_board_occupancy_key,
 )
 from ..utility.profiling_sections import profiled_section
@@ -1127,14 +1129,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if not unit_id:
             return []
 
-        payload_variants = self._build_model_positions_variants(
+        for model_positions in self._iter_model_positions_variants(
             unit,
             x=float(x),
             y=float(y),
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
-        )
-        for model_positions in payload_variants:
+        ):
             allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
             if not all(allowed_model_ids):
                 continue
@@ -1212,6 +1213,71 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             tuple_positions.append((x, y, z, facing))
         return tuple_positions
 
+    def _iter_model_positions_variants(
+        self,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        boundary_repulsors: list[object],
+        search_context,
+    ):
+        fast_positions = self._build_fast_grid_model_positions(unit, x=float(x), y=float(y))
+        if fast_positions:
+            yield list(fast_positions)
+            for alt_x, alt_y in self._local_anchor_search_points(unit, x=float(x), y=float(y)):
+                alt_positions = self._build_fast_grid_model_positions(unit, x=float(alt_x), y=float(alt_y))
+                if alt_positions:
+                    yield list(alt_positions)
+            if self._uses_fast_grid_deployment(unit):
+                return
+
+        for variant in self._build_detailed_model_positions_variants(
+            unit,
+            x=float(x),
+            y=float(y),
+            boundary_repulsors=boundary_repulsors,
+            search_context=search_context,
+        ):
+            yield list(variant)
+
+    def _build_fast_grid_model_positions(self, unit: object, *, x: float, y: float) -> list[dict]:
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        models = [model for model in list(getattr(unit, "models", []) or []) if model is not None]
+        if not self._uses_fast_grid_deployment(unit):
+            return []
+        radii = [max(0.1, float(model_longest_radius(model) or 0.0)) for model in models]
+        largest_radius = max(radii) if radii else 0.5
+        spacing = max(0.5, (2.0 * float(largest_radius)) + 0.1)
+        cols = int(max(1, math.ceil(math.sqrt(len(models)))))
+        rows = int(max(1, math.ceil(float(len(models)) / float(cols))))
+        x_origin = float(x) - (float(cols - 1) * float(spacing) * 0.5)
+        y_origin = float(y) - (float(rows - 1) * float(spacing) * 0.5)
+
+        payload_positions: list[dict] = []
+        for index, model in enumerate(models):
+            model_id = str(get_entity_id(model) or "")
+            if not model_id:
+                return []
+            col = int(index % cols)
+            row = int(index // cols)
+            model_x = float(x_origin + (float(col) * float(spacing)))
+            model_y = float(y_origin + (float(row) * float(spacing)))
+            payload_positions.append(
+                {
+                    "model_id": model_id,
+                    "position": [float(model_x), float(model_y), 0.0],
+                    "facing": 0.0,
+                }
+            )
+        return payload_positions
+
+    @staticmethod
+    def _uses_fast_grid_deployment(unit: object) -> bool:
+        return len([model for model in list(getattr(unit, "models", []) or []) if model is not None]) >= 6
+
     def _build_model_positions(
         self,
         unit: object,
@@ -1252,6 +1318,25 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return payload_positions
 
     def _build_model_positions_variants(
+        self,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        boundary_repulsors: list[object],
+        search_context,
+    ) -> list[list[dict]]:
+        return list(
+            self._iter_model_positions_variants(
+                unit,
+                x=float(x),
+                y=float(y),
+                boundary_repulsors=boundary_repulsors,
+                search_context=search_context,
+            )
+        )
+
+    def _build_detailed_model_positions_variants(
         self,
         unit: object,
         *,

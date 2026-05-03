@@ -305,6 +305,36 @@ class TestAstraMilitarumGrizzledCompanyStratagems(unittest.TestCase):
         self.assertEqual(target.special_rules.get("voice_of_command_order_key"), "MOVE_MOVE_MOVE")
         self.assertEqual(int(player.command_points), start_cp - 1)
 
+    def test_snap_to_it_headless_builder_emits_bound_order_payload(self):
+        army, player, _enemy_army, _enemy, _game = self._setup_env("MOVEMENT_PHASE", control=PlayerControl.REMOTE)
+        officer = _make_unit(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            faction_keywords=["ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", "This model can issue 1 order to REGIMENT units within 6\"."),
+            ],
+        )
+        target = _make_unit("Infantry", keywords=["REGIMENT"], faction_keywords=["ASTRA MILITARUM"])
+        army.add_unit(officer)
+        army.add_unit(target)
+
+        item = {
+            "name": "SNAP TO IT",
+            "available": True,
+            "is_reaction": True,
+            "context": {"phase_name": "Movement phase"},
+        }
+        specs = player.stratagems._build_tool_action_specs_for_item(item)
+
+        self.assertTrue(specs)
+        resolved = dict(specs[0]["payload"]["resolved_kwargs"])
+        self.assertIn("officer_unit", resolved)
+        self.assertIn("order_target_unit", resolved)
+        self.assertTrue(str(resolved["order_key"]).strip())
+        self.assertEqual(player.stratagems.get_tool_action_probe_diagnostics(), [])
+
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

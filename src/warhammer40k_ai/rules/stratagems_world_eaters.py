@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from ..engine.decision_port import get_decision_provider
@@ -423,6 +424,178 @@ class WorldEatersStratagemMixin:
                     continue
             candidates.append(root)
         return sorted(candidates, key=self._goretrack_sort_key)
+
+    def _we_goretrack_tool_action_bindings(self, stratagem_name: str, *, phase_name: str = "") -> list[dict[str, Any]]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"AGGRESSIVE DISEMBARKATION", "FULL-THROTTLE ASSAULT", "SMASH THROUGH"}:
+            return []
+        if not self._is_goretrack_onslaught():
+            return []
+        phase_name_l = str(phase_name or self._current_phase_name or "").strip().lower()
+        if phase_name_l != "movement phase":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+
+        bindings: list[dict[str, Any]] = []
+        if name_u == "AGGRESSIVE DISEMBARKATION":
+            for transport in self._goretrack_rhino_candidates(require_not_moved=True, require_any_passengers=True):
+                for passenger in self._goretrack_embarked_units(transport, require_world_eaters=True):
+                    bindings.append(
+                        {
+                            "phase_name": "Movement phase",
+                            "unit": transport,
+                            "target_unit": transport,
+                            "transport_unit": transport,
+                            "transport": transport,
+                            "passenger_unit": passenger,
+                            "selected_embarked_unit": passenger,
+                            "embarked_unit": passenger,
+                        }
+                    )
+            return bindings
+
+        if name_u == "FULL-THROTTLE ASSAULT":
+            for transport in self._goretrack_rhino_candidates(require_not_moved=True):
+                bindings.append(
+                    {
+                        "phase_name": "Movement phase",
+                        "unit": transport,
+                        "target_unit": transport,
+                        "transport_unit": transport,
+                        "transport": transport,
+                    }
+                )
+            return bindings
+
+        for vehicle in self._goretrack_vehicle_candidates(require_not_moved=True):
+            bindings.append(
+                {
+                    "phase_name": "Movement phase",
+                    "unit": vehicle,
+                    "target_unit": vehicle,
+                }
+            )
+        return bindings
+
+    def _we_can_use_goretrack_tool_action(self, stratagem_name: str, kwargs: Dict[str, Any]) -> Optional[bool]:
+        name_u = str(stratagem_name or "").strip().upper()
+        if name_u not in {"AGGRESSIVE DISEMBARKATION", "FULL-THROTTLE ASSAULT", "SMASH THROUGH"}:
+            return None
+        if not self._is_goretrack_onslaught():
+            return False
+        phase_name = str((kwargs or {}).get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "movement phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+
+        context = dict(kwargs or {})
+        target = (
+            context.get("unit")
+            or context.get("target_unit")
+            or context.get("transport_unit")
+            or context.get("transport")
+        )
+        if target is None:
+            return bool(self._we_goretrack_tool_action_bindings(name_u, phase_name=phase_name))
+
+        root = self._goretrack_root(target)
+        if root is None:
+            return False
+        candidates = list(context.get("candidates") or [])
+        if candidates and self._goretrack_sort_key(root) not in self._candidate_ids(candidates):
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return False
+        if not self._is_unit_alive(root):
+            return False
+        if not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+            return False
+
+        has_keyword = getattr(root, "has_keyword", None)
+        if name_u in {"AGGRESSIVE DISEMBARKATION", "FULL-THROTTLE ASSAULT"}:
+            if not callable(has_keyword) or not bool(has_keyword("RHINO")):
+                return False
+            valid_rhinos = self._goretrack_rhino_candidates(
+                require_not_moved=True,
+                require_any_passengers=(name_u == "AGGRESSIVE DISEMBARKATION"),
+            )
+            if self._goretrack_sort_key(root) not in self._candidate_ids(valid_rhinos):
+                return False
+            if name_u == "AGGRESSIVE DISEMBARKATION":
+                passenger = (
+                    context.get("embarked_unit")
+                    or context.get("passenger_unit")
+                    or context.get("selected_embarked_unit")
+                )
+                passengers = self._goretrack_embarked_units(root, require_world_eaters=True)
+                if passenger is not None:
+                    passenger_root = self._goretrack_root(passenger)
+                    return self._goretrack_sort_key(passenger_root) in self._candidate_ids(passengers)
+                return bool(passengers)
+            return True
+
+        is_vehicle = bool(getattr(root, "is_vehicle", False))
+        if callable(has_keyword):
+            is_vehicle = is_vehicle or bool(has_keyword("VEHICLE"))
+        if not is_vehicle:
+            return False
+        return self._goretrack_sort_key(root) in self._candidate_ids(
+            self._goretrack_vehicle_candidates(require_not_moved=True)
+        )
+
+    def _build_world_eaters_tool_action_specs_for_item(
+        self,
+        *,
+        item: Dict[str, Any],
+        stratagem: Any,
+        base_ctx: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in {"AGGRESSIVE DISEMBARKATION", "FULL-THROTTLE ASSAULT", "SMASH THROUGH"}:
+            return None
+        phase_name = str((base_ctx or {}).get("phase_name") or self._current_phase_name or "").strip()
+        bindings = self._we_goretrack_tool_action_bindings(name_u, phase_name=phase_name)
+        specs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        identity = self._stratagem_tool_payload_identity(stratagem)
+        for binding in bindings:
+            if not self._we_can_use_goretrack_tool_action(name_u, binding):
+                continue
+            serialized_kwargs = self._serialize_tool_action_value(binding)
+            stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            if stable_payload in seen:
+                continue
+            seen.add(stable_payload)
+            target_unit = binding.get("target_unit") or binding.get("unit")
+            label_suffix = self._tool_action_label_value(target_unit)
+            passenger = binding.get("embarked_unit") or binding.get("passenger_unit")
+            if passenger is not None:
+                label_suffix = f"{label_suffix} <- {self._tool_action_label_value(passenger)}"
+            specs.append(
+                {
+                    "label": f"{identity.get('tool_name', 'Tool')}: {label_suffix}",
+                    "payload": {
+                        "tool_family": "stratagem",
+                        "tool_type": "stratagem",
+                        **identity,
+                        "cp_cost": int(self._effective_cp_cost(stratagem, binding) or 0),
+                        "semantic_tags": ["move"],
+                        "is_reaction": bool(item.get("is_reaction", False)),
+                        "resolved_kwargs": serialized_kwargs,
+                    },
+                }
+            )
+        return specs
 
     def _goretrack_endless_pursuit_candidates(self) -> tuple[list[Any], dict[Any, list[Any]]]:
         if not self._is_goretrack_onslaught():

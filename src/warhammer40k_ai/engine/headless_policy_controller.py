@@ -57,6 +57,12 @@ _DRIVER_MANAGED_DECISION_TYPES = {
     DECISION_CHOOSE_MISSION,
 }
 
+_HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
+    "aeldari_unshrouded_truth",
+    "advance_redeploy_9h",
+    "normal_move_redeploy_9h",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,6 +134,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         if not callable(add_controller):
             return
         add_controller(self)
+        setattr(self._game, "_headless_policy_controller_attached", True)
         self._attached = True
 
     def supports_generic_tool_decisions(self) -> bool:
@@ -314,26 +321,25 @@ class HeadlessPolicyDecisionController(DecisionController):
             return False
         ctx = dict(getattr(request, "context", {}) or {})
         movement_type = str(params.get("movement_type", "") or ctx.get("movement_type", "") or "").strip().lower()
-        if movement_type != "deploy":
-            return False
         placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
         if not placement_kind:
-            return False
-        if placement_kind in {
-            "deployment",
-            "reserves_arrival",
-            "hyperphasic_recall",
-            "subterranean_tunnel_network",
-            "aeldari_unshrouded_truth",
-            "advance_redeploy_9h",
-            "normal_move_redeploy_9h",
-        }:
             return False
         allowed_model_ids = [
             str(value or "").strip()
             for value in list(ctx.get("allowed_model_ids", []) or [])
             if str(value or "").strip()
         ]
+        if placement_kind in _HEADLESS_REDEPLOY_PLACEMENT_KINDS:
+            return bool(allowed_model_ids and movement_type in {"advance", "deploy", "move", "reactive"})
+        if movement_type != "deploy":
+            return False
+        if placement_kind in {
+            "deployment",
+            "reserves_arrival",
+            "hyperphasic_recall",
+            "subterranean_tunnel_network",
+        }:
+            return False
         return bool(allowed_model_ids)
 
     @staticmethod
@@ -638,6 +644,308 @@ class HeadlessPolicyDecisionController(DecisionController):
                 _restore_model_location(model)
 
     @classmethod
+    def _synthesized_redeploy_model_positions(
+        cls,
+        game: object,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+        *,
+        unit: object,
+    ) -> list[dict[str, object]] | None:
+        game_map = getattr(game, "map", None)
+        if game_map is None or unit is None:
+            return None
+        ctx = dict(getattr(request, "context", {}) or {})
+        allowed_model_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if not allowed_model_ids:
+            return None
+        models_by_id = cls._redeploy_models_by_id(unit)
+        redeploy_models = [models_by_id.get(model_id) for model_id in sorted(allowed_model_ids)]
+        if any(model is None for model in redeploy_models):
+            return None
+
+        search_context = build_placement_search_context(
+            unit,
+            game_map,
+            avoid_friendly_units=True,
+            boundary_repulsors=[],
+        )
+        for x, y in cls._redeploy_anchor_points(game, unit):
+            if cls._redeploy_anchor_rejected(game, unit, x=float(x), y=float(y), context=ctx):
+                continue
+            model_positions = cls._redeploy_grid_model_positions(
+                game,
+                list(redeploy_models),
+                x=float(x),
+                y=float(y),
+            )
+            if model_positions and cls._redeploy_model_positions_are_valid(game, request, payload, model_positions):
+                return model_positions
+
+            model_positions = list(
+                _build_reserves_model_positions_from_anchor(
+                    game,
+                    unit,
+                    x=float(x),
+                    y=float(y),
+                    avoid_friendly_units=True,
+                    search_context=search_context,
+                )
+            )
+            if not model_positions:
+                continue
+            placed_ids = {str(entry.get("model_id", "") or "") for entry in list(model_positions or [])}
+            if placed_ids != allowed_model_ids:
+                continue
+            if not cls._redeploy_model_positions_are_valid(game, request, payload, model_positions):
+                continue
+            return model_positions
+        return None
+
+    @classmethod
+    def _redeploy_model_positions_are_valid(
+        cls,
+        game: object,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+        model_positions: list[dict[str, object]],
+    ) -> bool:
+        ctx = dict(getattr(request, "context", {}) or {})
+        validation_errors = validate_move_unit_payload(
+            game,
+            request,
+            option_payload={},
+            result_payload={
+                "unit_id": str(payload.get("unit_id", "") or ctx.get("unit_id", "") or ""),
+                "movement_type": str(payload.get("movement_type", "") or ctx.get("movement_type", "") or ""),
+                "action": str(payload.get("action", "") or "confirm"),
+                "model_positions": model_positions,
+            },
+        )
+        return not bool(validation_errors)
+
+    @classmethod
+    def _redeploy_models_by_id(cls, unit: object) -> dict[str, object]:
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        out: dict[str, object] = {}
+        for model in list(models or []):
+            model_id = str(maybe_entity_id(model) or "").strip()
+            if model_id and model_id not in out:
+                out[model_id] = model
+        return out
+
+    @classmethod
+    def _redeploy_grid_model_positions(
+        cls,
+        game: object,
+        models: list[object],
+        *,
+        x: float,
+        y: float,
+    ) -> list[dict[str, object]]:
+        if not models:
+            return []
+        max_radius = max(cls._model_radius(model) for model in list(models or []))
+        spacing = max(1.0, float(max_radius) * 2.0 + 0.25)
+        count = len(models)
+        cols = max(1, int(math.ceil(math.sqrt(float(count)))))
+        rows = max(1, int(math.ceil(float(count) / float(cols))))
+        game_map = getattr(game, "map", None)
+        height_fn = getattr(game_map, "get_surface_height_for_model", None) if game_map is not None else None
+        payload: list[dict[str, object]] = []
+        for index, model in enumerate(list(models or [])):
+            row = int(index // cols)
+            col = int(index % cols)
+            px = float(x) + (float(col) - (float(cols) - 1.0) / 2.0) * spacing
+            py = float(y) + (float(row) - (float(rows) - 1.0) / 2.0) * spacing
+            z = float(getattr(getattr(model, "model_base", None), "z", 0.0) or 0.0)
+            if callable(height_fn):
+                try:
+                    z = float(height_fn(model, px, py) or 0.0)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    z = float(getattr(getattr(model, "model_base", None), "z", 0.0) or 0.0)
+            facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
+            payload.append(cls._serialize_model_position(model, x=px, y=py, z=z, facing=facing))
+        return payload
+
+    @staticmethod
+    def _model_radius(model: object) -> float:
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return 0.5
+        longest_fn = getattr(base, "get_longest_radius", None)
+        if callable(longest_fn):
+            try:
+                return max(0.1, float(longest_fn() or 0.5))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        radius_fn = getattr(base, "get_radius", None)
+        if callable(radius_fn):
+            try:
+                return max(0.1, float(radius_fn() or 0.5))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        radius = getattr(base, "radius", 0.5)
+        if isinstance(radius, (list, tuple)) and radius:
+            radius = radius[0]
+        try:
+            return max(0.1, float(radius or 0.5))
+        except (TypeError, ValueError):
+            return 0.5
+
+    @classmethod
+    def _redeploy_anchor_points(cls, game: object, unit: object) -> list[tuple[float, float]]:
+        width, height = cls._board_dimensions(game)
+        footprint = estimate_unit_pack_footprint(unit)
+        margin = max(1.0, float(footprint.get("largest_radius", 0.0) or 0.0) + 0.25)
+        xs = (margin, width * 0.25, width * 0.5, width * 0.75, max(margin, width - margin))
+        ys = (margin, height * 0.25, height * 0.5, height * 0.75, max(margin, height - margin))
+        anchors: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+
+        def _add(x_raw: float, y_raw: float) -> None:
+            x = min(max(float(x_raw), margin), max(margin, float(width) - margin))
+            y = min(max(float(y_raw), margin), max(margin, float(height) - margin))
+            key = (round(x, 3), round(y, 3))
+            if key in seen:
+                return
+            seen.add(key)
+            anchors.append((x, y))
+
+        _add(width * 0.5, height * 0.5)
+        for y in ys:
+            for x in xs:
+                _add(float(x), float(y))
+
+        coarse_step, medium_step, exhaustive_step = cls._deep_strike_scan_steps(unit)
+        for step, limit in (
+            (coarse_step, 160),
+            (medium_step, 320),
+            (exhaustive_step, 512),
+        ):
+            produced = 0
+            for offset in (0.0, float(step) / 2.0):
+                for y in cls._axis_points(margin, max(margin, height - margin), step=float(step), offset=offset):
+                    for x in cls._axis_points(margin, max(margin, width - margin), step=float(step), offset=offset):
+                        _add(float(x), float(y))
+                        produced += 1
+                        if produced >= int(limit):
+                            break
+                    if produced >= int(limit):
+                        break
+                if produced >= int(limit):
+                    break
+        anchors.sort(
+            key=lambda point: (
+                -cls._redeploy_anchor_clearance_score(game, unit, point),
+                round(float(point[1]), 3),
+                round(float(point[0]), 3),
+            )
+        )
+        return anchors
+
+    @classmethod
+    def _redeploy_anchor_clearance_score(
+        cls,
+        game: object,
+        unit: object,
+        point: tuple[float, float],
+    ) -> float:
+        x = float(point[0])
+        y = float(point[1])
+        clearances: list[float] = []
+        for other_unit in cls._iter_enemy_units_for_synthesis(game, unit=unit):
+            bounds = deployed_unit_bounds(other_unit)
+            if bounds is not None:
+                clearances.append(cls._distance_to_bounds(x, y, bounds))
+        if not clearances:
+            return 0.0
+        return float(min(clearances))
+
+    @classmethod
+    def _redeploy_anchor_rejected(
+        cls,
+        game: object,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        context: dict[str, object],
+    ) -> bool:
+        width, height = cls._board_dimensions(game)
+        if float(x) < 0.0 or float(x) > float(width) or float(y) < 0.0 or float(y) > float(height):
+            return True
+        try:
+            min_enemy_distance = float(context.get("min_enemy_distance_horiz", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            min_enemy_distance = 0.0
+        if min_enemy_distance <= 0.0:
+            return False
+        footprint = estimate_unit_pack_footprint(unit)
+        clearance = float(min_enemy_distance) + float(footprint.get("largest_radius", 0.0) or 0.0)
+        for enemy_unit in cls._iter_enemy_units_for_synthesis(game, unit=unit):
+            bounds = deployed_unit_bounds(enemy_unit)
+            if bounds is None:
+                continue
+            if cls._distance_to_bounds(float(x), float(y), bounds) <= clearance:
+                return True
+        return False
+
+    @classmethod
+    def _iter_enemy_units_for_synthesis(cls, game: object, *, unit: object) -> list[object]:
+        own_army_getter = getattr(unit, "get_parent_army", None)
+        own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+        candidates: dict[str, object] = {}
+        for player in list(getattr(game, "players", []) or []):
+            army = getattr(player, "army", None)
+            get_army = getattr(player, "get_army", None)
+            if army is None and callable(get_army):
+                army = get_army()
+            for candidate in list(getattr(army, "units", []) or []):
+                cls._add_enemy_unit_for_synthesis(candidates, candidate, own_army=own_army, moving_unit=unit)
+        game_map = getattr(game, "map", None)
+        for candidate in list(getattr(game_map, "units", []) or []):
+            cls._add_enemy_unit_for_synthesis(candidates, candidate, own_army=own_army, moving_unit=unit)
+        return [candidates[key] for key in sorted(candidates.keys())]
+
+    @classmethod
+    def _add_enemy_unit_for_synthesis(
+        cls,
+        candidates: dict[str, object],
+        candidate: object,
+        *,
+        own_army: object | None,
+        moving_unit: object,
+    ) -> None:
+        if candidate is None or candidate is moving_unit:
+            return
+        root_getter = getattr(candidate, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else candidate
+        if root is None or root is moving_unit:
+            return
+        candidate_army_getter = getattr(root, "get_parent_army", None)
+        candidate_army = candidate_army_getter() if callable(candidate_army_getter) else getattr(root, "parent_army", None)
+        if own_army is not None and candidate_army is own_army:
+            return
+        if not cls._alive(root):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        if str(getattr(root, "reserve_status", "deployed") or "deployed") != "deployed":
+            return
+        if getattr(root, "embarked_in", None) is not None or bool(getattr(root, "is_embarked", False)):
+            return
+        unit_id = str(maybe_entity_id(root) or "")
+        if not unit_id or unit_id in candidates:
+            return
+        candidates[unit_id] = root
+
+    @classmethod
     def _synthesized_move_model_positions(
         cls,
         game: object | None,
@@ -656,6 +964,10 @@ class HeadlessPolicyDecisionController(DecisionController):
             return None
         get_root = getattr(unit, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else unit
+
+        placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
+        if placement_kind in _HEADLESS_REDEPLOY_PLACEMENT_KINDS:
+            return cls._synthesized_redeploy_model_positions(game, request, payload, unit=root)
 
         find_position = getattr(root, "_find_reanimation_position", None)
         validate_position = getattr(root, "_reanimation_position_valid", None)

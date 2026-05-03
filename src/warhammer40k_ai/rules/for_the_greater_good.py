@@ -325,7 +325,7 @@ class ForTheGreaterGoodManager:
                 return True
         return False
 
-    def _unit_is_visible_to_unit(self, observer, target, *, game=None) -> bool:
+    def _unit_is_visible_to_unit(self, observer, target, *, game=None, model_pair_limit: int | None = None) -> bool:
         if observer is None or target is None:
             return False
         game_map = getattr(game, "map", None) if game is not None else None
@@ -341,6 +341,7 @@ class ForTheGreaterGoodManager:
         can_see = getattr(game_map, "can_model_see_model", None)
         if not callable(can_see):
             return True
+        model_pairs = []
         for om in observer_models:
             try:
                 if not getattr(om, "is_alive", True):
@@ -353,12 +354,47 @@ class ForTheGreaterGoodManager:
                         continue
                 except Exception:
                     continue
-                try:
-                    if can_see(om, tm):
-                        return True
-                except Exception:
-                    continue
+                model_pairs.append((self._model_pair_distance_key(om, tm), om, tm))
+        model_pairs.sort(key=lambda item: item[0])
+        limit = int(model_pair_limit or 0)
+        if limit > 0:
+            model_pairs = model_pairs[:limit]
+        for _distance_key, om, tm in model_pairs:
+            try:
+                if can_see(om, tm):
+                    return True
+            except Exception:
+                continue
         return False
+
+    @staticmethod
+    def _model_pair_distance_key(observer_model, target_model) -> tuple[float, str, str]:
+        def _xy(model) -> tuple[float, float]:
+            get_location = getattr(model, "get_location", None)
+            if callable(get_location):
+                try:
+                    loc = list(get_location() or [])
+                    if len(loc) >= 2:
+                        return (float(loc[0]), float(loc[1]))
+                except (TypeError, ValueError):
+                    pass
+            base = getattr(model, "model_base", None)
+            try:
+                return (
+                    float(getattr(base, "x", 0.0) or 0.0),
+                    float(getattr(base, "y", 0.0) or 0.0),
+                )
+            except (TypeError, ValueError):
+                return (0.0, 0.0)
+
+        ox, oy = _xy(observer_model)
+        tx, ty = _xy(target_model)
+        distance_sq = ((float(ox) - float(tx)) ** 2) + ((float(oy) - float(ty)) ** 2)
+        return (
+            float(distance_sq),
+            str(getattr(observer_model, "id", getattr(observer_model, "_id", "")) or ""),
+            str(getattr(target_model, "id", getattr(target_model, "_id", "")) or ""),
+        )
 
     def _iter_ranged_profiles(self, unit) -> list:
         profiles = []
@@ -501,7 +537,15 @@ class ForTheGreaterGoodManager:
         out.sort(key=lambda u: str(getattr(u, "name", "")))
         return out
 
-    def get_eligible_spotted_targets(self, observer, *, game=None, player=None) -> list:
+    def get_eligible_spotted_targets(
+        self,
+        observer,
+        *,
+        game=None,
+        player=None,
+        max_targets: int | None = None,
+        visibility_pair_limit: int | None = None,
+    ) -> list:
         if observer is None:
             return []
         if game is None or player is None:
@@ -527,9 +571,11 @@ class ForTheGreaterGoodManager:
             seen.add(uid)
             if uid in self._spotted_by:
                 continue
-            if not self._unit_is_visible_to_unit(observer, root, game=game):
+            if not self._unit_is_visible_to_unit(observer, root, game=game, model_pair_limit=visibility_pair_limit):
                 continue
             out.append(root)
+            if max_targets is not None and len(out) >= int(max_targets):
+                break
         out.sort(key=lambda u: str(getattr(u, "name", "")))
         return out
 

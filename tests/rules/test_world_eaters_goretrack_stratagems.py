@@ -342,6 +342,77 @@ class TestWorldEatersGoretrackStratagems(unittest.TestCase):
         self.assertEqual(captured.get("max_distance"), 6.0)
         self.assertEqual(captured.get("require_not_in_engagement"), False)
 
+    def test_headless_tool_builder_binds_goretrack_transports_without_diagnostics(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        rhino = _make_unit(
+            "Rhino",
+            keywords=["VEHICLE", "RHINO", "Transport"],
+            faction_keywords=["WORLD EATERS"],
+            transport="Transport Capacity 12",
+        )
+        passenger = _make_unit(
+            "Passengers",
+            keywords=["INFANTRY"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army1.add_unit(rhino)
+        army1.add_unit(passenger)
+
+        rhino.deployed = True
+        rhino.models[0].set_location(5.0, 5.0, 0.0, 0.0)
+        game.map.place_unit(rhino)
+        rhino.transport_passengers = [passenger]
+        passenger.embarked_in = rhino
+
+        phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.phase = phase
+        game.current_player_index = 0
+        game.event_system.publish("phase_start", player=p1, phase=phase)
+
+        specs = p1.stratagems._build_tool_action_specs_for_item(
+            {
+                "available": True,
+                "name": "AGGRESSIVE DISEMBARKATION",
+                "context": {"phase_name": "Movement phase"},
+            }
+        )
+
+        self.assertEqual(p1.stratagems.get_tool_action_probe_diagnostics(), [])
+        self.assertEqual(len(specs), 1)
+        resolved = specs[0]["payload"]["resolved_kwargs"]
+        self.assertEqual(resolved["transport_unit"]["__entity_ref__"]["id"], rhino.id)
+        self.assertEqual(resolved["embarked_unit"]["__entity_ref__"]["id"], passenger.id)
+
+    def test_headless_tool_builder_filters_smash_through_to_vehicles(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        infantry = _make_unit("Infantry", keywords=["INFANTRY"], faction_keywords=["WORLD EATERS"])
+        vehicle = _make_unit("Vehicle", keywords=["VEHICLE"], faction_keywords=["WORLD EATERS"])
+        army1.add_unit(infantry)
+        army1.add_unit(vehicle)
+
+        for index, unit in enumerate((infantry, vehicle)):
+            unit.deployed = True
+            unit.models[0].set_location(5.0 + float(index), 5.0, 0.0, 0.0)
+            game.map.place_unit(unit)
+
+        phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.phase = phase
+        game.current_player_index = 0
+        game.event_system.publish("phase_start", player=p1, phase=phase)
+
+        specs = p1.stratagems._build_tool_action_specs_for_item(
+            {
+                "available": True,
+                "name": "SMASH THROUGH",
+                "context": {"phase_name": "Movement phase"},
+            }
+        )
+
+        self.assertEqual(p1.stratagems.get_tool_action_probe_diagnostics(), [])
+        self.assertEqual(len(specs), 1)
+        resolved = specs[0]["payload"]["resolved_kwargs"]
+        self.assertEqual(resolved["target_unit"]["__entity_ref__"]["id"], vehicle.id)
+
 
 if __name__ == "__main__":
     unittest.main()

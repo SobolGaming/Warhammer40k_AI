@@ -12945,9 +12945,14 @@ class GamePhaseHandlersMixin:
         mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
         if mgr is None:
             return None
+        target_kwargs = (
+            {"max_targets": 1, "visibility_pair_limit": 8}
+            if bool(getattr(self, "_headless_policy_controller_attached", False))
+            else {}
+        )
         observers = []
         for observer in list(mgr.get_eligible_observers(game=self, player=player) or []):
-            if list(mgr.get_eligible_spotted_targets(observer, game=self, player=player) or []):
+            if list(mgr.get_eligible_spotted_targets(observer, game=self, player=player, **target_kwargs) or []):
                 observers.append(observer)
         if not observers:
             return None
@@ -12991,7 +12996,12 @@ class GamePhaseHandlersMixin:
         mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
         if mgr is None:
             return None
-        targets = list(mgr.get_eligible_spotted_targets(observer_unit, game=self, player=player) or [])
+        target_kwargs = (
+            {"max_targets": 3, "visibility_pair_limit": 8}
+            if bool(getattr(self, "_headless_policy_controller_attached", False))
+            else {}
+        )
+        targets = list(mgr.get_eligible_spotted_targets(observer_unit, game=self, player=player, **target_kwargs) or [])
         if not targets:
             return None
         options = []
