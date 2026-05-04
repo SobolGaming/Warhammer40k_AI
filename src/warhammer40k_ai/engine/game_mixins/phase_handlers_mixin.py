@@ -12945,15 +12945,18 @@ class GamePhaseHandlersMixin:
         mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
         if mgr is None:
             return None
+        headless_controller_attached = bool(getattr(self, "_headless_policy_controller_attached", False))
         target_kwargs = (
             {"max_targets": 1, "visibility_pair_limit": 8}
-            if bool(getattr(self, "_headless_policy_controller_attached", False))
+            if headless_controller_attached
             else {}
         )
         observers = []
         for observer in list(mgr.get_eligible_observers(game=self, player=player) or []):
             if list(mgr.get_eligible_spotted_targets(observer, game=self, player=player, **target_kwargs) or []):
                 observers.append(observer)
+                if headless_controller_attached:
+                    break
         if not observers:
             return None
         options = []
@@ -23029,10 +23032,9 @@ class GamePhaseHandlersMixin:
         if game_map is None:
             raise RuntimeError("Objective control snapshot requires a game map.")
         snapshot = {}
-        had_prev_cache = hasattr(self, "_objective_control_model_oc_cache")
-        prev_cache = getattr(self, "_objective_control_model_oc_cache", None) if had_prev_cache else None
-        self._objective_control_model_oc_cache = {}
-        try:
+        from ...battlefield.control_queries import objective_control_cache_scope
+
+        with objective_control_cache_scope(self):
             for obj in list(getattr(game_map, "objectives", []) or []):
                 loc = getattr(obj, "location", None)
                 if loc is None or getattr(loc, "removed", False):
@@ -23040,14 +23042,6 @@ class GamePhaseHandlersMixin:
                 if hasattr(loc, "update_control"):
                     loc.update_control(self)
                 snapshot[loc] = getattr(loc, "controlling_player", None)
-        finally:
-            if had_prev_cache:
-                self._objective_control_model_oc_cache = prev_cache
-            else:
-                try:
-                    delattr(self, "_objective_control_model_oc_cache")
-                except AttributeError:
-                    pass
         self._objective_control_snapshot = snapshot
 
         # Phoenix Gem: resolve pending returns at end of the phase they were destroyed in.

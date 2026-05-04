@@ -12,6 +12,7 @@ import math
 from .event.system import EventSystem
 from .event_log import DeterministicEventLog
 from ..battlefield.map import Map, Objective
+from ..battlefield.control_queries import objective_control_cache_scope
 from .mission_cards import PrimaryMissionCard, SecondaryMissionCard
 from . import game_decision_runtime, game_scoring, game_serialization
 from ..roster.player import Player
@@ -13511,7 +13512,8 @@ class GameRuleEventService(GameServiceBase):
         # Primary mission scoring at command phase (2nd battle round onwards)
         primary = getattr(current_player, "primary_mission", None)
         if isinstance(primary, PrimaryMissionCard):
-            vp = primary.score_at_command_phase(self, current_player)
+            with objective_control_cache_scope(self):
+                vp = primary.score_at_command_phase(self, current_player)
             if vp:
                 added = self.award_vp(
                     current_player,

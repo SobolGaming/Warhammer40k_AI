@@ -365,6 +365,11 @@ def _parse_args() -> argparse.Namespace:
             "LLM choices are validated against legal candidates and fall back to deterministic rankers."
         ),
     )
+    parser.add_argument(
+        "--disable-tool-decisions",
+        action="store_true",
+        help="Disable optional generic tool-action decisions such as opportunistic stratagem reactions.",
+    )
     parser.add_argument("--max-phase-steps", type=int, default=80)
     parser.add_argument(
         "--output",
@@ -494,6 +499,7 @@ def _run_single_game(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
     llm_agent_config: str | None = None,
+    enable_tool_decisions: bool = True,
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
@@ -539,7 +545,9 @@ def _run_single_game(
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         reserve_policy=str(reserve_policy or "forced_only"),
         ai_router=ai_router,
+        enable_tool_decisions=bool(enable_tool_decisions),
     )
+    game._headless_disable_generic_tool_decisions = not bool(enable_tool_decisions)
     runtime = LocalAuthoritativeRuntime(
         game,
         player1_army_file=player1_army_file,
@@ -694,6 +702,7 @@ def _run_single_game_job(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
     llm_agent_config: str | None = None,
+    enable_tool_decisions: bool = True,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
@@ -732,6 +741,7 @@ def _run_single_game_job(
             max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
             deployment_ranker_model=str(deployment_ranker_model or ""),
             llm_agent_config=str(llm_agent_config or ""),
+            enable_tool_decisions=bool(enable_tool_decisions),
             log_phase_transitions=bool(log_phase_transitions),
             replay_dir=str(replay_dir or ""),
             replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
@@ -790,6 +800,7 @@ def run_headless_self_play(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str = "",
     llm_agent_config: str = "",
+    enable_tool_decisions: bool = True,
     output: str = "data/headless_self_play_decision_records.json",
     reward_profile: str = "dense_vp_delta_v1",
     no_reward_annotation: bool = False,
@@ -827,6 +838,7 @@ def run_headless_self_play(
                 max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                 deployment_ranker_model=str(deployment_ranker_model),
                 llm_agent_config=str(llm_agent_config),
+                enable_tool_decisions=bool(enable_tool_decisions),
                 log_level=str(log_level),
                 log_phase_transitions=bool(log_phase_transitions),
                 replay_dir=str(replay_dir),
@@ -866,6 +878,7 @@ def run_headless_self_play(
                     max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                     deployment_ranker_model=str(deployment_ranker_model),
                     llm_agent_config=str(llm_agent_config),
+                    enable_tool_decisions=bool(enable_tool_decisions),
                     log_level=str(log_level),
                     log_phase_transitions=bool(log_phase_transitions),
                     replay_dir=str(replay_dir),
@@ -1048,6 +1061,7 @@ def main() -> int:
         max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
         deployment_ranker_model=str(args.deployment_ranker_model),
         llm_agent_config=str(args.llm_agent_config),
+        enable_tool_decisions=not bool(args.disable_tool_decisions),
         output=str(args.output),
         reward_profile=str(args.reward_profile),
         no_reward_annotation=bool(args.no_reward_annotation),

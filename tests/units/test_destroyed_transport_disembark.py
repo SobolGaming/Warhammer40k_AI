@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from unittest.mock import patch
 
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -91,3 +92,40 @@ def test_destroyed_transport_disembark_retries_as_emergency_after_final_validati
     assert find_positions.call_count == 2
     assert find_positions.call_args_list[0].kwargs["max_distance"] == 3.0
     assert find_positions.call_args_list[1].kwargs["max_distance"] == 6.0
+
+
+def test_normal_disembark_final_validation_failure_logs_warning_not_error(caplog):
+    bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+    army = Army.with_detachment("Test", "Detachment")
+    player = Player("P1", PlayerControl.LOCAL, army)
+    game = Game(bf, players=[player])
+
+    transport = _make_unit("Transport", keywords=["Transport"], transport="Transport Capacity 10")
+    passenger = _make_unit("Passengers", keywords=["Infantry"])
+
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    game.rebuild_entity_registry()
+
+    transport.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    assert game.map.place_unit(transport) is True
+
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+
+    with (
+        patch.object(passenger, "_find_disembark_positions", return_value=[(12.5, 10.0, 0.0, 0.0)]),
+        patch.object(game.map, "place_unit", return_value=False),
+        caplog.at_level(logging.WARNING),
+    ):
+        ok = passenger.disembark(
+            game_map=game.map,
+            transport_unit=transport,
+            destroyed_transport=False,
+            emergency=False,
+            current_turn=1,
+        )
+
+    assert ok is False
+    assert "WARN: Passengers disembark failed: map placement validation failed" in caplog.text
+    assert "ERROR: Passengers disembark failed: map placement validation failed" not in caplog.text

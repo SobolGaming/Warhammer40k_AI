@@ -5693,7 +5693,7 @@ class ShootingMixin:
                     emergency=True,
                     current_turn=current_turn,
                 )
-            logger.error(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            logger.warning(f"WARN: {self.name} disembark failed: map placement validation failed")
             return False
 
         # Remove from transport passengers list

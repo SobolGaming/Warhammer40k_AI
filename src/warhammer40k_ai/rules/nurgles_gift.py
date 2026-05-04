@@ -473,6 +473,15 @@ class NurglesGiftManager:
             br = int(getattr(game, "turn", 0) or 0)
         except Exception:
             br = 0
+        objective_control_cache = getattr(game, "_objective_control_nurgles_gift_cache", None)
+        cache_key = (int(id(unit)), int(id(game_map)), int(br), bool(include_contagion_sources))
+        if isinstance(objective_control_cache, dict) and cache_key in objective_control_cache:
+            return objective_control_cache[cache_key]
+
+        def _cache_result(value):
+            if isinstance(objective_control_cache, dict):
+                objective_control_cache[cache_key] = value
+            return value
 
         try:
             enemy_units = list(game_map.get_enemy_units(unit))
@@ -490,7 +499,7 @@ class NurglesGiftManager:
                 enemy_units = []
 
         if not enemy_units:
-            return None
+            return _cache_result(None)
 
         from ..utility import aura_utils as _aura_utils
 
@@ -564,14 +573,14 @@ class NurglesGiftManager:
                         aura_range,
                         use_attached_aggregate=True,
                     ):
-                        return plague
+                        return _cache_result(plague)
             if bool(include_contagion_sources):
                 for source in sources:
                     if not mgr._unit_is_valid_contagion_source(source, game=game, game_map=game_map):
                         continue
                     rng = mgr.get_contagion_range(br, source_unit=source, game=game, game_map=game_map)
                     if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
-                        return plague
+                        return _cache_result(plague)
 
             objectives = list(getattr(game_map, "objectives", []) or [])
             for obj in objectives:
@@ -584,7 +593,7 @@ class NurglesGiftManager:
                     continue
                 is_within_objective = getattr(unit, "is_within_objective_range", None)
                 if callable(is_within_objective) and bool(is_within_objective(loc)):
-                    return plague
+                    return _cache_result(plague)
 
             for terrain_feature in list(getattr(game_map, "terrain_features", []) or []):
                 if terrain_feature is None:
@@ -597,7 +606,7 @@ class NurglesGiftManager:
                 ):
                     continue
                 if NurglesGiftManager.unit_within_range_of_terrain_feature(unit, terrain_feature, 3.0):
-                    return plague
+                    return _cache_result(plague)
 
             # Virulent Vectorium: Worldblight turns controlled objectives into contagion sources.
             for obj in objectives:
@@ -620,9 +629,9 @@ class NurglesGiftManager:
                     objective_contagion_range,
                     use_attached_aggregate=True,
                 ):
-                    return plague
+                    return _cache_result(plague)
 
-        return None
+        return _cache_result(None)
 
     @staticmethod
     def get_non_contagion_afflicted_toughness_modifier_for_unit(unit, *, game=None, game_map=None) -> int:

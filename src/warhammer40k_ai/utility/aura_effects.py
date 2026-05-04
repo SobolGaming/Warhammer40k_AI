@@ -4313,6 +4313,15 @@ def get_enemy_engagement_oc_divisors(unit, *, game_map=None) -> tuple[str, ...]:
         game_map = _get_map_from_attacker_unit(unit)
     if game_map is None:
         return ()
+    scoped_cache = getattr(game_map, "_objective_control_enemy_engagement_oc_divisors_cache", None)
+    cache_key = ""
+    if isinstance(scoped_cache, dict):
+        try:
+            cache_key = str(get_entity_id(unit))
+        except ValueError:
+            cache_key = f"unit:{id(unit)}"
+        if cache_key in scoped_cache:
+            return tuple(scoped_cache[cache_key])
 
     reasons: list[str] = []
     applied_keys: set[str] = set()
@@ -4356,4 +4365,7 @@ def get_enemy_engagement_oc_divisors(unit, *, game_map=None) -> tuple[str, ...]:
             except Exception:
                 continue
 
-    return tuple(reasons)
+    result = tuple(reasons)
+    if isinstance(scoped_cache, dict) and cache_key:
+        scoped_cache[cache_key] = result
+    return result

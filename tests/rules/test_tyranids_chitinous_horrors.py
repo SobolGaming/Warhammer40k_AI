@@ -128,6 +128,41 @@ class TestTyranidsChitinousHorrors(unittest.TestCase):
         unchanged = int(enemy.get_effective_model_characteristic(enemy.models[0], "objective_control", game_map=_Map()))
         self.assertEqual(unchanged, 3)
 
+    def test_chitinous_horrors_engagement_divisor_uses_scoped_cache(self):
+        from warhammer40k_ai.utility.aura_effects import get_enemy_engagement_oc_divisors
+
+        ability = {
+            "name": "Chitinous Horrors (Aura)",
+            "description": (
+                "While an enemy unit is within Engagement Range of this unit, "
+                "halve the Objective Control characteristic of models in that enemy unit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        rippers = _make_unit("Ripper Swarms", abilities=[ability], objective_control=0)
+        enemy = _make_unit("Enemy Unit", objective_control=3)
+
+        class _Map:
+            def __init__(self):
+                self.calls = 0
+                self._objective_control_enemy_engagement_oc_divisors_cache = {}
+
+            def get_enemy_units(self, unit):
+                if unit is enemy:
+                    return [rippers]
+                return []
+
+            def is_within_engagement_range(self, unit_a, unit_b):
+                self.calls += 1
+                return (unit_a is rippers and unit_b is enemy) or (unit_b is rippers and unit_a is enemy)
+
+        game_map = _Map()
+
+        self.assertEqual(get_enemy_engagement_oc_divisors(enemy, game_map=game_map), ("enemy_engagement_oc_halve:Chitinous Horrors (Aura)",))
+        self.assertEqual(get_enemy_engagement_oc_divisors(enemy, game_map=game_map), ("enemy_engagement_oc_halve:Chitinous Horrors (Aura)",))
+        self.assertEqual(game_map.calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

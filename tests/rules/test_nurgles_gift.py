@@ -211,6 +211,44 @@ class TestNurglesGift(unittest.TestCase):
         self.assertEqual(int(oc_val), 1)
         self.assertEqual(int(oc_low), 1)
 
+    def test_objective_control_nurgles_gift_cache_reuses_unit_affliction_result(self):
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager, PLAGUE_SCABROUS
+
+        player_attacker = SimpleNamespace(name="P1")
+        player_dg = SimpleNamespace(name="DG")
+        enemy_army = SimpleNamespace(faction_id="SM", units=[], player=player_attacker)
+        dg_army = SimpleNamespace(faction_id="DG", units=[], player=player_dg)
+
+        dg_mgr = NurglesGiftManager(dg_army)
+        dg_mgr.active_plague_key = PLAGUE_SCABROUS.key
+        dg_army.nurgles_gift = dg_mgr
+
+        source_unit = _UnitStub(keywords=["DEATH GUARD"], models=[SimpleNamespace(is_alive=True)], army=dg_army)
+        afflicted_unit = _UnitStub(keywords=["INFANTRY"], models=[SimpleNamespace(is_alive=True)], army=enemy_army)
+        dg_army.units = [source_unit]
+        enemy_army.units = [afflicted_unit]
+
+        game_map = _MapStub([source_unit, afflicted_unit])
+        game = SimpleNamespace(
+            map=game_map,
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+            turn=1,
+            players=[player_attacker, player_dg],
+            _objective_control_nurgles_gift_cache={},
+        )
+        player_attacker.game = game
+        player_attacker.army = enemy_army
+        player_dg.game = game
+        player_dg.army = dg_army
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True) as in_range:
+            first = NurglesGiftManager.get_afflicted_plague_for_unit(afflicted_unit, game=game, game_map=game_map)
+            second = NurglesGiftManager.get_afflicted_plague_for_unit(afflicted_unit, game=game, game_map=game_map)
+
+        self.assertIs(first, second)
+        self.assertEqual(first.key, PLAGUE_SCABROUS.key)
+        self.assertEqual(in_range.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -209,3 +209,23 @@ def test_fight_move_base_contact_helper_does_not_pass_map_as_game_context() -> N
 
     _args, kwargs = patched.call_args
     assert "game" not in kwargs
+
+
+def test_budgeted_fight_move_planning_uses_snapshot_without_routed_pathing() -> None:
+    model = _ModelStub("model-1", _BaseStub(x=4.0, y=5.0, z=0.0))
+    unit = _UnitStub("unit-1")
+    unit.models = [model]
+    model.parent_unit = unit
+    game = SimpleNamespace(map=SimpleNamespace())
+
+    with patch.object(fight_move, "plan_model_path", side_effect=AssertionError("routed pathing should not run")):
+        planned = fight_move.plan_deterministic_fight_move(
+            game,
+            unit,
+            movement_type="pile_in",
+            max_distance=3.0,
+            target_unit_ids=[],
+            deadline=0.0,
+        )
+
+    assert planned == [{"model_id": "model-1", "position": [4.0, 5.0, 0.0], "facing": 0.0}]

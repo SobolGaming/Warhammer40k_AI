@@ -328,6 +328,57 @@ class TestForTheGreaterGood(unittest.TestCase):
         self.assertFalse(visible)
         self.assertEqual(len(calls), 3)
 
+    def test_headless_observer_probe_stops_after_first_visible_observer(self):
+        from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
+
+        first_observer = SimpleNamespace(id="observer:first", name="First Observer")
+        second_observer = SimpleNamespace(id="observer:second", name="Second Observer")
+        target = SimpleNamespace(id="target:first", name="Target")
+        probe_calls = []
+
+        class _Queue:
+            @staticmethod
+            def list():
+                return []
+
+        class _Manager:
+            @staticmethod
+            def get_eligible_observers(**_kwargs):
+                return [first_observer, second_observer]
+
+            @staticmethod
+            def get_eligible_spotted_targets(observer, **_kwargs):
+                probe_calls.append(str(observer.id))
+                return [target]
+
+        class _Game(GamePhaseHandlersMixin):
+            _headless_policy_controller_attached = True
+
+            def __init__(self):
+                self.decision_queue = _Queue()
+                self.requests = []
+
+            @staticmethod
+            def _get_player_army(player):
+                return player.army
+
+            def request_decision(self, request):
+                self.requests.append(request)
+
+        game = _Game()
+        player = SimpleNamespace(id="player:tau", army=SimpleNamespace(for_the_greater_good=_Manager()))
+
+        request = game._queue_for_the_greater_good_observer_request(player=player)
+
+        self.assertIsNotNone(request)
+        self.assertEqual(probe_calls, ["observer:first"])
+        observer_ids = [
+            str((option.payload or {}).get("observer_unit_id", ""))
+            for option in list(request.options or [])
+            if (option.payload or {}).get("observer_unit_id")
+        ]
+        self.assertEqual(observer_ids, ["observer:first"])
+
     def test_precise_targeting_guided_attack_rerolls_hit(self):
         from warhammer40k_ai.engine.event.system import EventSystem
         from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager

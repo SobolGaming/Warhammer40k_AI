@@ -559,6 +559,22 @@ class DecisionRecordStore:
         )
         global_seed = self._global_seed()
         decision_seed = self._decision_seed(request, global_seed)
+        had_prev_state_blob_units_cache = hasattr(self.game, "_state_blob_units_runtime_cache")
+        prev_state_blob_units_cache = (
+            getattr(self.game, "_state_blob_units_runtime_cache", None) if had_prev_state_blob_units_cache else None
+        )
+        setattr(self.game, "_state_blob_units_runtime_cache", {})
+        try:
+            omniscient_state = _default_omniscient_state(self.game)
+            player_obs_state = _default_player_obs_state(self.game)
+        finally:
+            if had_prev_state_blob_units_cache:
+                setattr(self.game, "_state_blob_units_runtime_cache", prev_state_blob_units_cache)
+            else:
+                try:
+                    delattr(self.game, "_state_blob_units_runtime_cache")
+                except AttributeError:
+                    pass
         record = {
             "schema_version": SCHEMA_VERSION,
             "game_id": self._game_id(),
@@ -573,8 +589,8 @@ class DecisionRecordStore:
             "version_adapter_boundary": version_adapter_boundary,
             "global_seed": global_seed,
             "decision_seed": decision_seed,
-            "omniscient_state": _default_omniscient_state(self.game),
-            "player_obs_state": _default_player_obs_state(self.game),
+            "omniscient_state": omniscient_state,
+            "player_obs_state": player_obs_state,
             "candidates": [c.to_dict() for c in list(getattr(request, "candidates", []) or [])],
             "mask": list(getattr(request, "mask", []) or []),
             "wall_clock_ms": int(max(0, wall_clock_ms)),

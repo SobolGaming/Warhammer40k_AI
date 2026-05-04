@@ -196,6 +196,8 @@ def plan_deterministic_fight_move(
     game_map = getattr(game, "map", None)
     if game_map is None:
         return snapshot
+    if deadline is not None:
+        return snapshot
 
     target_units = _resolve_target_units(game, list(target_unit_ids or []))
     moved_models: list[object] = []

@@ -21551,6 +21551,11 @@ class StratagemManager(
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')
         if not s:
             return
+        if (
+            not self._player_can_accept_tool_action_decisions()
+            and bool(getattr(self.game, "_headless_disable_generic_tool_decisions", False))
+        ):
+            return
         overwatch_used = bool(self._used_this_turn.get('OVERWATCH', False))
         used_this_phase = getattr(self, "_used_stratagems_this_phase", set()) or set()
         if (s.name or "").strip().upper() in used_this_phase:

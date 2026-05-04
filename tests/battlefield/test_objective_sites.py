@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from shapely.geometry import Point, Polygon
 
+from warhammer40k_ai.battlefield.control_queries import objective_control_cache_scope
 from warhammer40k_ai.battlefield.objective_sites import Objective, ObjectiveCategory, ObjectiveSite
 
 
@@ -25,6 +26,19 @@ class _FakeModel:
         self.model_base = _FakeBase(x, y)
         self.objective_control = int(objective_control)
         self.is_alive = True
+
+
+class _CountingObjectiveControlModel:
+    def __init__(self, x: float, y: float, *, objective_control: int = 1) -> None:
+        self.model_base = _FakeBase(x, y)
+        self._objective_control = int(objective_control)
+        self.objective_control_reads = 0
+        self.is_alive = True
+
+    @property
+    def objective_control(self) -> int:
+        self.objective_control_reads += 1
+        return int(self._objective_control)
 
 
 class _FakeUnit:
@@ -106,6 +120,24 @@ def test_terrain_footprint_objective_site_uses_polygon_control_region() -> None:
     assert entry["control_region"]["terrain_area_id"] == "terrain_area:central_ruin"
     assert entry["control_region"]["layout_slot_id"] == "layout:center_ruin"
     assert "footprint" in entry["geometry"]
+
+
+def test_objective_control_cache_scope_reuses_model_oc_between_objectives() -> None:
+    model = _CountingObjectiveControlModel(10.0, 10.0, objective_control=2)
+    player = _FakePlayer("Controller", _FakeUnit(model))
+    game = _FakeGame([player])
+    first_site = ObjectiveSite(10.0, 10.0, 0.0, control_radius=3.0)
+    second_site = ObjectiveSite(10.0, 10.0, 0.0, control_radius=3.0)
+
+    with objective_control_cache_scope(game):
+        first_site.update_control(game)
+        second_site.update_control(game)
+
+    assert first_site.controlling_player is player
+    assert second_site.controlling_player is player
+    assert model.objective_control_reads == 1
+    assert not hasattr(game, "_objective_control_model_oc_cache")
+    assert not hasattr(game, "_objective_control_nurgles_gift_cache")
 
 
 def test_score_source_vp_evaluation_is_independent_of_site_shape() -> None:

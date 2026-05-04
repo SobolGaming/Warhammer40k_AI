@@ -3867,11 +3867,15 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 _maybe_queue_post_reactive_disembark_move(game, request, unit)
                 _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
             return finalized
-        unit.disembark(
-            game_map=getattr(game, "map", None),
-            transport_unit=transport,
-            current_turn=getattr(game, "turn", 1),
+        disembarked = bool(
+            unit.disembark(
+                game_map=getattr(game, "map", None),
+                transport_unit=transport,
+                current_turn=getattr(game, "turn", 1),
+            )
         )
+        if not disembarked:
+            return None
     finally:
         if had_override:
             sr = getattr(unit, "special_rules", None)

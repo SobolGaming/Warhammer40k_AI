@@ -262,6 +262,9 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
     objectives = objective_entries(game)
     players = sorted_players(game)
     objective_centroids = [tuple(objective["position"]) for objective in objectives]
+    runtime_cache = getattr(game, "_state_blob_units_runtime_cache", None)
+    if not isinstance(runtime_cache, dict):
+        runtime_cache = None
     player_units: dict[str, list[object]] = {}
     all_units: list[object] = []
     for player in players:
@@ -271,20 +274,36 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
         player_units[player_key] = units_for_player
         all_units.extend(units_for_player)
 
-    centroid_cache: dict[str, tuple[float, float, float]] = {}
-    outer_radius_cache: dict[str, float] = {}
-    alive_models_cache: dict[str, list[object]] = {}
+    if runtime_cache is None:
+        centroid_cache: dict[str, tuple[float, float, float]] = {}
+        outer_radius_cache: dict[str, float] = {}
+        alive_models_cache: dict[str, list[object]] = {}
+        engagement_cache: dict[str, bool] = {}
+        objective_range_cache: dict[str, list[str]] = {}
+    else:
+        centroid_cache = runtime_cache.setdefault("centroid_by_unit_id", {})
+        outer_radius_cache = runtime_cache.setdefault("outer_radius_by_unit_id", {})
+        alive_models_cache = runtime_cache.setdefault("alive_models_by_unit_id", {})
+        engagement_cache = runtime_cache.setdefault("engagement_by_unit_id", {})
+        objective_range_cache = runtime_cache.setdefault("objective_ids_by_unit_id", {})
     for unit in all_units:
         unit_id = str(get_entity_id(unit))
-        unit_models = alive_models(unit)
-        alive_models_cache[unit_id] = list(unit_models)
-        centroid = unit_centroid(unit, alive_models_override=unit_models)
-        centroid_cache[unit_id] = centroid
-        outer_radius_cache[unit_id] = unit_outer_radius(
-            unit,
-            centroid=centroid,
-            alive_models_override=unit_models,
-        )
+        if unit_id in alive_models_cache:
+            unit_models = list(alive_models_cache[unit_id])
+        else:
+            unit_models = alive_models(unit)
+            alive_models_cache[unit_id] = list(unit_models)
+        if unit_id in centroid_cache:
+            centroid = tuple(centroid_cache[unit_id])
+        else:
+            centroid = unit_centroid(unit, alive_models_override=unit_models)
+            centroid_cache[unit_id] = centroid
+        if unit_id not in outer_radius_cache:
+            outer_radius_cache[unit_id] = unit_outer_radius(
+                unit,
+                centroid=centroid,
+                alive_models_override=unit_models,
+            )
 
     enemy_units_by_player: dict[str, list[object]] = {}
     for player in players:
@@ -314,7 +333,24 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
             move = max_movement(unit)
             nearest_enemy = min((distance_2d(centroid, enemy) for enemy in enemy_centroids), default=9999.0)
             nearest_objective = min((distance_2d(centroid, objective) for objective in objective_centroids), default=9999.0)
-            in_range_objectives = objective_ids_in_range(unit, objectives)
+            if unit_id in objective_range_cache:
+                in_range_objectives = list(objective_range_cache[unit_id])
+            else:
+                in_range_objectives = objective_ids_in_range(unit, objectives)
+                objective_range_cache[unit_id] = list(in_range_objectives)
+            if unit_id in engagement_cache:
+                in_engagement_range = bool(engagement_cache[unit_id])
+            else:
+                in_engagement_range = bool(
+                    is_unit_in_engagement_range(
+                        unit,
+                        enemies,
+                        centroid_cache=centroid_cache,
+                        outer_radius_cache=outer_radius_cache,
+                        alive_models_cache=alive_models_cache,
+                    )
+                )
+                engagement_cache[unit_id] = bool(in_engagement_range)
             threat_flags = {
                 "can_reach_enemy_engagement_this_turn": bool(nearest_enemy <= (move + 12.0 + float(ENGAGEMENT_RANGE_HORIZONTAL))),
                 "can_reach_score_source_this_turn": bool(nearest_objective <= move),
@@ -326,15 +362,7 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
                 "model_count": int(len(models)),
                 "alive_model_count": int(len(unit_models)),
                 "position": [float(centroid[0]), float(centroid[1]), float(centroid[2])],
-                "in_engagement_range": bool(
-                    is_unit_in_engagement_range(
-                        unit,
-                        enemies,
-                        centroid_cache=centroid_cache,
-                        outer_radius_cache=outer_radius_cache,
-                        alive_models_cache=alive_models_cache,
-                    )
-                ),
+                "in_engagement_range": bool(in_engagement_range),
                 "control_region_ids_in_range": [f"region:objective:{oid}" for oid in in_range_objectives],
                 "score_source_ids_in_range": [f"score_source:objective:{oid}" for oid in in_range_objectives],
                 "threat_flags": threat_flags,

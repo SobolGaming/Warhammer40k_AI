@@ -1483,3 +1483,38 @@ def test_maybe_queue_post_command_tool_decisions_prioritizes_reactions_before_ph
         ("current", True),
         ("current", False),
     ]
+
+
+def test_overwatch_queue_skips_expensive_candidate_scan_without_tool_controller() -> None:
+    current_player = SimpleNamespace(
+        id="player:current",
+        command_points=1,
+        get_army=lambda: (_ for _ in ()).throw(AssertionError("candidate scan should not run")),
+    )
+    moving_owner = SimpleNamespace(id="player:moving")
+    moving_unit = SimpleNamespace(
+        special_rules={},
+        get_parent_army=lambda: SimpleNamespace(player=moving_owner),
+    )
+    stratagem = SimpleNamespace(
+        name="FIRE OVERWATCH",
+        cp_cost=1,
+        is_phase_allowed=lambda _phase: True,
+        is_turn_allowed=lambda _is_active_turn: True,
+    )
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = SimpleNamespace(
+        get_current_player=lambda: moving_owner,
+        _headless_disable_generic_tool_decisions=True,
+    )
+    manager.player = current_player
+    manager._current_phase_name = "Charge phase"
+    manager._used_stratagems_this_phase = set()
+    manager._used_this_turn = {}
+    manager._pending_reactions = []
+    manager.get_by_name = lambda _name: stratagem
+    manager._player_can_accept_tool_action_decisions = lambda: False
+
+    manager._maybe_queue_overwatch(moving_unit, action="charge", when="declare")
+
+    assert manager._pending_reactions == []

@@ -104,6 +104,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         require_authoritative: bool = True,
         ai_router: AIControllerRouter | None = None,
         auto_attach: bool = True,
+        enable_tool_decisions: bool = True,
     ) -> None:
         super().__init__(player_id=player_id)
         self._game = game
@@ -122,6 +123,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
         self._ai_router = ai_router
+        self._enable_tool_decisions = bool(enable_tool_decisions)
         self._attached = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
         if auto_attach and self._game is not None:
@@ -138,7 +140,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._attached = True
 
     def supports_generic_tool_decisions(self) -> bool:
-        return True
+        return bool(self._enable_tool_decisions)
 
     def on_decision_requested(self, game: object, request: DecisionRequest) -> None:
         if request is None:
@@ -1347,13 +1349,18 @@ class HeadlessPolicyDecisionController(DecisionController):
         }
         force_target_id = str(ctx.get("force_target_unit_id", "") or "").strip()
         try:
-            max_declarations = int(ctx.get("max_declarations", 0) or 0)
+            max_declarations = int(payload.get("max_declarations", ctx.get("max_declarations", 0)) or 0)
         except (TypeError, ValueError):
             max_declarations = 0
+        try:
+            max_validation_attempts = int(payload.get("max_validation_attempts", ctx.get("max_validation_attempts", 0)) or 0)
+        except (TypeError, ValueError):
+            max_validation_attempts = 0
         targets = cls._enemy_units_for_shooting(game, unit)
         if force_target_id:
             targets = [target for target in targets if str(maybe_entity_id(target) or "") == force_target_id]
         declarations: list[dict[str, object]] = []
+        validation_attempts = 0
         out_of_phase = bool(ctx.get("out_of_phase", False))
         for model in cls._attached_alive_models(unit):
             model_id = str(maybe_entity_id(model) or "")
@@ -1415,6 +1422,9 @@ class HeadlessPolicyDecisionController(DecisionController):
                         target_id = str(maybe_entity_id(target) or "")
                         if not target_id:
                             continue
+                        if max_validation_attempts > 0 and validation_attempts >= max_validation_attempts:
+                            return declarations
+                        validation_attempts += 1
                         if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
                             continue
                         accuracy_key = cls._profile_accuracy_key(profile, target)
@@ -1547,7 +1557,11 @@ class HeadlessPolicyDecisionController(DecisionController):
             unit_id = str(payload.get("unit_id", "") or "").strip()
             if not unit_id:
                 return False
-            declarations = cls._default_shooting_declarations(game, request, {"unit_id": unit_id})
+            declarations = cls._default_shooting_declarations(
+                game,
+                request,
+                {"unit_id": unit_id, "max_declarations": 1, "max_validation_attempts": 1},
+            )
             return bool(declarations)
 
         return True

@@ -3,6 +3,7 @@
 import re
 import unicodedata
 
+from ..battlefield.control_queries import objective_control_cache_scope
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
@@ -358,17 +359,18 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
 
         in_player_deployment = getattr(game, "_objective_in_player_deployment", None)
-        for location in self._iter_objective_locations(game):
-            update_control = getattr(location, "update_control", None)
-            if callable(update_control):
-                update_control(game)
-            if getattr(location, "controlling_player", None) is not player:
-                continue
-            if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
-                continue
-            for model in active_models:
-                if self._model_within_objective_marker(model, location):
-                    return True
+        with objective_control_cache_scope(game):
+            for location in self._iter_objective_locations(game):
+                update_control = getattr(location, "update_control", None)
+                if callable(update_control):
+                    update_control(game)
+                if getattr(location, "controlling_player", None) is not player:
+                    continue
+                if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
+                    continue
+                for model in active_models:
+                    if self._model_within_objective_marker(model, location):
+                        return True
         return False
 
     def mobile_sensor_relays_sustained_hits_value(self, model, weapon_profile=None, *, game_map=None) -> tuple[int, str]:
@@ -744,19 +746,20 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
 
         gained = 0
         in_player_deployment = getattr(game, "_objective_in_player_deployment", None)
-        for location in self._iter_objective_locations(game):
-            update_control = getattr(location, "update_control", None)
-            if callable(update_control):
-                update_control(game)
-            if getattr(location, "controlling_player", None) is not player:
-                continue
-            if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
-                continue
-            if not self._objective_has_iron_master_or_memnyr_model(location):
-                continue
-            gained += 1
-            if gained >= 2:
-                break
+        with objective_control_cache_scope(game):
+            for location in self._iter_objective_locations(game):
+                update_control = getattr(location, "update_control", None)
+                if callable(update_control):
+                    update_control(game)
+                if getattr(location, "controlling_player", None) is not player:
+                    continue
+                if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
+                    continue
+                if not self._objective_has_iron_master_or_memnyr_model(location):
+                    continue
+                gained += 1
+                if gained >= 2:
+                    break
 
         if gained <= 0:
             return 0
