@@ -634,7 +634,9 @@ class PositioningFightMovementMixin:
                                 relax_iters=5,
                                 avoid_friendly_units=True,
                                 boundary_repulsors=None,
-                                search_context=None):
+                                search_context=None,
+                                calculate_facing: bool = True,
+                                resolve_surface_height: bool = True):
         """
         Computes (x, y, z, facing) for each model in self.models.
         Tries formation templates (block, wedge, circle, column) built
@@ -672,8 +674,8 @@ class PositioningFightMovementMixin:
         if len(self.models) == 1:
             # Exact-placement callers expect the requested anchor itself; later validation
             # decides whether that anchor is legal for deployment/reserves/scout flows.
-            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
-            f = self.calculate_strategic_facing(start_x, start_y, game_map)
+            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y) if bool(resolve_surface_height) else 0.0
+            f = self.calculate_strategic_facing(start_x, start_y, game_map) if bool(calculate_facing) else 0.0
             self.models[0].set_location(float(start_x), float(start_y), float(z), float(f))
             return [(float(start_x), float(start_y), float(z), float(f))]
 
@@ -722,8 +724,12 @@ class PositioningFightMovementMixin:
             world = []
             pts2d = offsets + origin_2d
             for x, y in pts2d:
-                z = game_map.get_surface_height_for_model(self.models[len(world)], x, y)
-                f = self.calculate_strategic_facing(x, y, game_map)
+                z = (
+                    game_map.get_surface_height_for_model(self.models[len(world)], x, y)
+                    if bool(resolve_surface_height)
+                    else 0.0
+                )
+                f = self.calculate_strategic_facing(x, y, game_map) if bool(calculate_facing) else 0.0
                 world.append([x, y, z, f])
 
             # Check individual model base collisions instead of unit footprint
@@ -811,7 +817,11 @@ class PositioningFightMovementMixin:
                         norm = get_dist(vx, vy) or 1.0
                         pos[0] += (vx / norm) * grid_step
                         pos[1] += (vy / norm) * grid_step
-                        pos[2] = game_map.get_surface_height_for_model(self.models[i], pos[0], pos[1])
+                        pos[2] = (
+                            game_map.get_surface_height_for_model(self.models[i], pos[0], pos[1])
+                            if bool(resolve_surface_height)
+                            else 0.0
+                        )
                         collided = True
 
                 if not collided:

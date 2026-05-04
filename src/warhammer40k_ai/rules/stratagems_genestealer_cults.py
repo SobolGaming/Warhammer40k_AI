@@ -1049,6 +1049,98 @@ class GenestealerCultsStratagemMixin:
                         break
         return sorted(out, key=self._gsc_sort_key)
 
+    def _gsc_can_use_host_of_ascension_tool_action(self, name_u: str, kwargs: Dict[str, Any]) -> Optional[bool]:
+        normalized_name = self._gsc_norm_name(name_u)
+        if normalized_name not in {"PRIMED AND READIED", "COORDINATED TRAP"}:
+            return None
+        if not self._is_host_of_ascension_detachment():
+            return False
+
+        context = dict(kwargs or {})
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return False
+
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return False
+
+        friendly_candidates = self._gsc_host_of_ascension_phase_attack_candidates(phase_key=phase_key)
+        if normalized_name == "PRIMED AND READIED":
+            target_root = self._gsc_root(context.get("unit") or context.get("target_unit"))
+            if target_root is None:
+                return bool(friendly_candidates)
+            if not self._gsc_unit_in_candidates(target_root, friendly_candidates):
+                return False
+            context_candidates = [
+                self._gsc_root(candidate)
+                for candidate in list(context.get("candidates") or [])
+                if candidate is not None
+            ]
+            return not context_candidates or self._gsc_unit_in_candidates(target_root, context_candidates)
+
+        selected = (
+            context.get("units")
+            or context.get("selected_units")
+            or context.get("friendly_units")
+            or context.get("target_units")
+            or context.get("unit")
+        )
+        friendly_roots = self._gsc_resolve_unit_list(selected)
+        explicit_friendly_candidates = list(context.get("friendly_candidates") or [])
+        context_friendly_candidates = explicit_friendly_candidates or friendly_candidates
+        if not friendly_roots and len(explicit_friendly_candidates) == 2:
+            friendly_roots = self._gsc_resolve_unit_list(explicit_friendly_candidates)
+        if len(friendly_roots) != 2:
+            return False
+        for root in friendly_roots:
+            if not self._gsc_unit_in_candidates(root, context_friendly_candidates):
+                return False
+        source_root = self._gsc_root(context.get("source_unit"))
+        if source_root is not None and not self._gsc_unit_in_candidates(source_root, friendly_roots):
+            return False
+
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("target_enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        if enemy_unit is None:
+            possible_enemy = context.get("target_unit")
+            possible_root = self._gsc_root(possible_enemy) if possible_enemy is not None else None
+            if possible_root is not None and not self._gsc_unit_in_candidates(possible_root, friendly_roots):
+                enemy_unit = possible_enemy
+        enemy_candidates = list(context.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            enemy_candidates = self._gsc_coordinated_trap_enemy_candidates_for_units(
+                phase_key=phase_key,
+                selected_units=friendly_roots,
+            )
+        enemy_root = self._gsc_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = self._gsc_root(enemy_candidates[0])
+            else:
+                return False
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            return False
+        if not self._gsc_on_battlefield(enemy_root, require_targetable=True):
+            return False
+        if enemy_candidates and not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
+            return False
+
+        if phase_key == "FIGHT_PHASE":
+            game_map = getattr(game, "map", None)
+            if game_map is None:
+                return False
+            return all(bool(game_map.is_within_engagement_range(root, enemy_root)) for root in friendly_roots)
+        return True
+
     def _gsc_targetable(self, unit: Any) -> bool:
         return not bool(self._unit_cannot_be_target_of_stratagem(unit))
 
@@ -2396,9 +2488,17 @@ class GenestealerCultsStratagemMixin:
         stratagem: Any,
         base_ctx: Dict[str, Any],
     ) -> Optional[List[Dict[str, Any]]]:
-        if stratagem is None or not self._is_brood_brother_auxilia_detachment():
+        if stratagem is None:
             return None
         name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if self._is_host_of_ascension_detachment() and name_u in {"PRIMED AND READIED", "COORDINATED TRAP"}:
+            return self._build_genestealer_cults_host_tool_action_specs_for_item(
+                item=item,
+                stratagem=stratagem,
+                base_ctx=base_ctx,
+            )
+        if not self._is_brood_brother_auxilia_detachment():
+            return None
         if name_u not in {"ACCEPTABLE LOSSES", "SYMBIOTIC DESTRUCTION"}:
             return None
 
@@ -2514,6 +2614,106 @@ class GenestealerCultsStratagemMixin:
                             )
                         )
                         return specs
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("label", "")),
+                str(spec.get("payload", {}).get("action_id", "")),
+                str(spec.get("payload", {}).get("resolved_kwargs", "")),
+            )
+        )
+        return specs
+
+    def _build_genestealer_cults_host_tool_action_specs_for_item(
+        self,
+        *,
+        item: Dict[str, Any],
+        stratagem: Any,
+        base_ctx: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        phase_name = str(base_ctx.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._gsc_phase_key_from_name(phase_name)
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return []
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if active_player is not self.player:
+            return []
+
+        specs: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        original_ctx = dict(item.get("context", {}) or {})
+        friendly_candidates = self._gsc_host_of_ascension_phase_attack_candidates(phase_key=phase_key)
+        if original_ctx.get("candidates"):
+            friendly_candidates = [
+                candidate
+                for candidate in friendly_candidates
+                if self._gsc_unit_in_candidates(candidate, list(original_ctx.get("candidates") or []))
+            ]
+        if original_ctx.get("friendly_candidates"):
+            friendly_candidates = [
+                candidate
+                for candidate in friendly_candidates
+                if self._gsc_unit_in_candidates(candidate, list(original_ctx.get("friendly_candidates") or []))
+            ]
+        friendly_candidates = sorted(friendly_candidates, key=self._gsc_sort_key)
+
+        if name_u == "PRIMED AND READIED":
+            for unit in friendly_candidates:
+                self._tool_action_add_probe(
+                    specs=specs,
+                    seen=seen,
+                    stratagem=stratagem,
+                    item=item,
+                    kwargs={
+                        **base_ctx,
+                        "unit": unit,
+                        "target_unit": unit,
+                    },
+                    label_suffix=self._tool_action_label_value(unit),
+                )
+                if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                    break
+        elif name_u == "COORDINATED TRAP":
+            for first_index, first_unit in enumerate(friendly_candidates):
+                for second_unit in friendly_candidates[first_index + 1 :]:
+                    selected_units = [first_unit, second_unit]
+                    enemy_candidates = list(original_ctx.get("enemy_candidates") or [])
+                    if not enemy_candidates:
+                        enemy_candidates = self._gsc_coordinated_trap_enemy_candidates_for_units(
+                            phase_key=phase_key,
+                            selected_units=selected_units,
+                        )
+                    for enemy_unit in sorted(enemy_candidates, key=self._gsc_sort_key):
+                        self._tool_action_add_probe(
+                            specs=specs,
+                            seen=seen,
+                            stratagem=stratagem,
+                            item=item,
+                            kwargs={
+                                **base_ctx,
+                                "unit": first_unit,
+                                "target_unit": first_unit,
+                                "units": list(selected_units),
+                                "selected_units": list(selected_units),
+                                "friendly_units": list(selected_units),
+                                "target_units": list(selected_units),
+                                "enemy_unit": enemy_unit,
+                                "target_enemy_unit": enemy_unit,
+                            },
+                            label_suffix=(
+                                f"{self._tool_action_label_value(first_unit)} + "
+                                f"{self._tool_action_label_value(second_unit)} vs "
+                                f"{self._tool_action_label_value(enemy_unit)}"
+                            ),
+                        )
+                        if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                            break
+                    if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                        break
+                if len(specs) >= _GSC_TOOL_ACTION_MAX_SPECS:
+                    break
+
         specs.sort(
             key=lambda spec: (
                 str(spec.get("label", "")),

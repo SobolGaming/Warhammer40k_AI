@@ -61,6 +61,8 @@ def calculate_prospective_model_positions(
     avoid_friendly_units: bool = True,
     boundary_repulsors: Any = None,
     search_context: Any = None,
+    calculate_facing: bool = True,
+    resolve_surface_height: bool = True,
 ) -> list[tuple[float, float, float, float]]:
     calculate = getattr(unit, "calculate_model_positions", None)
     if not callable(calculate):
@@ -75,6 +77,8 @@ def calculate_prospective_model_positions(
             avoid_friendly_units=avoid_friendly_units,
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
+            calculate_facing=bool(calculate_facing),
+            resolve_surface_height=bool(resolve_surface_height),
         )
         normalized: list[tuple[float, float, float, float]] = []
         for entry in list(model_positions or []):

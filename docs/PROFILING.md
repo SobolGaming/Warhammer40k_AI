@@ -37,7 +37,10 @@ python scripts/run_headless_self_play.py \
 
 Each game job writes its own readable `.txt` report and binary `.prof` file. In multi-worker runs, profiling happens inside worker processes so the artifacts include the actual game work instead of only parent-process orchestration. Filenames include a safe version of the game id and process id; the report metadata keeps the exact game id.
 
-When `--report-output` is used, the report includes profile artifact paths only.
+When `--report-output` is used, the report includes profile artifact paths plus per-game
+`deployment_search_metrics` snapshots. These snapshots record deterministic search counters such as
+anchor attempts, fast/full validation calls, quick rejects, first-valid source, and per-unit
+model-position cache hits/misses.
 
 ## Report Contents
 
@@ -71,7 +74,9 @@ Initial section timers cover:
 
 When reading deployment/LoS profile output, note that headless deployment validation reuses the
 candidate's generated model-position payload across fast deployment validation and Decision API
-validation, and both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
+validation. Headless deployment also avoids terrain surface-height and strategic-facing calculation
+during search; detailed payload refinement is retained for small units where floor selection can
+change legality. Both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
 checks of the same model pair at the same positions and terrain/blocker state. Section timer call
 counts should therefore be interpreted as cache miss/work counts rather than every high-level
 shooting or deployment policy probe.

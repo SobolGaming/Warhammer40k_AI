@@ -560,6 +560,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             candidate_limit=int(candidate_limit),
             already_deployed=list(already_deployed or []),
         )
+        position_cache: dict[tuple[str, str, float, float], list[list[dict]]] = {}
         started = time.perf_counter()
         footprint = estimate_unit_pack_footprint(unit)
         candidate_groups = self._deployment_anchor_candidate_groups(
@@ -604,6 +605,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     search_context=search_context,
                     metric=metric,
                     source=str(source),
+                    position_cache=position_cache,
                 )
                 if not payload:
                     continue
@@ -663,6 +665,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     search_context=search_context,
                     metric=metric,
                     source=source,
+                    position_cache=position_cache,
                 )
                 if not payload:
                     continue
@@ -1122,6 +1125,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         search_context,
         metric: dict[str, object],
         source: str,
+        position_cache: dict[tuple[str, str, float, float], list[list[dict]]] | None = None,
     ) -> list[dict]:
         metric["validate_calls"] = int(metric.get("validate_calls", 0) or 0) + 1
         self._bump_metric_counter(metric, "source_validate_calls", str(source))
@@ -1135,6 +1139,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             y=float(y),
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
+            position_cache=position_cache,
+            metric=metric,
         ):
             allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
             if not all(allowed_model_ids):
@@ -1221,6 +1227,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         y: float,
         boundary_repulsors: list[object],
         search_context,
+        position_cache: dict[tuple[str, str, float, float], list[list[dict]]] | None = None,
+        metric: dict[str, object] | None = None,
     ):
         fast_positions = self._build_fast_grid_model_positions(unit, x=float(x), y=float(y))
         if fast_positions:
@@ -1232,13 +1240,31 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             if self._uses_fast_grid_deployment(unit):
                 return
 
-        for variant in self._build_detailed_model_positions_variants(
-            unit,
-            x=float(x),
-            y=float(y),
-            boundary_repulsors=boundary_repulsors,
-            search_context=search_context,
-        ):
+        cache_key = self._model_position_cache_key(unit, mode="detailed", x=float(x), y=float(y))
+        cached_variants = None
+        if position_cache is not None:
+            cached_variants = position_cache.get(cache_key)
+        if cached_variants is not None:
+            if metric is not None:
+                metric["position_cache_hits"] = int(metric.get("position_cache_hits", 0) or 0) + 1
+            variants = [[dict(entry or {}) for entry in list(variant or [])] for variant in cached_variants]
+        else:
+            if metric is not None:
+                metric["position_cache_misses"] = int(metric.get("position_cache_misses", 0) or 0) + 1
+            variants = self._build_detailed_model_positions_variants(
+                unit,
+                x=float(x),
+                y=float(y),
+                boundary_repulsors=boundary_repulsors,
+                search_context=search_context,
+                refine_surfaces=self._refines_surface_variants(unit),
+            )
+            if position_cache is not None:
+                position_cache[cache_key] = [
+                    [dict(entry or {}) for entry in list(variant or [])]
+                    for variant in list(variants or [])
+                ]
+        for variant in variants:
             yield list(variant)
 
     def _build_fast_grid_model_positions(self, unit: object, *, x: float, y: float) -> list[dict]:
@@ -1246,7 +1272,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if game_map is None:
             return []
         models = [model for model in list(getattr(unit, "models", []) or []) if model is not None]
-        if not self._uses_fast_grid_deployment(unit):
+        if not self._can_build_fast_grid_deployment(unit):
             return []
         radii = [max(0.1, float(model_longest_radius(model) or 0.0)) for model in models]
         largest_radius = max(radii) if radii else 0.5
@@ -1275,8 +1301,35 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return payload_positions
 
     @staticmethod
+    def _can_build_fast_grid_deployment(unit: object) -> bool:
+        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        return count == 1 or count >= 6
+
+    @staticmethod
     def _uses_fast_grid_deployment(unit: object) -> bool:
-        return len([model for model in list(getattr(unit, "models", []) or []) if model is not None]) >= 6
+        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        return count >= 6
+
+    @staticmethod
+    def _refines_surface_variants(unit: object) -> bool:
+        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        return count <= 5
+
+    @staticmethod
+    def _model_position_cache_key(
+        unit: object,
+        *,
+        mode: str,
+        x: float,
+        y: float,
+    ) -> tuple[str, str, float, float]:
+        unit_id = str(get_entity_id(unit) or "")
+        return (
+            str(unit_id),
+            str(mode or ""),
+            round(float(x), 3),
+            round(float(y), 3),
+        )
 
     def _build_model_positions(
         self,
@@ -1298,6 +1351,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             avoid_friendly_units=True,
             boundary_repulsors=boundary_repulsors,
             search_context=search_context,
+            calculate_facing=False,
+            resolve_surface_height=False,
         )
         models = list(getattr(unit, "models", []) or [])
         if not model_positions or len(model_positions) != len(models):
@@ -1325,14 +1380,16 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         y: float,
         boundary_repulsors: list[object],
         search_context,
+        refine_surfaces: bool = True,
     ) -> list[list[dict]]:
         return list(
-            self._iter_model_positions_variants(
+            self._build_detailed_model_positions_variants(
                 unit,
                 x=float(x),
                 y=float(y),
                 boundary_repulsors=boundary_repulsors,
                 search_context=search_context,
+                refine_surfaces=bool(refine_surfaces),
             )
         )
 
@@ -1344,6 +1401,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         y: float,
         boundary_repulsors: list[object],
         search_context,
+        refine_surfaces: bool = False,
     ) -> list[list[dict]]:
         base_positions = self._build_model_positions(
             unit,
@@ -1368,6 +1426,12 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     position_sets.append(list(alt_positions))
         if not position_sets:
             return []
+        if not bool(refine_surfaces):
+            return [
+                [dict(entry or {}) for entry in list(base_positions or [])]
+                for base_positions in list(position_sets or [])
+                if base_positions
+            ]
         models = list(getattr(unit, "models", []) or [])
         per_model_surfaces: list[list[float]] = []
 

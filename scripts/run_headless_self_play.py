@@ -671,6 +671,10 @@ def _run_single_game(
     reserve_arrival_diagnostics = _collect_reserve_arrival_diagnostics(game)
     get_reserves_metrics = getattr(controller, "get_reserves_arrival_search_metrics", None)
     reserves_arrival_search_metrics = list(get_reserves_metrics() or []) if callable(get_reserves_metrics) else []
+    deployment_search_metrics = {
+        str(player_id): list(getattr(maker, "get_deployment_search_metrics", lambda: [])() or [])
+        for player_id, maker in dict(deployment_decision_makers or {}).items()
+    }
     collect_llm_traces = getattr(ai_router, "collect_component_traces", None)
     llm_agent_traces = list(collect_llm_traces() or []) if callable(collect_llm_traces) else []
     return {
@@ -684,6 +688,7 @@ def _run_single_game(
         "tool_action_probe_diagnostics": tool_action_probe_diagnostics,
         "reserve_arrival_diagnostics": reserve_arrival_diagnostics,
         "reserves_arrival_search_metrics": reserves_arrival_search_metrics,
+        "deployment_search_metrics": deployment_search_metrics,
         "llm_agent_traces": llm_agent_traces,
         "replay_session_id": replay_session_id if replay_path is not None else "",
         "replay_path": str(replay_path) if replay_path is not None else "",
@@ -772,6 +777,7 @@ def _run_single_game_job(
         "tool_action_probe_diagnostics": _json_safe(list(result.get("tool_action_probe_diagnostics", []) or [])),
         "reserve_arrival_diagnostics": _json_safe(list(result.get("reserve_arrival_diagnostics", []) or [])),
         "reserves_arrival_search_metrics": _json_safe(list(result.get("reserves_arrival_search_metrics", []) or [])),
+        "deployment_search_metrics": _json_safe(dict(result.get("deployment_search_metrics", {}) or {})),
         "llm_agent_traces": _json_safe(list(result.get("llm_agent_traces", []) or [])),
         "replay_session_id": str(result.get("replay_session_id", "") or ""),
         "replay_path": str(result.get("replay_path", "") or ""),

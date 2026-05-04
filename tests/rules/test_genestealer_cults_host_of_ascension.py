@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
@@ -613,6 +614,48 @@ def test_primed_and_readied_queues_and_applies_critical_hits_on_five_plus() -> N
     assert any("primed and readied" in str(effect or "").strip().lower() for effect in list(hit.get("special_effects", []) or []))
 
 
+def test_primed_and_readied_tool_candidates_exclude_brood_brothers(caplog) -> None:
+    game, gsc_player, _enemy_player, gsc_unit = _make_game("Host of Ascension")
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+
+    brood_brother = _make_unit(
+        "Death Korps Of Krieg",
+        faction="Astra Militarum",
+        faction_keywords=["ASTRA MILITARUM"],
+        keywords=["INFANTRY"],
+    )
+    gsc_player.army.add_unit(brood_brother)
+    game.map.units = [gsc_unit, brood_brother]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+
+    assert not gsc_player.stratagems.can_use(
+        "PRIMED AND READIED",
+        unit=brood_brother,
+        phase_name="Shooting phase",
+    )
+    assert gsc_player.stratagems.can_use(
+        "PRIMED AND READIED",
+        unit=gsc_unit,
+        phase_name="Shooting phase",
+    )
+
+    with caplog.at_level(logging.ERROR):
+        specs = gsc_player.stratagems._build_tool_action_specs_for_item(
+            {"available": True, "name": "PRIMED AND READIED", "context": {"phase_name": "Shooting phase"}}
+        )
+
+    assert specs
+    serialized = str([spec.get("payload", {}).get("resolved_kwargs", {}) for spec in specs])
+    assert str(get_entity_id(gsc_unit) or "") in serialized
+    assert str(get_entity_id(brood_brother) or "") not in serialized
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
 def test_coordinated_trap_applies_target_lock_and_wound_bonus() -> None:
     game, gsc_player, enemy_player, first_unit = _make_game("Host of Ascension")
     game.turn = 2
@@ -720,6 +763,70 @@ def test_coordinated_trap_fight_phase_requires_enemy_engaged_with_both_units() -
     assert int(gsc_player.command_points or 0) == 5
 
 
+def test_coordinated_trap_tool_candidates_require_two_genestealer_cults_units(caplog) -> None:
+    game, gsc_player, enemy_player, first_unit = _make_game("Host of Ascension")
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+
+    second_unit = _make_unit(
+        "Acolyte Hybrids",
+        faction="Genestealer Cults",
+        faction_keywords=["GENESTEALER CULTS"],
+        keywords=["INFANTRY"],
+    )
+    brood_brother = _make_unit(
+        "Cadian Shock Troops",
+        faction="Astra Militarum",
+        faction_keywords=["ASTRA MILITARUM"],
+        keywords=["INFANTRY"],
+    )
+    enemy_unit = _make_unit(
+        "Marked Enemy",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    gsc_player.army.add_unit(second_unit)
+    gsc_player.army.add_unit(brood_brother)
+    enemy_player.army.add_unit(enemy_unit)
+    first_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    second_unit.models[0].set_location(12.0, 10.0, 0.0, 0.0)
+    brood_brother.models[0].set_location(14.0, 10.0, 0.0, 0.0)
+    enemy_unit.models[0].set_location(18.0, 10.0, 0.0, 0.0)
+    game.map.units = [first_unit, second_unit, brood_brother, enemy_unit]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+
+    assert not gsc_player.stratagems.can_use(
+        "COORDINATED TRAP",
+        units=[first_unit, brood_brother],
+        enemy_unit=enemy_unit,
+        phase_name="Shooting phase",
+    )
+    assert gsc_player.stratagems.can_use(
+        "COORDINATED TRAP",
+        units=[first_unit, second_unit],
+        enemy_unit=enemy_unit,
+        phase_name="Shooting phase",
+    )
+
+    with caplog.at_level(logging.ERROR):
+        specs = gsc_player.stratagems._build_tool_action_specs_for_item(
+            {"available": True, "name": "COORDINATED TRAP", "context": {"phase_name": "Shooting phase"}}
+        )
+
+    assert specs
+    serialized = str([spec.get("payload", {}).get("resolved_kwargs", {}) for spec in specs])
+    assert str(get_entity_id(first_unit) or "") in serialized
+    assert str(get_entity_id(second_unit) or "") in serialized
+    assert str(get_entity_id(enemy_unit) or "") in serialized
+    assert str(get_entity_id(brood_brother) or "") not in serialized
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
 def test_return_to_the_shadows_queues_and_places_unit_into_strategic_reserves() -> None:
     game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
     game.turn = 2
@@ -737,6 +844,20 @@ def test_return_to_the_shadows_queues_and_places_unit_into_strategic_reserves() 
 
     pending = _pending_reaction_by_name(gsc_player.stratagems, "RETURN TO THE SHADOWS")
     assert pending is not None
+    item = next(
+        item
+        for item in gsc_player.stratagems.get_phase_stratagem_items()
+        if str(item.get("name", "") or "") == "RETURN TO THE SHADOWS"
+    )
+    specs = gsc_player.stratagems._build_tool_action_specs_for_item(item)
+    assert specs
+    serialized_kwargs = str([spec.get("payload", {}).get("resolved_kwargs", {}) for spec in specs])
+    assert str(get_entity_id(gsc_unit) or "") in serialized_kwargs
+    assert not [
+        entry
+        for entry in gsc_player.stratagems.get_tool_action_probe_diagnostics()
+        if entry.get("code") == "tool_action_missing_context"
+    ]
     ok = gsc_player.stratagems.use(
         str(pending.get("stratagem", "")),
         unit=gsc_unit,

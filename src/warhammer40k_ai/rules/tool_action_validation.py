@@ -324,7 +324,7 @@ class ToolActionCandidateValidator:
         if bool(effect_params.get("requires_reserves", False)) and not self._unit_is_in_reserves(unit):
             return self._descriptor_issue("reserves")
 
-        reserve_status = str(effect_params.get("required_reserve_status") or effect_params.get("reserve_status") or "").strip()
+        reserve_status = str(effect_params.get("required_reserve_status") or "").strip()
         if reserve_status:
             actual_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
             if actual_status != reserve_status.lower() and not (reserve_status.lower() == "reserves" and self._unit_is_in_reserves(unit)):

@@ -23682,6 +23682,9 @@ class StratagemManager(
         goretrack_result = self._we_can_use_goretrack_tool_action(name_u, kwargs)
         if goretrack_result is not None and not goretrack_result:
             return False
+        gsc_host_result = self._gsc_can_use_host_of_ascension_tool_action(name_u, kwargs)
+        if gsc_host_result is not None and not gsc_host_result:
+            return False
         gsc_outlander_result = self._gsc_can_use_outlander_tool_action(name_u, kwargs)
         if gsc_outlander_result is not None and not gsc_outlander_result:
             return False
