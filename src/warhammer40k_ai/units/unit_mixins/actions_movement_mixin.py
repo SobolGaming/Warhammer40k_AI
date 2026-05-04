@@ -1,14 +1,112 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+from dataclasses import dataclass
 import logging
 from typing import Sequence
 from ...rules.selectable_section_abilities import (
-    ability_name_to_key as selectable_section_ability_name_to_key,
     unit_has_active_section_ability,
     unit_has_selectable_section_sub_ability,
 )
 logger = logging.getLogger(__name__)
+
+
+def _ability_activity_name_key(value: str) -> str:
+    return str(value or "").replace("\u2019", "'").replace("\u00e2\u20ac\u2122", "'").strip().lower()
+
+
+@dataclass(frozen=True)
+class _AbilityActivityMetadata:
+    cache_key: tuple
+    name: str
+    description: str
+    ability_type: str
+    disabled_name_key: str
+    requires_leading: bool
+    requires_not_leading: bool
+    leading_specific_units: tuple[str, ...]
+    led_by_model_phrases: tuple[str, ...]
+    leading_contains_model_phrases: tuple[str, ...]
+    selectable_kind: str
+    selectable_key: str
+    is_pain_ability: bool
+    is_wargear_ability: bool
+
+
+_SELECTABLE_ACTIVITY_BY_NAME = {
+    _ability_activity_name_key("The Blood God's Favour"): ("wrathful_presence", "BLOOD_GODS_FAVOUR"),
+    _ability_activity_name_key("Overwhelming Wrath (Aura)"): ("wrathful_presence", "OVERWHELMING_WRATH"),
+    _ability_activity_name_key("Driven by Ultimate Rage (Aura)"): ("wrathful_presence", "DRIVEN_BY_ULTIMATE_RAGE"),
+    _ability_activity_name_key("Beguiling Form"): ("daemon_primarch_slaanesh", "BEGUILING_FORM"),
+    _ability_activity_name_key("Daemonic Speed"): ("daemon_primarch_slaanesh", "DAEMONIC_SPEED"),
+    _ability_activity_name_key("Enthralling Hypnosis (Aura)"): ("daemon_primarch_slaanesh", "ENTHRALLING_HYPNOSIS"),
+    _ability_activity_name_key("Paragon of Hatred (Aura)"): ("csm_warmaster", "PARAGON_OF_HATRED"),
+    _ability_activity_name_key("Mark of Chaos Ascendant (Aura)"): ("csm_warmaster", "MARK_OF_CHAOS_ASCENDANT"),
+    _ability_activity_name_key("Lord of the Traitor Legions (Aura)"): ("csm_warmaster", "LORD_OF_THE_TRAITOR_LEGIONS"),
+    _ability_activity_name_key("Impossible Form (Psychic)"): ("thousand_sons_crimson_king", "IMPOSSIBLE_FORM"),
+    _ability_activity_name_key("Treason of Tzeentch (Psychic)"): ("thousand_sons_crimson_king", "TREASON_OF_TZEENTCH"),
+    _ability_activity_name_key("Time Flux (Aura, Psychic)"): ("thousand_sons_crimson_king", "TIME_FLUX"),
+    _ability_activity_name_key("Phaeron of the Stars (Aura)"): ("necrons_voice_of_triarch", "PHAERON_OF_THE_STARS"),
+    _ability_activity_name_key("Phaeron of the Blades (Aura)"): ("necrons_voice_of_triarch", "PHAERON_OF_THE_BLADES"),
+    _ability_activity_name_key("Relentless March (Aura)"): ("necrons_voice_of_triarch", "RELENTLESS_MARCH"),
+    _ability_activity_name_key("The Fiery Heart (Aura)"): ("adepta_sororitas_relics_of_the_matriarchs", "THE_FIERY_HEART"),
+    _ability_activity_name_key("Censer of the Sacred Rose (Aura)"): ("adepta_sororitas_relics_of_the_matriarchs", "CENSER_OF_THE_SACRED_ROSE"),
+    _ability_activity_name_key("Simulacrum of the Ebon Chalice (Aura)"): (
+        "adepta_sororitas_relics_of_the_matriarchs",
+        "SIMULACRUM_OF_THE_EBON_CHALICE",
+    ),
+    _ability_activity_name_key("Simulacrum of the Argent Shroud (Aura)"): (
+        "adepta_sororitas_relics_of_the_matriarchs",
+        "SIMULACRUM_OF_THE_ARGENT_SHROUD",
+    ),
+    _ability_activity_name_key("Icon of the Valorous Heart (Aura)"): (
+        "adepta_sororitas_relics_of_the_matriarchs",
+        "ICON_OF_THE_VALOROUS_HEART",
+    ),
+    _ability_activity_name_key("Petals of the Bloody Rose (Aura)"): (
+        "adepta_sororitas_relics_of_the_matriarchs",
+        "PETALS_OF_THE_BLOODY_ROSE",
+    ),
+    _ability_activity_name_key("Mist-wreathed Shadow Realms"): (
+        "space_marines_primarch_of_the_first_legion",
+        "MIST_WREATHED_SHADOW_REALMS",
+    ),
+    _ability_activity_name_key("Martial Exemplar (Aura)"): (
+        "space_marines_primarch_of_the_first_legion",
+        "MARTIAL_EXEMPLAR",
+    ),
+    _ability_activity_name_key("No Hiding From the Watchers (Aura)"): (
+        "space_marines_primarch_of_the_first_legion",
+        "NO_HIDING_FROM_THE_WATCHERS",
+    ),
+    _ability_activity_name_key("Primarch of the XIII (Aura)"): ("space_marines_author_of_the_codex", "PRIMARCH_OF_THE_XIII"),
+    _ability_activity_name_key("Master of Battle"): ("space_marines_author_of_the_codex", "MASTER_OF_BATTLE"),
+    _ability_activity_name_key("Supreme Strategist"): ("space_marines_author_of_the_codex", "SUPREME_STRATEGIST"),
+    _ability_activity_name_key("Invocation of Machine Vengeance"): (
+        "adeptus_mechanicus_canticles",
+        "INVOCATION_OF_MACHINE_VENGEANCE",
+    ),
+    _ability_activity_name_key("Mantra of Discipline"): ("adeptus_mechanicus_canticles", "MANTRA_OF_DISCIPLINE"),
+    _ability_activity_name_key("Shroudpsalm (Aura)"): ("adeptus_mechanicus_canticles", "SHROUDPSALM"),
+    _ability_activity_name_key("Banner of the Emperor Victorious"): (
+        "space_marines_temple_relics",
+        "BANNER_OF_THE_EMPEROR_VICTORIOUS",
+    ),
+    _ability_activity_name_key("Column from the Major Altar"): (
+        "space_marines_temple_relics",
+        "COLUMN_FROM_THE_MAJOR_ALTAR",
+    ),
+    _ability_activity_name_key("Water from the Stoup of Elucidation"): (
+        "space_marines_temple_relics",
+        "WATER_FROM_THE_STOUP_OF_ELUCIDATION",
+    ),
+    _ability_activity_name_key("Counterstrategist"): ("selectable_section", "COUNTERSTRATEGIST"),
+    _ability_activity_name_key("Decisive Command"): ("selectable_section", "DECISIVE_COMMAND"),
+    _ability_activity_name_key("Inspiring Hero (Aura)"): ("selectable_section", "INSPIRING_HERO"),
+    _ability_activity_name_key("Turbo Engine"): ("selectable_section", "TURBO_ENGINE"),
+    _ability_activity_name_key("Shokk Attack Engine"): ("selectable_section", "SHOKK_ATTACK_ENGINE"),
+    _ability_activity_name_key("Pulse Jet"): ("selectable_section", "PULSE_JET"),
+}
 
 
 def _iter_orks_temp_movement_effects_for_unit(
@@ -410,6 +508,74 @@ class ActionsMovementMixin:
         )
 
     @staticmethod
+    @lru_cache(maxsize=8192)
+    def _normalize_ability_activity_rules_text(text: str) -> str:
+        raw = str(text or "")
+        if not raw:
+            return ""
+        raw = re.sub(r"<[^>]+>", " ", raw)
+        raw = raw.replace("\n", " ").replace("\r", " ")
+        return re.sub(r"\s+", " ", raw).strip()
+
+    @staticmethod
+    def _strip_ability_activity_eligibility_prefix(text: str) -> str:
+        raw = str(text or "")
+        low = raw.lower()
+        for marker in (" model only.", " models only."):
+            idx = low.find(marker)
+            if idx != -1:
+                return raw[idx + len(marker):].strip()
+        return raw
+
+    @classmethod
+    @lru_cache(maxsize=8192)
+    def _ability_activity_metadata_from_values(
+        cls,
+        name: str,
+        description: str,
+        ability_type: str,
+    ) -> _AbilityActivityMetadata:
+        clean_name = str(name or "")
+        clean_description = str(description or "")
+        clean_type = str(ability_type or "")
+        source_text = f"{clean_name} {clean_description}".strip()
+        desc_text = cls._normalize_ability_activity_rules_text(
+            cls._strip_ability_activity_eligibility_prefix(clean_description)
+        )
+        normalized_source_text = cls._normalize_ability_activity_rules_text(
+            cls._strip_ability_activity_eligibility_prefix(source_text)
+        )
+        desc_meta = cls._parse_ability_condition_metadata(desc_text)
+        source_meta = cls._parse_ability_condition_metadata(normalized_source_text)
+        lookup_name = clean_name if clean_name else clean_description
+        selectable = _SELECTABLE_ACTIVITY_BY_NAME.get(_ability_activity_name_key(lookup_name), ("", ""))
+        return _AbilityActivityMetadata(
+            cache_key=(clean_name, clean_description, clean_type),
+            name=clean_name,
+            description=clean_description,
+            ability_type=clean_type,
+            disabled_name_key=cls._normalize_ascii_alnum_space(lookup_name),
+            requires_leading=bool(desc_meta[0]),
+            requires_not_leading=bool(desc_meta[1]),
+            leading_specific_units=tuple(source_meta[2]),
+            led_by_model_phrases=tuple(source_meta[3]),
+            leading_contains_model_phrases=tuple(source_meta[4]),
+            selectable_kind=str(selectable[0] or ""),
+            selectable_key=str(selectable[1] or ""),
+            is_pain_ability="(pain)" in str(lookup_name or "").lower(),
+            is_wargear_ability="wargear" in clean_type.lower(),
+        )
+
+    def _ability_activity_metadata(self, ability) -> _AbilityActivityMetadata:
+        if isinstance(ability, str):
+            return self._ability_activity_metadata_from_values("", str(ability or ""), "")
+        return self._ability_activity_metadata_from_values(
+            str(getattr(ability, "name", "") or ""),
+            str(getattr(ability, "description", "") or ""),
+            str(getattr(ability, "type", "") or ""),
+        )
+
+    @staticmethod
     def _ability_source_key(value: str) -> str:
         text = str(value or "").replace("\u2019", "'").replace("\u0192?T", "'").lower()
         text = re.sub(r"[^a-z0-9]+", " ", text)
@@ -642,29 +808,258 @@ class ActionsMovementMixin:
             return False
         return bool(self._parse_ability_condition_metadata(text)[1])
 
+    @staticmethod
+    def _ability_activity_value_signature(value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return tuple(
+                (str(key), ActionsMovementMixin._ability_activity_value_signature(inner))
+                for key, inner in sorted(value.items(), key=lambda item: str(item[0]))
+            )
+        if isinstance(value, (list, tuple)):
+            return tuple(ActionsMovementMixin._ability_activity_value_signature(inner) for inner in value)
+        if isinstance(value, set):
+            return tuple(
+                sorted(
+                    (ActionsMovementMixin._ability_activity_value_signature(inner) for inner in value),
+                    key=lambda item: str(item),
+                )
+            )
+        entity_id = getattr(value, "id", None) or getattr(value, "_id", None)
+        if entity_id:
+            return ("entity", str(entity_id))
+        return str(value)
+
+    @staticmethod
+    def _ability_activity_entity_signature(entity) -> str:
+        if entity is None:
+            return ""
+        try:
+            entity_id = get_entity_id(entity)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            entity_id = getattr(entity, "id", None) or getattr(entity, "_id", None)
+        return str(entity_id or "")
+
+    def _ability_activity_model_signature(self, model) -> tuple:
+        alive_attr = getattr(model, "is_alive", True)
+        try:
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            alive = True
+        wargear_names = tuple(
+            sorted(str(getattr(wargear, "name", "") or "") for wargear in list(getattr(model, "wargear", []) or []))
+        )
+        optional_wargear = tuple(sorted(str(item or "") for item in list(getattr(model, "optional_wargear", []) or [])))
+        return (
+            self._ability_activity_entity_signature(model) or str(id(model)),
+            alive,
+            getattr(model, "wounds", None),
+            tuple(str(value or "") for value in list(getattr(model, "keywords", []) or [])),
+            wargear_names,
+            optional_wargear,
+        )
+
+    def _ability_activity_unit_signature(self, unit) -> tuple:
+        models = tuple(self._ability_activity_model_signature(model) for model in list(getattr(unit, "models", []) or []))
+        return (
+            self._ability_activity_entity_signature(unit) or str(id(unit)),
+            str(getattr(unit, "name", "") or ""),
+            bool(getattr(unit, "is_leader", False)),
+            bool(getattr(unit, "is_attached_leader", False)),
+            bool(getattr(unit, "deployed", False)),
+            str(getattr(unit, "reserve_status", "") or ""),
+            self._ability_activity_entity_signature(getattr(unit, "attached_to", None)),
+            self._ability_activity_entity_signature(getattr(unit, "embarked_in", None)),
+            tuple(str(value or "") for value in list(getattr(unit, "keywords", []) or [])),
+            tuple(str(value or "") for value in list(getattr(unit, "faction_keywords", []) or [])),
+            self._ability_activity_value_signature(getattr(unit, "special_rules", None)),
+            models,
+        )
+
+    def _ability_activity_related_units(self) -> tuple:
+        units = []
+        seen: set[str] = set()
+
+        def add(unit) -> None:
+            if unit is None:
+                return
+            key = self._ability_activity_entity_signature(unit) or str(id(unit))
+            if key in seen:
+                return
+            seen.add(key)
+            units.append(unit)
+
+        add(self)
+        root = self
+        get_root = getattr(self, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                root = get_root()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                root = self
+        add(root)
+        add(getattr(self, "attached_to", None))
+        add(getattr(self, "embarked_in", None))
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            add(leader)
+        return tuple(units)
+
+    def _ability_activity_state_signature(self) -> tuple:
+        game = None
+        army = None
+        get_parent_army = getattr(self, "get_parent_army", None)
+        if callable(get_parent_army):
+            try:
+                army = get_parent_army()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                army = None
+        if army is not None:
+            game = getattr(getattr(army, "player", None), "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        phase = getattr(game, "phase", None) if game is not None else None
+        current_player = None
+        get_current_player = getattr(game, "get_current_player", None) if game is not None else None
+        if callable(get_current_player):
+            try:
+                current_player = get_current_player()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                current_player = None
+        root = self
+        get_root = getattr(self, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                root = get_root()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                root = self
+        related_units = self._ability_activity_related_units()
+        return (
+            int(getattr(root, "_ability_structure_generation", 0) or 0),
+            int(getattr(root, "_ability_activity_generation", 0) or 0),
+            int(getattr(game_map, "state_generation", 0) or 0),
+            int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+            str(getattr(phase, "name", "") or ""),
+            self._ability_activity_entity_signature(current_player),
+            tuple(self._ability_activity_unit_signature(unit) for unit in related_units),
+        )
+
+    def _selectable_ability_activity_result(self, kind: str, key: str):
+        if not kind or not key:
+            return None
+        if kind == "wrathful_presence":
+            from ...rules.wrathful_presence import unit_has_active_wrathful_presence
+
+            return bool(unit_has_active_wrathful_presence(self, key))
+        if kind == "daemon_primarch_slaanesh":
+            from ...rules.daemon_primarch_slaanesh import unit_has_active_daemon_primarch
+
+            return bool(unit_has_active_daemon_primarch(self, key))
+        if kind == "csm_warmaster":
+            from ...rules.csm_warmaster import unit_has_active_warmaster, unit_has_warmaster_ability
+
+            if unit_has_warmaster_ability(self):
+                return bool(unit_has_active_warmaster(self, key))
+            return None
+        if kind == "thousand_sons_crimson_king":
+            from ...rules.thousand_sons_crimson_king import (
+                unit_has_active_crimson_king,
+                unit_has_crimson_king_sub_ability,
+            )
+
+            if unit_has_crimson_king_sub_ability(self):
+                return bool(unit_has_active_crimson_king(self, key))
+            return None
+        if kind == "necrons_voice_of_triarch":
+            from ...rules.necrons_voice_of_triarch import (
+                unit_has_active_voice_of_triarch,
+                unit_has_voice_of_triarch_ability,
+            )
+
+            if unit_has_voice_of_triarch_ability(self):
+                return bool(unit_has_active_voice_of_triarch(self, key))
+            return None
+        if kind == "adepta_sororitas_relics_of_the_matriarchs":
+            from ...rules.adepta_sororitas_relics_of_the_matriarchs import (
+                unit_has_active_relics_of_the_matriarchs,
+                unit_has_relics_of_the_matriarchs_ability,
+            )
+
+            if unit_has_relics_of_the_matriarchs_ability(self):
+                return bool(unit_has_active_relics_of_the_matriarchs(self, key))
+            return None
+        if kind == "space_marines_primarch_of_the_first_legion":
+            from ...rules.space_marines_primarch_of_the_first_legion import (
+                unit_has_active_primarch_of_the_first_legion,
+                unit_has_primarch_of_the_first_legion_ability,
+            )
+
+            if unit_has_primarch_of_the_first_legion_ability(self):
+                return bool(unit_has_active_primarch_of_the_first_legion(self, key))
+            return None
+        if kind == "space_marines_author_of_the_codex":
+            from ...rules.space_marines_author_of_the_codex import (
+                unit_has_active_author_of_the_codex,
+                unit_has_author_of_the_codex_ability,
+            )
+
+            if unit_has_author_of_the_codex_ability(self):
+                return bool(unit_has_active_author_of_the_codex(self, key))
+            return None
+        if kind == "adeptus_mechanicus_canticles":
+            from ...rules.adeptus_mechanicus_canticles import unit_has_active_canticles, unit_has_canticles_sub_ability
+
+            if unit_has_canticles_sub_ability(self):
+                return bool(unit_has_active_canticles(self, key))
+            return None
+        if kind == "space_marines_temple_relics":
+            from ...rules.space_marines_temple_relics import (
+                unit_has_active_temple_relics,
+                unit_has_temple_relics_sub_ability,
+            )
+
+            if unit_has_temple_relics_sub_ability(self):
+                return bool(unit_has_active_temple_relics(self, key))
+            return None
+        if kind == "selectable_section":
+            if unit_has_selectable_section_sub_ability(self):
+                return bool(unit_has_active_section_ability(self, key))
+            return None
+        return None
+
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
+        metadata = self._ability_activity_metadata(ability)
+        cache = getattr(self, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            self._ability_cache = {}
+            cache = self._ability_cache
+        cache_key = ("ability_is_active_v2", metadata.cache_key, self._ability_activity_state_signature())
+        cached = cache.get(cache_key)
+        if isinstance(cached, bool):
+            return cached
+        result = bool(self._ability_is_active_uncached(ability, metadata))
+        cache[cache_key] = result
+        return result
+
+    def _ability_is_active_uncached(self, ability, metadata: _AbilityActivityMetadata | None = None) -> bool:
+        if metadata is None:
+            metadata = self._ability_activity_metadata(ability)
         sr = getattr(self, "special_rules", None)
         if isinstance(sr, dict):
             disabled = list(sr.get("disabled_ability_names", []) or [])
             if disabled:
-                if isinstance(ability, str):
-                    name = ability
-                else:
-                    name = getattr(ability, "name", "") or ""
-                norm_name = self._normalize_ascii_alnum_space(name)
                 disabled_set = {
                     self._normalize_ascii_alnum_space(item)
                     for item in disabled
                 }
-                if norm_name and norm_name in disabled_set:
+                if metadata.disabled_name_key and metadata.disabled_name_key in disabled_set:
                     return False
 
-        led_by_model_phrases = self._ability_led_by_model_phrases(ability)
+        led_by_model_phrases = list(metadata.led_by_model_phrases)
         if led_by_model_phrases:
             if not any(self._attached_leader_matches_phrase(phrase) for phrase in led_by_model_phrases):
                 return False
-        leading_contains_model_phrases = self._ability_leading_contains_model_phrases(ability)
+        leading_contains_model_phrases = list(metadata.leading_contains_model_phrases)
         if leading_contains_model_phrases:
             def _contains_model_phrase(phrase: str) -> bool:
                 target = str(phrase or "").strip()
@@ -689,16 +1084,16 @@ class ActionsMovementMixin:
 
             if not any(_contains_model_phrase(phrase) for phrase in leading_contains_model_phrases):
                 return False
-        if self._ability_requires_leading(ability):
+        if metadata.requires_leading:
             # Only enforce leading attachment when this unit is actually a Leader datasheet.
             if bool(getattr(self, "is_leader", False)) and not bool(getattr(self, "is_attached_leader", False)):
                 return False
             if bool(getattr(self, "is_leader", False)):
-                specific_units = self._ability_leading_specific_units(ability)
+                specific_units = list(metadata.leading_specific_units)
                 if specific_units:
                     if not any(self._attached_unit_matches_phrase(phrase) for phrase in specific_units):
                         return False
-        elif self._ability_requires_not_leading(ability):
+        elif metadata.requires_not_leading:
             if bool(getattr(self, "is_attached_leader", False)):
                 return False
         try:
@@ -730,151 +1125,26 @@ class ActionsMovementMixin:
                 return bool(getattr(self, "is_attached_leader", False))
         except Exception:
             pass
-        try:
-            from ...rules.wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key:
-                return bool(unit_has_active_wrathful_presence(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.daemon_primarch_slaanesh import ability_name_to_key, unit_has_active_daemon_primarch
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key:
-                return bool(unit_has_active_daemon_primarch(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.csm_warmaster import (
-                ability_name_to_key,
-                unit_has_active_warmaster,
-                unit_has_warmaster_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_warmaster_ability(self):
-                return bool(unit_has_active_warmaster(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.thousand_sons_crimson_king import (
-                ability_name_to_key,
-                unit_has_active_crimson_king,
-                unit_has_crimson_king_sub_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_crimson_king_sub_ability(self):
-                return bool(unit_has_active_crimson_king(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.necrons_voice_of_triarch import (
-                ability_name_to_key,
-                unit_has_active_voice_of_triarch,
-                unit_has_voice_of_triarch_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_voice_of_triarch_ability(self):
-                return bool(unit_has_active_voice_of_triarch(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.adepta_sororitas_relics_of_the_matriarchs import (
-                ability_name_to_key,
-                unit_has_active_relics_of_the_matriarchs,
-                unit_has_relics_of_the_matriarchs_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_relics_of_the_matriarchs_ability(self):
-                return bool(unit_has_active_relics_of_the_matriarchs(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.space_marines_primarch_of_the_first_legion import (
-                ability_name_to_key,
-                unit_has_active_primarch_of_the_first_legion,
-                unit_has_primarch_of_the_first_legion_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_primarch_of_the_first_legion_ability(self):
-                return bool(unit_has_active_primarch_of_the_first_legion(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.space_marines_author_of_the_codex import (
-                ability_name_to_key,
-                unit_has_active_author_of_the_codex,
-                unit_has_author_of_the_codex_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_author_of_the_codex_ability(self):
-                return bool(unit_has_active_author_of_the_codex(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.adeptus_mechanicus_canticles import (
-                ability_name_to_key,
-                unit_has_active_canticles,
-                unit_has_canticles_sub_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_canticles_sub_ability(self):
-                return bool(unit_has_active_canticles(self, key))
-        except Exception:
-            pass
-        try:
-            from ...rules.space_marines_temple_relics import (
-                ability_name_to_key,
-                unit_has_active_temple_relics,
-                unit_has_temple_relics_sub_ability,
-            )
-            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-            key = ability_name_to_key(name)
-            if key and unit_has_temple_relics_sub_ability(self):
-                return bool(unit_has_active_temple_relics(self, key))
-        except Exception:
-            pass
-        name = ability if isinstance(ability, str) else getattr(ability, "name", "")
-        key = selectable_section_ability_name_to_key(name)
-        if key and unit_has_selectable_section_sub_ability(self):
-            return bool(unit_has_active_section_ability(self, key))
+        selectable_result = self._selectable_ability_activity_result(metadata.selectable_kind, metadata.selectable_key)
+        if selectable_result is not None:
+            return bool(selectable_result)
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
-        try:
-            name = ""
-            if isinstance(ability, str):
-                name = ability
-            else:
-                name = getattr(ability, "name", "") or ""
-            if "(pain)" in str(name or "").lower():
-                sr = getattr(self, "special_rules", None)
-                if not (isinstance(sr, dict) and sr.get("pain_empowered")):
-                    return False
-        except Exception:
-            pass
+        if metadata.is_pain_ability:
+            sr = getattr(self, "special_rules", None)
+            if not (isinstance(sr, dict) and sr.get("pain_empowered")):
+                return False
 
         # Wargear abilities only apply if the wargear is equipped.
-        try:
-            atype = str(getattr(ability, "type", "") or "").lower()
-            if "wargear" in atype:
-                ability_name = str(getattr(ability, "name", "") or "")
-                if self._has_wargear_named(ability_name):
-                    return True
-                # Some datasheets encode non-weapon systems as "Wargear" abilities without
-                # corresponding wargear profiles/options (e.g., built-in drones).
-                if not self._wargear_option_mentions_name(ability_name):
-                    return True
-                return False
-        except Exception:
-            pass
+        if metadata.is_wargear_ability:
+            ability_name = str(metadata.name or "")
+            if self._has_wargear_named(ability_name):
+                return True
+            # Some datasheets encode non-weapon systems as "Wargear" abilities without
+            # corresponding wargear profiles/options (e.g., built-in drones).
+            if not self._wargear_option_mentions_name(ability_name):
+                return True
+            return False
         return True
 
     def _ability_attached_possessed_formation_bonus_distance(self, ability) -> Optional[int]:
