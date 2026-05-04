@@ -1891,7 +1891,11 @@ class LateGameplayMixin:
         found, damage_str = self._find_ability_with_patterns(["deadly demise"], extract_value=True, value_pattern=r'(\d+|D\d+)')
         if found:
             try:
-                dice_collection = DiceCollection.from_string(damage_str)
+                normalized_damage = str(damage_str or "").strip()
+                if normalized_damage.isdigit():
+                    dice_collection = DiceCollection(0, 0, int(normalized_damage))
+                else:
+                    dice_collection = DiceCollection.from_string(normalized_damage)
                 result = (True, dice_collection)
             except ValueError:
                 raise ValueError(f"Deadly Demise ability found but could not parse damage value '{damage_str}' for unit '{self.name}'")

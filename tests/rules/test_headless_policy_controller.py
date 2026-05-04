@@ -17,6 +17,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_UNIT,
 )
@@ -321,6 +322,55 @@ def test_headless_policy_controller_can_disable_generic_tool_decisions() -> None
     controller = HeadlessPolicyDecisionController(game=None, auto_attach=False, enable_tool_decisions=False)
 
     assert controller.supports_generic_tool_decisions() is False
+
+
+def test_headless_policy_synthesizes_required_realm_unit_selection() -> None:
+    game = _FakeGame()
+    request = DecisionRequest.create(
+        DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+        "Select one required unit.",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"action": "confirm"})],
+        context={
+            "ability": "siege_regiment_creeping_barrage_selection",
+            "allowed_unit_ids": ["unit-b", "unit-a"],
+            "max_units": 1,
+            "required_units": 1,
+        },
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    command = game.commands[0]
+    assert command.payload["result_payload"]["unit_ids"] == ["unit-b"]
+
+
+def test_headless_policy_skips_optional_realm_selection_without_empty_confirm() -> None:
+    game = _FakeGame()
+    request = DecisionRequest.create(
+        DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+        "Select optional units.",
+        player_id="player-1",
+        options=[
+            DecisionOption.create("Confirm", payload={"action": "confirm"}),
+            DecisionOption.create("None", payload={"action": "skip"}),
+        ],
+        context={
+            "ability": "deceptors_masters_of_misdirection_selection",
+            "allowed_unit_ids": ["unit-1", "unit-2"],
+            "max_units": 2,
+        },
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    command = game.commands[0]
+    assert command.payload["result_payload"]["action"] == "skip"
+    assert command.payload["result_payload"]["skipped"] is True
 
 
 def test_headless_policy_controller_picks_best_legal_candidate_and_applies_candidate_payload() -> None:

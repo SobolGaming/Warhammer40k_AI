@@ -21,6 +21,7 @@ from .decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_UNIT,
@@ -311,7 +312,80 @@ class HeadlessPolicyDecisionController(DecisionController):
                     synthesized_positions = self._synthesized_move_model_positions(game, request, normalized)
                     if synthesized_positions:
                         normalized["model_positions"] = synthesized_positions
+        if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+            action = str(normalized.get("action", "") or "").strip().lower()
+            if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
+                unit_ids = normalized.get("unit_ids")
+                if not isinstance(unit_ids, list) or not unit_ids:
+                    synthesized_unit_ids = self._synthesized_realm_unit_ids(request, normalized)
+                    if synthesized_unit_ids:
+                        normalized["unit_ids"] = synthesized_unit_ids
         return normalized
+
+    @staticmethod
+    def _request_allows_skip(request: DecisionRequest) -> bool:
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            action = str(payload.get("action", "") or "").strip().lower()
+            if action in {"skip", "pass"} or bool(payload.get("skip", False)) or bool(payload.get("skipped", False)):
+                return True
+        return False
+
+    @classmethod
+    def _synthesized_realm_unit_ids(cls, request: DecisionRequest, payload: dict[str, Any]) -> list[str]:
+        params = dict(payload or {})
+        existing = [
+            str(unit_id or "").strip()
+            for unit_id in list(params.get("unit_ids") or [])
+            if str(unit_id or "").strip()
+        ]
+        if existing:
+            return existing
+
+        ctx = dict(getattr(request, "context", {}) or {})
+        allowed_ids = [
+            str(unit_id or "").strip()
+            for unit_id in list(ctx.get("allowed_unit_ids") or [])
+            if str(unit_id or "").strip()
+        ]
+        if not allowed_ids:
+            return []
+
+        required_units = cls._int_context_value(ctx, "required_units", default=0)
+        max_units = cls._int_context_value(ctx, "max_units", default=len(allowed_ids))
+        if max_units <= 0:
+            return []
+
+        if required_units <= 0 and cls._request_allows_skip(request):
+            return []
+
+        target_count = int(required_units) if required_units > 0 else int(max_units)
+        target_count = min(int(target_count), int(max_units), len(allowed_ids))
+        if required_units > 0 and target_count != int(required_units):
+            return []
+
+        outside_shadow_ids = {
+            str(unit_id or "").strip()
+            for unit_id in list(ctx.get("outside_shadow_unit_ids") or [])
+            if str(unit_id or "").strip()
+        }
+        if outside_shadow_ids and target_count > 1:
+            inside_ids = [unit_id for unit_id in allowed_ids if unit_id not in outside_shadow_ids]
+            if len(inside_ids) < target_count:
+                return []
+            allowed_ids = inside_ids
+
+        return list(allowed_ids[:target_count])
+
+    @staticmethod
+    def _int_context_value(context: dict[str, Any], key: str, *, default: int) -> int:
+        value = context.get(str(key), None)
+        if value is None or str(value).strip() == "":
+            return int(default)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return int(default)
 
     @staticmethod
     def _move_request_can_synthesize_positions(request: DecisionRequest, payload: dict[str, Any]) -> bool:
@@ -1507,6 +1581,13 @@ class HeadlessPolicyDecisionController(DecisionController):
                 return True
             return self._move_request_can_synthesize_positions(request, params)
         if str(getattr(request, "decision_type", "") or "") != DECISION_DECLARE_SHOTS:
+            if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                params = dict(payload or {})
+                action = str(params.get("action", "") or "").strip().lower()
+                if action in {"pass", "skip"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+                    return True
+                unit_ids = params.get("unit_ids")
+                return isinstance(unit_ids, list) and bool(unit_ids)
             return True
         params = dict(payload or {})
         action = str(params.get("action", "") or "").strip().lower()
@@ -1679,6 +1760,11 @@ class HeadlessPolicyDecisionController(DecisionController):
             if isinstance(declarations, list) and bool(declarations):
                 return True
             return action == "confirm"
+        if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+            unit_ids = params.get("unit_ids")
+            if isinstance(unit_ids, list) and bool(unit_ids):
+                return True
+            return bool(self._synthesized_realm_unit_ids(request, params))
         return True
 
     @staticmethod

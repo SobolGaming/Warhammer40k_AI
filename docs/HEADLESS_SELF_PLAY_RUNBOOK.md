@@ -98,6 +98,9 @@ Default shooting policy:
 - Headless `DECLARE_SHOTS` synthesis declares one legal profile for each ranged weapon carried by an eligible model.
 - Hazardous profiles are eligible during default shooting.
 - For weapons with multiple legal targetable profiles, the controller chooses the profile/target pair with the best hit-probability x wound-probability, using expected damage only as a tie-breaker.
+- Generic headless `SELECT_REALM_OF_CHAOS_UNITS` handling now synthesizes deterministic `unit_ids`
+  for required unit-selection windows, such as Siege Regiment `Creeping Barrage`, and answers
+  optional empty-selection windows with their skip option instead of attempting an invalid empty confirm.
 - Genestealer Cults Outlander Claw `CLOSE-RANGE SHOOT-OUT` derives eligible Mounted/Vehicle units that have not been selected to shoot before exposing the generic stratagem tool action, so target-required options are not emitted without a bound unit.
 - Core `GRENADE` and `TANK SHOCK` expose one generic stratagem tool action per legal unit/enemy binding when CP is available, including windows with multiple legal enemy targets.
 - T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.
@@ -121,6 +124,8 @@ Logging controls:
 - `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.
 - Battle-shock failure status lines and Shadow of Chaos Daemonic Terror mortal-wound resolution also log at `DEBUG`, not `ERROR`.
+- Deadly Demise parameters that are fixed numbers, for example `Deadly Demise 1`, are treated as fixed
+  mortal-wound damage instead of dice expressions.
 - `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.
 - Each emitted phase-transition log is tagged with a stable per-game id, so multi-worker output stays attributable:
   - without `--seed-base`: `selfplay:000000`, `selfplay:000001`, ...

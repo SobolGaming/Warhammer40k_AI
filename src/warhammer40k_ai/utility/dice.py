@@ -255,6 +255,8 @@ class DiceCollection:
         return (self.number * (self.die_faces + 1) / 2) + self.modifier
 
     def __str__(self) -> str:
+        if int(self.number) == 0 and int(self.die_faces) == 0:
+            return str(int(self.modifier))
         modifier = ""
         if self.modifier > 0:
             modifier = f"+{self.modifier}"

@@ -128,6 +128,21 @@ def test_core_ability_runtime_hooks_available_to_headless_army() -> None:
     assert leader.can_be_attached_to == ["Core Bodyguard"]
 
 
+def test_deadly_demise_accepts_fixed_numeric_damage_parameter() -> None:
+    unit = _make_unit(
+        "Fixed Explosion Carrier",
+        abilities=[_ability("Deadly Demise", "Deadly Demise 1", "1")],
+    )
+
+    has_deadly_demise, deadly_demise_damage = unit.has_deadly_demise()
+
+    assert has_deadly_demise is True
+    assert str(deadly_demise_damage) == "1"
+    assert deadly_demise_damage.min() == 1
+    assert deadly_demise_damage.max() == 1
+    assert deadly_demise_damage.roll() == 1
+
+
 @pytest.mark.parametrize(
     ("trigger_roll", "expected_explosion"),
     [
