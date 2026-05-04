@@ -6007,7 +6007,7 @@ class ShootingMixin:
         if not hasattr(game_map, "place_unit"):
             raise RuntimeError("Finalize disembark requires a game map with place_unit().")
         if not game_map.place_unit(self):
-            logger.error(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            logger.warning(f"WARN: {self.name} disembark failed: map placement validation failed")
             return False
 
         transport_unit.remove_passenger(self)

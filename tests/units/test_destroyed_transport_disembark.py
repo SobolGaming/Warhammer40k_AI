@@ -129,3 +129,37 @@ def test_normal_disembark_final_validation_failure_logs_warning_not_error(caplog
     assert ok is False
     assert "WARN: Passengers disembark failed: map placement validation failed" in caplog.text
     assert "ERROR: Passengers disembark failed: map placement validation failed" not in caplog.text
+
+
+def test_finalize_manual_disembark_final_validation_failure_logs_warning_not_error(caplog):
+    bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+    army = Army.with_detachment("Test", "Detachment")
+    player = Player("P1", PlayerControl.LOCAL, army)
+    game = Game(bf, players=[player])
+
+    transport = _make_unit("Transport", keywords=["Transport"], transport="Transport Capacity 10")
+    passenger = _make_unit("Passengers", keywords=["Infantry"])
+
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    game.rebuild_entity_registry()
+
+    transport.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    assert game.map.place_unit(transport) is True
+
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+    passenger.models[0].set_location(12.5, 10.0, 0.0, 0.0)
+
+    with patch.object(game.map, "place_unit", return_value=False), caplog.at_level(logging.WARNING):
+        ok = passenger.finalize_manual_disembark(
+            game_map=game.map,
+            transport_unit=transport,
+            destroyed_transport=False,
+            emergency=False,
+            current_turn=1,
+        )
+
+    assert ok is False
+    assert "WARN: Passengers disembark failed: map placement validation failed" in caplog.text
+    assert "ERROR: Passengers disembark failed: map placement validation failed" not in caplog.text

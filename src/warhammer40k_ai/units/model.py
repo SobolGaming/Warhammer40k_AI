@@ -2222,7 +2222,7 @@ class Model:
                         fnp_saves += 1
                         logger.info(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - SAVED")
                     else:
-                        logger.error(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - FAILED")
+                        logger.info(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - FAILED")
                 
                 # Reduce damage by the number of successful FNP saves
                 amount -= fnp_saves

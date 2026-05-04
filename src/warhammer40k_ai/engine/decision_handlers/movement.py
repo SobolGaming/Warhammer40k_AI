@@ -3704,6 +3704,19 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
         return ("Disembark transport not found.",)
     model_positions = result.payload.get("model_positions")
     if model_positions is not None:
+        expected_model_ids = {
+            str(get_entity_id(model) or "").strip()
+            for model in list(getattr(unit, "get_models_for_collision", lambda: [])() or [])
+            if getattr(model, "is_alive", True) and str(get_entity_id(model) or "").strip()
+        }
+        provided_model_ids = {
+            str(entry.get("model_id", "") or "").strip()
+            for entry in list(model_positions or [])
+            if isinstance(entry, dict) and str(entry.get("model_id", "") or "").strip()
+        }
+        missing_model_ids = sorted(expected_model_ids - provided_model_ids)
+        if missing_model_ids:
+            return ("Disembark requires positions for every alive model in the unit.",)
         try:
             max_distance = float(
                 ctx.get("reactive_disembark_range", ctx.get("disembark_max_distance", 0)) or 0
@@ -3850,8 +3863,13 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
         had_override = True
     try:
         if model_positions is not None:
-            apply_model_positions(game, list(model_positions or []))
+            prior_model_positions = current_model_positions(unit)
             game_map = getattr(game, "map", None)
+            was_on_map = False
+            if game_map is not None:
+                units_list = getattr(game_map, "units", None)
+                was_on_map = isinstance(units_list, list) and unit in units_list
+            apply_model_positions(game, list(model_positions or []))
             if game_map is None:
                 raise RuntimeError("Disembark requires an active game map.")
             finalized = bool(
@@ -3866,6 +3884,15 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
             if finalized:
                 _maybe_queue_post_reactive_disembark_move(game, request, unit)
                 _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
+            else:
+                apply_model_positions(game, prior_model_positions)
+                units_list = getattr(game_map, "units", None)
+                if isinstance(units_list, list):
+                    if was_on_map and unit not in units_list:
+                        units_list.append(unit)
+                    if not was_on_map:
+                        while unit in units_list:
+                            units_list.remove(unit)
             return finalized
         disembarked = bool(
             unit.disembark(

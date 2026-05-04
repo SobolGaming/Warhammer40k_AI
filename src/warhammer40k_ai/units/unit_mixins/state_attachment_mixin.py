@@ -1873,13 +1873,13 @@ class StateAttachmentMixin:
                 logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
                     f"-> {mod_roll} vs Ld {leadership_value} - PASSED! ")
             else:
-                logger.error(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
                     f"-> {mod_roll} vs Ld {leadership_value} - FAILED! ")
         else:
             if passed:
                 logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
             else:
-                logger.error(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+                logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         if reroll_sources and not passed:
             want_reroll = True
@@ -2042,13 +2042,13 @@ class StateAttachmentMixin:
                 logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
                     f"-> {mod_roll} vs Ld {leadership_value} - PASSED! ")
             else:
-                logger.error(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
                     f"-> {mod_roll} vs Ld {leadership_value} - FAILED! ")
         else:
             if passed:
                 logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
             else:
-                logger.error(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+                logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         return passed
 
