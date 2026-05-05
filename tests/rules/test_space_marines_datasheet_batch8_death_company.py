@@ -426,7 +426,7 @@ def test_death_company_marines_with_bolt_rifles_visions_of_heresy_heroic_interve
 
     observed = {}
 
-    def _fake_attempt_charge(charger, target, out_of_turn=False, count_as_charged=False):
+    def _fake_attempt_charge(charger, target, out_of_turn=False, count_as_charged=False, direct_only=False):
         observed["charger_id"] = str(get_entity_id(charger) or "")
         observed["charge_reroll_active"] = bool(charger.can_reroll_charge_roll(game=game, game_map=game.map))
         return True
