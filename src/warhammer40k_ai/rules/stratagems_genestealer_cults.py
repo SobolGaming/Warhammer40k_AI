@@ -2623,6 +2623,12 @@ class GenestealerCultsStratagemMixin:
         )
         return specs
 
+    def _genestealer_cults_tool_action_empty_specs_are_valid(self, *, item: Dict[str, Any], stratagem: Any) -> bool:
+        if stratagem is None or not self._is_brood_brother_auxilia_detachment():
+            return False
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        return name_u in {"ACCEPTABLE LOSSES", "SYMBIOTIC DESTRUCTION"}
+
     def _build_genestealer_cults_host_tool_action_specs_for_item(
         self,
         *,

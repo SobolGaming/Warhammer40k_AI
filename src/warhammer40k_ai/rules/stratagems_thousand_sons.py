@@ -640,6 +640,59 @@ class ThousandSonsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
 
+    def _build_thousand_sons_tool_action_specs_for_item(
+        self,
+        *,
+        item: dict[str, Any],
+        stratagem: Any,
+        base_ctx: dict[str, Any],
+    ) -> Optional[list[dict[str, Any]]]:
+        if stratagem is None or not self._is_thousand_sons_rubricae_phalanx_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "INFERNAL FUSILLADE":
+            return None
+
+        phase_name = str(base_ctx.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = phase_name.lower().replace("_", " ")
+        if phase_key != "shooting phase":
+            return []
+
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if active_player is not self.player:
+            return []
+
+        specs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for unit in self._ts_infernal_fusillade_candidates():
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs={
+                    **base_ctx,
+                    "unit": unit,
+                    "target_unit": unit,
+                },
+                label_suffix=self._tool_action_label_value(unit),
+            )
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("label", "")),
+                str(spec.get("payload", {}).get("action_id", "")),
+                str(spec.get("payload", {}).get("resolved_kwargs", "")),
+            )
+        )
+        return specs
+
+    def _thousand_sons_tool_action_empty_specs_are_valid(self, *, item: dict[str, Any], stratagem: Any) -> bool:
+        if stratagem is None or not self._is_thousand_sons_rubricae_phalanx_detachment():
+            return False
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        return name_u == "INFERNAL FUSILLADE"
+
     def _ts_implacable_guardians_candidates(
         self,
         *,

@@ -9,6 +9,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -273,6 +274,41 @@ def test_infernal_fusillade_sets_inferno_strength_and_psychic_attack_type():
         log_roll=False,
     )
     assert bool(non_inferno_wound.get("wound")) is False
+
+
+def test_infernal_fusillade_tool_candidates_only_include_psyker_units():
+    game, ts_player, _enemy_player, ts_army, _enemy_army = _build_game()
+    psyker = _make_unit(
+        "Rubric Marines",
+        keywords=["INFANTRY", "RUBRICAE", "PSYKER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    heldrake = _make_unit(
+        "Heldrake",
+        keywords=["VEHICLE", "FLY"],
+        faction_keywords=["THOUSAND SONS"],
+        toughness="9",
+        wounds="12",
+    )
+    ts_army.add_unit(psyker)
+    ts_army.add_unit(heldrake)
+    _deploy_unit(game, psyker, 10.0, 10.0)
+    _deploy_unit(game, heldrake, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    _set_phase(game, ts_player, "SHOOTING_PHASE", 0)
+    specs = ts_player.stratagems._build_tool_action_specs_for_item(
+        {"available": True, "name": "INFERNAL FUSILLADE", "context": {"phase_name": "Shooting phase"}}
+    )
+
+    assert specs
+    labels = [str(spec.get("label", "") or "") for spec in specs]
+    assert any("Rubric Marines" in label for label in labels)
+    assert all("Heldrake" not in label for label in labels)
+    serialized_kwargs = str([spec.get("payload", {}).get("resolved_kwargs", {}) for spec in specs])
+    assert str(get_entity_id(psyker) or "") in serialized_kwargs
+    assert str(get_entity_id(heldrake) or "") not in serialized_kwargs
+    assert ts_player.stratagems.get_tool_action_probe_diagnostics() == []
 
 
 def test_implacable_guardians_queues_and_excludes_psyker_models_from_damage_reduction():

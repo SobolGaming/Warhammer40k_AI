@@ -4523,13 +4523,9 @@ class StratagemManager(
         specs: List[Dict[str, Any]] = []
         seen: set[str] = set()
 
-        specialized_builder = getattr(self, "_build_genestealer_cults_tool_action_specs_for_item", None)
-        if callable(specialized_builder):
-            specialized_specs = specialized_builder(item=item, stratagem=stratagem, base_ctx=base_ctx)
-            if specialized_specs is not None:
-                return specialized_specs
-
         for specialized_name in (
+            "_build_genestealer_cults_tool_action_specs_for_item",
+            "_build_thousand_sons_tool_action_specs_for_item",
             "_build_orks_tool_action_specs_for_item",
             "_build_astra_militarum_tool_action_specs_for_item",
             "_build_world_eaters_tool_action_specs_for_item",
@@ -5179,6 +5175,16 @@ class StratagemManager(
         )
         return specs
 
+    def _tool_action_empty_specs_are_valid(self, item: Dict[str, Any], stratagem: Stratagem) -> bool:
+        for hook_name in (
+            "_genestealer_cults_tool_action_empty_specs_are_valid",
+            "_thousand_sons_tool_action_empty_specs_are_valid",
+        ):
+            hook = getattr(self, hook_name, None)
+            if callable(hook) and bool(hook(item=item, stratagem=stratagem)):
+                return True
+        return False
+
     def _build_tool_action_request(self, *, reactions_only: bool) -> Any:
         if not self._player_can_accept_tool_action_decisions():
             return None
@@ -5207,7 +5213,12 @@ class StratagemManager(
                 continue
             raw_specs = self._build_tool_action_specs_for_item(item)
             filtered_specs = self._filter_legal_tool_action_specs(raw_specs)
-            if not filtered_specs and not self._has_tool_action_error_diagnostic(stratagem):
+            empty_specs_are_valid = self._tool_action_empty_specs_are_valid(item, stratagem)
+            if (
+                not filtered_specs
+                and not empty_specs_are_valid
+                and not self._has_tool_action_error_diagnostic(stratagem)
+            ):
                 self._record_tool_action_provider_contract_error(
                     stratagem=stratagem,
                     item=item,

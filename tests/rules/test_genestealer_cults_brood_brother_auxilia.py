@@ -1214,6 +1214,47 @@ def test_brood_brother_tool_candidates_emit_only_fully_bound_specialized_context
     assert gsc_player.stratagems.get_tool_action_probe_diagnostics() == []
 
 
+def test_brood_brother_empty_tool_candidates_do_not_record_provider_context_error():
+    game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 6
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    game.add_decision_controller(
+        SimpleNamespace(
+            handles_player=lambda player_id: str(player_id or "") == str(gsc_player.id),
+            supports_generic_tool_decisions=lambda: True,
+        )
+    )
+
+    gsc_player.stratagems.get_phase_stratagem_items = lambda: [
+        {
+            "available": True,
+            "name": "ACCEPTABLE LOSSES",
+            "context": {"phase_name": "Shooting phase"},
+            "is_reaction": False,
+        },
+        {
+            "available": True,
+            "name": "SYMBIOTIC DESTRUCTION",
+            "context": {"phase_name": "Shooting phase"},
+            "is_reaction": False,
+        },
+    ]
+
+    request = gsc_player.stratagems._build_tool_action_request(reactions_only=False)
+
+    assert request is None
+    provider_errors = [
+        entry
+        for entry in gsc_player.stratagems.get_tool_action_probe_diagnostics()
+        if entry.get("code") in {"tool_action_missing_context", "tool_action_candidates_all_filtered"}
+    ]
+    assert provider_errors == []
+
+
 def test_symbiotic_destruction_tool_candidates_cache_unit_enemy_legality(monkeypatch):
     game, gsc_army, enemy_army, gsc_player, _enemy_player = _build_game(detachment="Brood Brother Auxilia")
     game.phase = BattleRoundPhases.SHOOTING_PHASE
