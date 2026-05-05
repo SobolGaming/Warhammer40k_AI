@@ -111,6 +111,24 @@ def masters_of_void_enemy_dz_override_active(unit: object, game: object) -> bool
     return True
 
 
+def _prospective_model_overlaps_enemy_deployment_zone(
+    game: object,
+    model: object,
+    x: float,
+    y: float,
+    player_id: str,
+) -> bool:
+    base = getattr(model, "model_base", None)
+    base_checker = getattr(game, "does_position_base_overlap_enemy_deployment_zone", None)
+    if callable(base_checker) and base is not None:
+        if bool(base_checker(float(x), float(y), base, player_id)):
+            return True
+    point_checker = getattr(game, "is_position_in_enemy_deployment_zone", None)
+    if callable(point_checker):
+        return bool(point_checker(float(x), float(y), player_id))
+    return False
+
+
 def transponder_lock_module_turn_one_spotter_requirement_satisfied(
     unit: object,
     prospective: list[tuple[float, float, float, float]],
@@ -459,6 +477,7 @@ def _evaluate_reserves_arrival_prospective(
 
     strategic_ok = False
     strategic_used_edge_touch = False
+    strategic_enemy_dz_rejected = False
     selected_edge: str | None = None
     ignore_battlefield_edge_requirement = bool(
         context.get("reserves_arrival_ignore_battlefield_edge_requirement", False)
@@ -477,18 +496,14 @@ def _evaluate_reserves_arrival_prospective(
             elif not is_valid_strategic_reserves_edge(game, edge, turn=effective_turn):
                 continue
             if effective_turn == 2 and player_id and not masters_of_void_enemy_dz_override_active(unit, game):
-                enemy_dz_checker = getattr(game, "is_position_in_enemy_deployment_zone", None)
-                if callable(enemy_dz_checker):
-                    any_in_enemy_dz = False
-                    for (x, y, _z, _facing) in prospective:
-                        try:
-                            if enemy_dz_checker(float(x), float(y), player_id):
-                                any_in_enemy_dz = True
-                                break
-                        except Exception:
-                            continue
-                    if any_in_enemy_dz:
-                        continue
+                any_in_enemy_dz = False
+                for model, (x, y, _z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+                    if _prospective_model_overlaps_enemy_deployment_zone(game, model, float(x), float(y), player_id):
+                        any_in_enemy_dz = True
+                        break
+                if any_in_enemy_dz:
+                    strategic_enemy_dz_rejected = True
+                    continue
             used_touch = False
             ok_all = True
             for model, (x, y, z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):
@@ -541,6 +556,8 @@ def _evaluate_reserves_arrival_prospective(
                         "Reserves arrival must be within 6\" of a battlefield edge or wholly within 9\" of a Tunnel Marker."
                     ]
                 }
+            if strategic_enemy_dz_rejected:
+                return {"errors": ["Strategic Reserves units cannot arrive in the enemy deployment zone during battle round 2."]}
             return {"errors": ["Reserves arrival must be within 6\" of a battlefield edge."]}
 
     battlefield_edge = selected_edge if strategic_ok else None

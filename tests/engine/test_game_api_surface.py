@@ -96,6 +96,7 @@ EXPECTED_PUBLIC_GAME_CALLABLES = {
     "handle_reserves_arrival_phase",
     "in_command_context",
     "install_decision_providers",
+    "does_position_base_overlap_enemy_deployment_zone",
     "is_charge_phase",
     "is_charge_phase_complete",
     "is_command_phase",

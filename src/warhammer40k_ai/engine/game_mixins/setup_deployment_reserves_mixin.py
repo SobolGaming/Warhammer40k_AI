@@ -7,6 +7,87 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _coerce_deployment_base_radius(value: object, default: float = 0.0) -> float:
+    if value is None:
+        return float(default)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return float(default)
+        return max(0.0, max(float(item) for item in value))
+    return max(0.0, float(value))
+
+
+def _deployment_base_radius(model_base: object) -> float:
+    get_longest_radius = getattr(model_base, "get_longest_radius", None)
+    if callable(get_longest_radius):
+        return _coerce_deployment_base_radius(get_longest_radius())
+    radius = getattr(model_base, "radius", None)
+    if radius is not None:
+        return _coerce_deployment_base_radius(radius)
+    get_radius = getattr(model_base, "get_radius", None)
+    if callable(get_radius):
+        return _coerce_deployment_base_radius(get_radius())
+    return 0.0
+
+
+def _deployment_base_geometry_at(x: float, y: float, model_base: object):
+    from shapely.geometry import Point as _ShPoint
+    from shapely.geometry import Polygon as _ShPoly
+
+    get_shape_at = getattr(model_base, "get_base_shape_at", None)
+    if callable(get_shape_at):
+        base_geometry = get_shape_at(float(x), float(y), getattr(model_base, "facing", 0.0))
+        if base_geometry is not None:
+            if hasattr(base_geometry, "is_valid") and not base_geometry.is_valid:
+                base_geometry = base_geometry.buffer(0)
+            return base_geometry
+
+    base_type_name = str(getattr(getattr(model_base, "base_type", None), "name", "") or "").upper()
+    if bool(getattr(model_base, "has_circular_base", False)) or base_type_name == "CIRCULAR":
+        return _ShPoint(float(x), float(y)).buffer(_deployment_base_radius(model_base))
+
+    get_vertices_at_position = getattr(model_base, "get_vertices_at_position", None)
+    if callable(get_vertices_at_position):
+        base_geometry = _ShPoly(get_vertices_at_position(float(x), float(y)))
+        if hasattr(base_geometry, "is_valid") and not base_geometry.is_valid:
+            base_geometry = base_geometry.buffer(0)
+        return base_geometry
+
+    return _ShPoint(float(x), float(y)).buffer(_deployment_base_radius(model_base))
+
+
+def _mission_zone_playable_geometry(mission_zone: object):
+    from shapely.geometry import Polygon as _ShPoly
+
+    zone_geometry = _ShPoly(getattr(mission_zone, "vertices"))
+    if hasattr(zone_geometry, "is_valid") and not zone_geometry.is_valid:
+        zone_geometry = zone_geometry.buffer(0)
+
+    for cutout in list(getattr(mission_zone, "cutouts", None) or []):
+        get_geometry = getattr(cutout, "get_shapely_geometry", None)
+        if not callable(get_geometry):
+            continue
+        cutout_geometry = get_geometry()
+        if cutout_geometry is None:
+            continue
+        if hasattr(cutout_geometry, "is_valid") and not cutout_geometry.is_valid:
+            cutout_geometry = cutout_geometry.buffer(0)
+        zone_geometry = zone_geometry.difference(cutout_geometry)
+    return zone_geometry
+
+
+def _deployment_base_overlaps_mission_zone(
+    x: float,
+    y: float,
+    model_base: object,
+    mission_zone: object,
+) -> bool:
+    base_geometry = _deployment_base_geometry_at(float(x), float(y), model_base)
+    zone_geometry = _mission_zone_playable_geometry(mission_zone)
+    intersection = zone_geometry.intersection(base_geometry)
+    return float(getattr(intersection, "area", 0.0) or 0.0) > 1e-6
+
+
 class GameSetupDeploymentReservesMixin:
     def _pending_reinforcements_select_unit_request(self):
         queue = getattr(self, "decision_queue", None)
@@ -976,6 +1057,27 @@ class GameSetupDeploymentReservesMixin:
                 for mission_zone in zone['mission_zones']:
                     if mission_zone.contains_point(x, y):
                         return True
+        return False
+
+    def does_position_base_overlap_enemy_deployment_zone(
+        self,
+        x: float,
+        y: float,
+        model_base,
+        player_id: str,
+    ) -> bool:
+        """Check if any positive-area part of a model base overlaps an enemy deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return False
+
+        for zone_player_id, zone in self.deployment_zones.items():
+            if zone_player_id == player_id:
+                continue
+            if 'mission_zones' not in zone or not zone['mission_zones']:
+                raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+            for mission_zone in zone['mission_zones']:
+                if _deployment_base_overlaps_mission_zone(float(x), float(y), model_base, mission_zone):
+                    return True
         return False
 
     def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> float:

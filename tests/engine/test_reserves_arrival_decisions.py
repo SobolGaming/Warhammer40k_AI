@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.decision_handlers.movement import validate_move_unit_payload
 from warhammer40k_ai.engine.reserve_entry_rules import evaluate_reserves_arrival_positions
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
+from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.engine.state_blob_units import unit_entries
 from warhammer40k_ai.engine import turn_manager
@@ -20,6 +21,37 @@ class _ReserveRequestGame(GameSetupDeploymentReservesMixin):
     def __init__(self) -> None:
         self.turn = 3
         self.players = []
+
+
+class _ReserveEnemyDeploymentZoneGame(GameSetupDeploymentReservesMixin):
+    def __init__(self, player) -> None:
+        self.turn = 2
+        self.players = [player]
+        self.battlefield = SimpleNamespace(width=60.0, height=44.0)
+        self.map = SimpleNamespace(width=60.0, height=44.0)
+        self.deployment_zones = {
+            str(player.id): {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Own Deployment Zone",
+                        DeploymentZoneType.DEFENDER,
+                        [(0.0, 0.0), (60.0, 0.0), (60.0, 6.0), (0.0, 6.0)],
+                    )
+                ]
+            },
+            "player:enemy": {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Enemy Deployment Zone",
+                        DeploymentZoneType.ATTACKER,
+                        [(0.0, 38.0), (60.0, 38.0), (60.0, 44.0), (0.0, 44.0)],
+                    )
+                ]
+            },
+        }
+
+    def get_current_player(self):
+        return self.players[0]
 
 
 class _ReserveScoringGame(GameMissionsScoringActionsMixin):
@@ -238,6 +270,35 @@ def test_strategic_reserves_large_model_edge_touch_applies_when_base_cannot_fit_
     assert evaluation.get("errors") == []
     assert evaluation.get("battlefield_edge") == "own"
     assert evaluation.get("edge_touch") is True
+
+
+def test_round_two_strategic_reserves_rejects_base_overlap_with_enemy_deployment_zone() -> None:
+    player, _army, unit = _build_reserve_unit()
+    player.get_army = lambda: player.army
+    base = SimpleNamespace(
+        base_type=SimpleNamespace(name="CIRCULAR"),
+        has_circular_base=True,
+        radius=2.0,
+        get_radius=lambda: 2.0,
+        get_longest_radius=lambda: 2.0,
+    )
+    unit.models = [SimpleNamespace(id="model:large", _id="model:large", model_base=base, is_alive=True)]
+    game = _ReserveEnemyDeploymentZoneGame(player)
+
+    assert game.is_position_in_enemy_deployment_zone(2.0, 37.0, player.id) is False
+    assert game.does_position_base_overlap_enemy_deployment_zone(2.0, 37.0, base, player.id) is True
+
+    evaluation = evaluate_reserves_arrival_positions(
+        game,
+        unit,
+        [{"model_id": "model:large", "position": [2.0, 37.0, 0.0], "facing": 0.0}],
+        ctx={"placement_kind": "reserves_arrival"},
+    )
+
+    assert evaluation.get("errors") == [
+        "Strategic Reserves units cannot arrive in the enemy deployment zone during battle round 2."
+    ]
+    assert evaluation.get("battlefield_edge") is None
 
 
 def test_aircraft_reserve_arrival_skips_ruins_surface_validation_but_keeps_reserve_rules() -> None:

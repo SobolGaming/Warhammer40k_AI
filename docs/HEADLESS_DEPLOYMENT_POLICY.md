@@ -84,6 +84,8 @@ This document describes deterministic headless placement behavior for deployment
       generated payload is not clipped by the battlefield boundary;
     - those large edge-touch arrivals add a bounded dense along-edge scan before staggered fallback
       so aircraft can find narrow legal gaps around terrain and deployed models;
+    - battle round 2 Strategic Reserves arrivals reject any placement whose model base has
+      positive-area overlap with the enemy deployment zone, even if the model centre is outside it;
     - AIRCRAFT reserve arrivals keep boundary, overlap, enemy-distance, and reserve-edge checks,
       but do not reject otherwise legal airborne setup solely because the projected base footprint
       intersects RUINS wall/floor surface geometry;
