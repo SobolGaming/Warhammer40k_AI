@@ -218,6 +218,14 @@ def _pending_by_name(stratagems, name: str):
     return None
 
 
+def _phase_item_by_name(stratagems, name: str):
+    target = str(name or "").strip().upper()
+    for item in list(stratagems.get_phase_stratagem_items() or []):
+        if str(item.get("name", "") or "").strip().upper() == target:
+            return item
+    return None
+
+
 def _first_request(game: Game, decision_type: str):
     for request in list(game.decision_queue.list() or []):
         if str(getattr(request, "decision_type", "") or "") == str(decision_type):
@@ -246,6 +254,18 @@ def test_deceptors_stratagem_descriptors_registered():
         assert by_id.name == name
         assert by_name is not None
         assert by_name.stratagem_id == stratagem_id
+
+
+def test_coils_of_deception_is_not_phase_available_without_fall_back_trigger():
+    game, csm_player, _enemy_player, _csm_army, _enemy_army = _build_game()
+
+    _set_phase(game, csm_player, "MOVEMENT_PHASE", 0)
+
+    item = _phase_item_by_name(csm_player.stratagems, "COILS OF DECEPTION")
+    assert item is not None
+    assert item["available"] is False
+    assert item["reason"] == "No trigger"
+    assert item["is_reaction"] is False
 
 
 def test_coils_of_deception_reacts_to_fall_back_grants_shooting_and_expires_at_turn_end():

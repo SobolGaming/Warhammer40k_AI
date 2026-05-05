@@ -107,6 +107,9 @@ Default shooting policy:
 - Selected-to-fight stratagems such as Imperial Agents Veiled Blade `PRIME TARGET` are exposed from the
   `fight_unit_selected` reaction window, not from broad Fight phase scans, so Fight phase records are not
   polluted by stratagem prompts when no unit has actually been selected to fight.
+- Chaos Space Marines Deceptors `COILS OF DECEPTION` and related Fall Back-only CSM stratagems are treated
+  as reaction-only tool actions, so broad Movement phase scans do not emit invalid options before a unit has
+  actually ended a Fall Back move.
 
 Pending-placement policy:
 - Headless `MOVE_UNIT` confirmations that represent pending model placement (for example Reanimation Protocols or other confirm-only deploy-style follow-up placements) now synthesize explicit `model_positions` before resolution.
