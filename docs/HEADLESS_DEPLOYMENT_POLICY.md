@@ -155,6 +155,10 @@ This document describes deterministic headless placement behavior for deployment
 - Units destroyed at the battle round 3 reserves cutoff emit
   `reserve_destroyed_round3` diagnostics with reserve provenance and the last
   failed placement reason, when one was recorded.
+- `scripts/run_headless_matchup_batch.py` keeps `reserve_destroyed_round3`
+  entries in the reserve-arrival diagnostic totals, but does not elevate that
+  documented warning into the `Errors / Bug Candidates` report section. Other
+  reserve-arrival diagnostics remain reportable bug candidates.
 
 ## Pregame Decision Surfaces
 

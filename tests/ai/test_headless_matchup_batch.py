@@ -77,3 +77,47 @@ def test_write_summary_records_match_stats_and_bug_candidates(tmp_path: Path) ->
     assert "Armies generated: 2 exact 2000-point rosters" in text
     assert "Aeldari / Warhost" in text
     assert "Stderr warning lines" in text
+
+
+def test_expected_reserve_cutoff_warning_is_not_a_bug_candidate() -> None:
+    mod = _load_script_module()
+
+    bugs = mod._bug_candidates_from_match(
+        {
+            "match_index": 7,
+            "player1": "Adeptus Mechanicus / Cohort Cybernetica",
+            "player2": "Thousand Sons / Warpforged Cabal",
+            "status": "completed",
+            "tool_probe_diagnostic_counts": {},
+            "reserve_arrival_diagnostic_counts": {"WARNING:reserve_destroyed_round3": 1},
+            "stderr_error_counts": {},
+        }
+    )
+
+    assert bugs == []
+
+
+def test_unexpected_reserve_diagnostic_is_a_bug_candidate() -> None:
+    mod = _load_script_module()
+
+    bugs = mod._bug_candidates_from_match(
+        {
+            "match_index": 8,
+            "player1": "Adeptus Mechanicus / Cohort Cybernetica",
+            "player2": "Thousand Sons / Warpforged Cabal",
+            "status": "completed",
+            "tool_probe_diagnostic_counts": {},
+            "reserve_arrival_diagnostic_counts": {
+                "WARNING:reserve_destroyed_round3": 1,
+                "WARNING:reserve_metadata_incomplete_post_deployment": 1,
+            },
+            "stderr_error_counts": {},
+            "report_path": "report.json",
+        }
+    )
+
+    assert len(bugs) == 1
+    assert bugs[0]["bug_candidate"] == "Completed game emitted structured diagnostics."
+    assert bugs[0]["reserve_arrival_diagnostic_counts"] == {
+        "WARNING:reserve_metadata_incomplete_post_deployment": 1,
+    }

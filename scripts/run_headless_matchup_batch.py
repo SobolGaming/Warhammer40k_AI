@@ -59,6 +59,12 @@ CHAPTER_BY_FACTION = {
     "Space Marines": "Ultramarines",
 }
 
+EXPECTED_RESERVE_ARRIVAL_DIAGNOSTICS = frozenset(
+    {
+        "WARNING:reserve_destroyed_round3",
+    }
+)
+
 
 @dataclass(frozen=True)
 class BatchPaths:
@@ -560,15 +566,21 @@ def _bug_candidates_from_match(match: dict[str, Any]) -> list[dict[str, Any]]:
                 "error_tail": _tail(Path(str(match.get("stderr_path", "") or ""))),
             }
         )
-    if match.get("tool_probe_diagnostic_counts") or match.get("reserve_arrival_diagnostic_counts"):
+    tool_probe_diagnostic_counts = dict(match.get("tool_probe_diagnostic_counts") or {})
+    reserve_arrival_diagnostic_counts = {
+        str(label): int(count or 0)
+        for label, count in dict(match.get("reserve_arrival_diagnostic_counts") or {}).items()
+        if str(label) not in EXPECTED_RESERVE_ARRIVAL_DIAGNOSTICS
+    }
+    if tool_probe_diagnostic_counts or reserve_arrival_diagnostic_counts:
         bugs.append(
             {
                 "match_index": int(match.get("match_index", 0) or 0),
                 "player1": str(match.get("player1", "") or ""),
                 "player2": str(match.get("player2", "") or ""),
                 "bug_candidate": "Completed game emitted structured diagnostics.",
-                "tool_probe_diagnostic_counts": dict(match.get("tool_probe_diagnostic_counts") or {}),
-                "reserve_arrival_diagnostic_counts": dict(match.get("reserve_arrival_diagnostic_counts") or {}),
+                "tool_probe_diagnostic_counts": tool_probe_diagnostic_counts,
+                "reserve_arrival_diagnostic_counts": reserve_arrival_diagnostic_counts,
                 "report_path": str(match.get("report_path", "") or ""),
             }
         )
