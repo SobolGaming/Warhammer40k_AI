@@ -400,6 +400,63 @@ class TestAeldariSeerCouncilStratagems(unittest.TestCase):
             any("FATE INESCAPABLE" in str(effect or "").upper() for effect in list(save_result.get("special_effects") or []))
         )
 
+    def test_seer_council_phase_items_include_target_context(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Farseer",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        infantry = _make_unit(
+            "Guardian Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "GUARDIANS"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        aeldari_army.add_unit(infantry)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, infantry, 13.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+
+        _set_phase(game, p2, "COMMAND_PHASE", 1)
+        presentiment_item = next(
+            item
+            for item in list(p1.stratagems.get_phase_stratagem_items() or [])
+            if item["name"] == "PRESENTIMENT OF DREAD" and item["is_reaction"] is True
+        )
+        presentiment_context = dict(presentiment_item.get("context") or {})
+        self.assertEqual(presentiment_context["candidates"], [psyker])
+        self.assertEqual(presentiment_context["enemy_candidates"], [enemy])
+        self.assertEqual(list(presentiment_context["enemy_candidates_by_unit"].values()), [[enemy]])
+        self.assertEqual(list(presentiment_context["model_candidates_by_unit"].values()), [[psyker.models[0]]])
+        specs = p1.stratagems._build_tool_action_specs_for_item(presentiment_item)
+        self.assertEqual(len(specs), 1)
+        payload = dict(specs[0]["payload"])
+        resolved = dict(payload.get("resolved_kwargs") or {})
+        self.assertEqual(resolved["model"]["__entity_ref__"]["id"], get_entity_id(psyker.models[0]))
+        self.assertEqual(resolved["enemy_unit"]["__entity_ref__"]["id"], get_entity_id(enemy))
+        self.assertEqual(p1.stratagems.get_tool_action_probe_diagnostics(), [])
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        fate_item = next(
+            item
+            for item in list(p1.stratagems.get_phase_stratagem_items() or [])
+            if item["name"] == "FATE INESCAPABLE" and item["is_reaction"] is False
+        )
+        self.assertIn(infantry, list(dict(fate_item.get("context") or {}).get("candidates") or []))
+
     def test_psychic_shield_queues_and_applies_ranged_targeting_cap(self):
         game, p1, p2, aeldari_army, enemy_army = _build_game()
         psyker = _make_unit(

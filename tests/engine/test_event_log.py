@@ -22,6 +22,23 @@ class _Entity:
         self.name = name
 
 
+class _ExpensiveRepr:
+    def __repr__(self):
+        raise AssertionError("event logging should not format payload reprs")
+
+
+def test_event_publish_info_log_does_not_repr_payload(monkeypatch):
+    from warhammer40k_ai.engine.event import system as event_system_module
+
+    calls = []
+    monkeypatch.setattr(event_system_module.logger, "isEnabledFor", lambda _level: True)
+    monkeypatch.setattr(event_system_module.logger, "info", lambda *args, **_kwargs: calls.append(args))
+
+    EventSystem().publish("model_destroyed_before_removal", model=_ExpensiveRepr())
+
+    assert calls == [("Event publish: %s -> keys=%s", "model_destroyed_before_removal", ["model"])]
+
+
 def test_dice_roll_replay_from_event_log():
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1

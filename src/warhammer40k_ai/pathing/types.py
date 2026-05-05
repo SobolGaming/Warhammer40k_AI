@@ -73,6 +73,7 @@ class PathQuery:
     exact_refine_safety_margin: float = 0.1
     goal_facing: Optional[float] = None
     sweep_require_vertical_overlap: bool = False
+    direct_only: bool = False
 
 
 @dataclass(frozen=True, eq=False)

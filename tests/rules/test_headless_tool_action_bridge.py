@@ -751,6 +751,8 @@ def test_headless_core_reaction_stratagems_emit_tool_actions_with_cp_and_trigger
     payloads = _tool_payloads(request)
     assert [payload["tool_name"] for payload in payloads] == [name]
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
+    if name == "HEROIC INTERVENTION":
+        assert payloads[0]["resolved_kwargs"]["charge_path_direct_only"] is True
 
 
 def test_tool_action_sort_key_accepts_string_helper_map_keys() -> None:
@@ -1483,6 +1485,43 @@ def test_maybe_queue_post_command_tool_decisions_prioritizes_reactions_before_ph
         ("current", True),
         ("current", False),
     ]
+
+
+def test_maybe_queue_post_command_tool_decisions_skips_setup() -> None:
+    calls: list[bool] = []
+    current_player = SimpleNamespace(
+        id="player:current",
+        stratagems=SimpleNamespace(
+            queue_headless_tool_action_decision=lambda *, reactions_only=False: calls.append(bool(reactions_only))
+        ),
+    )
+    dummy_game = SimpleNamespace(
+        is_authoritative=True,
+        setup_complete=False,
+        players=[current_player],
+        decision_queue=DecisionQueue(),
+        get_current_player=lambda: current_player,
+    )
+
+    assert Game._maybe_queue_post_command_tool_decisions(dummy_game, None, SimpleNamespace(ok=True)) is False
+    assert calls == []
+
+
+def test_tool_action_can_use_filters_stale_once_per_phase_stratagem() -> None:
+    stratagem = SimpleNamespace(
+        name="PRESENTIMENT OF DREAD",
+        can_use=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("stale once-per-phase tool action should be filtered before stratagem.can_use")
+        ),
+    )
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = SimpleNamespace()
+    manager.player = SimpleNamespace()
+    manager._current_phase_name = "Command phase"
+    manager._used_stratagems_this_phase = {"PRESENTIMENT OF DREAD"}
+    manager.get_by_name = lambda _name: stratagem
+
+    assert manager.can_use("PRESENTIMENT OF DREAD", phase_name="Command phase") is False
 
 
 def test_overwatch_queue_skips_expensive_candidate_scan_without_tool_controller() -> None:

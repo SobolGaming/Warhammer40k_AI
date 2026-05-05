@@ -1247,6 +1247,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CYBERSPIRIT MACHINATIONS",
     "STRANDS OF TIME",
     "THROUGH THE VEIL",
+    "UNSHROUDED TRUTH",
     "TANGLEFOOT GRENADES",
     "TITANIC DUEL",
     "WRATH OF THE DOOMED",
@@ -1272,6 +1273,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INTO DARKNESS",
     "NEW ORDERS",
     "PEERLESS WARRIOR",
+    "PRESENTIMENT OF DREAD",
     "RAPID EMBARKATION",
     "RAPID INGRESS",
     "RAPID FEINT",
@@ -4397,6 +4399,8 @@ class StratagemManager(
             return
         if validation.issues:
             return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() == "HEROIC INTERVENTION":
+            probe["charge_path_direct_only"] = True
         serialized_kwargs = self._serialize_tool_action_value(probe)
         stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         if stable_payload in seen:
@@ -4531,6 +4535,7 @@ class StratagemManager(
             "_build_orks_tool_action_specs_for_item",
             "_build_astra_militarum_tool_action_specs_for_item",
             "_build_world_eaters_tool_action_specs_for_item",
+            "_build_aeldari_tool_action_specs_for_item",
         ):
             specialized_builder = getattr(self, specialized_name, None)
             if callable(specialized_builder):
@@ -6595,6 +6600,38 @@ class StratagemManager(
 
     def _stratagem_application_ledger(self) -> StratagemApplicationLedger:
         return StratagemApplicationLedger(self)
+
+    def _stratagem_repeat_available_this_phase(self, name_u: str, kwargs: Dict[str, Any]) -> bool:
+        key = self._normalize_stratagem_name(name_u or "")
+        if not key or key not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return True
+        if key == "COMMAND RE-ROLL":
+            return self._command_reroll_repeat_allowed(
+                target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                candidates=kwargs.get("candidates"),
+            )
+        if key == "HEROIC INTERVENTION":
+            return self._heroic_intervention_repeat_allowed(
+                target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                candidates=kwargs.get("candidates"),
+                enemy_unit=kwargs.get("enemy_unit"),
+            )
+        if key == "RAPID INGRESS":
+            return self._rapid_ingress_repeat_allowed(
+                target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                candidates=kwargs.get("candidates"),
+            )
+        if key == "COUNTER-OFFENSIVE":
+            return self._counter_offensive_daemonforge_available(
+                target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                candidates=kwargs.get("candidates"),
+            )
+        if key == "GRENADE":
+            return self._grenade_repeat_allowed(
+                target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                candidates=kwargs.get("candidates"),
+            )
+        return False
 
     def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None, enemy_unit=None) -> bool:
         ledger = self._stratagem_application_ledger()
@@ -23670,6 +23707,9 @@ class StratagemManager(
         name_u = self._normalize_stratagem_name(s.name or "")
         if self._stratagem_once_per_battle_used(s):
             return False
+        phase_name = kwargs.get("phase_name") or self._current_phase_name
+        if phase_name and not self._stratagem_repeat_available_this_phase(name_u, kwargs):
+            return False
         if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
             kwargs = self._awakened_dynasty_undying_legions_preflight_context(kwargs)
         if name_u == "DENIZENS OF THE WARP" and not self._can_use_denizens_of_warp(kwargs):
@@ -26169,6 +26209,27 @@ class StratagemManager(
                     return False
             except Exception:
                 raise
+            direct_only_charge_path = bool(kwargs.get("charge_path_direct_only", False))
+            if direct_only_charge_path:
+                get_max_charge_distance = getattr(self.game, "get_max_charge_distance", None)
+                max_charge_distance = 12.0
+                if callable(get_max_charge_distance):
+                    max_charge_distance = float(get_max_charge_distance(unit, target_unit=enemy))
+                find_destination = getattr(self.game, "_find_charge_destination", None)
+                if callable(find_destination):
+                    destination = find_destination(
+                        unit,
+                        enemy,
+                        max_distance=float(max_charge_distance),
+                        max_pairs=1,
+                        direct_only=True,
+                    )
+                    if destination is None:
+                        logger.info(
+                            "INFO: Heroic Intervention: no direct headless charge path available for %s.",
+                            getattr(unit, "name", "Unit"),
+                        )
+                        return False
             eff_cost = s.cp_cost
             apply_info = {}
             try:
@@ -26193,7 +26254,15 @@ class StratagemManager(
                             source=str(apply_info.get("visions_of_heresy_source", "") or ""),
                             stratagem_name=str(getattr(s, "name", "") or ""),
                         )
-                ok = bool(self.game.attempt_charge(unit, enemy, out_of_turn=True, count_as_charged=False))
+                ok = bool(
+                    self.game.attempt_charge(
+                        unit,
+                        enemy,
+                        out_of_turn=True,
+                        count_as_charged=False,
+                        direct_only=direct_only_charge_path,
+                    )
+                )
             except Exception:
                 raise
             finally:
@@ -26209,7 +26278,7 @@ class StratagemManager(
             except Exception:
                 raise
             if not ok:
-                logger.error("ERROR: Heroic Intervention: charge failed")
+                logger.info("INFO: Heroic Intervention: charge failed")
             return True
 
         # Drukhari (Spectacle of Spite): A CHALLENGE MET
@@ -32595,6 +32664,15 @@ class StratagemManager(
             "WARRIOR FOCUS",
         }:
             return dict(self._aeldari_aspect_host_tool_action_context(name_u, phase_name=phase_label) or {})
+        aeldari_seer_context_fn = getattr(self, "_aeldari_seer_council_tool_action_context", None)
+        if callable(aeldari_seer_context_fn):
+            aeldari_seer_context = aeldari_seer_context_fn(
+                name_u,
+                phase_name=phase_label,
+                is_active_turn=bool(is_active_turn),
+            )
+            if aeldari_seer_context is not None:
+                return dict(aeldari_seer_context)
         if not is_active_turn:
             return {}
         if name_u == "AUTO-DIVINATORY TARGETING":

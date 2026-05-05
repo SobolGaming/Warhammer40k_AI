@@ -203,6 +203,7 @@ class ChargeService:
         max_distance: float,
         max_pairs: int | None = None,
         max_candidates_per_pair: int | None = None,
+        direct_only: bool = False,
     ) -> tuple[float, float, float] | None:
         if charging_unit is None or target_unit is None:
             return None
@@ -251,6 +252,7 @@ class ChargeService:
                         prefer_constrained=False,
                         enable_exact_refine=False,
                         exact_refine_max_paths=1,
+                        direct_only=bool(direct_only),
                     )
                 )
                 if not bool(getattr(path_result, "valid", False)):
@@ -1186,6 +1188,7 @@ class ChargeService:
         *,
         out_of_turn: bool = False,
         count_as_charged: bool = True,
+        direct_only: bool = False,
     ) -> bool:
         """Attempt a charge move with the given unit against the target.
 
@@ -1222,9 +1225,9 @@ class ChargeService:
 
         # CRITICAL RULE: If charge roll is insufficient, charge fails and no models move
         if charge_roll < distance_needed:
-            logger.error(f"Charge failed: roll {charge_roll}\" insufficient to reach within 1\" "
+            logger.info(f"Charge failed: roll {charge_roll}\" insufficient to reach within 1\" "
                 f"(needed {distance_needed:.1f}\")")
-            logger.error("Charge failed: no models move")
+            logger.info("Charge failed: no models move")
             return False
 
         # CRITICAL: Store original model positions BEFORE attempting movement
@@ -1237,9 +1240,10 @@ class ChargeService:
             charging_unit,
             target_unit,
             max_distance=float(charge_roll),
+            direct_only=bool(direct_only),
         )
         if destination is None:
-            logger.error("Charge failed: no legal routed destination within charge distance")
+            logger.info("Charge failed: no legal routed destination within charge distance")
             return False
 
         # Attempt to move the unit with special charge movement logic
@@ -1258,11 +1262,11 @@ class ChargeService:
                 logger.info(f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
                     f"edge-to-edge distance with {target_unit.name}")
                 return True
-            logger.error(f"Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge "
+            logger.info(f"Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge "
                 f"distance (not <= 1.0\") with {target_unit.name}")
             # CRITICAL: Revert all model positions if charge failed to achieve engagement range
             # This ensures that NO MODELS MOVE when a charge fails
-            logger.error("Charge failed: reverting all model positions - no models should move on failed charge")
+            logger.info("Charge failed: reverting all model positions - no models should move on failed charge")
 
             # Restore original positions
             for i, original_pos in enumerate(original_model_positions):
@@ -1272,9 +1276,9 @@ class ChargeService:
             # Unit position is now derived from model positions, no need to restore
 
             return False
-        logger.error("Charge failed: could not move unit")
+        logger.info("Charge failed: could not move unit")
         # CRITICAL: Restore original positions if charge_move failed completely
-        logger.error("Charge failed: reverting all model positions - no models should move on failed charge")
+        logger.info("Charge failed: reverting all model positions - no models should move on failed charge")
 
         # Restore original positions
         for i, original_pos in enumerate(original_model_positions):

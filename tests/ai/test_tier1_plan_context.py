@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.tier1_plan import _unit_priority_tiers
 from warhammer40k_ai.roster.player import Player
+
+
+class _ModelWithExpensiveMovement:
+    _movement = 12
+
+    @property
+    def movement(self) -> int:
+        raise AssertionError("Tier1 planning should use cached _movement when present")
 
 
 def _build_game() -> tuple[Game, Player, Player]:
@@ -51,3 +62,12 @@ def test_tier1_plan_exists_at_command_phase_start() -> None:
     game.start_command_phase()
     plan = game.get_or_create_tier1_plan(p1.id)
     assert str(plan.plan_id)
+
+
+def test_tier1_unit_priority_uses_cached_model_movement() -> None:
+    unit = SimpleNamespace(id="unit:fast", deployed=True, models=[_ModelWithExpensiveMovement()])
+    player = SimpleNamespace(army=SimpleNamespace(units=[unit]))
+
+    tiers = _unit_priority_tiers(player)
+
+    assert tiers["P0"] == ["unit:fast"]

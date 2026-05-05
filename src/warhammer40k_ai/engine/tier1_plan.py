@@ -145,7 +145,9 @@ def _unit_priority_tiers(player: object) -> dict[str, list[str]]:
             continue
         max_move = 0
         for model in list(getattr(unit, "models", []) or []):
-            value = getattr(model, "_movement", getattr(model, "movement", 0))
+            value = getattr(model, "_movement", None)
+            if value is None:
+                value = getattr(model, "movement", 0)
             try:
                 max_move = max(max_move, int(value or 0))
             except (TypeError, ValueError):

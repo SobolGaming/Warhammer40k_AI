@@ -1251,6 +1251,141 @@ class AeldariStratagemMixin:
     def _aeldari_seer_forewarned_candidates(self, *, target_units: List[Any]) -> List[Any]:
         return self._aeldari_seer_defensive_infantry_candidates(target_units=target_units)
 
+    def _aeldari_seer_alive_model_candidates(self, unit: Any) -> List[Any]:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        out: List[Any] = []
+        for model in models:
+            if model is None:
+                continue
+            alive = getattr(model, "is_alive", True)
+            if callable(alive):
+                alive = alive()
+            if not bool(alive):
+                continue
+            out.append(model)
+        return sorted(out, key=lambda model: str(get_entity_id(model) or getattr(model, "name", "") or ""))
+
+    def _aeldari_seer_council_tool_action_context(
+        self,
+        stratagem_name: str,
+        *,
+        phase_name: str = "",
+        is_active_turn: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._is_seer_council_detachment():
+            return None
+        name_u = self._aeldari_norm_name(stratagem_name)
+        phase_key = str(phase_name or "").strip().lower()
+
+        if name_u == "PRESENTIMENT OF DREAD":
+            if phase_key != "command phase":
+                return {
+                    "candidates": [],
+                    "enemy_candidates": [],
+                    "enemy_candidates_by_unit": {},
+                    "model_candidates_by_unit": {},
+                }
+            candidates = self._aeldari_seer_presentiment_psyker_candidates()
+            enemy_by_unit: Dict[str, List[Any]] = {}
+            model_by_unit: Dict[str, List[Any]] = {}
+            enemy_candidates: List[Any] = []
+            seen_enemies: set[str] = set()
+            for candidate in candidates:
+                unit_key = self._aeldari_sort_key(candidate)
+                enemies = self._aeldari_seer_presentiment_enemy_candidates(candidate)
+                enemy_by_unit[unit_key] = list(enemies)
+                model_by_unit[unit_key] = self._aeldari_seer_alive_model_candidates(candidate)
+                for enemy in enemies:
+                    enemy_key = self._aeldari_sort_key(enemy)
+                    if enemy_key and enemy_key in seen_enemies:
+                        continue
+                    if enemy_key:
+                        seen_enemies.add(enemy_key)
+                    enemy_candidates.append(enemy)
+            enemy_candidates.sort(key=self._aeldari_sort_key)
+            return {
+                "candidates": candidates,
+                "enemy_candidates": enemy_candidates,
+                "enemy_candidates_by_unit": enemy_by_unit,
+                "model_candidates_by_unit": model_by_unit,
+            }
+
+        if name_u == "FATE INESCAPABLE":
+            if phase_key != "shooting phase" or not bool(is_active_turn):
+                return {"candidates": []}
+            return {"candidates": self._aeldari_seer_fate_inescapable_candidates()}
+
+        if name_u == "UNSHROUDED TRUTH":
+            if phase_key != "movement phase" or not bool(is_active_turn):
+                return {"candidates": []}
+            return {"candidates": self._aeldari_seer_unshrouded_truth_candidates()}
+
+        return None
+
+    def _build_aeldari_tool_action_specs_for_item(
+        self,
+        *,
+        item: Dict[str, Any],
+        stratagem: Any,
+        base_ctx: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u != "PRESENTIMENT OF DREAD":
+            return None
+
+        original_ctx = dict(item.get("context", {}) or {})
+        explicit_unit = base_ctx.get("unit") or base_ctx.get("target_unit")
+        explicit_enemy = base_ctx.get("enemy_unit") or base_ctx.get("target_enemy_unit")
+        explicit_model = base_ctx.get("model") or base_ctx.get("target_model")
+        source_units = [explicit_unit] if explicit_unit is not None else list(original_ctx.get("candidates") or [])
+        source_units = self._tool_action_root_units(source_units)
+        enemy_by_unit = dict(original_ctx.get("enemy_candidates_by_unit") or {})
+        model_by_unit = dict(original_ctx.get("model_candidates_by_unit") or {})
+        specs: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for source_unit in source_units:
+            if source_unit is None:
+                continue
+            unit_key = self._tool_action_sort_key(source_unit)
+            models = [explicit_model] if explicit_model is not None else list(model_by_unit.get(unit_key) or [])
+            if not models:
+                models = self._aeldari_seer_alive_model_candidates(source_unit)
+            enemies = [explicit_enemy] if explicit_enemy is not None else list(enemy_by_unit.get(unit_key) or [])
+            if not enemies:
+                enemies = list(original_ctx.get("enemy_candidates") or [])
+            models = [model for model in models if model is not None]
+            enemies = [enemy for enemy in enemies if enemy is not None]
+            models.sort(key=lambda model: str(get_entity_id(model) or getattr(model, "name", "") or ""))
+            enemies.sort(key=self._tool_action_sort_key)
+            for model in models:
+                for enemy_unit in enemies:
+                    self._tool_action_add_probe(
+                        specs=specs,
+                        seen=seen,
+                        stratagem=stratagem,
+                        item=item,
+                        kwargs={
+                            **base_ctx,
+                            "unit": source_unit,
+                            "target_unit": source_unit,
+                            "model": model,
+                            "target_model": model,
+                            "enemy_unit": enemy_unit,
+                            "target_enemy_unit": enemy_unit,
+                        },
+                        label_suffix=(
+                            f"{self._tool_action_label_value(model)} vs "
+                            f"{self._tool_action_label_value(enemy_unit)}"
+                        ),
+                    )
+
+        return specs
+
     def _aeldari_devoted_ynnari_candidates(
         self,
         *,
@@ -1856,10 +1991,30 @@ class AeldariStratagemMixin:
                 "cp_cost": stratagem.cp_cost,
                 "candidates": candidates,
             }
+            model_candidates_by_unit: Dict[str, List[Any]] = {}
+            for candidate in candidates:
+                model_candidates_by_unit[self._aeldari_sort_key(candidate)] = (
+                    self._aeldari_seer_alive_model_candidates(candidate)
+                )
+            if model_candidates_by_unit:
+                payload["model_candidates_by_unit"] = model_candidates_by_unit
+            enemy_candidates_by_unit: Dict[str, List[Any]] = {}
+            for candidate in candidates:
+                enemy_candidates_by_unit[self._aeldari_sort_key(candidate)] = (
+                    self._aeldari_seer_presentiment_enemy_candidates(candidate)
+                )
+            if enemy_candidates_by_unit:
+                payload["enemy_candidates_by_unit"] = enemy_candidates_by_unit
             if len(candidates) == 1:
                 payload["unit"] = candidates[0]
                 payload["target_unit"] = candidates[0]
-                enemy_candidates = self._aeldari_seer_presentiment_enemy_candidates(candidates[0])
+                model_candidates = list(model_candidates_by_unit.get(self._aeldari_sort_key(candidates[0])) or [])
+                if model_candidates:
+                    payload["model_candidates"] = model_candidates
+                    if len(model_candidates) == 1:
+                        payload["model"] = model_candidates[0]
+                        payload["target_model"] = model_candidates[0]
+                enemy_candidates = list(enemy_candidates_by_unit.get(self._aeldari_sort_key(candidates[0])) or [])
                 if enemy_candidates:
                     payload["enemy_candidates"] = enemy_candidates
                     if len(enemy_candidates) == 1:

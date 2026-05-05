@@ -50,10 +50,12 @@ class EventSystem:
         return bool(self._group_enabled.get(group, True))
 
     def publish(self, event_name: str, *, _target_groups: Iterable[str] | None = None, **kwargs):
-        try:
-            logger.info(f"Event publish: {event_name} -> {kwargs}")
-        except Exception:
-            pass
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Event publish: %s -> keys=%s",
+                event_name,
+                sorted(str(key) for key in kwargs.keys()),
+            )
         lifecycle = getattr(self, "lifecycle", None)
         if lifecycle is not None:
             try:

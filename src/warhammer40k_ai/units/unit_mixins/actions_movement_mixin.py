@@ -17938,7 +17938,7 @@ class ActionsMovementMixin:
                     else:
                         logger.debug(f"Model {model._id} cannot charge to formation position - pathfinding failed")
             else:
-                logger.error(f"{self.name} charge failed - no valid formation found, trying individual positioning")
+                logger.info(f"{self.name} charge failed - no valid formation found, trying individual positioning")
 
             # If formation failed or had limited success, try individual model positioning
             if successful_moves < len(self.models) // 2:  # If less than half succeeded
@@ -18058,7 +18058,7 @@ class ActionsMovementMixin:
                         continue
                     # Check if this model's base overlaps with the friendly model's base
                     if model.model_base.collides_with(friendly_model.model_base):
-                        logger.error(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
+                        logger.info(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):

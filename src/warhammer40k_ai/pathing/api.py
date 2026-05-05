@@ -653,6 +653,17 @@ def plan_model_path(query: PathQuery) -> PathResult:
                     failure_reason=None,
                     debug_artifacts=debug_artifacts,
                 )
+    if bool(getattr(query, "direct_only", False)):
+        return PathResult(
+            valid=False,
+            poses=(),
+            waypoints=(),
+            distance_cost=0.0,
+            pivot_cost=0.0,
+            used_exact_refiner=False,
+            failure_reason="No legal direct path found",
+            debug_artifacts={"path_mode": "direct_only"} if query.debug_enabled else {},
+        )
     world_snapshot = build_world_snapshot(query.game_map, movement_profile, moving_model=model)
     dynamic_overlay = build_dynamic_overlay(
         query.game_map,

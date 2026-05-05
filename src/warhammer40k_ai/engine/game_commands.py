@@ -127,6 +127,8 @@ class GameCommandService:
             return False
         if not bool(getattr(result, "ok", False)):
             return False
+        if not bool(getattr(game, "setup_complete", True)):
+            return False
         queue = getattr(game, "decision_queue", None)
         list_fn = getattr(queue, "list", None) if queue is not None else None
         if callable(list_fn) and list(list_fn() or []):

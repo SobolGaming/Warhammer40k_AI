@@ -103,6 +103,9 @@ Default shooting policy:
   optional empty-selection windows with their skip option instead of attempting an invalid empty confirm.
 - Genestealer Cults Outlander Claw `CLOSE-RANGE SHOOT-OUT` derives eligible Mounted/Vehicle units that have not been selected to shoot before exposing the generic stratagem tool action, so target-required options are not emitted without a bound unit.
 - Core `GRENADE` and `TANK SHOCK` expose one generic stratagem tool action per legal unit/enemy binding when CP is available, including windows with multiple legal enemy targets.
+- Automatic headless `HEROIC INTERVENTION` tool actions are bounded to direct charge routes, avoiding expensive opportunistic routed-path searches during reaction probes.
+- Aeldari Seer Council phase items populate legal source, model, enemy, and shooting-target context for `PRESENTIMENT OF DREAD`, `FATE INESCAPABLE`, and `UNSHROUDED TRUTH` before any headless tool-action preflight.
+- Post-command headless stratagem tool-action scans are gated until setup is complete, so deployment commands cannot trigger normal battle-phase stratagem candidate generation through the default command-phase placeholder.
 - T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.
 - Selected-to-fight stratagems such as Imperial Agents Veiled Blade `PRIME TARGET` are exposed from the
   `fight_unit_selected` reaction window, not from broad Fight phase scans, so Fight phase records are not
@@ -127,6 +130,7 @@ Logging controls:
 - `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.
 - Battle-shock failure status lines and Shadow of Chaos Daemonic Terror mortal-wound resolution also log at `DEBUG`, not `ERROR`.
+- Failed charge movement, including automatic headless Heroic Intervention attempts, logs below `WARNING`; failed charges are normal game outcomes, not engine errors.
 - Deadly Demise parameters that are fixed numbers, for example `Deadly Demise 1`, are treated as fixed
   mortal-wound damage instead of dice expressions.
 - `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.
