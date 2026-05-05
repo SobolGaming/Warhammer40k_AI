@@ -520,6 +520,34 @@ def test_resolve_wave_serpent_compound_override_uses_base_or_hull_footprint():
     assert wave_distance == pytest.approx(0.0, abs=1e-6)
 
 
+def test_resolve_heldrake_uses_complete_footprint_bounding_rectangle():
+    parsed_radius = _parse_flying_base_size("120 x 92mm flying base")[1]
+    resolved = resolve_model_geometry(
+        datasheet_id="000000961",
+        datasheet_name="Heldrake",
+        model_name="Heldrake",
+        unit_keywords=["Vehicle", "Aircraft", "Chaos"],
+        parsed_base_type=BaseType.ELLIPTICAL,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+    )
+
+    assert resolved.geometry_source == "geometry_override:heldrake_hull"
+    assert resolved.base_type == BaseType.HULL
+    assert len(resolved.compound_parts) == 2
+    parts = {part["part_id"]: part for part in resolved.compound_parts}
+    support = parts["support_base"]
+    hull = parts["hull_proxy"]
+    assert support["shape"] == "ellipse"
+    assert support["radius"][0] == pytest.approx(convert_mm_to_inches(120.0) / 2.0, abs=1e-4)
+    assert support["radius"][1] == pytest.approx(convert_mm_to_inches(92.0) / 2.0, abs=1e-4)
+    assert hull["shape"] == "hull"
+    assert hull["radius"][0] == pytest.approx(5.0, abs=1e-4)
+    assert hull["radius"][1] == pytest.approx(3.75, abs=1e-4)
+    assert resolved.radius[0] == pytest.approx(5.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(3.75, abs=1e-4)
+
+
 def test_clone_base_preserves_compound_geometry():
     compound = Base(BaseType.HULL, (0.5, 0.5))
     compound.set_compound_parts(

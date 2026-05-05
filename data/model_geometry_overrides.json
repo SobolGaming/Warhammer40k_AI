@@ -1829,10 +1829,10 @@
       "type": "flying_hull",
       "rules_footprint": "closest_of_base_or_hull",
       "support_base": {"shape": "ellipse", "major_mm": 120.0, "minor_mm": 92.0},
-      "length_mm": 191.0,
-      "width_mm": 254.0,
+      "length_mm": 254.0,
+      "width_mm": 190.5,
       "height_mm": 110.0,
-      "notes": "Compound support-base plus hull proxy for Heldrakes across Chaos Space Marines, Thousand Sons, World Eaters, and Emperor's Children. The support part preserves the 120 x 92mm flying base; the hull proxy uses community model measurements of about 7.5in head-to-tail and 10in wingtip-to-wingtip. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf, https://www.reddit.com/r/Warhammer40k/comments/1cvkqnt, and https://wh40k.lexicanum.com/wiki/Heldrake"
+      "notes": "Compound support-base plus hull proxy for Heldrakes across Chaos Space Marines, Thousand Sons, World Eaters, and Emperor's Children. The support part preserves the 120 x 92mm flying base; the hull proxy uses the developer-provided simplified complete footprint: an irregular physical silhouette represented as a 10in x 7.5in bounding rectangle. Sources: https://assets.warhammer-community.com/eng_4-xglmycxyvf.pdf"
     },
     "blue_scribes_hull": {
       "display_name": "The Blue Scribes",

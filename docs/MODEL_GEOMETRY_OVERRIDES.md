@@ -90,6 +90,7 @@ placement/movement legality.
 - `Hammerfall Bunker`, `Tidewall Droneport` / `Tidewall Shieldline` / `Tidewall Gunrig` (manual hull rectangles)
 - `Catacomb Command Barge` / `Annihilation Barge`, `Triarch Stalker`, and `Convergence Of Dominion` Starsteles (manual hull rectangles)
 - `Feculent Gnarlmaw`, `Noctilith Crown`, `Skull Altar`, and `Miasmic Malignifier` (manual hull rectangles)
+- `Heldrake` (120 x 92mm support base plus developer-provided 10in x 7.5in complete-footprint hull proxy)
 - all in-scope published `* flying base` datasheets (compound support-base + hull proxy footprints for closest-of-base-or-hull measurement)
 
 Vehicle hull overrides use source notes embedded in `data/model_geometry_overrides.json`. Where only
