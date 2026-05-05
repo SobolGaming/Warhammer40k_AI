@@ -79,9 +79,10 @@ This document describes deterministic headless placement behavior for deployment
     - units in Strategic Reserves that can also Deep Strike search edge-band zones first, then battlefield Deep Strike zones.
   - Strategic reserves:
     - edge-biased anchors around preferred edge offsets;
-    - large single-model bases that cannot fit wholly within 6" of a battlefield edge use exact
-      base-touching edge offsets, and along-edge anchors are inset by the model footprint so the
-      generated payload is not clipped by the battlefield boundary;
+    - large single-model bases use orientation-aware edge offsets from the model's actual circular,
+      oval, hull, or compound footprint bounds instead of a generic longest-radius offset; when the
+      oriented perpendicular footprint cannot fit wholly within 6", generated anchors touch the
+      battlefield edge exactly without clipping over it or drifting away from it;
     - those large edge-touch arrivals add a bounded dense along-edge scan before staggered fallback
       so aircraft can find narrow legal gaps around terrain and deployed models;
     - battle round 2 Strategic Reserves arrivals reject any placement whose model base has

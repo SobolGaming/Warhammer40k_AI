@@ -11,6 +11,7 @@ from .reserve_entry_geometry import (
     is_valid_strategic_reserves_edge,
     model_radius,
     prospective_positions_from_model_payload,
+    strategic_edge_footprint_metrics,
     strategic_reserves_edges,
 )
 from ..utility.entity_ids import get_entity_id
@@ -506,17 +507,40 @@ def _evaluate_reserves_arrival_prospective(
                     continue
             used_touch = False
             ok_all = True
-            for model, (x, y, z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+            for model, (x, y, z, facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+                metrics = strategic_edge_footprint_metrics(
+                    unit,
+                    model,
+                    x=float(x),
+                    y=float(y),
+                    z=float(z),
+                    facing=float(facing),
+                    battlefield_edge=str(edge),
+                    width=float(width),
+                    height=float(height),
+                )
+                if metrics is not None:
+                    if bool(metrics["overhangs_board"]):
+                        ok_all = False
+                        break
+                    if bool(metrics["within_six"]):
+                        continue
+                    if bool(metrics["requires_edge_touch"]) and bool(metrics["touches_edge"]):
+                        used_touch = True
+                        continue
+                    ok_all = False
+                    break
+
                 radius = float(model_radius(model))
                 distance = distance_to_battlefield_edge((x, y, z), edge, width=width, height=height)
                 max_center = 6.0 - radius
                 min_center = radius
                 if max_center + 1e-6 >= min_center:
-                    if distance > max_center + 1e-6:
+                    if distance + 1e-6 < min_center or distance > max_center + 1e-6:
                         ok_all = False
                         break
                     continue
-                if abs(distance - radius) > 0.25:
+                if distance + 1e-6 < radius or abs(distance - radius) > 0.25:
                     ok_all = False
                     break
                 used_touch = True

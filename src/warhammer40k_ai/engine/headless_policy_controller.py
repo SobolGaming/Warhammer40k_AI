@@ -37,6 +37,8 @@ from .placement_zone_heuristics import (
 from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
 from .reserve_entry_geometry import (
     is_valid_strategic_reserves_edge as _is_valid_strategic_reserves_edge,
+    strategic_edge_footprint_metrics as _strategic_edge_footprint_metrics,
+    strategic_edge_touch_offset_for_model as _strategic_edge_touch_offset_for_model,
     strategic_reserves_edges as _strategic_reserves_edges,
 )
 from .reserve_entry_rules import masters_of_void_enemy_dz_override_active
@@ -63,6 +65,8 @@ _HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
     "advance_redeploy_9h",
     "normal_move_redeploy_9h",
 }
+
+_STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE = 1e-4
 
 logger = logging.getLogger(__name__)
 
@@ -2174,7 +2178,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            strategic_edge_groups = list(self._strategic_edge_anchor_groups(unit, width=width, height=height) or [])
+            strategic_edge_groups = list(self._strategic_edge_anchor_groups(unit, width=width, height=height, game=game) or [])
             if strategic_edge_groups:
                 groups.append(strategic_edge_groups[0])
             groups.extend(
@@ -2647,12 +2651,195 @@ class HeadlessPolicyDecisionController(DecisionController):
         has_deep_strike = getattr(unit, "has_deep_strike", None)
         return bool(has_deep_strike()) if callable(has_deep_strike) else False
 
+    @staticmethod
+    def _alive_models_for_anchor_geometry(unit: object) -> list[object]:
+        models: list[object] = []
+        for model in list(getattr(unit, "models", []) or []):
+            alive_attr = getattr(model, "is_alive", True)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if alive:
+                models.append(model)
+        return models
+
+    def _strategic_anchor_facing(
+        self,
+        game: object | None,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+    ) -> float:
+        game_map = getattr(game, "map", None) if game is not None else None
+        calculate_facing = getattr(unit, "calculate_strategic_facing", None)
+        if callable(calculate_facing) and game_map is not None:
+            try:
+                return float(calculate_facing(float(x), float(y), game_map))
+            except (AttributeError, TypeError, ValueError):
+                pass
+        return float(math.atan2((float(height) * 0.5) - float(y), (float(width) * 0.5) - float(x)))
+
+    def _single_model_strategic_edge_metrics(
+        self,
+        game: object | None,
+        unit: object,
+        *,
+        edge: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        touch_tolerance: float = 0.25,
+    ) -> dict[str, float | bool] | None:
+        alive_models = self._alive_models_for_anchor_geometry(unit)
+        if len(alive_models) != 1:
+            return None
+        facing = self._strategic_anchor_facing(
+            game,
+            unit,
+            x=float(x),
+            y=float(y),
+            width=float(width),
+            height=float(height),
+        )
+        return _strategic_edge_footprint_metrics(
+            unit,
+            alive_models[0],
+            x=float(x),
+            y=float(y),
+            z=0.0,
+            facing=float(facing),
+            battlefield_edge=str(edge),
+            width=float(width),
+            height=float(height),
+            touch_tolerance=float(touch_tolerance),
+        )
+
+    @staticmethod
+    def _edge_point_from_offset(
+        edge: str,
+        *,
+        along: float,
+        edge_offset: float,
+        width: float,
+        height: float,
+    ) -> tuple[float, float]:
+        if edge == "own":
+            return (float(along), float(edge_offset))
+        if edge == "enemy":
+            return (float(along), max(0.0, float(height) - float(edge_offset)))
+        if edge == "left":
+            return (float(edge_offset), float(along))
+        return (max(0.0, float(width) - float(edge_offset)), float(along))
+
+    def _adjusted_strategic_edge_point(
+        self,
+        game: object | None,
+        unit: object,
+        *,
+        edge: str,
+        along: float,
+        edge_offset: float,
+        width: float,
+        height: float,
+    ) -> tuple[float, float]:
+        x, y = self._edge_point_from_offset(
+            edge,
+            along=float(along),
+            edge_offset=float(edge_offset),
+            width=float(width),
+            height=float(height),
+        )
+        alive_models = self._alive_models_for_anchor_geometry(unit)
+        if len(alive_models) != 1:
+            return (float(x), float(y))
+
+        for _ in range(2):
+            metrics = self._single_model_strategic_edge_metrics(
+                game,
+                unit,
+                edge=str(edge),
+                x=float(x),
+                y=float(y),
+                width=float(width),
+                height=float(height),
+                touch_tolerance=_STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE,
+            )
+            if metrics is None:
+                return (float(x), float(y))
+            if (
+                not bool(metrics["overhangs_board"])
+                and not bool(metrics["requires_edge_touch"])
+                and self._largest_model_radius(unit) <= 3.0
+            ):
+                return (float(x), float(y))
+            facing = self._strategic_anchor_facing(
+                game,
+                unit,
+                x=float(x),
+                y=float(y),
+                width=float(width),
+                height=float(height),
+            )
+            exact_offset = _strategic_edge_touch_offset_for_model(
+                unit,
+                alive_models[0],
+                battlefield_edge=str(edge),
+                facing=float(facing),
+            )
+            if exact_offset is None:
+                return (float(x), float(y))
+            adjusted = self._edge_point_from_offset(
+                edge,
+                along=float(along),
+                edge_offset=float(exact_offset),
+                width=float(width),
+                height=float(height),
+            )
+            if abs(adjusted[0] - x) <= 1e-4 and abs(adjusted[1] - y) <= 1e-4:
+                return (float(adjusted[0]), float(adjusted[1]))
+            x, y = adjusted
+        return (float(x), float(y))
+
+    def _strategic_edge_anchor_footprint_viable(
+        self,
+        game: object | None,
+        unit: object,
+        *,
+        edge: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+    ) -> bool:
+        metrics = self._single_model_strategic_edge_metrics(
+            game,
+            unit,
+            edge=str(edge),
+            x=float(x),
+            y=float(y),
+            width=float(width),
+            height=float(height),
+            touch_tolerance=_STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE,
+        )
+        if metrics is None:
+            return True
+        if bool(metrics["overhangs_board"]):
+            return False
+        if bool(metrics["requires_edge_touch"]):
+            return bool(metrics["touches_edge"])
+        if bool(metrics["within_six"]):
+            return True
+        return False
+
     def _strategic_edge_anchor_groups(
         self,
         unit: object,
         *,
         width: float,
         height: float,
+        game: object | None = None,
     ) -> list[tuple[str, list[tuple[float, float]]]]:
         along_step = self._strategic_edge_scan_step(unit, width=width, height=height)
         preferred_offset = self._strategic_edge_offset_preference(unit)
@@ -2681,17 +2868,39 @@ class HeadlessPolicyDecisionController(DecisionController):
             ]
             return filtered or [float(preferred_offset)]
 
+        def _append_edge_candidate(edge: str, along: float, edge_offset: float, out: list[tuple[float, float]]) -> None:
+            x, y = self._adjusted_strategic_edge_point(
+                game,
+                unit,
+                edge=str(edge),
+                along=float(along),
+                edge_offset=float(edge_offset),
+                width=float(width),
+                height=float(height),
+            )
+            if not self._strategic_edge_anchor_footprint_viable(
+                game,
+                unit,
+                edge=str(edge),
+                x=float(x),
+                y=float(y),
+                width=float(width),
+                height=float(height),
+            ):
+                return
+            out.append((float(x), float(y)))
+
         def _edge_band(step: float, offset_values: list[float], *, half_step: bool, out: list[tuple[float, float]]) -> None:
             axis_offset = (step / 2.0) if half_step else 0.0
             xs = self._axis_points(along_margin, width - along_margin, step=step, offset=axis_offset)
             ys = self._axis_points(along_margin, height - along_margin, step=step, offset=axis_offset)
             for edge_offset in list(offset_values or []):
                 for x in xs:
-                    out.append((float(x), float(edge_offset)))
-                    out.append((float(x), max(0.0, float(height) - float(edge_offset))))
+                    _append_edge_candidate("own", float(x), float(edge_offset), out)
+                    _append_edge_candidate("enemy", float(x), float(edge_offset), out)
                 for y in ys:
-                    out.append((float(edge_offset), float(y)))
-                    out.append((max(0.0, float(width) - float(edge_offset)), float(y)))
+                    _append_edge_candidate("left", float(y), float(edge_offset), out)
+                    _append_edge_candidate("right", float(y), float(edge_offset), out)
 
         offsets = _valid_edge_offsets(self._strategic_edge_offsets(preferred_offset))
         _edge_band(along_step, offsets[:4], half_step=False, out=primary)
@@ -2705,14 +2914,24 @@ class HeadlessPolicyDecisionController(DecisionController):
             half_step=False,
             out=fallback,
         )
-        fallback.extend(
-            [
-                (0.0, 0.0),
-                (0.0, float(height)),
-                (float(width), 0.0),
-                (float(width), float(height)),
-            ]
-        )
+        single_shape_metrics_available = self._single_model_strategic_edge_metrics(
+            game,
+            unit,
+            edge="own",
+            x=float(preferred_offset),
+            y=float(preferred_offset),
+            width=float(width),
+            height=float(height),
+        ) is not None
+        if len(self._alive_models_for_anchor_geometry(unit)) != 1 or not single_shape_metrics_available:
+            fallback.extend(
+                [
+                    (0.0, 0.0),
+                    (0.0, float(height)),
+                    (float(width), 0.0),
+                    (float(width), float(height)),
+                ]
+            )
         groups.append(("strategic_edge_band", primary))
         if edge_touch_dense:
             groups.append(("strategic_edge_touch_dense", edge_touch_dense))
@@ -2832,9 +3051,39 @@ class HeadlessPolicyDecisionController(DecisionController):
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if not in_strategic:
             return False
+        valid_edges = self._strategic_reserves_search_edges(game, unit)
+        single_model_metrics = [
+            metrics
+            for metrics in (
+                self._single_model_strategic_edge_metrics(
+                    game,
+                    unit,
+                    edge=str(edge),
+                    x=float(x),
+                    y=float(y),
+                    width=float(width),
+                    height=float(height),
+                    touch_tolerance=_STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE,
+                )
+                for edge in list(valid_edges or [])
+            )
+            if metrics is not None
+        ]
+        if single_model_metrics and bool(single_model_metrics[0]["overhangs_board"]):
+            return True
+        can_use_gap_search = self._strategic_reserves_can_use_gap_search(dict(_context or {}), unit)
+        if single_model_metrics and not can_use_gap_search:
+            edge_legal = any(
+                bool(metrics["touches_edge"])
+                if bool(metrics["requires_edge_touch"])
+                else bool(metrics["within_six"])
+                for metrics in single_model_metrics
+            )
+            if not edge_legal:
+                return True
         edge_dist = min(float(x), float(y), float(max(0.0, width - x)), float(max(0.0, height - y)))
         max_edge_band = 8.0 + float(footprint["radius"])
-        if edge_dist > max_edge_band and not self._strategic_reserves_can_use_gap_search(dict(_context or {}), unit):
+        if edge_dist > max_edge_band and not can_use_gap_search:
             return True
         return False
 

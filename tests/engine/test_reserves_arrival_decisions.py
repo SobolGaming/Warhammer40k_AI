@@ -15,6 +15,7 @@ from warhammer40k_ai.engine.game_mixins.missions_scoring_actions_mixin import (
 from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import (
     GameSetupDeploymentReservesMixin,
 )
+from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
 class _ReserveRequestGame(GameSetupDeploymentReservesMixin):
@@ -241,6 +242,50 @@ def test_strategic_reserves_edge_offsets_allow_large_single_model_bases() -> Non
     assert all(5.0 <= y <= 39.0 for _x, y in primary_points)
 
 
+def test_strategic_reserves_edge_offsets_use_oriented_hull_axis_extent() -> None:
+    base = Base(BaseType.HULL, (4.0, 1.0))
+    model = SimpleNamespace(id="model:hull", _id="model:hull", model_base=base, is_alive=True)
+    unit = SimpleNamespace(
+        models=[model],
+        calculate_strategic_facing=lambda _x, _y, _game_map: 0.0,
+    )
+    game = SimpleNamespace(map=SimpleNamespace(width=60.0, height=44.0, units=[]))
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    groups = controller._strategic_edge_anchor_groups(unit, width=60.0, height=44.0, game=game)
+    primary_points = list(groups[0][1])
+
+    assert any(abs(y - 1.0) < 1e-6 for _x, y in primary_points)
+    assert any(abs(y - 43.0) < 1e-6 for _x, y in primary_points)
+    assert not any(0.0 <= y < 1.0 - 1e-6 for _x, y in primary_points)
+
+
+def test_strategic_reserves_edge_touch_candidates_are_exact_for_oriented_large_hull() -> None:
+    base = Base(BaseType.HULL, (1.0, 3.5))
+    model = SimpleNamespace(id="model:hull", _id="model:hull", model_base=base, is_alive=True)
+    unit = SimpleNamespace(
+        models=[model],
+        calculate_strategic_facing=lambda _x, _y, _game_map: 0.0,
+    )
+    game = SimpleNamespace(map=SimpleNamespace(width=60.0, height=44.0, units=[]))
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    groups = controller._strategic_edge_anchor_groups(unit, width=60.0, height=44.0, game=game)
+    anchors = [
+        (float(x), float(y))
+        for _source, anchors in groups
+        for x, y in anchors
+    ]
+    own_enemy_edge_points = [
+        (x, y)
+        for x, y in anchors
+        if 3.0 < x < 57.0 and (0.0 <= y < 6.0 or 38.0 < y <= 44.0)
+    ]
+
+    assert own_enemy_edge_points
+    assert all(abs(y - 3.5) < 1e-6 or abs(y - 40.5) < 1e-6 for _x, y in own_enemy_edge_points)
+
+
 def test_strategic_reserves_large_model_edge_touch_applies_when_base_cannot_fit_wholly_within_six() -> None:
     player, _army, unit = _build_reserve_unit()
     player.get_army = lambda: player.army
@@ -270,6 +315,111 @@ def test_strategic_reserves_large_model_edge_touch_applies_when_base_cannot_fit_
     assert evaluation.get("errors") == []
     assert evaluation.get("battlefield_edge") == "own"
     assert evaluation.get("edge_touch") is True
+
+
+def test_strategic_reserves_validation_rejects_oriented_hull_overhanging_edge() -> None:
+    player, _army, unit = _build_reserve_unit()
+    player.get_army = lambda: player.army
+    base = Base(BaseType.HULL, (2.5, 0.75))
+    model = SimpleNamespace(id="model:hull", _id="model:hull", model_base=base, is_alive=True)
+    unit.models = [model]
+    game = SimpleNamespace(
+        turn=2,
+        battlefield=SimpleNamespace(width=60.0, height=44.0),
+        map=SimpleNamespace(width=60.0, height=44.0),
+        players=[player],
+        get_enemy_units=lambda _player: [],
+        is_valid_strategic_reserves_edge=lambda _edge, turn=None: True,
+        get_current_player=lambda: player,
+    )
+
+    overhanging = evaluate_reserves_arrival_positions(
+        game,
+        unit,
+        [{"model_id": "model:hull", "position": [20.0, 0.5, 0.0], "facing": 0.0}],
+        ctx={"placement_kind": "reserves_arrival"},
+    )
+    touching = evaluate_reserves_arrival_positions(
+        game,
+        unit,
+        [{"model_id": "model:hull", "position": [20.0, 0.75, 0.0], "facing": 0.0}],
+        ctx={"placement_kind": "reserves_arrival"},
+    )
+
+    assert overhanging.get("errors") == ["Reserves arrival must be within 6\" of a battlefield edge."]
+    assert touching.get("errors") == []
+    assert touching.get("battlefield_edge") == "own"
+
+
+def test_headless_quick_rejects_strategic_edge_anchor_when_footprint_overhangs() -> None:
+    player, _army, unit = _build_reserve_unit()
+    player.get_army = lambda: player.army
+    base = Base(BaseType.HULL, (2.5, 0.75))
+    model = SimpleNamespace(id="model:hull", _id="model:hull", model_base=base, is_alive=True)
+    unit.models = [model]
+    unit.calculate_strategic_facing = lambda _x, _y, _game_map: 0.0
+    game = SimpleNamespace(
+        turn=2,
+        battlefield=SimpleNamespace(width=60.0, height=44.0),
+        map=SimpleNamespace(width=60.0, height=44.0, units=[]),
+        players=[player],
+        is_valid_strategic_reserves_edge=lambda _edge, turn=None: True,
+    )
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    assert controller._quick_reject_reserves_anchor(
+        game,
+        unit,
+        x=20.0,
+        y=0.5,
+        _context={"placement_kind": "reserves_arrival"},
+    ) is True
+    assert controller._quick_reject_reserves_anchor(
+        game,
+        unit,
+        x=20.0,
+        y=0.75,
+        _context={"placement_kind": "reserves_arrival"},
+    ) is False
+
+
+def test_headless_quick_rejects_large_edge_touch_anchor_when_away_from_edge() -> None:
+    player, _army, unit = _build_reserve_unit()
+    player.get_army = lambda: player.army
+    base = Base(BaseType.HULL, (1.0, 3.5))
+    model = SimpleNamespace(id="model:hull", _id="model:hull", model_base=base, is_alive=True)
+    unit.models = [model]
+    unit.calculate_strategic_facing = lambda _x, _y, _game_map: 0.0
+    game = SimpleNamespace(
+        turn=2,
+        battlefield=SimpleNamespace(width=60.0, height=44.0),
+        map=SimpleNamespace(width=60.0, height=44.0, units=[]),
+        players=[player],
+        is_valid_strategic_reserves_edge=lambda _edge, turn=None: True,
+    )
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    assert controller._quick_reject_reserves_anchor(
+        game,
+        unit,
+        x=20.0,
+        y=3.25,
+        _context={"placement_kind": "reserves_arrival"},
+    ) is True
+    assert controller._quick_reject_reserves_anchor(
+        game,
+        unit,
+        x=20.0,
+        y=3.75,
+        _context={"placement_kind": "reserves_arrival"},
+    ) is True
+    assert controller._quick_reject_reserves_anchor(
+        game,
+        unit,
+        x=20.0,
+        y=3.5,
+        _context={"placement_kind": "reserves_arrival"},
+    ) is False
 
 
 def test_round_two_strategic_reserves_rejects_base_overlap_with_enemy_deployment_zone() -> None:

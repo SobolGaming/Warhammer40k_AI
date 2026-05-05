@@ -90,6 +90,140 @@ def model_radius(model: object) -> float:
     return 1.0
 
 
+def model_footprint_bounds_at(
+    unit: object,
+    model: object,
+    *,
+    x: float,
+    y: float,
+    z: float,
+    facing: float,
+) -> tuple[float, float, float, float] | None:
+    create_base = getattr(unit, "_create_potential_base", None)
+    if callable(create_base):
+        try:
+            candidate_base = create_base(float(x), float(y), float(z), float(facing), model=model)
+        except (AttributeError, TypeError, ValueError):
+            candidate_base = None
+        if candidate_base is not None:
+            get_shape = getattr(candidate_base, "get_base_shape", None)
+            if callable(get_shape):
+                shape = get_shape()
+                if shape is not None and not bool(getattr(shape, "is_empty", False)):
+                    min_x, min_y, max_x, max_y = shape.bounds
+                    return (float(min_x), float(min_y), float(max_x), float(max_y))
+
+    base = getattr(model, "model_base", None)
+    get_shape_at = getattr(base, "get_base_shape_at", None)
+    if callable(get_shape_at):
+        shape = get_shape_at(float(x), float(y), float(facing))
+        if shape is not None and not bool(getattr(shape, "is_empty", False)):
+            min_x, min_y, max_x, max_y = shape.bounds
+            return (float(min_x), float(min_y), float(max_x), float(max_y))
+    return None
+
+
+def strategic_edge_footprint_metrics(
+    unit: object,
+    model: object,
+    *,
+    x: float,
+    y: float,
+    z: float,
+    facing: float,
+    battlefield_edge: str,
+    width: float,
+    height: float,
+    touch_tolerance: float = 0.25,
+) -> dict[str, float | bool] | None:
+    bounds = model_footprint_bounds_at(unit, model, x=float(x), y=float(y), z=float(z), facing=float(facing))
+    if bounds is None:
+        return None
+
+    min_x, min_y, max_x, max_y = bounds
+    edge = str(battlefield_edge or "").strip().lower()
+    if edge == "own":
+        near_gap = float(min_y)
+        far_distance = float(max_y)
+        center_distance = float(y)
+        toward_edge_extent = float(y) - float(min_y)
+        away_edge_extent = float(max_y) - float(y)
+        perpendicular_extent = float(max_y) - float(min_y)
+    elif edge == "enemy":
+        near_gap = float(height) - float(max_y)
+        far_distance = float(height) - float(min_y)
+        center_distance = float(height) - float(y)
+        toward_edge_extent = float(max_y) - float(y)
+        away_edge_extent = float(y) - float(min_y)
+        perpendicular_extent = float(max_y) - float(min_y)
+    elif edge == "left":
+        near_gap = float(min_x)
+        far_distance = float(max_x)
+        center_distance = float(x)
+        toward_edge_extent = float(x) - float(min_x)
+        away_edge_extent = float(max_x) - float(x)
+        perpendicular_extent = float(max_x) - float(min_x)
+    elif edge == "right":
+        near_gap = float(width) - float(max_x)
+        far_distance = float(width) - float(min_x)
+        center_distance = float(width) - float(x)
+        toward_edge_extent = float(max_x) - float(x)
+        away_edge_extent = float(x) - float(min_x)
+        perpendicular_extent = float(max_x) - float(min_x)
+    else:
+        return None
+
+    overhang_epsilon = 1e-6
+    overhangs_board = bool(
+        min_x < -overhang_epsilon
+        or min_y < -overhang_epsilon
+        or max_x > float(width) + overhang_epsilon
+        or max_y > float(height) + overhang_epsilon
+    )
+    within_six = bool(near_gap >= -overhang_epsilon and far_distance <= 6.0 + overhang_epsilon)
+    requires_edge_touch = bool(float(perpendicular_extent) > 6.0 + overhang_epsilon)
+    touches_edge = bool(near_gap >= -overhang_epsilon and near_gap <= float(touch_tolerance) + overhang_epsilon)
+    return {
+        "min_x": float(min_x),
+        "min_y": float(min_y),
+        "max_x": float(max_x),
+        "max_y": float(max_y),
+        "near_gap": float(near_gap),
+        "far_distance": float(far_distance),
+        "center_distance": float(center_distance),
+        "toward_edge_extent": float(toward_edge_extent),
+        "away_edge_extent": float(away_edge_extent),
+        "perpendicular_extent": float(perpendicular_extent),
+        "overhangs_board": bool(overhangs_board),
+        "within_six": bool(within_six),
+        "requires_edge_touch": bool(requires_edge_touch),
+        "touches_edge": bool(touches_edge),
+    }
+
+
+def strategic_edge_touch_offset_for_model(
+    unit: object,
+    model: object,
+    *,
+    battlefield_edge: str,
+    facing: float,
+) -> float | None:
+    bounds = model_footprint_bounds_at(unit, model, x=0.0, y=0.0, z=0.0, facing=float(facing))
+    if bounds is None:
+        return None
+    min_x, min_y, max_x, max_y = bounds
+    edge = str(battlefield_edge or "").strip().lower()
+    if edge == "own":
+        return float(max(0.0, -float(min_y)))
+    if edge == "enemy":
+        return float(max(0.0, float(max_y)))
+    if edge == "left":
+        return float(max(0.0, -float(min_x)))
+    if edge == "right":
+        return float(max(0.0, float(max_x)))
+    return None
+
+
 def prospective_positions_from_model_payload(unit: object, model_positions: object) -> dict[str, Any]:
     if not isinstance(model_positions, list) or not model_positions:
         return {"error": "Reserves arrival requires model positions."}
