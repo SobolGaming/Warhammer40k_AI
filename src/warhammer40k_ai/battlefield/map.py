@@ -69,6 +69,7 @@ from .terrain_visibility import (
     sample_model_points_3d as terrain_sample_model_points_3d,
     segment_blocked_by_terrain_feature as terrain_segment_blocked_by_terrain_feature,
 )
+from ..utility.army_ownership import army_identifier, unit_parent_army, units_are_enemies, units_share_army
 import logging
 logger = logging.getLogger(__name__)
 
@@ -184,10 +185,44 @@ class Map:
             all_models.extend(self._unit_collision_models(unit))
         return all_models
 
+    @staticmethod
+    def _unit_faction_label(unit: Unit) -> str:
+        army = unit_parent_army(unit)
+        for entity in (unit, army):
+            if entity is None:
+                continue
+            for attr in ("faction_id", "faction"):
+                value = str(getattr(entity, attr, "") or "").strip().upper()
+                if value:
+                    return value
+        return ""
+
+    @staticmethod
+    def _unit_has_army_identifier(unit: Unit) -> bool:
+        return army_identifier(unit_parent_army(unit)) is not None
+
+    @classmethod
+    def _units_have_distinct_unidentified_factions(cls, unit: Unit, test_unit: Unit) -> bool:
+        if cls._unit_has_army_identifier(unit) or cls._unit_has_army_identifier(test_unit):
+            return False
+        unit_faction = cls._unit_faction_label(unit)
+        test_faction = cls._unit_faction_label(test_unit)
+        return bool(unit_faction and test_faction and unit_faction != test_faction)
+
+    @classmethod
+    def _units_have_matching_unidentified_factions(cls, unit: Unit, test_unit: Unit) -> bool:
+        if cls._unit_has_army_identifier(unit) or cls._unit_has_army_identifier(test_unit):
+            return False
+        unit_faction = cls._unit_faction_label(unit)
+        test_faction = cls._unit_faction_label(test_unit)
+        return bool(unit_faction and unit_faction == test_faction)
+
     def get_enemy_units(self, unit: Unit) -> List[Unit]:
         enemy_units = []
         for test_unit in self.units:
-            if unit.get_parent_army() != test_unit.get_parent_army():
+            if test_unit is unit:
+                continue
+            if units_are_enemies(unit, test_unit) or self._units_have_distinct_unidentified_factions(unit, test_unit):
                 enemy_units.append(test_unit)
         return enemy_units
 
@@ -199,8 +234,15 @@ class Map:
 
     def get_friendly_units(self, unit: Unit) -> List[Unit]:
         friendly_units = []
+        unit_army = unit_parent_army(unit)
         for test_unit in self.units:
-            if unit.get_parent_army() == test_unit.get_parent_army():
+            if (
+                test_unit is unit
+                or units_share_army(unit, test_unit)
+                or self._units_have_matching_unidentified_factions(unit, test_unit)
+            ):
+                friendly_units.append(test_unit)
+            elif unit_army is None and unit_parent_army(test_unit) is None:
                 friendly_units.append(test_unit)
         return friendly_units
 

@@ -7,6 +7,7 @@ from typing import Iterable, Optional
 from shapely.ops import unary_union
 from shapely.geometry import Point as ShapelyPoint
 from ..engine.combat_timing import CombatEngagementState, engagement_state_for_models
+from .army_ownership import same_army, unit_parent_army
 
 
 @dataclass(frozen=True)
@@ -369,7 +370,7 @@ def count_enemy_models_within_range(
     source_unit = getattr(source_model, "parent_unit", None)
     if source_unit is None or not hasattr(source_unit, "get_parent_army"):
         return 0
-    source_army = source_unit.get_parent_army()
+    source_army = unit_parent_army(source_unit)
     if source_army is None:
         return 0
 
@@ -400,11 +401,8 @@ def count_enemy_models_within_range(
                 continue
         except Exception:
             continue
-        try:
-            root_army = root.get_parent_army()
-        except Exception:
-            root_army = None
-        if root_army is None or root_army is source_army:
+        root_army = unit_parent_army(root)
+        if root_army is None or same_army(root_army, source_army):
             continue
         enemy_roots.append(root)
 

@@ -8,7 +8,7 @@ from warhammer40k_ai.utility.ability_support import (
     army_has_ability_id,
     pact_restrictions_for_faction,
 )
-from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.utility.entity_ids import get_entity_id, maybe_entity_id
 import re
 import unicodedata
 import uuid
@@ -3189,7 +3189,8 @@ class Army:
         return f"Army: {self.faction} - {detachment_summary}\n{self.units}"
 
     def __eq__(self, other):
-        return self._id == other._id
+        other_id = maybe_entity_id(other)
+        return other_id is not None and self._id == other_id
 
     def __hash__(self):
         return hash(self._id)

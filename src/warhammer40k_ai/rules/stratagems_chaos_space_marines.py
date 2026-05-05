@@ -6,6 +6,7 @@ from typing import Any, Optional
 from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..utility import dice as dice_module
+from ..utility.army_ownership import unit_owned_by_player
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -59,11 +60,7 @@ class ChaosSpaceMarinesStratagemMixin:
 
     @staticmethod
     def _csm_owned_by_player(unit: Any, player: Any) -> bool:
-        if unit is None or player is None:
-            return False
-        get_parent_army = getattr(unit, "get_parent_army", None)
-        parent_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
-        return getattr(parent_army, "player", None) is player
+        return unit_owned_by_player(unit, player)
 
     @staticmethod
     def _csm_has_keyword(entity: Any, keyword: str) -> bool:

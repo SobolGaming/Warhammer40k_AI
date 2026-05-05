@@ -428,13 +428,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             cache.clear()
 
     def _unit_in_army(self, unit) -> bool:
-        root = self._unit_root(unit)
-        if root is None or self.army is None:
-            return False
-        get_parent_army = getattr(root, "get_parent_army", None)
-        if not callable(get_parent_army):
-            return False
-        return get_parent_army() is self.army
+        return self._unit_belongs_to_army(self._unit_root(unit))
 
     def _model_in_army(self, model) -> bool:
         if model is None:

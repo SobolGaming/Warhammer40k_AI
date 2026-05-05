@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from ..utility.army_ownership import same_army, unit_belongs_to_army, unit_parent_army
 from .faction_registry import faction_ids_match
 
 
@@ -75,6 +76,14 @@ class DetachmentManagerBase:
         if faction_id:
             return self._army_faction_matches(faction_id)
         return False
+
+    def _unit_belongs_to_army(self, unit, army=None) -> bool:
+        return unit_belongs_to_army(unit, self.army if army is None else army)
+
+    def _unit_is_enemy_of_army(self, unit, army=None) -> bool:
+        target_army = self.army if army is None else army
+        parent_army = unit_parent_army(unit)
+        return parent_army is not None and target_army is not None and not same_army(parent_army, target_army)
 
     def _army_faction_matches(self, faction_id: str) -> bool:
         fid = ""
