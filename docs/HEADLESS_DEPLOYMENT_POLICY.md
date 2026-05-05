@@ -162,6 +162,11 @@ This document describes deterministic headless placement behavior for deployment
   entries in the reserve-arrival diagnostic totals, but does not elevate that
   documented warning into the `Errors / Bug Candidates` report section. Other
   reserve-arrival diagnostics remain reportable bug candidates.
+- For anchored smoke batches, pass
+  `--anchor-faction "Chaos Space Marines"` to force that faction into player 1
+  for every generated matchup. Opponents are selected deterministically at
+  random from repeated `--faction` entries, or from the default broad faction
+  pool when no custom pool is supplied, excluding the anchor faction.
 
 ## Pregame Decision Surfaces
 

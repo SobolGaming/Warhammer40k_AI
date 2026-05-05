@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 import sys
 
+import pytest
+
 
 def _load_script_module():
     script_path = Path(__file__).resolve().parents[2] / "scripts" / "run_headless_matchup_batch.py"
@@ -26,6 +28,40 @@ def test_army_specs_are_deterministic_and_cover_requested_count() -> None:
     assert len(first) == 6
     assert all(spec.seed > 123 for spec in first)
     assert {spec.faction for spec in first[:3]} == {"Aeldari", "Orks", "Necrons"}
+
+
+def test_army_specs_anchor_faction_pairs_random_non_anchor_opponents() -> None:
+    mod = _load_script_module()
+
+    first = mod._army_specs(
+        army_count=10,
+        base_seed=321,
+        factions=("Chaos Space Marines", "Aeldari", "Orks", "Necrons"),
+        anchor_faction="Chaos Space Marines",
+    )
+    second = mod._army_specs(
+        army_count=10,
+        base_seed=321,
+        factions=("Chaos Space Marines", "Aeldari", "Orks", "Necrons"),
+        anchor_faction="Chaos Space Marines",
+    )
+
+    assert first == second
+    assert [spec.faction for spec in first[0::2]] == ["Chaos Space Marines"] * 5
+    assert set(spec.faction for spec in first[1::2]) <= {"Aeldari", "Orks", "Necrons"}
+    assert all(spec.seed > 321 for spec in first)
+
+
+def test_army_specs_anchor_faction_requires_opponent_pool() -> None:
+    mod = _load_script_module()
+
+    with pytest.raises(ValueError, match="non-anchor opponent"):
+        mod._army_specs(
+            army_count=2,
+            base_seed=321,
+            factions=("Chaos Space Marines",),
+            anchor_faction="Chaos Space Marines",
+        )
 
 
 def test_write_summary_records_match_stats_and_bug_candidates(tmp_path: Path) -> None:

@@ -114,6 +114,11 @@ def _safe_name(value: str) -> str:
     return cleaned.strip("_") or "item"
 
 
+def _faction_key(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", " ", str(value or "").strip()).lower()
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as handle:
@@ -191,11 +196,45 @@ def _int_or_default(value: Any, default: int) -> int:
     return int(value)
 
 
-def _army_specs(*, army_count: int, base_seed: int, factions: tuple[str, ...]) -> list[ArmySpec]:
+def _random_style_tags(rng: random.Random) -> tuple[str, ...]:
+    style_count = rng.choice((2, 3))
+    return tuple(sorted(rng.sample(list(STYLE_POOL), style_count)))
+
+
+def _army_specs(
+    *,
+    army_count: int,
+    base_seed: int,
+    factions: tuple[str, ...],
+    anchor_faction: str = "",
+) -> list[ArmySpec]:
     rng = random.Random(int(base_seed))
     faction_pool = [str(faction or "").strip() for faction in factions if str(faction or "").strip()]
     if not faction_pool:
         raise ValueError("At least one faction is required.")
+    anchor = str(anchor_faction or "").strip()
+    if anchor:
+        if int(army_count) % 2 != 0:
+            raise ValueError("Anchored matchup batches require an even army count.")
+        anchor_key = _faction_key(anchor)
+        opponent_pool = [faction for faction in faction_pool if _faction_key(faction) != anchor_key]
+        if not opponent_pool:
+            raise ValueError("Anchored matchup batches require at least one non-anchor opponent faction.")
+        specs: list[ArmySpec] = []
+        for match_index in range(int(army_count) // 2):
+            for offset, faction in ((1, anchor), (2, rng.choice(opponent_pool))):
+                index = match_index * 2 + offset
+                seed = int(base_seed) + (index * 101) + rng.randint(0, 1_000_000)
+                specs.append(
+                    ArmySpec(
+                        index=index,
+                        faction=faction,
+                        style_tags=_random_style_tags(rng),
+                        seed=seed,
+                    )
+                )
+        return specs
+
     shuffled = list(faction_pool)
     rng.shuffle(shuffled)
     specs: list[ArmySpec] = []
@@ -204,10 +243,8 @@ def _army_specs(*, army_count: int, base_seed: int, factions: tuple[str, ...]) -
             faction = shuffled[index - 1]
         else:
             faction = rng.choice(faction_pool)
-        style_count = rng.choice((2, 3))
-        style_tags = tuple(sorted(rng.sample(list(STYLE_POOL), style_count)))
         seed = int(base_seed) + (index * 101) + rng.randint(0, 1_000_000)
-        specs.append(ArmySpec(index=index, faction=faction, style_tags=style_tags, seed=seed))
+        specs.append(ArmySpec(index=index, faction=faction, style_tags=_random_style_tags(rng), seed=seed))
     return specs
 
 
@@ -344,17 +381,32 @@ def _generate_armies(
     base_seed: int,
     points: int,
     factions: tuple[str, ...],
+    anchor_faction: str,
     workers: int,
     max_attempts: int,
     rules_data_dir: str,
 ) -> list[dict[str, Any]]:
     manifest = _load_json(paths.manifest)
     existing_armies = list(manifest.get("armies") or [])
-    if len(existing_armies) == int(army_count) and all(Path(str(a.get("army_list_path", ""))).exists() for a in existing_armies):
+    manifest_faction_pool = tuple(str(faction or "").strip() for faction in list(manifest.get("faction_pool") or []))
+    manifest_anchor = str(manifest.get("anchor_faction", "") or "").strip()
+    if (
+        len(existing_armies) == int(army_count)
+        and int(manifest.get("base_seed", -1) or -1) == int(base_seed)
+        and int(manifest.get("points", -1) or -1) == int(points)
+        and manifest_faction_pool == tuple(factions)
+        and manifest_anchor == str(anchor_faction or "").strip()
+        and all(Path(str(a.get("army_list_path", ""))).exists() for a in existing_armies)
+    ):
         return [dict(army) for army in existing_armies]
 
     paths.armies.mkdir(parents=True, exist_ok=True)
-    specs = _army_specs(army_count=int(army_count), base_seed=int(base_seed), factions=tuple(factions))
+    specs = _army_specs(
+        army_count=int(army_count),
+        base_seed=int(base_seed),
+        factions=tuple(factions),
+        anchor_faction=str(anchor_faction or ""),
+    )
     armies: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     max_workers = max(1, min(int(workers), len(specs)))
@@ -390,6 +442,8 @@ def _generate_armies(
             "generated_at_utc": _utc_now(),
             "base_seed": int(base_seed),
             "points": int(points),
+            "faction_pool": list(factions),
+            "anchor_faction": str(anchor_faction or "").strip(),
             "army_count_requested": int(army_count),
             "army_count": len(armies),
             "armies": armies,
@@ -797,6 +851,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-reserves-arrival-seconds", type=float, default=10.0)
     parser.add_argument("--rules-data-dir", default="wahapedia_data")
     parser.add_argument(
+        "--anchor-faction",
+        default="",
+        help=(
+            "Optional faction forced into player 1 for every matchup. Opponents are chosen "
+            "deterministically at random from --faction entries or the default pool, excluding the anchor."
+        ),
+    )
+    parser.add_argument(
         "--enable-tool-decisions",
         action="store_true",
         help="Enable optional generic tool-action decisions. Disabled by default for stable broad smoke batches.",
@@ -823,6 +885,7 @@ def main() -> int:
     factions = tuple(str(faction).strip() for faction in list(args.faction or []) if str(faction).strip())
     if not factions:
         factions = DEFAULT_FACTIONS
+    anchor_faction = str(args.anchor_faction or "").strip()
 
     started = time.perf_counter()
     _status(
@@ -832,6 +895,7 @@ def main() -> int:
         base_seed=int(args.base_seed),
         matchups=matchups,
         army_count=army_count,
+        anchor_faction=anchor_faction,
     )
     armies = _generate_armies(
         paths=paths,
@@ -839,6 +903,7 @@ def main() -> int:
         base_seed=int(args.base_seed),
         points=int(args.points),
         factions=factions,
+        anchor_faction=anchor_faction,
         workers=max(1, int(args.army_workers)),
         max_attempts=max(1, int(args.synthesis_attempts)),
         rules_data_dir=str(args.rules_data_dir),
