@@ -3450,18 +3450,65 @@ class Army:
         if not eligible:
             return None
 
-        options = [
-            DecisionOption.create(
-                str(getattr(u, "name", "Unit") or "Unit"),
-                payload={"target_unit_id": get_entity_id(u)},
+        ability_label = str(ability_name or "").strip()
+        source_id_str = str(source_id or "")
+        player_id = str(getattr(player, "id", "") or "")
+        battle_round = 0
+        if isinstance(context_extra, dict):
+            try:
+                battle_round = int(context_extra.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                battle_round = 0
+        if battle_round <= 0:
+            try:
+                battle_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                battle_round = 0
+
+        options = []
+        for target in eligible:
+            target_id = get_entity_id(target)
+            payload = {
+                "ability": ability_key,
+                "source_unit_id": source_id_str,
+                "unit_id": source_id_str,
+                "target_unit_id": target_id,
+                "player_id": player_id,
+            }
+            if ability_label:
+                payload["ability_name"] = ability_label
+            if battle_round:
+                payload["battle_round"] = int(battle_round)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload=payload,
+                )
             )
-            for u in eligible
-        ]
         if bool(allow_skip):
-            options.append(DecisionOption.create("None", payload={"action": "skip", "skip": True}))
+            skip_payload = {
+                "action": "skip",
+                "skip": True,
+                "ability": ability_key,
+                "source_unit_id": source_id_str,
+                "unit_id": source_id_str,
+                "player_id": player_id,
+            }
+            if ability_label:
+                skip_payload["ability_name"] = ability_label
+            if battle_round:
+                skip_payload["battle_round"] = int(battle_round)
+            options.append(DecisionOption.create("None", payload=skip_payload))
         if not options:
             return None
-        context = {"ability": ability_key, "source_unit_id": source_id}
+        context = {
+            "ability": ability_key,
+            "source_unit_id": source_id_str,
+            "unit_id": source_id_str,
+            "player_id": player_id,
+        }
+        if battle_round:
+            context["battle_round"] = int(battle_round)
         if ability_name:
             context["ability_name"] = str(ability_name)
         if allow_skip:
@@ -3565,7 +3612,20 @@ class Army:
                         )
                 except Exception:
                     pass
-                options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "ability": "archons_will_objective",
+                            "ability_name": "Archon's Will",
+                            "source_unit_id": root_id,
+                            "unit_id": root_id,
+                            "objective_id": objective_id,
+                            "battle_round": int(battle_round or 0),
+                            "player_id": str(getattr(player, "id", "") or ""),
+                        },
+                    )
+                )
             if not options:
                 continue
 
@@ -3579,6 +3639,8 @@ class Army:
                     "ability_name": "Archon's Will",
                     "source_unit_id": root_id,
                     "unit_id": root_id,
+                    "battle_round": int(battle_round or 0),
+                    "player_id": str(getattr(player, "id", "") or ""),
                     "optional": False,
                 },
             )
@@ -3700,6 +3762,11 @@ class Army:
         if source_root is None or not isinstance(source_rule, dict):
             return
 
+        ability_name = str(source_rule.get("source", "") or "Priority Objective Identified").strip()
+        if not ability_name:
+            ability_name = "Priority Objective Identified"
+        source_root_id = str(get_entity_id(source_root) or "")
+        player_id = str(getattr(player, "id", "") or "")
         options = []
         candidate_objective_ids = []
         for idx, (objective_id, objective) in enumerate(objectives):
@@ -3711,14 +3778,25 @@ class Army:
                     f"({float(getattr(objective_point, 'x', 0.0)):.1f}, "
                     f"{float(getattr(objective_point, 'y', 0.0)):.1f})"
                 )
-            options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "ability": "priority_objective_identified",
+                        "ability_name": ability_name,
+                        "army_id": army_id,
+                        "source_unit_id": source_root_id,
+                        "unit_id": source_root_id,
+                        "objective_id": objective_id,
+                        "battle_round": int(battle_round or 0),
+                        "player_id": player_id,
+                    },
+                )
+            )
             candidate_objective_ids.append(objective_id)
         if not options:
             return
 
-        ability_name = str(source_rule.get("source", "") or "Priority Objective Identified").strip()
-        if not ability_name:
-            ability_name = "Priority Objective Identified"
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
             f"{ability_name}: select one objective marker on the battlefield.",
@@ -3728,9 +3806,10 @@ class Army:
                 "ability": "priority_objective_identified",
                 "ability_name": ability_name,
                 "army_id": army_id,
-                "source_unit_id": str(get_entity_id(source_root) or ""),
-                "unit_id": str(get_entity_id(source_root) or ""),
+                "source_unit_id": source_root_id,
+                "unit_id": source_root_id,
                 "battle_round": int(battle_round or 0),
+                "player_id": player_id,
                 "candidate_objective_ids": list(candidate_objective_ids),
                 "optional": False,
             },
@@ -4180,6 +4259,8 @@ class Army:
             if duplicate:
                 continue
 
+            ability_name = str(rule.get("source", "") or "Singular Purpose").strip() or "Singular Purpose"
+            player_id = str(getattr(player, "id", "") or "")
             options = []
             eligible_targets = self._eligible_quarry_units(enemy_units, exclude_embarked=False)
             eligible_targets.sort(key=lambda target: str(get_entity_id(target) or ""))
@@ -4191,7 +4272,16 @@ class Army:
                 options.append(
                     DecisionOption.create(
                         f"Enemy: {enemy_name}",
-                        payload={"mode": "enemy_unit", "target_unit_id": enemy_id},
+                        payload={
+                            "ability": "singular_purpose",
+                            "ability_name": ability_name,
+                            "source_unit_id": root_id,
+                            "unit_id": root_id,
+                            "mode": "enemy_unit",
+                            "target_unit_id": enemy_id,
+                            "battle_round": int(battle_round or 0),
+                            "player_id": player_id,
+                        },
                     )
                 )
 
@@ -4210,7 +4300,16 @@ class Army:
                 options.append(
                     DecisionOption.create(
                         f"Objective: {label}",
-                        payload={"mode": "objective_marker", "objective_id": objective_id},
+                        payload={
+                            "ability": "singular_purpose",
+                            "ability_name": ability_name,
+                            "source_unit_id": root_id,
+                            "unit_id": root_id,
+                            "mode": "objective_marker",
+                            "objective_id": objective_id,
+                            "battle_round": int(battle_round or 0),
+                            "player_id": player_id,
+                        },
                     )
                 )
 
@@ -4236,7 +4335,6 @@ class Army:
             if not source_model_id and source_models:
                 source_model_id = str(get_entity_id(source_models[0]) or "")
 
-            ability_name = str(rule.get("source", "") or "Singular Purpose").strip() or "Singular Purpose"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
                 f"{ability_name}: select one enemy unit or one objective marker.",
@@ -4248,6 +4346,8 @@ class Army:
                     "source_unit_id": root_id,
                     "unit_id": root_id,
                     "source_model_id": source_model_id,
+                    "battle_round": int(battle_round or 0),
+                    "player_id": player_id,
                     "singular_purpose_reroll_hit": bool(rule.get("reroll_hit", False)),
                     "singular_purpose_reroll_wound": bool(rule.get("reroll_wound", False)),
                     "singular_purpose_objective_fnp": int(rule.get("objective_feel_no_pain", 5) or 5),

@@ -364,6 +364,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                     "action": "skip",
                     "choice_key": "",
                     "choice_name": "None",
+                    "ability": self._DESPERATE_FOR_REDEMPTION_ABILITY_KEY,
+                    "ability_name": self.DESPERATE_FOR_REDEMPTION_NAME,
+                    "army_id": str(maybe_entity_id(army) or ""),
+                    "battle_round": int(battle_round or 0),
+                    "player_id": player_id,
                 },
             )
         ]
@@ -375,6 +380,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                     payload={
                         "choice_key": key,
                         "choice_name": label,
+                        "ability": self._DESPERATE_FOR_REDEMPTION_ABILITY_KEY,
+                        "ability_name": self.DESPERATE_FOR_REDEMPTION_NAME,
+                        "army_id": str(maybe_entity_id(army) or ""),
+                        "battle_round": int(battle_round or 0),
+                        "player_id": player_id,
                     },
                 )
             )
@@ -388,6 +398,7 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                 "ability_name": self.DESPERATE_FOR_REDEMPTION_NAME,
                 "army_id": str(maybe_entity_id(army) or ""),
                 "battle_round": int(battle_round or 0),
+                "player_id": player_id,
                 "allowed_choice_keys": list(available_keys),
                 "optional": True,
             },
@@ -576,6 +587,9 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                 battle_round=int(battle_round or 0),
             ):
                 continue
+            source_name = str(source.get("source_name", "") or self._VERSE_OF_HOLY_PIETY_SOURCE_NAME).strip()
+            if not source_name:
+                source_name = self._VERSE_OF_HOLY_PIETY_SOURCE_NAME
 
             options = [
                 DecisionOption.create(
@@ -585,6 +599,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                         "choice_key": "",
                         "choice_name": "None",
                         "source_unit_id": source_unit_id,
+                        "ability": self._VERSE_OF_HOLY_PIETY_ABILITY_KEY,
+                        "ability_name": source_name,
+                        "army_id": str(maybe_entity_id(army) or ""),
+                        "battle_round": int(battle_round or 0),
+                        "player_id": player_id,
                     },
                 )
             ]
@@ -597,13 +616,15 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                             "choice_key": key,
                             "choice_name": label,
                             "source_unit_id": source_unit_id,
+                            "ability": self._VERSE_OF_HOLY_PIETY_ABILITY_KEY,
+                            "ability_name": source_name,
+                            "army_id": str(maybe_entity_id(army) or ""),
+                            "battle_round": int(battle_round or 0),
+                            "player_id": player_id,
                         },
                     )
                 )
 
-            source_name = str(source.get("source_name", "") or self._VERSE_OF_HOLY_PIETY_SOURCE_NAME).strip()
-            if not source_name:
-                source_name = self._VERSE_OF_HOLY_PIETY_SOURCE_NAME
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
                 (
@@ -619,6 +640,7 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                     "source_unit_id": source_unit_id,
                     "source_model_id": str(source.get("bearer_model_id", "") or ""),
                     "battle_round": int(battle_round or 0),
+                    "player_id": player_id,
                     "allowed_choice_keys": list(vow_keys),
                     "optional": True,
                     "once_per_battle": True,

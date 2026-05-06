@@ -43,6 +43,10 @@
     "decision_type": {
       "type": "string"
     },
+    "request_context": {
+      "type": "object",
+      "description": "Canonical JSON-safe snapshot of the DecisionRequest context used to produce this record."
+    },
     "rules_bundle": {
       "$ref": "#/$defs/RulesBundle"
     },

@@ -4248,6 +4248,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                         "choice_name": label,
                         "summary": str(summaries.get(key, label) or label),
                         "army_id": army_id,
+                        "ability": "librarius_psychic_disciplines",
+                        "ability_name": "Psychic Disciplines",
+                        "battle_round": int(round_now),
+                        "player_id": player_id,
                     },
                 )
             )
@@ -4336,6 +4340,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                     "choice_name": "None",
                     "summary": "No litany active this battle round.",
                     "army_id": army_id,
+                    "ability": "zealous_litanies",
+                    "ability_name": "Zealous Litanies",
+                    "battle_round": int(round_now),
+                    "player_id": player_id,
                 },
             )
         ]
@@ -4349,6 +4357,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                         "choice_name": label,
                         "summary": str(summaries.get(key, label) or label),
                         "army_id": army_id,
+                        "ability": "zealous_litanies",
+                        "ability_name": "Zealous Litanies",
+                        "battle_round": int(round_now),
+                        "player_id": player_id,
                     },
                 )
             )

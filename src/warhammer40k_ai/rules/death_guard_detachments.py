@@ -183,6 +183,7 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         from ..engine.decisions import DecisionOption, DecisionRequest
 
         army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        player_id = str(getattr(player, "id", "") or "")
         if self._pending_manifold_maladies_request(game, army_id=army_id, battle_round=int(round_value)):
             return None
 
@@ -194,7 +195,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                     "skip": True,
                     "choice_key": "",
                     "army_id": army_id,
+                    "ability": "manifold_maladies",
+                    "ability_name": self._MANIFOLD_MALADIES_SOURCE,
                     "battle_round": int(round_value),
+                    "player_id": player_id,
                 },
             )
         ]
@@ -206,7 +210,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                         "choice_key": str(getattr(plague, "key", "") or ""),
                         "summary": str(getattr(plague, "summary", "") or ""),
                         "army_id": army_id,
+                        "ability": "manifold_maladies",
+                        "ability_name": self._MANIFOLD_MALADIES_SOURCE,
                         "battle_round": int(round_value),
+                        "player_id": player_id,
                     },
                 )
             )
@@ -221,6 +228,7 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                 "ability_name": self._MANIFOLD_MALADIES_SOURCE,
                 "army_id": army_id,
                 "battle_round": int(round_value),
+                "player_id": player_id,
                 "allowed_choice_keys": [str(getattr(plague, "key", "") or "") for plague in list(DEFAULT_PLAGUES)],
                 "optional": True,
             },
@@ -2537,8 +2545,27 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             "Miasmic Bombardment: select enemy units to become Afflicted.",
             player_id=getattr(player, "id", None),
             options=[
-                DecisionOption.create("Confirm", payload={"action": "confirm"}),
-                DecisionOption.create("None", payload={"action": "skip", "skip": True}),
+                DecisionOption.create(
+                    "Confirm",
+                    payload={
+                        "action": "confirm",
+                        "ability": "miasmic_bombardment",
+                        "ability_name": self._MIASMIC_BOMBARDMENT_SOURCE,
+                        "army_id": army_id,
+                        "battle_round": int(round_value),
+                    },
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "ability": "miasmic_bombardment",
+                        "ability_name": self._MIASMIC_BOMBARDMENT_SOURCE,
+                        "army_id": army_id,
+                        "battle_round": int(round_value),
+                    },
+                ),
             ],
             context={
                 "ability": "miasmic_bombardment",

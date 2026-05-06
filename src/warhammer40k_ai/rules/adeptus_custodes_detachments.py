@@ -2903,6 +2903,7 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self.can_select_martial_mastery(game=game, battle_round=round_value):
             return None
         army_id = str(maybe_entity_id(self.army) or "") if self.army is not None else ""
+        player_id = str(getattr(player, "id", "") or "")
         if self._pending_martial_mastery_request(game, army_id=army_id, battle_round=int(round_value)):
             return None
 
@@ -2913,7 +2914,10 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                     "action": "skip",
                     "choice_key": "",
                     "army_id": army_id,
+                    "ability": "martial_mastery",
+                    "ability_name": self._MARTIAL_MASTERY_SOURCE,
                     "battle_round": int(round_value),
+                    "player_id": player_id,
                 },
             ),
             DecisionOption.create(
@@ -2921,7 +2925,10 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 payload={
                     "choice_key": "CRIT_5_PLUS",
                     "army_id": army_id,
+                    "ability": "martial_mastery",
+                    "ability_name": self._MARTIAL_MASTERY_SOURCE,
                     "battle_round": int(round_value),
+                    "player_id": player_id,
                 },
             ),
             DecisionOption.create(
@@ -2929,7 +2936,10 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 payload={
                     "choice_key": "AP_PLUS_1",
                     "army_id": army_id,
+                    "ability": "martial_mastery",
+                    "ability_name": self._MARTIAL_MASTERY_SOURCE,
                     "battle_round": int(round_value),
+                    "player_id": player_id,
                 },
             ),
         ]
@@ -2944,6 +2954,7 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 "ability_name": self._MARTIAL_MASTERY_SOURCE,
                 "army_id": army_id,
                 "battle_round": int(round_value),
+                "player_id": player_id,
                 "allowed_choice_keys": ["CRIT_5_PLUS", "AP_PLUS_1"],
                 "optional": True,
             },

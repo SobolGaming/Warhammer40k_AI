@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from .descriptor_bundle import descriptor_bundle_id as build_descriptor_bundle_id
 from .descriptor_compiler import compile_descriptor_bundle
-from .decisions import CandidateAction, DecisionRequest, DecisionResult
+from .decisions import CandidateAction, DecisionRequest, DecisionResult, _canonicalize_value
 from .path_witness import build_model_path_witness_for_unit
 from .ruleset import RulesetBundle
 from .state_blob import all_player_obs_states, canonical_omniscient_state
@@ -50,6 +50,12 @@ def _default_player_obs_state(game: object) -> dict[str, dict[str, Any]]:
 
 def _decision_type(request: DecisionRequest) -> str:
     return str(getattr(request, "decision_type", "") or "")
+
+
+def _request_context_snapshot(request: DecisionRequest) -> dict[str, Any]:
+    context = dict(getattr(request, "context", {}) or {})
+    canonical = _canonicalize_value(context)
+    return dict(canonical or {}) if isinstance(canonical, dict) else {}
 
 
 def _safe_phase_name(game: object) -> str:
@@ -582,6 +588,7 @@ class DecisionRecordStore:
             "phase": _safe_phase_name(self.game),
             "decision_id": str(request.decision_id or ""),
             "decision_type": _decision_type(request),
+            "request_context": _request_context_snapshot(request),
             "rules_bundle": rules_bundle.to_dict(),
             "rules_bundle_id": str(rules_bundle.rules_bundle_id),
             "descriptor_ids": descriptor_ids,

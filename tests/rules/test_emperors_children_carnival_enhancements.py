@@ -285,6 +285,9 @@ class TestEmperorsChildrenCarnivalEnhancements(unittest.TestCase):
             ability="possessed_blade",
         )
         self.assertIsNotNone(choose_weapon_request)
+        weapon_payload = dict(getattr(choose_weapon_request.options[0], "payload", {}) or {})
+        self.assertEqual(str(weapon_payload.get("ability", "") or ""), "possessed_blade")
+        self.assertEqual(int(weapon_payload.get("battle_round", 0) or 0), 1)
         resolve_decision_command(
             game,
             choose_weapon_request,

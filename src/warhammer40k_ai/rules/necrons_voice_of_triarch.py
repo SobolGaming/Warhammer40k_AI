@@ -281,6 +281,13 @@ class VoiceOfTriarchManager:
                         "choice_key": option.key,
                         "choice_name": option.name,
                         "summary": option.summary,
+                        "ability": "voice_of_triarch",
+                        "ability_name": VOICE_OF_THE_TRIARCH_NAME,
+                        "source_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "battle_round": int(battle_round or 0),
+                        "expires_round": int(expires_round or 0),
+                        "player_id": player_id,
                     },
                 )
                 for option in VOICE_OF_TRIARCH_OPTIONS

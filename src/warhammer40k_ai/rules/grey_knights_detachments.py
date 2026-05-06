@@ -786,11 +786,31 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             options = [
                 DecisionOption.create(
                     f"Use on {getattr(root, 'name', 'Unit')}",
-                    payload={"target_unit_id": root_id},
+                    payload={
+                        "ability": "grey_knights_banishers_ephemeral_tome",
+                        "ability_name": "The Ephemeral Tome",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "phase_name": "SHOOTING_PHASE",
+                        "turn": int(turn_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
                 DecisionOption.create(
                     "None",
-                    payload={"action": "skip", "skip": True},
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "ability": "grey_knights_banishers_ephemeral_tome",
+                        "ability_name": "The Ephemeral Tome",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "phase_name": "SHOOTING_PHASE",
+                        "turn": int(turn_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
             ]
             game.request_decision(
@@ -980,11 +1000,31 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             options = [
                 DecisionOption.create(
                     f"Use on {getattr(root, 'name', 'Unit')}",
-                    payload={"target_unit_id": root_id},
+                    payload={
+                        "ability": "grey_knights_augurium_grimoire_of_conjunctions",
+                        "ability_name": "Grimoire of Conjunctions",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "phase_name": "FIGHT_PHASE",
+                        "turn": int(turn_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
                 DecisionOption.create(
                     "None",
-                    payload={"action": "skip", "skip": True},
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "ability": "grey_knights_augurium_grimoire_of_conjunctions",
+                        "ability_name": "Grimoire of Conjunctions",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "phase_name": "FIGHT_PHASE",
+                        "turn": int(turn_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
             ]
             game.request_decision(
@@ -1067,11 +1107,29 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             options = [
                 DecisionOption.create(
                     f"Use on {getattr(root, 'name', 'Unit')}",
-                    payload={"target_unit_id": root_id},
+                    payload={
+                        "ability": "grey_knights_augurium_shield_of_prophecy",
+                        "ability_name": "Shield of Prophecy",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "battle_round": int(round_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
                 DecisionOption.create(
                     "None",
-                    payload={"action": "skip", "skip": True},
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "ability": "grey_knights_augurium_shield_of_prophecy",
+                        "ability_name": "Shield of Prophecy",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "battle_round": int(round_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
+                    },
                 ),
             ]
             game.request_decision(
@@ -1091,6 +1149,7 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
                         "unit_id": source_unit_id,
                         "candidate_unit_ids": [root_id],
                         "battle_round": int(round_now or 0),
+                        "player_id": str(getattr(player, "id", "") or ""),
                         "turn": int(round_now or 0),
                         "once_key": once_key,
                         "bearer_model_id": bearer_model_id,

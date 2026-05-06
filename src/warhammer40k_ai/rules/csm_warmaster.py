@@ -268,7 +268,16 @@ class WarmasterManager:
                     req_options = [
                         DecisionOption.create(
                             opt.name,
-                            payload={"choice_key": opt.key, "summary": opt.summary, "unit_id": unit_id},
+                            payload={
+                                "choice_key": opt.key,
+                                "summary": opt.summary,
+                                "unit_id": unit_id,
+                                "ability": "warmaster",
+                                "ability_name": "Warmaster",
+                                "battle_round": int(battle_round or 0),
+                                "expires_round": int(expires_round or 0),
+                                "player_id": player_id,
+                            },
                         )
                         for opt in WARMMASTER_OPTIONS
                     ]
@@ -280,6 +289,8 @@ class WarmasterManager:
                         player_id=player_id,
                         options=req_options,
                         context={
+                            "ability": "warmaster",
+                            "ability_name": "Warmaster",
                             "unit_id": unit_id,
                             "battle_round": int(battle_round or 0),
                             "player_id": player_id,

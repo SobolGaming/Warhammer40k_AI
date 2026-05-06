@@ -318,7 +318,18 @@ class CrimsonKingManager:
             options = [
                 DecisionOption.create(
                     option.name,
-                    payload={"choice_key": option.key, "choice_name": option.name, "summary": option.summary},
+                    payload={
+                        "choice_key": option.key,
+                        "choice_name": option.name,
+                        "summary": option.summary,
+                        "ability": "unearthly_power",
+                        "ability_name": UNEARTHLY_POWER_NAME,
+                        "source_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "battle_round": int(br or 0),
+                        "expires_round": int(expires_round or 0),
+                        "player_id": player_id,
+                    },
                 )
                 for option in CRIMSON_KING_OPTIONS
             ]

@@ -10010,7 +10010,14 @@ class GameView:
                 options.append(
                     DecisionOption.create(
                         f"{value}",
-                        payload={"pledge_value": int(value), "army_id": army_id},
+                        payload={
+                            "ability": "pledges_to_the_dark_prince",
+                            "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                            "pledge_value": int(value),
+                            "army_id": army_id,
+                            "battle_round": int(battle_round or 0),
+                            "player_id": str(getattr(player, "id", "") or ""),
+                        },
                     )
                 )
             req = _require_pending_decision_request(self.game if self.game is not None else None,
@@ -10019,10 +10026,12 @@ class GameView:
                 player_id=getattr(player, "id", None),
                 options=options,
                 context={
+                    "ability": "pledges_to_the_dark_prince",
                     "army_id": army_id,
                     "battle_round": int(battle_round or 0),
                     "max_value": max_value,
                     "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                    "player_id": str(getattr(player, "id", "") or ""),
                 },
 
             )

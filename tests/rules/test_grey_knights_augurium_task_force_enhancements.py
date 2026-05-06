@@ -394,6 +394,8 @@ class TestGreyKnightsAuguriumTaskForceEnhancements(unittest.TestCase):
         for opt in options:
             payload = dict(getattr(opt, "payload", {}) or {})
             if str(payload.get("target_unit_id", "") or "") == source_id:
+                self.assertEqual(str(payload.get("ability", "") or ""), "grey_knights_augurium_shield_of_prophecy")
+                self.assertEqual(int(payload.get("battle_round", 0) or 0), 2)
                 use_option_id = opt.option_id
                 break
         self.assertIsNotNone(use_option_id)

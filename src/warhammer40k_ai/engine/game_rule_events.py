@@ -10799,9 +10799,13 @@ class GameRuleEventService(GameServiceBase):
                             DecisionOption.create(
                                 weapon_name,
                                 payload={
+                                    "ability": "possessed_blade",
+                                    "ability_name": "Possessed Blade",
                                     "weapon_name": weapon_name,
                                     "unit_id": unit_id,
                                     "model_id": model_id,
+                                    "battle_round": br,
+                                    "player_id": str(getattr(player, "id", "") or ""),
                                 },
                             )
                             for weapon_name in weapon_names
@@ -10817,6 +10821,8 @@ class GameRuleEventService(GameServiceBase):
                                 "phase": "Start of battle",
                                 "unit_id": unit_id,
                                 "model_id": model_id,
+                                "battle_round": br,
+                                "player_id": str(getattr(player, "id", "") or ""),
                             },
                         )
                         self.request_decision(request)
@@ -10851,15 +10857,24 @@ class GameRuleEventService(GameServiceBase):
                 options = [
                     DecisionOption.create(
                         label=str(value),
-                        payload={"pledge_value": int(value), "army_id": army_id},
+                        payload={
+                            "ability": "pledges_to_the_dark_prince",
+                            "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                            "pledge_value": int(value),
+                            "army_id": army_id,
+                            "battle_round": br,
+                            "player_id": str(getattr(player, "id", "") or ""),
+                        },
                     )
                     for value in range(1, max_value + 1)
                 ]
                 context = {
+                    "ability": "pledges_to_the_dark_prince",
                     "army_id": army_id,
                     "battle_round": br,
                     "max_value": max_value,
                     "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                    "player_id": str(getattr(player, "id", "") or ""),
                 }
                 request = DecisionRequest.create(
                     DECISION_CHOOSE_PLEDGE,
@@ -10968,12 +10983,15 @@ class GameRuleEventService(GameServiceBase):
                             DecisionOption.create(
                                 kw,
                                 payload={
+                                    "ability": "start_of_battle_keyword_reroll",
                                     "keyword": kw,
                                     "unit_id": unit_id,
                                     "model_id": model_id,
                                     "ability_key": ability_key,
                                     "ability_name": spec.get("source", ""),
                                     "selection_kind": spec.get("selection_kind", "reroll_ones"),
+                                    "battle_round": br,
+                                    "player_id": str(getattr(player, "id", "") or ""),
                                 },
                             )
                             for kw in keywords
@@ -10989,6 +11007,7 @@ class GameRuleEventService(GameServiceBase):
                             "unit_id": unit_id,
                             "model_id": model_id,
                             "battle_round": br,
+                            "player_id": str(getattr(player, "id", "") or ""),
                         }
                         request = DecisionRequest.create(
                             DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,

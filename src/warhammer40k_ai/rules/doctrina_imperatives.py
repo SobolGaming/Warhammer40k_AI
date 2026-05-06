@@ -248,10 +248,19 @@ class DoctrinaImperativesManager:
                     if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", br) or br) == br:
                         return
             options = list(DOCTRINA_OPTIONS)
+            player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
             req_options = [
                 DecisionOption.create(
                     opt.name,
-                    payload={"choice_key": opt.key, "summary": opt.summary, "army_id": army_id},
+                    payload={
+                        "choice_key": opt.key,
+                        "summary": opt.summary,
+                        "army_id": army_id,
+                        "ability": "doctrina_imperatives",
+                        "ability_name": "Doctrina Imperatives",
+                        "battle_round": br,
+                        "player_id": player_id,
+                    },
                 )
                 for opt in options
             ]
@@ -262,7 +271,13 @@ class DoctrinaImperativesManager:
                 "Select a Doctrina Imperative.",
                 player_id=getattr(getattr(self.army, "player", None), "id", None),
                 options=req_options,
-                context={"army_id": army_id, "battle_round": br},
+                context={
+                    "ability": "doctrina_imperatives",
+                    "ability_name": "Doctrina Imperatives",
+                    "army_id": army_id,
+                    "battle_round": br,
+                    "player_id": player_id,
+                },
             )
             if hasattr(game, "request_decision"):
                 game.request_decision(req)

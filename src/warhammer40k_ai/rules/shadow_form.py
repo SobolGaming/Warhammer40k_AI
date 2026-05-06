@@ -285,6 +285,7 @@ class ShadowFormManager:
                 except Exception:
                     continue
                 unit_id = get_entity_id(unit)
+                player_id = str(getattr(player, "id", "") or "")
                 queue = getattr(game, "decision_queue", None)
                 if queue is not None and hasattr(queue, "list"):
                     for req in list(queue.list() or []):
@@ -297,7 +298,15 @@ class ShadowFormManager:
                         req_options = [
                             DecisionOption.create(
                                 opt.name,
-                                payload={"choice_key": opt.key, "summary": opt.summary, "unit_id": unit_id},
+                                payload={
+                                    "choice_key": opt.key,
+                                    "summary": opt.summary,
+                                    "unit_id": unit_id,
+                                    "ability": "shadow_form",
+                                    "ability_name": "Shadow Form",
+                                    "battle_round": int(battle_round or 0),
+                                    "player_id": player_id,
+                                },
                             )
                             for opt in SHADOW_FORM_OPTIONS
                         ]
@@ -308,7 +317,13 @@ class ShadowFormManager:
                             "Select Shadow Form.",
                             player_id=getattr(player, "id", None),
                             options=req_options,
-                            context={"unit_id": unit_id, "battle_round": int(battle_round or 0)},
+                            context={
+                                "ability": "shadow_form",
+                                "ability_name": "Shadow Form",
+                                "unit_id": unit_id,
+                                "battle_round": int(battle_round or 0),
+                                "player_id": player_id,
+                            },
                         )
                         if hasattr(game, "request_decision"):
                             game.request_decision(req)

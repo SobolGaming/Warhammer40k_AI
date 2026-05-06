@@ -3679,6 +3679,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return None
         army = self.army
         army_id = get_entity_id(army) if army is not None else None
+        player_id = str(getattr(player, "id", "") or "")
         req_options = [
             DecisionOption.create(
                 "None",
@@ -3686,7 +3687,10 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                     "action": "skip",
                     "choice_key": "",
                     "army_id": army_id,
+                    "ability": "synaptic_imperatives",
+                    "ability_name": "Synaptic Imperatives",
                     "battle_round": int(battle_round),
+                    "player_id": player_id,
                 },
             )
         ]
@@ -3700,7 +3704,10 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                         "choice_key": str(imperative.key),
                         "summary": str(imperative.summary),
                         "army_id": army_id,
+                        "ability": "synaptic_imperatives",
+                        "ability_name": "Synaptic Imperatives",
                         "battle_round": int(battle_round),
+                        "player_id": player_id,
                     },
                 )
             )
@@ -3714,6 +3721,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 "ability_name": "Synaptic Imperatives",
                 "army_id": army_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "allowed_choice_keys": list(choice_keys),
                 "optional": True,
             },
@@ -3848,6 +3856,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
 
         army = self.army
         army_id = get_entity_id(army) if army is not None else None
+        player_id = str(getattr(player, "id", "") or "")
         options = []
         for opt in self.get_available_hyper_adaptations():
             key = getattr(opt, "key", None)
@@ -3858,7 +3867,15 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             options.append(
                 DecisionOption.create(
                     name,
-                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                    payload={
+                        "choice_key": str(key),
+                        "summary": summary,
+                        "army_id": army_id,
+                        "ability": "hyper_adaptation",
+                        "ability_name": "Hyper-adaptation",
+                        "battle_round": int(battle_round),
+                        "player_id": player_id,
+                    },
                 )
             )
         if not options:
@@ -3868,7 +3885,13 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             "Select Hyper-adaptation.",
             player_id=getattr(player, "id", None),
             options=options,
-            context={"army_id": army_id, "battle_round": int(battle_round)},
+            context={
+                "ability": "hyper_adaptation",
+                "ability_name": "Hyper-adaptation",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "player_id": player_id,
+            },
         )
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:

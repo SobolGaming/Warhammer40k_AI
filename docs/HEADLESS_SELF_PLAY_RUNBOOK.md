@@ -102,6 +102,7 @@ Default shooting policy:
 - Generic headless `SELECT_REALM_OF_CHAOS_UNITS` handling now synthesizes deterministic `unit_ids`
   for required unit-selection windows, such as Siege Regiment `Creeping Barrage`, and answers
   optional empty-selection windows with their skip option instead of attempting an invalid empty confirm.
+- DecisionRecords include `request_context`, and start-of-battle-round ability candidates also carry explicit `ability`, `battle_round`, and owner context where applicable, so saved replays can distinguish repeated round-start prompts with the same visible option labels.
 - Genestealer Cults Outlander Claw `CLOSE-RANGE SHOOT-OUT` derives eligible Mounted/Vehicle units that have not been selected to shoot before exposing the generic stratagem tool action, so target-required options are not emitted without a bound unit.
 - Core `GRENADE` and `TANK SHOCK` expose one generic stratagem tool action per legal unit/enemy binding when CP is available, including windows with multiple legal enemy targets.
 - Automatic headless `HEROIC INTERVENTION` tool actions are bounded to direct charge routes, avoiding expensive opportunistic routed-path searches during reaction probes.

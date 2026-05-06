@@ -164,6 +164,15 @@ class TestSpaceMarinesWrathfulProcession(unittest.TestCase):
         self.assertEqual(str(getattr(mgr, "wrathful_procession_active_litany_key", "")).upper(), "CHORUS_OF_RELENTLESS_HATE")
         self.assertEqual(int(getattr(mgr, "wrathful_procession_active_litany_round", 0) or 0), 1)
 
+    def test_zealous_litanies_candidates_preserve_round_context(self):
+        game, _sm_player, _enemy_player, army_sm, _army_enemy = _build_game("Wrathful Procession")
+        request = _queue_zealous_litany_request(game, army_sm)
+
+        for candidate in list(getattr(request, "candidates", []) or []):
+            params = dict(getattr(candidate, "params", {}) or {})
+            self.assertEqual(params.get("ability"), "zealous_litanies")
+            self.assertEqual(params.get("battle_round"), 1)
+
     def test_chorus_of_relentless_hate_applies_move_and_advance_bonuses(self):
         game, sm_player, _enemy_player, army_sm, _army_enemy = _build_game("Wrathful Procession")
         infantry = _make_unit(

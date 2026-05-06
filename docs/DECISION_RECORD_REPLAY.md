@@ -56,6 +56,7 @@ Locked invariants:
 - DecisionRecord logging:
   - recorded `rules_bundle` always matches game atomic ids.
   - recorded `rules_bundle_id` always matches the derived bundle id.
+  - recorded `request_context` preserves the original decision context for audit and dataset slicing; strict replay still resolves against the live pending `DecisionRequest`.
   - recorded `descriptor_bundle_id` always matches the compiled descriptor bundle used for the request.
   - recorded `version_adapter_boundary` preserves the active adapter-conditioned replay/training boundary.
 - Snapshot save/load:

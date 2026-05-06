@@ -352,17 +352,42 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
 
         allowed_model_ids = [str(get_entity_id(m)) for m in candidates]
         max_models = self.get_wrath_of_khorne_max_models()
+        player_id = str(getattr(player, "id", "") or "")
         req = DecisionRequest.create(
             DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
             "Select Vessels of Wrath models (optional).",
             player_id=getattr(player, "id", None),
             options=[
-                DecisionOption.create("Confirm", payload={"action": "confirm", "army_id": army_id}),
-                DecisionOption.create("None", payload={"action": "skip", "skip": True, "army_id": army_id}),
+                DecisionOption.create(
+                    "Confirm",
+                    payload={
+                        "action": "confirm",
+                        "ability": "vessels_of_wrath_models",
+                        "ability_name": "Wrath of Khorne",
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "player_id": player_id,
+                    },
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "ability": "vessels_of_wrath_models",
+                        "ability_name": "Wrath of Khorne",
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "player_id": player_id,
+                    },
+                ),
             ],
             context={
+                "ability": "vessels_of_wrath_models",
+                "ability_name": "Wrath of Khorne",
                 "army_id": army_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "max_models": int(max_models),
                 "allowed_model_ids": allowed_model_ids,
                 "source": source,
@@ -413,11 +438,20 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
                     return True
 
         options = []
+        player_id = str(getattr(player, "id", "") or "")
         for d in available_defs:
             options.append(
                 DecisionOption.create(
                     d.name,
-                    payload={"blessing_key": d.key, "army_id": army_id, "summary": d.short_effect},
+                    payload={
+                        "blessing_key": d.key,
+                        "ability": "vessels_of_wrath_blessing",
+                        "ability_name": "Vessels of Wrath Blessing",
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "player_id": player_id,
+                        "summary": d.short_effect,
+                    },
                 )
             )
         if not options:
@@ -428,8 +462,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             player_id=getattr(player, "id", None),
             options=options,
             context={
+                "ability": "vessels_of_wrath_blessing",
+                "ability_name": "Vessels of Wrath Blessing",
                 "army_id": army_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "source": source,
             },
         )

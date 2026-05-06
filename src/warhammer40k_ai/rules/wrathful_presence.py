@@ -317,6 +317,7 @@ class WrathfulPresenceManager:
                 except Exception:
                     continue
                 unit_id = get_entity_id(unit)
+                player_id = str(getattr(player, "id", "") or "")
                 queue = getattr(game, "decision_queue", None)
                 if queue is not None and hasattr(queue, "list"):
                     for req in list(queue.list() or []):
@@ -329,7 +330,15 @@ class WrathfulPresenceManager:
                         req_options = [
                             DecisionOption.create(
                                 opt.name,
-                                payload={"choice_key": opt.key, "summary": opt.summary, "unit_id": unit_id},
+                                payload={
+                                    "choice_key": opt.key,
+                                    "summary": opt.summary,
+                                    "unit_id": unit_id,
+                                    "ability": "wrathful_presence",
+                                    "ability_name": "Wrathful Presence",
+                                    "battle_round": int(battle_round or 0),
+                                    "player_id": player_id,
+                                },
                             )
                             for opt in WRATHFUL_PRESENCE_OPTIONS
                         ]
@@ -340,7 +349,13 @@ class WrathfulPresenceManager:
                             "Select Wrathful Presence.",
                             player_id=getattr(player, "id", None),
                             options=req_options,
-                            context={"unit_id": unit_id, "battle_round": int(battle_round or 0)},
+                            context={
+                                "ability": "wrathful_presence",
+                                "ability_name": "Wrathful Presence",
+                                "unit_id": unit_id,
+                                "battle_round": int(battle_round or 0),
+                                "player_id": player_id,
+                            },
                         )
                         if hasattr(game, "request_decision"):
                             game.request_decision(req)

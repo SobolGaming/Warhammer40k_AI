@@ -167,6 +167,45 @@ def test_replay_decision_records_strict_mode_rejects_candidate_mismatch() -> Non
         replay_decision_records(snapshot_before, [bad_record], strict=True)
 
 
+def test_decision_record_preserves_request_context_for_replay_audit() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm round-start ability?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+        context={
+            "ability": "zealous_litanies",
+            "ability_name": "Zealous Litanies",
+            "army_id": "army:bt",
+            "battle_round": 3,
+            "allowed_choice_keys": {"RITE_OF_PERFERVID_WRATH", "CHORUS_OF_RELENTLESS_HATE"},
+        },
+    )
+    game.request_decision(request)
+
+    apply_result = game.resolve_decision(
+        DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+    )
+
+    assert apply_result.ok is True
+    record = game.decision_record_store.records[-1]
+    assert record["request_context"]["ability"] == "zealous_litanies"
+    assert record["request_context"]["battle_round"] == 3
+    assert record["request_context"]["allowed_choice_keys"] == [
+        "CHORUS_OF_RELENTLESS_HATE",
+        "RITE_OF_PERFERVID_WRATH",
+    ]
+
+
 def test_replay_decision_records_round_trip_preserves_army_build_and_objective_site_provenance() -> None:
     game, player = _build_complex_replay_game()
     request = _queue_confirmation(game, player)

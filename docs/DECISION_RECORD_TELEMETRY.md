@@ -8,6 +8,7 @@ Canonical schema:
 Runtime guarantees:
 - A `DecisionRecord` is emitted for each resolved decision and for each rejected `RESOLVE_DECISION` command that can still be mapped to a pending request.
 - Every record includes decomposed `rules_bundle` ids plus convenience `rules_bundle_id`.
+- Every record includes `request_context`, a JSON-safe snapshot of the originating `DecisionRequest.context`, so replay audits can identify rule-specific timing such as `ability`, `battle_round`, source unit, and player context even when candidate payloads are compact.
 - Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/army-build/tool`) used at record time.
 - Every record includes the compiled `descriptor_bundle_id` used for the request.
 - Every record includes `version_adapter_boundary`, preserving the exact adapter-conditioned replay/training boundary that was active when the decision was made.

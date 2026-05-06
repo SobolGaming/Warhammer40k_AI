@@ -2445,6 +2445,10 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
 
         options = []
         candidate_bindings = []
+        army_id = str(get_entity_id(self.army) or "")
+        resolved_ability = str(ability or "murderous_agenda").strip() or "murderous_agenda"
+        resolved_ability_name = str(ability_name or self.MURDEROUS_AGENDA_SOURCE).strip() or self.MURDEROUS_AGENDA_SOURCE
+        player_id = str(getattr(player, "id", "") or "")
         for contract_key in self._murderous_agenda_contract_keys():
             candidates = self._collect_murderous_agenda_candidates(contract_key, game=game, player=player)
             contract_name = self._murderous_agenda_contract_name(contract_key)
@@ -2456,18 +2460,25 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 options.append(
                     DecisionOption.create(
                         f"{contract_name}: {str(getattr(candidate, 'name', 'Unit') or 'Unit')}",
-                        payload={"contract_key": contract_key, "target_unit_id": target_unit_id},
+                        payload={
+                            "ability": resolved_ability,
+                            "ability_name": resolved_ability_name,
+                            "army_id": army_id,
+                            "contract_key": contract_key,
+                            "target_unit_id": target_unit_id,
+                            "battle_round": int(battle_round or 0),
+                            "player_id": player_id,
+                        },
                     )
                 )
         if not options:
             return None
-        army_id = str(get_entity_id(self.army) or "")
-        resolved_ability_name = str(ability_name or self.MURDEROUS_AGENDA_SOURCE).strip() or self.MURDEROUS_AGENDA_SOURCE
         context = {
-            "ability": str(ability or "murderous_agenda").strip() or "murderous_agenda",
+            "ability": resolved_ability,
             "ability_name": resolved_ability_name,
             "army_id": army_id,
             "battle_round": battle_round,
+            "player_id": player_id,
             "candidate_bindings": list(candidate_bindings),
             "allow_reselect": bool(allow_reselect),
         }

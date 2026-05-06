@@ -373,6 +373,8 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return None
 
         slot_index = int(len(existing_ids) + 1)
+        army_id = self._entity_id(self.army)
+        player_id = str(getattr(owner, "id", "") or "")
         options = []
         candidate_ids: list[str] = []
         for idx, (objective_id, objective, location) in enumerate(candidate_entries):
@@ -382,7 +384,20 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                 label = f"{label} ({float(getattr(location, 'x', 0.0)):.1f}, {float(getattr(location, 'y', 0.0)):.1f})"
             except (TypeError, ValueError):
                 pass
-            options.append(DecisionOption.create(label, payload={"objective_id": str(objective_id)}))
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "objective_id": str(objective_id),
+                        "ability": self.DAUNTLESS_DEFENDERS_ABILITY_KEY,
+                        "ability_name": self.DAUNTLESS_DEFENDERS_NAME,
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "slot_index": int(slot_index),
+                        "player_id": player_id,
+                    },
+                )
+            )
         if not options:
             return None
 
@@ -394,7 +409,6 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         else:
             prompt = "Dauntless Defenders: select a new foundation objective marker."
 
-        army_id = self._entity_id(self.army)
         return DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
             prompt,
@@ -405,6 +419,7 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                 "ability_name": self.DAUNTLESS_DEFENDERS_NAME,
                 "army_id": army_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "slot_index": int(slot_index),
                 "existing_foundation_ids": list(existing_ids),
                 "candidate_objective_ids": list(candidate_ids),

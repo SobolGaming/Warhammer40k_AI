@@ -165,12 +165,17 @@ class TestDrukhariKabaliteCartelMurderousAgenda(unittest.TestCase):
         ]
         self.assertTrue(requests)
         request = requests[-1]
+        self.assertEqual(str((getattr(request, "context", {}) or {}).get("ability", "") or ""), "murderous_agenda")
+        self.assertEqual(int((getattr(request, "context", {}) or {}).get("battle_round", 0) or 0), 1)
         option = next(
             opt
             for opt in list(request.options or [])
             if str((getattr(opt, "payload", {}) or {}).get("contract_key", "") or "") == "TROPHY_HUNTERS"
             and str((getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "") == str(enemy_character._id)
         )
+        option_payload = dict(getattr(option, "payload", {}) or {})
+        self.assertEqual(str(option_payload.get("ability", "") or ""), "murderous_agenda")
+        self.assertEqual(int(option_payload.get("battle_round", 0) or 0), 1)
         result = DecisionResult(
             decision_id=request.decision_id,
             player_id=dru_player.id,

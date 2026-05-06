@@ -326,11 +326,20 @@ class TemplarVowsManager:
                         return
             options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
             req_options = []
+            player_id = str(getattr(player, "id", "") or "") if player is not None else ""
             for vow in options:
                 req_options.append(
                     DecisionOption.create(
                         vow.name,
-                        payload={"choice_key": vow.key, "summary": vow.summary, "army_id": army_id},
+                        payload={
+                            "choice_key": vow.key,
+                            "summary": vow.summary,
+                            "army_id": army_id,
+                            "ability": "templar_vow",
+                            "ability_name": "Templar Vows",
+                            "battle_round": int(battle_round),
+                            "player_id": player_id,
+                        },
                     )
                 )
             if not req_options:
@@ -340,7 +349,13 @@ class TemplarVowsManager:
                 "Select a Templar Vow.",
                 player_id=getattr(player, "id", None) if player is not None else None,
                 options=req_options,
-                context={"army_id": army_id, "battle_round": int(battle_round)},
+                context={
+                    "ability": "templar_vow",
+                    "ability_name": "Templar Vows",
+                    "army_id": army_id,
+                    "battle_round": int(battle_round),
+                    "player_id": player_id,
+                },
             )
             if hasattr(game, "request_decision"):
                 game.request_decision(req)

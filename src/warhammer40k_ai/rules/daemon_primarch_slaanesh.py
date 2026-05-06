@@ -294,6 +294,7 @@ class DaemonPrimarchSlaaneshManager:
             except Exception:
                 continue
             unit_id = get_entity_id(unit)
+            player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
             queue = getattr(game, "decision_queue", None)
             if queue is not None and hasattr(queue, "list"):
                 for req in list(queue.list() or []):
@@ -306,7 +307,17 @@ class DaemonPrimarchSlaaneshManager:
                     req_options = [
                         DecisionOption.create(
                             opt.name,
-                            payload={"choice_key": opt.key, "summary": opt.summary, "unit_id": unit_id},
+                            payload={
+                                "choice_key": opt.key,
+                                "summary": opt.summary,
+                                "unit_id": unit_id,
+                                "ability": "daemon_primarch_slaanesh",
+                                "ability_name": "Daemon Primarch of Slaanesh",
+                                "battle_round": int(br or 0),
+                                "expires_round": int(expires_round or 0),
+                                "opponent_player_id": opp_id,
+                                "player_id": player_id,
+                            },
                         )
                         for opt in DAEMON_PRIMARCH_SLAANESH_OPTIONS
                     ]
@@ -318,10 +329,13 @@ class DaemonPrimarchSlaaneshManager:
                         player_id=getattr(getattr(self.army, "player", None), "id", None),
                         options=req_options,
                         context={
+                            "ability": "daemon_primarch_slaanesh",
+                            "ability_name": "Daemon Primarch of Slaanesh",
                             "unit_id": unit_id,
                             "battle_round": int(br or 0),
                             "opponent_player_id": opp_id,
                             "expires_round": int(expires_round or 0),
+                            "player_id": player_id,
                         },
                     )
                     if hasattr(game, "request_decision"):

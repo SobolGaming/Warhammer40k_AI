@@ -329,6 +329,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         army_id = self._entity_id(self.army)
         if not army_id:
             return False
+        player_id = str(getattr(owner, "id", "") or "")
         from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
 
         if self._pending_artillery_support_request(
@@ -350,6 +351,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                 DecisionOption.create(
                     mode_label,
                     payload={
+                        "ability": self._ARTILLERY_SUPPORT_MODE_ABILITY,
+                        "ability_name": "Artillery Support",
+                        "army_id": army_id,
+                        "battle_round": int(battle_round or 0),
+                        "player_id": player_id,
                         "artillery_support_mode": mode_key,
                         "mode_key": mode_key,
                     },
@@ -368,6 +374,7 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                 "ability_name": "Artillery Support",
                 "army_id": army_id,
                 "battle_round": int(battle_round or 0),
+                "player_id": player_id,
                 "max_units": int(max_units),
                 "allowed_modes": ["creeping_barrage", "incendiary_bombardment", "smoke_shells"],
                 "optional": False,

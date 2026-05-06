@@ -592,9 +592,16 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             for req in game.decision_queue.list()
             if req.decision_type == DECISION_CHOOSE_PLEDGE and str(req.context.get("army_id", "")) == army_id
         )
+        self.assertEqual(str(pledge_req.context.get("ability", "") or ""), "pledges_to_the_dark_prince")
+        self.assertEqual(int(pledge_req.context.get("battle_round", 0) or 0), 1)
         option_id = next(
             opt.option_id for opt in pledge_req.options if int(opt.payload.get("pledge_value", 0) or 0) == 2
         )
+        option_payload = next(
+            dict(opt.payload or {}) for opt in pledge_req.options if int(opt.payload.get("pledge_value", 0) or 0) == 2
+        )
+        self.assertEqual(str(option_payload.get("ability", "") or ""), "pledges_to_the_dark_prince")
+        self.assertEqual(int(option_payload.get("battle_round", 0) or 0), 1)
         value, apply_result = resolve_decision_value(game, pledge_req, option_id)
         self.assertEqual(int(value or 0), 2)
         self.assertTrue(getattr(apply_result, "ok", False))

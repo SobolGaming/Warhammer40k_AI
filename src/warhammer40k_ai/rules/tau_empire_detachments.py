@@ -1757,6 +1757,8 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return
 
         queue = getattr(game, "decision_queue", None)
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        player_id = str(getattr(player, "id", "") or "")
         for source_unit in self._iter_strategic_conqueror_sources():
             if not self._enhancement_bearer_alive(source_unit):
                 continue
@@ -1797,7 +1799,20 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
                         )
                 except Exception:
                     pass
-                options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "objective_id": objective_id,
+                            "ability": "strategic_conqueror",
+                            "ability_name": "Strategic Conqueror",
+                            "source_unit_id": source_unit_id,
+                            "unit_id": source_unit_id,
+                            "battle_round": battle_round,
+                            "player_id": player_id,
+                        },
+                    )
+                )
             if not options:
                 continue
 
@@ -1811,6 +1826,8 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
                     "ability_name": "Strategic Conqueror",
                     "source_unit_id": source_unit_id,
                     "unit_id": source_unit_id,
+                    "battle_round": battle_round,
+                    "player_id": player_id,
                     "optional": False,
                 },
             )

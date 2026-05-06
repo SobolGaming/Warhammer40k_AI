@@ -308,6 +308,13 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         return None
 
     @staticmethod
+    def _is_base_harbingers_request(request) -> bool:
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_HARBINGER:
+            return False
+        context = getattr(request, "context", {}) or {}
+        return str(context.get("ability", "") or "") == "harbingers_of_dread"
+
+    @staticmethod
     def _apply_enhancement(unit, *, enhancement_id: str, enhancement_name: str):
         unit._get_enhancement_bearer_model = lambda: unit.models[0]
         enhancement = Enhancement(
@@ -333,8 +340,7 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         base_requests = [
             req
             for req in list(game.decision_queue.list() or [])
-            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_HARBINGER
-            and not str((getattr(req, "context", {}) or {}).get("ability", "") or "")
+            if self._is_base_harbingers_request(req)
         ]
         self.assertTrue(base_requests)
         base_request = base_requests[-1]
@@ -406,8 +412,7 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         base_request = next(
             req
             for req in list(game.decision_queue.list() or [])
-            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_HARBINGER
-            and not str((getattr(req, "context", {}) or {}).get("ability", "") or "")
+            if self._is_base_harbingers_request(req)
         )
         base_option = self._choose_first_non_random_option(base_request)
         base_result = DecisionResult(
@@ -458,8 +463,7 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         base_request = next(
             req
             for req in list(game.decision_queue.list() or [])
-            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_HARBINGER
-            and not str((getattr(req, "context", {}) or {}).get("ability", "") or "")
+            if self._is_base_harbingers_request(req)
         )
         base_option = self._choose_first_non_random_option(base_request)
         result = DecisionResult(
@@ -510,8 +514,7 @@ class TestChaosKnightsTraitorisLance(unittest.TestCase):
         base_request = next(
             req
             for req in list(game.decision_queue.list() or [])
-            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_HARBINGER
-            and not str((getattr(req, "context", {}) or {}).get("ability", "") or "")
+            if self._is_base_harbingers_request(req)
         )
         roll_option = self._choose_roll_option(base_request)
         self.assertIsNotNone(roll_option)

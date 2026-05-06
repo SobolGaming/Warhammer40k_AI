@@ -628,11 +628,16 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if owner is None:
             return None
         army_id = self._entity_id(self.army)
+        player_id = str(getattr(owner, "id", "") or "")
         options = [
             DecisionOption.create(
                 label,
                 payload={
                     "army_id": army_id,
+                    "ability": self._DATA_PSALM_ABILITY_KEY,
+                    "ability_name": self._DATA_PSALM_SOURCE,
+                    "battle_round": int(battle_round),
+                    "player_id": player_id,
                     "choice_key": key,
                 },
             )
@@ -650,6 +655,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                 "ability_name": self._DATA_PSALM_SOURCE,
                 "army_id": army_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "allowed_choice_keys": [key for key, _label in self.data_psalm_benedictions()],
                 "optional": False,
             },
@@ -3526,7 +3532,23 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             source_sr.get("enhancement_skitarii_cantic_thrallnet_source", "")
             or self._SKITARII_CANTIC_THRALLNET_SOURCE
         ).strip() or self._SKITARII_CANTIC_THRALLNET_SOURCE
-        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        army_id = self._entity_id(self.army)
+        player_id = str(getattr(owner, "id", "") or "")
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "ability": self._SKITARII_CANTIC_THRALLNET_ABILITY_KEY,
+                    "ability_name": source_name,
+                    "army_id": army_id,
+                    "source_unit_id": source_root_id,
+                    "source_member_unit_id": source_member_id,
+                    "battle_round": int(battle_round),
+                    "player_id": player_id,
+                },
+            )
+        ]
         for target in candidates:
             target_id = self._entity_id(target)
             if not target_id:
@@ -3539,6 +3561,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                         "source_unit_id": source_root_id,
                         "source_member_unit_id": source_member_id,
                         "target_unit_id": target_id,
+                        "ability": self._SKITARII_CANTIC_THRALLNET_ABILITY_KEY,
+                        "ability_name": source_name,
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "player_id": player_id,
                     },
                 )
             )
@@ -3560,10 +3587,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             context={
                 "ability": self._SKITARII_CANTIC_THRALLNET_ABILITY_KEY,
                 "ability_name": source_name,
-                "army_id": self._entity_id(self.army),
+                "army_id": army_id,
                 "source_unit_id": source_root_id,
                 "source_member_unit_id": source_member_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
                 "candidate_unit_ids": [self._entity_id(target) for target in candidates if self._entity_id(target)],
                 "optional": True,
             },
@@ -4475,12 +4503,17 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return None
         target_id = self._entity_id(target_unit)
         source_army_id = self._entity_id(self.army)
+        player_id = str(getattr(opponent, "id", "") or "")
         options = [
             DecisionOption.create(
                 "Stand Firm",
                 payload={
                     "army_id": source_army_id,
                     "target_unit_id": target_id,
+                    "ability": self._RAD_BOMBARDMENT_ABILITY_KEY,
+                    "ability_name": "Rad-bombardment",
+                    "battle_round": int(battle_round),
+                    "player_id": player_id,
                     self._RAD_BOMBARDMENT_CHOICE_KEY: self._RAD_BOMBARDMENT_CHOICE_STAND_FIRM,
                 },
             ),
@@ -4489,6 +4522,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                 payload={
                     "army_id": source_army_id,
                     "target_unit_id": target_id,
+                    "ability": self._RAD_BOMBARDMENT_ABILITY_KEY,
+                    "ability_name": "Rad-bombardment",
+                    "battle_round": int(battle_round),
+                    "player_id": player_id,
                     self._RAD_BOMBARDMENT_CHOICE_KEY: self._RAD_BOMBARDMENT_CHOICE_TAKE_COVER,
                 },
             ),
@@ -4508,6 +4545,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                 "army_id": source_army_id,
                 "target_unit_id": target_id,
                 "battle_round": int(battle_round),
+                "player_id": player_id,
             },
         )
 

@@ -417,6 +417,17 @@ class RelicsOfTheMatriarchsManager:
                         "choice_names": [],
                         "choice_count": 0,
                     }
+                payload.update(
+                    {
+                        "ability": "relics_of_the_matriarchs",
+                        "ability_name": RELICS_OF_THE_MATRIARCHS_NAME,
+                        "source_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "battle_round": int(battle_round or 0),
+                        "expires_round": int(expires_round or 0),
+                        "player_id": player_id,
+                    }
+                )
                 options.append(DecisionOption.create(option_label, payload=payload))
             if not options:
                 continue

@@ -300,6 +300,7 @@ class HarbingersOfDreadManager:
             available = list(self.get_available_dread_abilities())
             if not available:
                 return
+            player_id = str(getattr(player, "id", "") or "")
             req_options = []
             try:
                 from ..utility.dice import get_roll
@@ -323,6 +324,10 @@ class HarbingersOfDreadManager:
                         "rolls": rolls,
                         "selected_keys": list(selected_keys),
                         "army_id": army_id,
+                        "ability": "harbingers_of_dread",
+                        "ability_name": "Harbingers of Dread",
+                        "battle_round": br,
+                        "player_id": player_id,
                     },
                 )
             )
@@ -330,7 +335,15 @@ class HarbingersOfDreadManager:
                 req_options.append(
                     DecisionOption.create(
                         dread.name,
-                        payload={"choice_key": dread.key, "summary": dread.summary, "army_id": army_id},
+                        payload={
+                            "choice_key": dread.key,
+                            "summary": dread.summary,
+                            "army_id": army_id,
+                            "ability": "harbingers_of_dread",
+                            "ability_name": "Harbingers of Dread",
+                            "battle_round": br,
+                            "player_id": player_id,
+                        },
                     )
                 )
             req = DecisionRequest.create(
@@ -338,7 +351,13 @@ class HarbingersOfDreadManager:
                 "Select Harbingers of Dread.",
                 player_id=getattr(player, "id", None),
                 options=req_options,
-                context={"army_id": army_id, "battle_round": br},
+                context={
+                    "ability": "harbingers_of_dread",
+                    "ability_name": "Harbingers of Dread",
+                    "army_id": army_id,
+                    "battle_round": br,
+                    "player_id": player_id,
+                },
             )
             if hasattr(game, "request_decision"):
                 game.request_decision(req)
