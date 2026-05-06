@@ -130,7 +130,16 @@ class BlessingsOfKhorneDialog(BaseDialog):
                 "ctx": dict(self._ctx_payload),
             }
             if callable(self.on_confirm):
-                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                option_id = ""
+                selected_keys = [str(key) for key in list(self._selected_blessings)]
+                for entry in list(self._option_entries or []):
+                    entry_payload = dict(entry.get("payload", {}) or {})
+                    entry_keys = [str(key) for key in list(entry_payload.get("selected_blessings", []) or [])]
+                    if entry_keys == selected_keys and bool(entry_payload.get("use_reborn", False)) == bool(self._use_reborn):
+                        option_id = str(entry.get("option_id", "") or "")
+                        break
+                if not option_id and self._option_entries:
+                    option_id = str(self._option_entries[0]["option_id"])
                 self.on_confirm(option_id, payload)
             self.hide()
             return True
@@ -346,4 +355,3 @@ class BlessingsOfKhorneDialog(BaseDialog):
             "already_active_keys": list(getattr(ctx, "already_active_keys", set()) or []),
             "reborn_in_blood_available": bool(getattr(ctx, "reborn_in_blood_available", False)),
         }
-

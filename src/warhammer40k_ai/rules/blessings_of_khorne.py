@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from enum import Enum
+from itertools import combinations
 from typing import Callable, Iterable, Optional
 
 
@@ -69,6 +72,15 @@ DEFAULT_BLESSINGS: tuple[BlessingDefinition, ...] = (
         short_effect="Melee vs Infantry gains Devastating Wounds (eligible units).",
     ),
 )
+
+_HEADLESS_BLESSING_PRIORITY: dict[str, int] = {
+    "WARP_BLADES": 60,
+    "MARTIAL_EXCELLENCE": 55,
+    "UNBRIDLED_BLOODLUST": 50,
+    "DECAPITATING_STRIKES": 45,
+    "RAGE_FUELLED_INVIGORATION": 35,
+    "TOTAL_CARNAGE": 30,
+}
 
 
 @dataclass
@@ -507,6 +519,93 @@ class BlessingsOfKhorneManager:
             reborn_in_blood_available=bool(ctx_data.get("reborn_in_blood_available", False)),
         )
 
+    def _headless_blessing_candidate_rows(
+        self,
+        *,
+        army_id: str,
+        ctx: BlessingsRollContext,
+        decision_type: str,
+    ) -> tuple[list[object], list[object]]:
+        from ..engine.decisions import CandidateAction, DecisionOption
+
+        ctx_payload = self.serialize_ctx_payload(ctx)
+        already_active = set(getattr(ctx, "already_active_keys", set()) or set())
+        legal_keys = [key for key in self.definitions.keys() if key not in already_active]
+        selections: list[tuple[str, ...]] = [tuple()]
+        max_activations = max(0, int(getattr(ctx, "max_activations", 0) or 0))
+        for size in range(1, max_activations + 1):
+            for selection in combinations(legal_keys, size):
+                preview = self.preview_choice(ctx, selected_blessing_keys=list(selection))
+                if bool(preview.get("ok", False)):
+                    selections.append(tuple(selection))
+
+        def _selection_sort_key(selection: tuple[str, ...]) -> tuple[int, int, str]:
+            priority = sum(int(_HEADLESS_BLESSING_PRIORITY.get(key, 0)) for key in selection)
+            return (-len(selection), -priority, "|".join(selection))
+
+        rows = [(selection, False) for selection in sorted(set(selections), key=_selection_sort_key)]
+        reborn_preview = self.preview_choice(ctx, selected_blessing_keys=[], use_reborn_in_blood=True)
+        if bool(reborn_preview.get("ok", False)):
+            rows.insert(0, (tuple(), True))
+
+        options = []
+        candidates = []
+        for selection, use_reborn in rows:
+            selected = list(selection)
+            if use_reborn:
+                label = "Use Reborn in Blood"
+            else:
+                label = "No Blessings" if not selected else "Activate " + " + ".join(
+                    self.definitions[key].name for key in selected
+                )
+            payload = {
+                "army_id": str(army_id),
+                "selected_blessings": selected,
+                "use_reborn": bool(use_reborn),
+                "ctx": dict(ctx_payload),
+            }
+            action_blob = json.dumps(
+                {
+                    "army_id": str(army_id),
+                    "battle_round": int(getattr(ctx, "battle_round", 0) or 0),
+                    "dice": list(getattr(ctx, "dice", []) or []),
+                    "rerolled_indices": list(getattr(ctx, "rerolled_indices", []) or []),
+                    "selected_blessings": selected,
+                    "use_reborn": bool(use_reborn),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+            action_id = f"{decision_type}:{hashlib.sha256(action_blob.encode('utf-8')).hexdigest()}"
+            payload["action_id"] = action_id
+            options.append(DecisionOption.create(label, payload=dict(payload)))
+
+            priority = 200 if use_reborn else sum(
+                int(_HEADLESS_BLESSING_PRIORITY.get(key, 0)) for key in selected
+            )
+            if use_reborn:
+                candidate_kind = "reborn_in_blood"
+            elif not selected:
+                candidate_kind = "noop"
+            else:
+                candidate_kind = "blessings_of_khorne"
+            candidate_params = dict(payload)
+            candidate_params.pop("action_id", None)
+            candidates.append(
+                CandidateAction(
+                    action_id=action_id,
+                    params=candidate_params,
+                    metadata={
+                        "label": label,
+                        "candidate_kind": candidate_kind,
+                        "projected_action_enablement_delta": 3.0 if use_reborn else float(len(selected)),
+                        "projected_trade_ev": float(priority) / 100.0,
+                    },
+                )
+            )
+        return options, candidates
+
     def build_start_of_round_request(self, army, *, battle_round: int, game=None):
         if army is None:
             return None
@@ -572,12 +671,23 @@ class BlessingsOfKhorneManager:
         )
 
         army_id = get_entity_id(army)
+        options, candidates = self._headless_blessing_candidate_rows(
+            army_id=str(army_id),
+            ctx=ctx,
+            decision_type=DECISION_CHOOSE_BLESSINGS,
+        )
         req = DecisionRequest.create(
             DECISION_CHOOSE_BLESSINGS,
             "Select Blessings of Khorne.",
             player_id=getattr(player, "id", None),
-            options=[DecisionOption.create("Confirm", payload={"army_id": army_id})],
+            options=options or [
+                DecisionOption.create(
+                    "No Blessings",
+                    payload={"army_id": army_id, "selected_blessings": []},
+                )
+            ],
             context={"army_id": army_id, "ctx": self.serialize_ctx_payload(ctx)},
+            candidates=candidates or None,
         )
         if game is not None:
             request_fn = getattr(game, "request_decision", None)

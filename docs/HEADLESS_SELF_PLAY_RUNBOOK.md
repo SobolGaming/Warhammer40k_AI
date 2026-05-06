@@ -85,6 +85,7 @@ stable per-game `game_id`, while the machine-readable report records the actual 
 What `--max-phase-steps 80` means:
 - It is a safety cap on battle-phase transitions per game after setup.
 - If a game appears stuck and reaches this cap, the script fails fast instead of running forever.
+- The game ends after battle round 5; wrapping out of the final Fight phase does not start battle-round-6 hooks or decisions.
 
 By default, this script also applies reward annotation using `dense_vp_delta_v1`.
 
@@ -104,6 +105,7 @@ Default shooting policy:
 - Genestealer Cults Outlander Claw `CLOSE-RANGE SHOOT-OUT` derives eligible Mounted/Vehicle units that have not been selected to shoot before exposing the generic stratagem tool action, so target-required options are not emitted without a bound unit.
 - Core `GRENADE` and `TANK SHOCK` expose one generic stratagem tool action per legal unit/enemy binding when CP is available, including windows with multiple legal enemy targets.
 - Automatic headless `HEROIC INTERVENTION` tool actions are bounded to direct charge routes, avoiding expensive opportunistic routed-path searches during reaction probes.
+- World Eaters `Blessings of Khorne` start-of-battle-round prompts expose deterministic legal activation candidates from the rolled dice; the headless policy prefers two activations when available and records the selected Blessings payload instead of an empty confirm.
 - Aeldari Seer Council phase items populate legal source, model, enemy, and shooting-target context for `PRESENTIMENT OF DREAD`, `FATE INESCAPABLE`, and `UNSHROUDED TRUTH` before any headless tool-action preflight.
 - Post-command headless stratagem tool-action scans are gated until setup is complete, so deployment commands cannot trigger normal battle-phase stratagem candidate generation through the default command-phase placeholder.
 - T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.

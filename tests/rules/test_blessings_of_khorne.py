@@ -92,6 +92,127 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertTrue(res["reborn_used"])
         self.assertEqual(res["activated"], [])
 
+    def test_headless_start_request_auto_selects_legal_blessings(self):
+        from warhammer40k_ai.engine.decision_handlers.abilities import (
+            _apply_choose_blessings,
+            _validate_choose_blessings,
+        )
+        from warhammer40k_ai.engine.decisions import DecisionResult
+        from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
+
+        class _Unit:
+            deployed = True
+            reserve_status = "deployed"
+
+            def is_alive(self):
+                return True
+
+            def attached_unit_has_blessings_of_khorne(self):
+                return True
+
+            def _find_ability_with_patterns(self, _patterns):
+                return False, None
+
+        mgr = BlessingsOfKhorneManager()
+        mgr.on_battle_round_start(1)
+        unit = _Unit()
+        army = SimpleNamespace(id="army:we", units=[unit], blessings_of_khorne=mgr, player=None)
+        player = SimpleNamespace(id="player:we", name="World Eaters", army=army, get_army=lambda: army)
+        army.player = player
+        dice = iter([6, 6, 5, 5, 4, 4, 1, 1])
+        game = SimpleNamespace(
+            players=[player],
+            random_source=SimpleNamespace(randint=lambda _low, _high: next(dice)),
+            is_authoritative=True,
+        )
+
+        with patch("warhammer40k_ai.utility.ability_support.army_has_ability_id", return_value=True):
+            req = mgr.build_start_of_round_request(army, battle_round=1, game=game)
+
+        ranked = HeadlessPolicyDecisionController()._rank_legal_candidates(req)
+        self.assertTrue(ranked)
+        chosen = ranked[0]
+        self.assertEqual(set(chosen.params["selected_blessings"]), {"MARTIAL_EXCELLENCE", "WARP_BLADES"})
+
+        option_id = ""
+        for option in req.options:
+            if req.action_id_for_option_id(option.option_id) == chosen.action_id:
+                option_id = option.option_id
+                break
+        self.assertTrue(option_id)
+
+        result = DecisionResult(
+            decision_id=req.decision_id,
+            player_id=req.player_id,
+            option_id=option_id,
+            payload=dict(chosen.params),
+        )
+        self.assertEqual(_validate_choose_blessings(game, req, result), ())
+        applied = _apply_choose_blessings(game, req, result)
+        self.assertEqual(set(applied["activated"]), {"MARTIAL_EXCELLENCE", "WARP_BLADES"})
+        self.assertTrue(mgr.is_blessing_active("MARTIAL_EXCELLENCE", battle_round=1))
+        self.assertTrue(mgr.is_blessing_active("WARP_BLADES", battle_round=1))
+
+    def test_headless_start_request_can_schedule_reborn_in_blood(self):
+        from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_blessings
+        from warhammer40k_ai.engine.decisions import DecisionResult
+        from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
+
+        class _Angron:
+            deployed = False
+            reserve_status = "destroyed"
+
+            def is_alive(self):
+                return False
+
+            def attached_unit_has_blessings_of_khorne(self):
+                return True
+
+            def _find_ability_with_patterns(self, patterns):
+                return any("reborn in blood" in str(pattern).lower() for pattern in patterns), None
+
+        mgr = BlessingsOfKhorneManager()
+        mgr.on_battle_round_start(1)
+        angron = _Angron()
+        scheduled_games = []
+        army = SimpleNamespace(
+            id="army:we",
+            units=[angron],
+            blessings_of_khorne=mgr,
+            player=None,
+            schedule_reborn_in_blood=lambda *, game: scheduled_games.append(game) or True,
+        )
+        player = SimpleNamespace(id="player:we", name="World Eaters", army=army, get_army=lambda: army)
+        army.player = player
+        dice = iter([6, 6, 6, 1, 1, 1, 2, 2])
+        game = SimpleNamespace(
+            players=[player],
+            random_source=SimpleNamespace(randint=lambda _low, _high: next(dice)),
+            is_authoritative=True,
+        )
+
+        with patch("warhammer40k_ai.utility.ability_support.army_has_ability_id", return_value=True):
+            req = mgr.build_start_of_round_request(army, battle_round=1, game=game)
+
+        chosen = HeadlessPolicyDecisionController()._rank_legal_candidates(req)[0]
+        self.assertTrue(chosen.params["use_reborn"])
+        option_id = next(
+            option.option_id
+            for option in req.options
+            if req.action_id_for_option_id(option.option_id) == chosen.action_id
+        )
+        result = DecisionResult(
+            decision_id=req.decision_id,
+            player_id=req.player_id,
+            option_id=option_id,
+            payload=dict(chosen.params),
+        )
+        applied = _apply_choose_blessings(game, req, result)
+        self.assertTrue(applied["reborn_used"])
+        self.assertEqual(scheduled_games, [game])
+
     def test_total_carnage_queue_resolves_after_attacks(self):
         from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
 
@@ -213,4 +334,3 @@ class TestBlessingsCombatInjection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

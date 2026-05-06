@@ -188,6 +188,10 @@ def _apply_choose_blessings(game: object, request: DecisionRequest, result: Deci
     selected = result.payload.get("selected_blessings") or result.payload.get("choices") or []
     use_reborn = bool(result.payload.get("use_reborn", False))
     applied = mgr.apply_choice(ctx, selected_blessing_keys=list(selected), use_reborn_in_blood=use_reborn)
+    if bool(applied.get("reborn_used", False)):
+        schedule_reborn = getattr(army, "schedule_reborn_in_blood", None)
+        if callable(schedule_reborn):
+            schedule_reborn(game=game)
     try:
         names = []
         for k in list(selected or []):
