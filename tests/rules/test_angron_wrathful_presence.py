@@ -61,6 +61,67 @@ def test_blood_gods_favour_grants_six_rerolls():
     assert mgr.favoured_of_khorne_rerolls_for_army(army) == 6
 
 
+def test_wrathful_presence_defers_blessings_until_aura_choice(monkeypatch):
+    from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_wrathful
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_BLESSINGS, DECISION_CHOOSE_WRATHFUL_PRESENCE
+    from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.rules.wrathful_presence import KEY_BLOOD_GODS_FAVOUR
+
+    class _Game:
+        def __init__(self):
+            self.turn = 1
+            self.players = []
+            self.decision_queue = DecisionQueue()
+            self.is_authoritative = True
+            rolls = iter([1, 1, 2, 2, 3, 3, 4, 4])
+            self.random_source = SimpleNamespace(randint=lambda _low, _high: next(rolls))
+
+        def request_decision(self, request):
+            self.decision_queue.add(request)
+
+    army = Army("World Eaters")
+    angron = _make_stub_unit("Angron", army, keywords=("WORLD EATERS",))
+    angron._id = "unit:angron"
+    angron.possible_abilities = [SimpleNamespace(name="Wrathful Presence")]
+    angron.attached_unit_has_blessings_of_khorne = lambda: True
+    angron._find_ability_with_patterns = lambda _patterns: (False, None)
+    army.units = [angron]
+
+    game = _Game()
+    player = SimpleNamespace(id="player:we", name="World Eaters", game=game, army=army, get_army=lambda: army)
+    game.players = [player]
+    army.player = player
+
+    monkeypatch.setattr("warhammer40k_ai.utility.ability_support.army_has_ability_id", lambda _army, _ability: True)
+
+    army.on_battle_round_start(1)
+
+    pending = game.decision_queue.list()
+    assert [req.decision_type for req in pending] == [DECISION_CHOOSE_WRATHFUL_PRESENCE]
+
+    wrathful_req = pending[0]
+    option = next(
+        opt
+        for opt in wrathful_req.options
+        if (opt.payload or {}).get("choice_key") == KEY_BLOOD_GODS_FAVOUR
+    )
+    result = DecisionResult(
+        decision_id=wrathful_req.decision_id,
+        player_id=wrathful_req.player_id,
+        option_id=option.option_id,
+        payload=dict(option.payload or {}),
+    )
+    game.decision_queue.pop(wrathful_req.decision_id)
+    _apply_choose_wrathful(game, wrathful_req, result)
+
+    pending = game.decision_queue.list()
+    assert [req.decision_type for req in pending] == [DECISION_CHOOSE_BLESSINGS]
+    ctx = dict(pending[0].context.get("ctx") or {})
+    assert ctx["battle_round"] == 1
+    assert ctx["rerolls_allowed"] == 6
+
+
 def test_overwhelming_wrath_blocks_fall_back_on_failed_leadership(monkeypatch):
     from warhammer40k_ai.units.unit import Unit
     from warhammer40k_ai.rules.wrathful_presence import KEY_OVERWHELMING_WRATH, set_active_wrathful_presence

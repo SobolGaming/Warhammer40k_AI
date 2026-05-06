@@ -34743,6 +34743,31 @@ def _apply_choose_wrathful(game: object, request: DecisionRequest, result: Decis
             _log_action_for_players(game, player, f"Wrathful Presence: {uname} selected {label} (Battle Round {battle_round})")
     except Exception:
         pass
+    get_army = getattr(unit, "get_parent_army", None)
+    army = get_army() if callable(get_army) else None
+    blessings_mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+    wrathful_mgr = getattr(army, "wrathful_presence", None) if army is not None else None
+    if blessings_mgr is not None and hasattr(blessings_mgr, "queue_start_of_round_request"):
+        pending_wrathful = False
+        if wrathful_mgr is not None and hasattr(wrathful_mgr, "has_pending_decision"):
+            pending_wrathful = wrathful_mgr.has_pending_decision(
+                game,
+                battle_round=int(battle_round or 0),
+                ignore_decision_id=str(getattr(request, "decision_id", "") or ""),
+            )
+        if not pending_wrathful:
+            if game is not None and hasattr(game, "decision_record_store"):
+                followups = list(getattr(game, "_pending_wrathful_presence_blessings_followups", []) or [])
+                followups.append(
+                    {
+                        "decision_id": str(getattr(request, "decision_id", "") or ""),
+                        "army": army,
+                        "battle_round": int(battle_round or 0),
+                    }
+                )
+                setattr(game, "_pending_wrathful_presence_blessings_followups", followups)
+            else:
+                blessings_mgr.queue_start_of_round_request(army, battle_round=int(battle_round or 0), game=game)
     return str(choice)
 
 

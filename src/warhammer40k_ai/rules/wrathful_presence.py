@@ -291,6 +291,39 @@ class WrathfulPresenceManager:
     def get_wrathful_presence_units(self) -> list:
         return wrathful_presence_units(self.army)
 
+    def has_pending_decision(self, game, *, battle_round: int, ignore_decision_id: str | None = None) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_WRATHFUL_PRESENCE
+            from ..utility.entity_ids import get_entity_id
+        except ImportError:
+            return False
+        unit_ids = set()
+        for unit in self.get_wrathful_presence_units():
+            try:
+                unit_ids.add(str(get_entity_id(unit)))
+            except ValueError:
+                continue
+        if not unit_ids:
+            return False
+        ignored = str(ignore_decision_id or "")
+        for req in list(queue.list() or []):
+            if ignored and str(getattr(req, "decision_id", "")) == ignored:
+                continue
+            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_WRATHFUL_PRESENCE:
+                continue
+            ctx = getattr(req, "context", {}) or {}
+            if str(ctx.get("unit_id", "")) not in unit_ids:
+                continue
+            if int(ctx.get("battle_round", battle_round) or 0) != int(battle_round):
+                continue
+            return True
+        return False
+
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if self.army is None:
             return

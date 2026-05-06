@@ -335,3 +335,5 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `CHOOSE_POWER_FROM_PAIN_OPTION` | Power from Pain must choose an available option. | UI | `Policy` | `T1` |
 | `CHOOSE_MALEFIC_SURGE_UNIT` | Malefic Surge must choose the source or recipient unit. | UI | `Policy` | `T2` |
 | `CHOOSE_MALEFIC_SURGE_ABILITY` | Malefic Surge must choose the ability to apply. | UI | `Policy` | `T1/T2` |
+
+Round-start decision ordering: when a World Eaters army has Angron's `Wrathful Presence`, `CHOOSE_WRATHFUL_PRESENCE` resolves before that army's same-round `CHOOSE_BLESSINGS` request. The Blessings request context records the post-aura Khorne Yahtzee state, including `ctx.rerolls_allowed`, so `The Blood God's Favour` is visible as six available Blessings rerolls in the same battle round.

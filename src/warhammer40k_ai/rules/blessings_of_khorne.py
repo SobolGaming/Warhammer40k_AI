@@ -128,10 +128,13 @@ class BlessingsOfKhorneManager:
 
         # Deferred Total Carnage models (resolved after attacking unit finishes its attacks)
         self._pending_total_carnage: list[object] = []
+        self._start_of_round_request_battle_round: Optional[int] = None
 
     # ---------------- Lifecycle ----------------
     def on_battle_round_start(self, battle_round: int) -> None:
         # Blessings expire at end of battle round; clearing at start of the next is equivalent.
+        if self._active_battle_round != int(battle_round):
+            self._start_of_round_request_battle_round = None
         self._active_battle_round = int(battle_round)
         self.active_blessing_keys.clear()
         self._baseline_activations_used = 0
@@ -689,10 +692,45 @@ class BlessingsOfKhorneManager:
             context={"army_id": army_id, "ctx": self.serialize_ctx_payload(ctx)},
             candidates=candidates or None,
         )
-        if game is not None:
-            request_fn = getattr(game, "request_decision", None)
-            if callable(request_fn):
-                request_fn(req)
+        return req
+
+    def has_start_of_round_request_for_round(self, battle_round: int) -> bool:
+        return self._start_of_round_request_battle_round == int(battle_round)
+
+    def queue_start_of_round_request(self, army, *, battle_round: int, game=None):
+        if army is None or game is None:
+            return None
+        if self.has_start_of_round_request_for_round(int(battle_round)):
+            return None
+        request_fn = getattr(game, "request_decision", None)
+        if not callable(request_fn):
+            return None
+        army_id = ""
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
+            from ..utility.entity_ids import get_entity_id
+
+            army_id = get_entity_id(army)
+        except (ImportError, ValueError):
+            DECISION_CHOOSE_BLESSINGS = ""
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list") and DECISION_CHOOSE_BLESSINGS:
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BLESSINGS:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                req_ctx = ctx.get("ctx") if isinstance(ctx.get("ctx"), dict) else {}
+                if str(ctx.get("army_id", "")) != str(army_id):
+                    continue
+                if int(req_ctx.get("battle_round", battle_round) or 0) != int(battle_round):
+                    continue
+                self._start_of_round_request_battle_round = int(battle_round)
+                return req
+        req = self.build_start_of_round_request(army, battle_round=int(battle_round), game=game)
+        if req is None:
+            return None
+        self._start_of_round_request_battle_round = int(battle_round)
+        request_fn(req)
         return req
 
     # ---------------- Total Carnage deferred resolution ----------------

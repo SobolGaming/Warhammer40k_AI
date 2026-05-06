@@ -12603,6 +12603,7 @@ class GameRuleEventService(GameServiceBase):
             self._maybe_apply_cult_ambush_followup(request, result)
             self._maybe_queue_code_chivalric_followup(request, result)
             self._maybe_queue_frenzy_followup(request, result)
+            self._maybe_queue_wrathful_presence_blessings_followup(request, result)
         else:
             try:
                 dtype = getattr(request, "decision_type", "")
@@ -12621,6 +12622,36 @@ class GameRuleEventService(GameServiceBase):
             accepted=accepted,
         )
         return apply_result
+
+    def _maybe_queue_wrathful_presence_blessings_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        pending = list(getattr(self, "_pending_wrathful_presence_blessings_followups", []) or [])
+        if not pending:
+            return
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        ready = []
+        keep = []
+        for item in pending:
+            if str(dict(item or {}).get("decision_id", "") or "") == decision_id:
+                ready.append(dict(item or {}))
+            else:
+                keep.append(item)
+        setattr(self, "_pending_wrathful_presence_blessings_followups", keep)
+        for item in ready:
+            army = item.get("army")
+            if army is None:
+                continue
+            try:
+                battle_round = int(item.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                battle_round = int(getattr(self, "turn", 0) or 0)
+            blessings_mgr = getattr(army, "blessings_of_khorne", None)
+            if blessings_mgr is None or not hasattr(blessings_mgr, "queue_start_of_round_request"):
+                continue
+            wrathful_mgr = getattr(army, "wrathful_presence", None)
+            if wrathful_mgr is not None and hasattr(wrathful_mgr, "has_pending_decision"):
+                if wrathful_mgr.has_pending_decision(self, battle_round=battle_round):
+                    continue
+            blessings_mgr.queue_start_of_round_request(army, battle_round=battle_round, game=self)
 
     def get_current_player(self) -> Player:
         """Get the current player."""

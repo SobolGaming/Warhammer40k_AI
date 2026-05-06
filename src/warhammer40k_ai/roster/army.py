@@ -3250,37 +3250,24 @@ class Army:
     def on_battle_round_start(self, battle_round: int) -> None:
         """Army-level start-of-battle-round hook for faction rules/state resets."""
         game = getattr(getattr(self, "player", None), "game", None)
+        br = int(battle_round)
         mgr = getattr(self, "blessings_of_khorne", None)
         if mgr is not None:
-            mgr.on_battle_round_start(int(battle_round))
-            if game is not None and bool(getattr(game, "is_authoritative", True)):
-                try:
-                    from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
-                    from ..utility.entity_ids import get_entity_id
-                except Exception:
-                    DECISION_CHOOSE_BLESSINGS = None
-                if DECISION_CHOOSE_BLESSINGS:
-                    army_id = get_entity_id(self)
-                    queue = getattr(game, "decision_queue", None)
-                    pending = False
-                    if queue is not None and hasattr(queue, "list"):
-                        for req in list(queue.list() or []):
-                            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BLESSINGS:
-                                continue
-                            ctx = getattr(req, "context", {}) or {}
-                            if str(ctx.get("army_id", "")) == str(army_id):
-                                pending = True
-                                break
-                    if not pending:
-                        try:
-                            req = mgr.build_start_of_round_request(self, battle_round=int(battle_round), game=game)
-                        except Exception:
-                            req = None
-                        if req is not None and hasattr(game, "request_decision"):
-                            game.request_decision(req)
+            mgr.on_battle_round_start(br)
+        wrathful_mgr = getattr(self, "wrathful_presence", None)
+        wrathful_presence_handled = False
+        if wrathful_mgr is not None:
+            wrathful_mgr.on_battle_round_start(br, game=game)
+            wrathful_presence_handled = True
+        if mgr is not None and game is not None and bool(getattr(game, "is_authoritative", True)):
+            pending_wrathful = False
+            if wrathful_mgr is not None and hasattr(wrathful_mgr, "has_pending_decision"):
+                pending_wrathful = wrathful_mgr.has_pending_decision(game, battle_round=br)
+            if not pending_wrathful and hasattr(mgr, "queue_start_of_round_request"):
+                mgr.queue_start_of_round_request(self, battle_round=br, game=game)
         mgr = getattr(self, "world_eaters_detachments", None)
         if mgr is not None:
-            mgr.on_battle_round_start(int(battle_round), game=game)
+            mgr.on_battle_round_start(br, game=game)
         mgr = getattr(self, "orks_detachments", None)
         if mgr is not None and hasattr(mgr, "on_battle_round_start"):
             mgr.on_battle_round_start(int(battle_round), game=game)
@@ -3297,8 +3284,8 @@ class Army:
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "wrathful_presence", None)
-        if mgr is not None:
-            mgr.on_battle_round_start(int(battle_round), game=game)
+        if mgr is not None and not wrathful_presence_handled:
+            mgr.on_battle_round_start(br, game=game)
         mgr = getattr(self, "crimson_king", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

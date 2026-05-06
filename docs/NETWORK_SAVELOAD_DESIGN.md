@@ -700,7 +700,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_id} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - templar_vows_dialog: CHOOSE_VOW {choice_id}
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
-- wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
+- wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}; for World Eaters armies with Angron, this resolves before the same-round blessings_of_khorne_dialog so `CHOOSE_BLESSINGS` sees any active Wrathful Presence modifier such as `The Blood God's Favour`.
 - yes_no_dialog: CONFIRM_YES_NO {choice}
 - patrol_squad_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="patrol_squad"`, `unit_id`, `ability_name="Patrol Squad"`)
 - extremis_level_threat_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="extremis_level_threat"`, `ability_name`, `army_id`)
