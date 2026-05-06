@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT, DECISION_SELECT_TOOL_ACTION
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -160,6 +160,18 @@ def _first_option(request, predicate):
         if predicate(payload):
             return option
     return None
+
+
+def _enable_headless_tool_actions(game: Game, player: Player) -> None:
+    player.control = PlayerControl.REMOTE
+    game.decision_controller_hub = SimpleNamespace(
+        _controllers=[
+            SimpleNamespace(
+                handles_player=lambda player_id: str(player_id or "") == str(player.id),
+                supports_generic_tool_decisions=lambda: True,
+            )
+        ]
+    )
 
 
 class TestDrukhariCoveniteCoterieStratagems(unittest.TestCase):
@@ -490,6 +502,119 @@ class TestDrukhariCoveniteCoterieStratagems(unittest.TestCase):
 
         p1.stratagems._queue_drukhari_covenite_model_destroyed_reactions(unit=haemonculus, model=destroyed_model)
         self.assertIsNone(_pending_by_name(p1.stratagems, "POSTMORTALITY"))
+
+    def test_postmortality_is_not_exposed_as_broad_headless_phase_action(self):
+        game, p1, _p2, _drukhari_army, _enemy_army = _build_game()
+        _enable_headless_tool_actions(game, p1)
+
+        _set_phase(game, p1, "COMMAND_PHASE", 0)
+        queued = p1.stratagems.queue_headless_tool_action_decision(reactions_only=False)
+
+        self.assertFalse(queued)
+        self.assertEqual(list(game.decision_queue.list() or []), [])
+        diagnostics = p1.stratagems.get_tool_action_probe_diagnostics()
+        postmortality_errors = [
+            entry
+            for entry in diagnostics
+            if str(entry.get("stratagem_name", "") or "").strip().upper() == "POSTMORTALITY"
+        ]
+        self.assertEqual(postmortality_errors, [])
+
+    def test_postmortality_headless_tool_action_uses_destroyed_model_context(self):
+        game, p1, p2, drukhari_army, enemy_army = _build_game()
+        _enable_headless_tool_actions(game, p1)
+        haemonculus = _make_unit(
+            "Haemonculus",
+            keywords=["INFANTRY", "CHARACTER", "HAEMONCULUS", "HAEMONCULUS COVENS", "DRUKHARI"],
+            faction_keywords=["DRUKHARI"],
+            wounds=5,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        drukhari_army.add_unit(haemonculus)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, haemonculus, 10.0, 10.0)
+        _place_unit(game, enemy, 12.0, 10.0)
+        game.rebuild_entity_registry()
+        _set_pfp_tokens(p1, 3)
+
+        destroyed_model = haemonculus.models[0]
+        destroyed_model.wounds = 0
+        _set_phase(game, p2, "FIGHT_PHASE", 1)
+        p1.stratagems._on_model_destroyed_before_removal(unit=haemonculus, model=destroyed_model)
+
+        queued = p1.stratagems.queue_headless_tool_action_decision(reactions_only=True)
+
+        self.assertTrue(queued)
+        request = _find_request(game, DECISION_SELECT_TOOL_ACTION, ability="tool_action")
+        self.assertIsNotNone(request)
+        postmortality = _first_option(
+            request,
+            lambda payload: str(payload.get("tool_name", "") or "").strip().upper() == "POSTMORTALITY",
+        )
+        self.assertIsNotNone(postmortality)
+        resolved = dict(postmortality.payload.get("resolved_kwargs", {}) or {})
+        self.assertIn("destroyed_model", resolved)
+        self.assertIn("model", resolved)
+        self.assertEqual(p1.stratagems.get_tool_action_probe_diagnostics(), [])
+
+    def test_poisoners_art_headless_tool_action_uses_hit_enemy_candidates_only(self):
+        game, p1, _p2, drukhari_army, enemy_army = _build_game()
+        _enable_headless_tool_actions(game, p1)
+        wracks = _make_unit(
+            "Wracks",
+            keywords=["INFANTRY", "HAEMONCULUS COVENS", "DRUKHARI"],
+            faction_keywords=["DRUKHARI"],
+        )
+        enemy_hit = _make_unit(
+            "Enemy Hit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        enemy_not_hit = _make_unit(
+            "Enemy Not Hit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        drukhari_army.add_unit(wracks)
+        enemy_army.add_unit(enemy_hit)
+        enemy_army.add_unit(enemy_not_hit)
+        _place_unit(game, wracks, 10.0, 10.0)
+        _place_unit(game, enemy_hit, 12.0, 10.0)
+        _place_unit(game, enemy_not_hit, 16.0, 10.0)
+        game.rebuild_entity_registry()
+
+        _set_phase(game, p1, "FIGHT_PHASE", 0)
+        wracks.round_state.fought_this_phase = True
+        p1.stratagems._on_fight_attacks_resolved(
+            unit=wracks,
+            target_unit=enemy_hit,
+            hits_by_target={enemy_hit: 1},
+        )
+
+        queued = p1.stratagems.queue_headless_tool_action_decision(reactions_only=True)
+
+        self.assertTrue(queued)
+        request = _find_request(game, DECISION_SELECT_TOOL_ACTION, ability="tool_action")
+        self.assertIsNotNone(request)
+        poison_payloads = [
+            dict(option.payload or {})
+            for option in list(request.options or [])
+            if str(getattr(option, "payload", {}).get("tool_name", "") or "").strip().upper() == "POISONER'S ART"
+        ]
+        self.assertEqual(len(poison_payloads), 1)
+        resolved = dict(poison_payloads[0].get("resolved_kwargs", {}) or {})
+        enemy_ref = dict(resolved.get("enemy_unit", {}) or {})
+        enemy_ref_id = dict(enemy_ref.get("__entity_ref__", {}) or {}).get("id")
+        self.assertEqual(enemy_ref_id, get_entity_id(enemy_hit))
+        self.assertNotEqual(enemy_ref_id, get_entity_id(enemy_not_hit))
+        self.assertEqual(p1.stratagems.get_tool_action_probe_diagnostics(), [])
 
     def test_symphony_of_suffering_queues_after_destroying_enemy_and_forces_nearby_tests(self):
         game, p1, _p2, drukhari_army, enemy_army = _build_game()

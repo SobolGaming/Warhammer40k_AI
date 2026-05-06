@@ -110,6 +110,8 @@ Default shooting policy:
 - Aeldari Seer Council phase items populate legal source, model, enemy, and shooting-target context for `PRESENTIMENT OF DREAD`, `FATE INESCAPABLE`, and `UNSHROUDED TRUTH` before any headless tool-action preflight.
 - Post-command headless stratagem tool-action scans are gated until setup is complete, so deployment commands cannot trigger normal battle-phase stratagem candidate generation through the default command-phase placeholder.
 - T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.
+- Drukhari Covenite Coterie `POSTMORTALITY`, `POISONER'S ART`, `SYMPHONY OF SUFFERING`, `CONNOISSEURS OF PAIN`, and `ENFOLDING NIGHTMARE` are treated as trigger-bound reactions, while `DISTILLERS OF FEAR` emits only legal Haemonculus Covens fight targets.
+- Descriptor-backed stratagems whose timing or target requires event context are gated out of broad phase scans automatically. Broad phase descriptors that need bound model/support context use the generic descriptor context provider to synthesize deterministic model, support-unit, objective, and enemy candidate maps before headless preflight. Run `python3 scripts/audit_stratagem_tool_action_context.py --all-descriptors --show-blocked`; no `blocked` rows should remain.
 - Selected-to-fight stratagems such as Imperial Agents Veiled Blade `PRIME TARGET` are exposed from the
   `fight_unit_selected` reaction window, not from broad Fight phase scans, so Fight phase records are not
   polluted by stratagem prompts when no unit has actually been selected to fight.

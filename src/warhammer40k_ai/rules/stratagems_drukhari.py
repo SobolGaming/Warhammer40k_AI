@@ -844,6 +844,294 @@ class DrukhariStratagemMixin:
             return False
         return True
 
+    def _drukhari_covenite_distillers_candidates(self) -> list[Any]:
+        if not self._is_drukhari_covenite_coterie():
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        friendly_units = getattr(self, "_tool_action_friendly_units", lambda: [])()
+        for unit in list(friendly_units or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            unit_id = self._drukhari_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._drukhari_is_haemonculus_covens_unit(root):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._drukhari_sort_key)
+
+    def _drukhari_tool_action_context(
+        self,
+        name_u: str,
+        *,
+        phase_name: str,
+        is_active_turn: bool,
+    ) -> dict[str, Any] | None:
+        name_key = str(name_u or "").strip().upper()
+        phase_key = str(phase_name or "").strip().lower()
+        if name_key == "DISTILLERS OF FEAR":
+            if phase_key != "fight phase" or not bool(is_active_turn):
+                return {"candidates": []}
+            return {"candidates": self._drukhari_covenite_distillers_candidates()}
+        if name_key in {
+            "CONNOISSEURS OF PAIN",
+            "ENFOLDING NIGHTMARE",
+            "POISONER'S ART",
+            "POSTMORTALITY",
+            "SYMPHONY OF SUFFERING",
+        }:
+            return {"candidates": []}
+        return None
+
+    def _drukhari_can_use_tool_action(self, name_u: str, kwargs: dict[str, Any]) -> bool | None:
+        name_key = str(name_u or "").strip().upper()
+        if name_key not in {
+            "CONNOISSEURS OF PAIN",
+            "DISTILLERS OF FEAR",
+            "ENFOLDING NIGHTMARE",
+            "POISONER'S ART",
+            "POSTMORTALITY",
+            "SYMPHONY OF SUFFERING",
+        }:
+            return None
+        if not self._is_drukhari_covenite_coterie():
+            return False
+
+        context = dict(kwargs or {})
+        unit = context.get("unit") or context.get("target_unit") or context.get("destroyed_unit")
+        root = self._drukhari_root(unit)
+        phase_key = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        candidates = list(context.get("candidates") or [])
+        if name_key == "DISTILLERS OF FEAR":
+            if phase_key != "fight phase":
+                return False
+            if root is None:
+                return bool(candidates)
+            if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+                return False
+            if not self._drukhari_owned_by_player(root, self.player):
+                return False
+            if not self._drukhari_on_battlefield(root):
+                return False
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                return False
+            if not self._drukhari_is_haemonculus_covens_unit(root):
+                return False
+            return not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False))
+
+        if name_key == "POSTMORTALITY":
+            model = context.get("model") or context.get("target_model") or context.get("destroyed_model")
+            if root is None or model is None:
+                return False
+            if not self._drukhari_owned_by_player(root, self.player):
+                return False
+            if not self._drukhari_postmortality_model_eligible(unit=root, model=model):
+                return False
+            model_id = self._drukhari_sort_key(model)
+            if model_id and model_id in self._drukhari_postmortality_used_model_ids():
+                return False
+            return self._drukhari_can_spend_pain_tokens(1)
+
+        if root is None:
+            return False
+        if name_key in {"POISONER'S ART", "SYMPHONY OF SUFFERING", "DISTILLERS OF FEAR"} and phase_key != "fight phase":
+            return False
+        if name_key in {"CONNOISSEURS OF PAIN", "ENFOLDING NIGHTMARE"}:
+            if name_key == "ENFOLDING NIGHTMARE" and phase_key != "shooting phase":
+                return False
+            if name_key == "CONNOISSEURS OF PAIN" and phase_key not in {"shooting phase", "fight phase"}:
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if phase_key == "shooting phase" and active_player is self.player:
+                return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return False
+
+        if name_key == "CONNOISSEURS OF PAIN":
+            attacker = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+            attacker_root = self._drukhari_root(attacker)
+            if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+                return False
+            if not self._is_drukhari_unit(root):
+                return False
+            return self._drukhari_can_spend_pain_tokens(1)
+
+        if name_key == "ENFOLDING NIGHTMARE":
+            attacker = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+            attacker_root = self._drukhari_root(attacker)
+            if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+                return False
+            return self._drukhari_is_haemonculus_covens_unit(root)
+
+        if name_key == "POISONER'S ART":
+            if not self._drukhari_is_haemonculus_covens_unit(root):
+                return False
+            if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                return False
+            enemy = context.get("enemy_unit") or context.get("target_enemy_unit") or context.get("selected_unit") or context.get("poisoned_unit")
+            if enemy is None:
+                return bool(candidates)
+            enemy_root = self._drukhari_root(enemy)
+            if enemy_root is None or self._drukhari_owned_by_player(enemy_root, self.player):
+                return False
+            if candidates and not self._drukhari_unit_in_candidates(enemy_root, candidates):
+                return False
+            if not self._drukhari_on_battlefield(enemy_root):
+                return False
+            return not self._drukhari_has_keyword(enemy_root, "VEHICLE")
+
+        if name_key == "SYMPHONY OF SUFFERING":
+            return self._is_drukhari_unit(root)
+        return None
+
+    def _build_drukhari_tool_action_specs_for_item(
+        self,
+        *,
+        item: dict[str, Any],
+        stratagem: Any,
+        base_ctx: dict[str, Any],
+    ) -> list[dict[str, Any]] | None:
+        name_key = str(getattr(stratagem, "name", "") or item.get("name", "") or "").strip().upper()
+        if name_key not in {
+            "CONNOISSEURS OF PAIN",
+            "DISTILLERS OF FEAR",
+            "ENFOLDING NIGHTMARE",
+            "POISONER'S ART",
+            "POSTMORTALITY",
+            "SYMPHONY OF SUFFERING",
+        }:
+            return None
+
+        context = dict(item.get("context", {}) or {})
+        specs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def add_probe(kwargs: dict[str, Any], label_suffix: str = "") -> None:
+            self._tool_action_add_probe(
+                specs=specs,
+                seen=seen,
+                stratagem=stratagem,
+                item=item,
+                kwargs=kwargs,
+                label_suffix=label_suffix,
+            )
+
+        phase_name = str(base_ctx.get("phase_name") or context.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        common_ctx = {**base_ctx, "phase_name": phase_name}
+        unit = context.get("unit") or context.get("target_unit") or context.get("destroyed_unit")
+        root = self._drukhari_root(unit)
+
+        if name_key == "DISTILLERS OF FEAR":
+            candidates = list(context.get("candidates") or [])
+            if root is not None:
+                candidates = [root]
+            elif not candidates:
+                candidates = self._drukhari_covenite_distillers_candidates()
+            for candidate in sorted((self._drukhari_root(unit) for unit in candidates), key=self._drukhari_sort_key):
+                if candidate is None:
+                    continue
+                add_probe(
+                    {
+                        **common_ctx,
+                        "unit": candidate,
+                        "target_unit": candidate,
+                    },
+                    self._tool_action_label_value(candidate),
+                )
+            return specs
+
+        if name_key == "POSTMORTALITY":
+            model = context.get("model") or context.get("target_model") or context.get("destroyed_model")
+            if root is None or model is None:
+                return []
+            add_probe(
+                {
+                    **common_ctx,
+                    "unit": root,
+                    "target_unit": root,
+                    "destroyed_unit": root,
+                    "model": model,
+                    "target_model": model,
+                    "destroyed_model": model,
+                    "destroyed_position": context.get("destroyed_position"),
+                },
+                f"{self._tool_action_label_value(root)} -> {self._tool_action_label_value(model)}",
+            )
+            return specs
+
+        if root is None:
+            return []
+
+        if name_key in {"CONNOISSEURS OF PAIN", "ENFOLDING NIGHTMARE"}:
+            attacker = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+                or context.get("target_enemy_unit")
+            )
+            attacker_root = self._drukhari_root(attacker)
+            if attacker_root is None:
+                return []
+            add_probe(
+                {
+                    **common_ctx,
+                    "unit": root,
+                    "target_unit": root,
+                    "attacking_unit": attacker_root,
+                    "attacker_unit": attacker_root,
+                    "enemy_unit": attacker_root,
+                    "target_enemy_unit": attacker_root,
+                },
+                f"{self._tool_action_label_value(root)} vs {self._tool_action_label_value(attacker_root)}",
+            )
+            return specs
+
+        if name_key == "POISONER'S ART":
+            candidates = list(context.get("candidates") or context.get("enemy_candidates") or [])
+            enemies = sorted((self._drukhari_root(enemy) for enemy in candidates), key=self._drukhari_sort_key)
+            for enemy_root in enemies:
+                if enemy_root is None:
+                    continue
+                add_probe(
+                    {
+                        **common_ctx,
+                        "unit": root,
+                        "target_unit": root,
+                        "enemy_unit": enemy_root,
+                        "target_enemy_unit": enemy_root,
+                    },
+                    f"{self._tool_action_label_value(root)} vs {self._tool_action_label_value(enemy_root)}",
+                )
+            return specs
+
+        if name_key == "SYMPHONY OF SUFFERING":
+            add_probe(
+                {
+                    **common_ctx,
+                    "unit": root,
+                    "target_unit": root,
+                },
+                self._tool_action_label_value(root),
+            )
+            return specs
+        return None
+
     def _drukhari_vicious_blades_roll_modifiers(self, transport_unit: Any) -> list[int]:
         transport_root = self._drukhari_root(transport_unit)
         if transport_root is None:

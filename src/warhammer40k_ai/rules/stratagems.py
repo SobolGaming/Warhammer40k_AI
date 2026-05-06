@@ -40,7 +40,9 @@ from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
 from .tool_action_context import (
     TOOL_ACTION_HELPER_CONTEXT_KEYS,
     ToolActionProviderContract,
+    bound_context_keys_required_for_tool_action,
     descriptor_requires_model_binding,
+    descriptor_requires_trigger_context,
 )
 from .tool_action_validation import ToolActionCandidateValidator, ToolActionValidationIssue
 
@@ -1173,6 +1175,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
     "COILS OF DECEPTION",
+    "CONNOISSEURS OF PAIN",
     "COMBINED FIRE",
     "MOBILE DAKKASTORM",
     "MOUNT UP, LADZ",
@@ -1206,6 +1209,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "ENFOLDING NIGHTMARE",
     "DETONATOR",
     "EMP GRENADES",
     "ENCIRCLING THE PREY",
@@ -1294,6 +1298,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "JOIN THE HUNT",
     "PINPOINT COUNTER-OFFENSIVE",
+    "POISONER'S ART",
+    "POSTMORTALITY",
     "POUNCE ON THE PREY",
     "PHOTON GRENADES",
     "RAPID REGENERATION",
@@ -1305,6 +1311,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SAVAGE ECHOES",
     "SAVAGE ROAR",
     "SQUAD TACTICS",
+    "SYMPHONY OF SUFFERING",
     "SWOOPING MOCKERY",
     "SHOCK BOMBARDMENT",
     "SWIFT INTERCEPTION",
@@ -3736,6 +3743,14 @@ class StratagemManager(
         }
 
     @staticmethod
+    def _tool_action_requires_trigger_context(stratagem: Stratagem) -> bool:
+        return descriptor_requires_trigger_context(getattr(stratagem, "tool_descriptor", None))
+
+    @staticmethod
+    def _tool_action_missing_bound_context_keys(stratagem: Stratagem, context: Dict[str, Any]) -> tuple[str, ...]:
+        return bound_context_keys_required_for_tool_action(stratagem, context)
+
+    @staticmethod
     def _tool_action_helper_context_keys() -> set[str]:
         return set(TOOL_ACTION_HELPER_CONTEXT_KEYS)
 
@@ -3880,7 +3895,11 @@ class StratagemManager(
                 missing.append(key_text)
         if effect_params.get("choices") and _context_value_missing(choice_key):
             missing.append("choice_key")
-        support_optional = bool(kwargs.get("secondary_optional", effect_params.get("secondary_optional", False)))
+        support_optional = (
+            bool(kwargs.get("secondary_optional", effect_params.get("secondary_optional", False)))
+            or "up_to_" in target_text
+            or "up to " in target_text
+        )
         needs_support = (
             "source_and" in target_text
             or ("within_6" in target_text and "_and_" in target_text)
@@ -4155,6 +4174,675 @@ class StratagemManager(
         ]
         embarked.sort(key=self._tool_action_sort_key)
         return embarked
+
+    @staticmethod
+    def _tool_action_normalized_keyword(value: Any) -> str:
+        return re.sub(r"[^A-Z0-9]+", "", str(value or "").strip().upper())
+
+    @classmethod
+    def _tool_action_entity_has_keyword(cls, entity: Any, keyword: str) -> bool:
+        wanted = cls._tool_action_normalized_keyword(keyword)
+        if not wanted or entity is None:
+            return False
+        for method_name in ("has_keyword", "has_any_keyword"):
+            checker = getattr(entity, method_name, None)
+            if callable(checker):
+                try:
+                    if bool(checker(keyword)):
+                        return True
+                except (AttributeError, TypeError, ValueError):
+                    pass
+        values: list[Any] = [getattr(entity, "name", "")]
+        for attr_name in ("keywords", "faction_keywords", "keyword", "faction_keyword"):
+            raw_value = getattr(entity, attr_name, None)
+            if isinstance(raw_value, str):
+                values.append(raw_value)
+            else:
+                values.extend(list(raw_value or []))
+        normalized = {
+            cls._tool_action_normalized_keyword(value)
+            for value in list(values or [])
+            if str(value or "").strip()
+        }
+        return wanted in normalized
+
+    @classmethod
+    def _tool_action_entity_has_all_keywords(cls, entity: Any, keywords: Iterable[str]) -> bool:
+        return all(cls._tool_action_entity_has_keyword(entity, keyword) for keyword in list(keywords or []))
+
+    @classmethod
+    def _tool_action_entity_has_any_keywords(cls, entity: Any, keywords: Iterable[str]) -> bool:
+        return any(cls._tool_action_entity_has_keyword(entity, keyword) for keyword in list(keywords or []))
+
+    def _tool_action_model_parent_unit(self, model: Any) -> Any:
+        parent = getattr(model, "parent_unit", None)
+        if parent is None:
+            return None
+        get_root = getattr(parent, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else parent
+        return root if root is not None else parent
+
+    def _tool_action_model_has_keyword(self, model: Any, keyword: str) -> bool:
+        if self._tool_action_entity_has_keyword(model, keyword):
+            return True
+        parent = self._tool_action_model_parent_unit(model)
+        return self._tool_action_entity_has_keyword(parent, keyword)
+
+    def _tool_action_unit_models(self, unit: Any) -> List[Any]:
+        root = self._tool_action_context_entity(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        alive_models: list[Any] = []
+        for model in list(models or []):
+            is_alive = getattr(model, "is_alive", True)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(is_alive):
+                continue
+            alive_models.append(model)
+        alive_models.sort(key=self._tool_action_sort_key)
+        return alive_models
+
+    @staticmethod
+    def _tool_action_model_is_wounded(model: Any) -> bool:
+        try:
+            current = int(getattr(model, "wounds", 0) or 0)
+            starting = int(getattr(model, "_base_wounds", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        return starting > 0 and 0 < current < starting
+
+    @classmethod
+    def _tool_action_entity_name_contains_any(cls, entity: Any, names: Iterable[str]) -> bool:
+        text = cls._tool_action_normalized_keyword(getattr(entity, "name", ""))
+        if not text:
+            return False
+        return any(cls._tool_action_normalized_keyword(name) in text for name in list(names or []))
+
+    def _tool_action_unit_on_battlefield_for_descriptor(self, unit: Any) -> bool:
+        root = self._tool_action_context_entity(unit)
+        if root is None:
+            return False
+        if bool(_unit_cannot_be_target_of_stratagem(root)):
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if getattr(root, "deployed", True) is False:
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+        return reserve_status in {"", "deployed"}
+
+    @staticmethod
+    def _tool_action_descriptor_distance_inches(target_text: str, effect_params: Dict[str, Any]) -> Optional[float]:
+        raw_distance = effect_params.get("distance_inches")
+        if raw_distance is None:
+            match = re.search(r"within_([0-9]+(?:_[0-9]+)?)", str(target_text or ""))
+            raw_distance = str(match.group(1)).replace("_", ".") if match else None
+        if raw_distance is None:
+            return None
+        try:
+            return float(raw_distance)
+        except (TypeError, ValueError):
+            return None
+
+    def _tool_action_units_within_distance(self, source_unit: Any, target_unit: Any, distance: Optional[float]) -> bool:
+        if distance is None:
+            return True
+        source_root = self._tool_action_context_entity(source_unit)
+        target_root = self._tool_action_context_entity(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        get_distance = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if callable(get_distance):
+            value = get_distance(source_root, target_root)
+            if value is not None:
+                try:
+                    return float(value) <= float(distance) + 1e-6
+                except (TypeError, ValueError):
+                    return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return True
+        return bool(unit_within_range_of_unit(source_root, target_root, float(distance), use_attached_aggregate=True))
+
+    @staticmethod
+    def _tool_action_objective_location(objective: Any) -> Any:
+        location = getattr(objective, "location", None)
+        return location if location is not None else objective
+
+    def _tool_action_model_within_distance_of_objective(
+        self,
+        model: Any,
+        objective: Any,
+        *,
+        distance: Optional[float],
+    ) -> bool:
+        if distance is None:
+            return True
+        location = self._tool_action_objective_location(objective)
+        if location is None or bool(getattr(location, "removed", False)):
+            return False
+        get_location = getattr(model, "get_location", None)
+        model_location = get_location() if callable(get_location) else None
+        if model_location is None:
+            base = getattr(model, "model_base", None)
+            if base is None:
+                return False
+            model_location = (
+                getattr(base, "x", None),
+                getattr(base, "y", None),
+            )
+        if len(model_location) < 2:
+            return False
+        try:
+            dx = float(model_location[0] or 0.0) - float(getattr(location, "x", 0.0) or 0.0)
+            dy = float(model_location[1] or 0.0) - float(getattr(location, "y", 0.0) or 0.0)
+            base = getattr(model, "model_base", None)
+            radius_fn = getattr(base, "get_radius", None) if base is not None else None
+            radius = float(radius_fn() or 0.0) if callable(radius_fn) else 0.0
+        except (TypeError, ValueError):
+            return False
+        return ((dx * dx) + (dy * dy)) ** 0.5 <= float(distance) + radius + 1e-6
+
+    @staticmethod
+    def _tool_action_descriptor_support_optional(target_text: str, effect_params: Dict[str, Any]) -> bool:
+        text = str(target_text or "").strip().lower()
+        return (
+            "up_to_" in text
+            or "up to " in text
+            or bool(effect_params.get("secondary_optional", False))
+        )
+
+    @staticmethod
+    def _tool_action_descriptor_primary_keyword_rules(
+        target_text: str,
+        effect_params: Dict[str, Any],
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        text = str(target_text or "").strip().lower()
+        required_all: list[str] = []
+        required_any: list[str] = []
+        excluded_any: list[str] = []
+        required_names_any: list[str] = []
+
+        required_all.extend(str(value) for value in list(effect_params.get("required_keywords_all") or []))
+        required_all.extend(str(value) for value in list(effect_params.get("required_faction_keywords_all") or []))
+        required_any.extend(str(value) for value in list(effect_params.get("required_keywords_any") or []))
+        required_any.extend(str(value) for value in list(effect_params.get("eligible_unit_keywords_any") or []))
+        excluded_any.extend(str(value) for value in list(effect_params.get("excluded_keywords_any") or []))
+        excluded_any.extend(str(value) for value in list(effect_params.get("excluded_keywords") or []))
+
+        if "wraith_construct_unit" in text:
+            required_any.extend(["WRAITH CONSTRUCT", "WRAITHBLADES", "WRAITHGUARD", "WRAITHLORD"])
+        elif "wraithblades_wraithguard_or_wraithlord" in text:
+            required_names_any.extend(["Wraithblades", "Wraithguard", "Wraithlord"])
+        elif "regiment_unit" in text:
+            required_all.append("REGIMENT")
+        elif "one_titanic_chaos_knights_unit" in text:
+            required_all.extend(["CHAOS KNIGHTS", "TITANIC"])
+        elif "imperial_knights_unit" in text:
+            required_all.append("IMPERIAL KNIGHTS")
+        elif "armiger_model_or_titanic_model" in text:
+            required_all.append("IMPERIAL KNIGHTS")
+            required_any.extend(["ARMIGER", "TITANIC"])
+        elif "tau_empire_battlesuit_unit" in text:
+            required_all.extend(["T'AU EMPIRE", "BATTLESUIT"])
+        elif "heretic_astartes_unit" in text:
+            required_all.append("HERETIC ASTARTES")
+        elif "adeptus_astartes_infantry_unit" in text:
+            required_all.extend(["ADEPTUS ASTARTES", "INFANTRY"])
+        elif "adeptus_astartes_walker" in text:
+            required_all.extend(["ADEPTUS ASTARTES", "WALKER"])
+        elif "grey_knights" in text:
+            required_all.extend(["GREY KNIGHTS", "CHARACTER"])
+        elif "cryptek" in text:
+            required_all.append("CRYPTEK")
+        elif "tech_priest" in text:
+            required_all.append("TECH-PRIEST")
+        elif "lord_of_virulence" in text:
+            required_names_any.append("Lord of Virulence")
+        elif "imperial_knights_titanic_model" in text:
+            required_all.extend(["IMPERIAL KNIGHTS", "TITANIC"])
+        elif "imperial_knights_model" in text:
+            required_all.append("IMPERIAL KNIGHTS")
+
+        if "excluding_damned" in text or "exclude_damned" in text:
+            excluded_any.append("DAMNED")
+        if "non_monster_non_vehicle" in text:
+            excluded_any.extend(["MONSTER", "VEHICLE"])
+
+        return (
+            tuple(value for value in required_all if str(value or "").strip()),
+            tuple(value for value in required_any if str(value or "").strip()),
+            tuple(value for value in excluded_any if str(value or "").strip()),
+            tuple(value for value in required_names_any if str(value or "").strip()),
+        )
+
+    @staticmethod
+    def _tool_action_descriptor_support_keyword_rules(
+        target_text: str,
+        effect_params: Dict[str, Any],
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        text = str(target_text or "").strip().lower()
+        required_all: list[str] = []
+        required_any: list[str] = []
+        excluded_any: list[str] = []
+        support_keyword = str(effect_params.get("support_unit_keyword", "") or "").strip()
+        if support_keyword:
+            required_all.append(support_keyword)
+        required_all.extend(str(value) for value in list(effect_params.get("support_required_keywords_all") or []))
+        required_all.extend(str(value) for value in list(effect_params.get("support_unit_keywords_all") or []))
+        required_any.extend(str(value) for value in list(effect_params.get("support_required_keywords_any") or []))
+        required_any.extend(str(value) for value in list(effect_params.get("paired_support_keywords_any") or []))
+        excluded_any.extend(str(value) for value in list(effect_params.get("support_excluded_keywords_any") or []))
+        excluded_any.extend(str(value) for value in list(effect_params.get("support_unit_keywords_none") or []))
+        if "squadron_unit" in text:
+            required_all.append("SQUADRON")
+        if "war_dog" in text:
+            required_all.append("WAR DOG")
+        if "bondsman_armiger" in text or "bondsman_armigers" in text or bool(effect_params.get("requires_bondsman", False)):
+            required_all.append("ARMIGER")
+        if "friendly_adeptus_mechanicus" in text:
+            required_all.append("ADEPTUS MECHANICUS")
+        if "friendly_transport" in text or bool(effect_params.get("requires_transport", False)):
+            required_all.append("TRANSPORT")
+        return (
+            tuple(value for value in required_all if str(value or "").strip()),
+            tuple(value for value in required_any if str(value or "").strip()),
+            tuple(value for value in excluded_any if str(value or "").strip()),
+        )
+
+    def _tool_action_descriptor_unit_matches_primary(
+        self,
+        unit: Any,
+        *,
+        target_text: str,
+        effect_params: Dict[str, Any],
+        phase_name: str,
+    ) -> bool:
+        root = self._tool_action_context_entity(unit)
+        if root is None or not self._tool_action_unit_on_battlefield_for_descriptor(root):
+            return False
+        required_all, required_any, excluded_any, required_names_any = self._tool_action_descriptor_primary_keyword_rules(
+            target_text,
+            effect_params,
+        )
+        if required_all and not self._tool_action_entity_has_all_keywords(root, required_all):
+            return False
+        if required_any and not self._tool_action_entity_has_any_keywords(root, required_any):
+            return False
+        if excluded_any and self._tool_action_entity_has_any_keywords(root, excluded_any):
+            return False
+        if required_names_any and not self._tool_action_entity_name_contains_any(root, required_names_any):
+            return False
+        text = str(target_text or "").strip().lower()
+        round_state = getattr(root, "round_state", None)
+        phase_key = str(phase_name or "").strip().lower()
+        if "not_yet_shot" in text and bool(
+            getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
+        ):
+            return False
+        if "not_yet_selected_to_fight" in text or ("not_yet_selected" in text and phase_key == "fight phase"):
+            if bool(getattr(round_state, "fought_this_phase", False) or getattr(round_state, "fought_this_round", False)):
+                return False
+        return True
+
+    def _tool_action_descriptor_support_candidates_for_unit(
+        self,
+        stratagem: Stratagem,
+        unit: Any,
+        friendly_units: Iterable[Any],
+    ) -> List[Any]:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
+        required_all, required_any, excluded_any = self._tool_action_descriptor_support_keyword_rules(
+            target_text,
+            effect_params,
+        )
+        if not required_all and not required_any:
+            return []
+        distance = self._tool_action_descriptor_distance_inches(target_text, effect_params)
+        support_candidates: list[Any] = []
+        unit_id = self._tool_action_context_entity_id(unit)
+        for candidate in list(friendly_units or []):
+            candidate_id = self._tool_action_context_entity_id(candidate)
+            if not candidate_id or candidate_id == unit_id:
+                continue
+            if not self._tool_action_unit_on_battlefield_for_descriptor(candidate):
+                continue
+            if required_all and not self._tool_action_entity_has_all_keywords(candidate, required_all):
+                continue
+            if required_any and not self._tool_action_entity_has_any_keywords(candidate, required_any):
+                continue
+            if excluded_any and self._tool_action_entity_has_any_keywords(candidate, excluded_any):
+                continue
+            if distance is not None and not self._tool_action_units_within_distance(unit, candidate, distance):
+                continue
+            support_candidates.append(candidate)
+        support_candidates.sort(key=self._tool_action_sort_key)
+        return support_candidates
+
+    def _tool_action_descriptor_external_model_sources(
+        self,
+        *,
+        target_text: str,
+        effect_params: Dict[str, Any],
+        friendly_units: Iterable[Any],
+    ) -> List[Any]:
+        text = str(target_text or "").strip().lower()
+        if "psyker_model" not in text and "friendly_necrons_non_monster_non_vehicle_model" not in text:
+            return []
+        candidates: list[Any] = []
+        for unit in list(friendly_units or []):
+            if "psyker_model" in text:
+                if "asuryani_psyker_model" in text:
+                    if not self._tool_action_entity_has_all_keywords(unit, ("ASURYANI", "PSYKER")):
+                        continue
+                elif not self._tool_action_entity_has_all_keywords(unit, ("AELDARI", "PSYKER")):
+                    continue
+            if "friendly_necrons_non_monster_non_vehicle_model" in text:
+                if not self._tool_action_entity_has_keyword(unit, "NECRONS"):
+                    continue
+                if self._tool_action_entity_has_any_keywords(unit, ("MONSTER", "VEHICLE")):
+                    continue
+            if not self._tool_action_unit_on_battlefield_for_descriptor(unit):
+                continue
+            candidates.append(unit)
+        candidates.sort(key=self._tool_action_sort_key)
+        return candidates
+
+    def _tool_action_descriptor_model_matches(
+        self,
+        model: Any,
+        *,
+        unit: Any,
+        target_text: str,
+        effect_params: Dict[str, Any],
+    ) -> bool:
+        text = str(target_text or "").strip().lower()
+        if "wounded_model" in text or "heal_wounded_model" in str(effect_params):
+            if not self._tool_action_model_is_wounded(model):
+                return False
+        if "non_character_model" in text or str(effect_params.get("selected_model_keyword", "")).upper() == "CHARACTER":
+            if bool(getattr(model, "is_character", False)) or self._tool_action_model_has_keyword(model, "CHARACTER"):
+                return False
+        model_keyword = str(effect_params.get("model_keyword", "") or "").strip()
+        if model_keyword and not self._tool_action_model_has_keyword(model, model_keyword):
+            return False
+        if "grey_knights_character_model" in text:
+            return self._tool_action_model_has_keyword(model, "GREY KNIGHTS") and self._tool_action_model_has_keyword(model, "CHARACTER")
+        if "cryptek_model" in text:
+            return self._tool_action_model_has_keyword(model, "CRYPTEK")
+        if "friendly_necrons_non_monster_non_vehicle_model" in text:
+            return (
+                self._tool_action_model_has_keyword(model, "NECRONS")
+                and not self._tool_action_model_has_keyword(model, "MONSTER")
+                and not self._tool_action_model_has_keyword(model, "VEHICLE")
+            )
+        if "lord_of_virulence_model" in text:
+            return self._tool_action_entity_name_contains_any(model, ("Lord of Virulence",)) or self._tool_action_entity_name_contains_any(unit, ("Lord of Virulence",))
+        if "tech_priest_model" in text:
+            return self._tool_action_model_has_keyword(model, "TECH-PRIEST")
+        if "adeptus_astartes_walker_model" in text:
+            return self._tool_action_model_has_keyword(model, "ADEPTUS ASTARTES") and self._tool_action_model_has_keyword(model, "WALKER")
+        if "wolf_guard_headtaker_or_wolf_guard_terminator_pack_leader_model" in text:
+            return self._tool_action_entity_name_contains_any(
+                model,
+                ("Wolf Guard Headtaker", "Wolf Guard Terminator Pack Leader", "Pack Leader"),
+            ) or self._tool_action_entity_name_contains_any(
+                unit,
+                ("Wolf Guard Headtaker", "Wolf Guard Terminator Pack Leader"),
+            )
+        if "imperial_knights_model" in text or "armiger_model_or_titanic_model" in text:
+            if not self._tool_action_model_has_keyword(model, "IMPERIAL KNIGHTS"):
+                return False
+            if "armiger_model_or_titanic_model" in text:
+                return self._tool_action_model_has_keyword(model, "ARMIGER") or self._tool_action_model_has_keyword(model, "TITANIC")
+            return True
+        if "psyker_model" in text:
+            if "asuryani_psyker_model" in text:
+                return self._tool_action_model_has_keyword(model, "ASURYANI") and self._tool_action_model_has_keyword(model, "PSYKER")
+            return self._tool_action_model_has_keyword(model, "AELDARI") and self._tool_action_model_has_keyword(model, "PSYKER")
+        if "battlesuit_model" in text:
+            return self._tool_action_model_has_keyword(model, "BATTLESUIT")
+        return True
+
+    def _tool_action_descriptor_model_candidates_for_unit(
+        self,
+        stratagem: Stratagem,
+        unit: Any,
+        *,
+        friendly_units: Iterable[Any],
+    ) -> List[Any]:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
+        distance = self._tool_action_descriptor_distance_inches(target_text, effect_params)
+        source_units = self._tool_action_descriptor_external_model_sources(
+            target_text=target_text,
+            effect_params=effect_params,
+            friendly_units=friendly_units,
+        )
+        if not source_units:
+            source_units = [unit]
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for source_unit in list(source_units or []):
+            if distance is not None and source_unit is not unit:
+                if not self._tool_action_units_within_distance(source_unit, unit, distance):
+                    continue
+            for model in self._tool_action_unit_models(source_unit):
+                model_id = self._tool_action_sort_key(model)
+                if model_id and model_id in seen:
+                    continue
+                if not self._tool_action_descriptor_model_matches(
+                    model,
+                    unit=source_unit,
+                    target_text=target_text,
+                    effect_params=effect_params,
+                ):
+                    continue
+                if model_id:
+                    seen.add(model_id)
+                candidates.append(model)
+        candidates.sort(key=self._tool_action_sort_key)
+        return candidates
+
+    def _tool_action_descriptor_objective_candidates_for_unit(
+        self,
+        stratagem: Stratagem,
+        unit: Any,
+        *,
+        model_candidates: Iterable[Any],
+    ) -> List[Any]:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        if "objective" not in target_text:
+            return []
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {}) if descriptor is not None else {}
+        distance = self._tool_action_descriptor_distance_inches(target_text, effect_params)
+        objectives: list[Any] = []
+        seen: set[str] = set()
+        for objective in self._tool_action_objectives():
+            objective_id = self._tool_action_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            location = self._tool_action_objective_location(objective)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if "controlled_objective" in target_text or "on_controlled_objective" in target_text:
+                if getattr(location, "controlling_player", None) is not self.player:
+                    continue
+            models = list(model_candidates or []) or self._tool_action_unit_models(unit)
+            if distance is not None and not any(
+                self._tool_action_model_within_distance_of_objective(model, objective, distance=distance)
+                for model in list(models or [])
+            ):
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            objectives.append(objective)
+        objectives.sort(key=self._tool_action_sort_key)
+        return objectives
+
+    def _tool_action_descriptor_enemy_candidates_for_unit(self, stratagem: Stratagem, unit: Any) -> List[Any]:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        if not self._tool_action_descriptor_requires_enemy_unit(target_text):
+            return []
+        enemies = [
+            enemy
+            for enemy in self._tool_action_enemy_units()
+            if not self._tool_action_entity_has_keyword(enemy, "LONE OPERATIVE")
+        ]
+        enemies.sort(key=self._tool_action_sort_key)
+        return enemies
+
+    def _tool_action_descriptor_bound_phase_context(
+        self,
+        stratagem: Stratagem,
+        *,
+        phase_name: str,
+        is_active_turn: bool,
+    ) -> Optional[Dict[str, Any]]:
+        if self._tool_action_requires_trigger_context(stratagem):
+            return None
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        if descriptor is None:
+            return None
+        target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+        effect_params = dict(getattr(descriptor, "effect_params", {}) or {})
+        missing_bound = set(self._tool_action_missing_bound_context_keys(stratagem, {"phase_name": phase_name}))
+        needs_model = "model" in missing_bound
+        needs_support = "support_unit" in missing_bound or bool(effect_params.get("requires_bondsman", False))
+        if not needs_model and not needs_support:
+            return None
+
+        friendly_units = self._tool_action_friendly_units()
+        candidates = [
+            unit
+            for unit in list(friendly_units or [])
+            if self._tool_action_descriptor_unit_matches_primary(
+                unit,
+                target_text=target_text,
+                effect_params=effect_params,
+                phase_name=phase_name,
+            )
+        ]
+        if needs_model and not candidates:
+            candidates = list(friendly_units or [])
+
+        context: Dict[str, Any] = {}
+        model_candidates_by_unit: dict[str, list[Any]] = {}
+        all_model_candidates: list[Any] = []
+        seen_models: set[str] = set()
+        if needs_model:
+            for unit in list(candidates or []):
+                model_candidates = self._tool_action_descriptor_model_candidates_for_unit(
+                    stratagem,
+                    unit,
+                    friendly_units=friendly_units,
+                )
+                if not model_candidates:
+                    continue
+                unit_id = self._tool_action_context_entity_id(unit)
+                if not unit_id:
+                    continue
+                model_candidates_by_unit[unit_id] = model_candidates
+                for model in list(model_candidates or []):
+                    model_id = self._tool_action_sort_key(model)
+                    if model_id and model_id in seen_models:
+                        continue
+                    if model_id:
+                        seen_models.add(model_id)
+                    all_model_candidates.append(model)
+            candidates = [
+                unit
+                for unit in list(candidates or [])
+                if self._tool_action_context_entity_id(unit) in model_candidates_by_unit
+            ]
+            if model_candidates_by_unit:
+                context["model_candidates_by_unit"] = model_candidates_by_unit
+                context["model_candidates"] = sorted(all_model_candidates, key=self._tool_action_sort_key)
+
+        if needs_support:
+            support_candidates_by_unit: dict[str, list[Any]] = {}
+            for unit in list(candidates or []):
+                support_candidates = self._tool_action_descriptor_support_candidates_for_unit(
+                    stratagem,
+                    unit,
+                    friendly_units,
+                )
+                if not support_candidates and self._tool_action_descriptor_support_optional(target_text, effect_params):
+                    continue
+                if not support_candidates:
+                    continue
+                unit_id = self._tool_action_context_entity_id(unit)
+                if not unit_id:
+                    continue
+                support_candidates_by_unit[unit_id] = support_candidates
+            if support_candidates_by_unit:
+                context["support_candidates_by_unit"] = support_candidates_by_unit
+                context["friendly_candidates_by_unit"] = dict(support_candidates_by_unit)
+
+        if "objective" in target_text:
+            objective_candidates_by_unit: dict[str, list[Any]] = {}
+            all_objectives: list[Any] = []
+            seen_objectives: set[str] = set()
+            for unit in list(candidates or []):
+                unit_id = self._tool_action_context_entity_id(unit)
+                if not unit_id:
+                    continue
+                objectives = self._tool_action_descriptor_objective_candidates_for_unit(
+                    stratagem,
+                    unit,
+                    model_candidates=model_candidates_by_unit.get(unit_id, []),
+                )
+                if objectives:
+                    objective_candidates_by_unit[unit_id] = objectives
+                for objective in list(objectives or []):
+                    objective_id = self._tool_action_sort_key(objective)
+                    if objective_id and objective_id in seen_objectives:
+                        continue
+                    if objective_id:
+                        seen_objectives.add(objective_id)
+                    all_objectives.append(objective)
+            if objective_candidates_by_unit:
+                context["objective_candidates_by_unit"] = objective_candidates_by_unit
+                context["objective_candidates"] = sorted(all_objectives, key=self._tool_action_sort_key)
+
+        if self._tool_action_descriptor_requires_enemy_unit(target_text):
+            enemy_candidates_by_unit: dict[str, list[Any]] = {}
+            all_enemies: list[Any] = []
+            seen_enemies: set[str] = set()
+            for unit in list(candidates or []):
+                unit_id = self._tool_action_context_entity_id(unit)
+                if not unit_id:
+                    continue
+                enemies = self._tool_action_descriptor_enemy_candidates_for_unit(stratagem, unit)
+                if enemies:
+                    enemy_candidates_by_unit[unit_id] = enemies
+                for enemy in list(enemies or []):
+                    enemy_id = self._tool_action_sort_key(enemy)
+                    if enemy_id and enemy_id in seen_enemies:
+                        continue
+                    if enemy_id:
+                        seen_enemies.add(enemy_id)
+                    all_enemies.append(enemy)
+            if enemy_candidates_by_unit:
+                context["enemy_candidates_by_unit"] = enemy_candidates_by_unit
+                context["enemy_candidates"] = sorted(all_enemies, key=self._tool_action_sort_key)
+
+        if candidates:
+            context["candidates"] = sorted(candidates, key=self._tool_action_sort_key)
+            context["source_candidates"] = list(context["candidates"])
+        return context
 
     def _tool_action_secondary_cards(self) -> List[Any]:
         cards = list(getattr(self.player, "active_secondaries", []) or []) if self.player is not None else []
@@ -4536,6 +5224,7 @@ class StratagemManager(
             "_build_astra_militarum_tool_action_specs_for_item",
             "_build_world_eaters_tool_action_specs_for_item",
             "_build_aeldari_tool_action_specs_for_item",
+            "_build_drukhari_tool_action_specs_for_item",
         ):
             specialized_builder = getattr(self, specialized_name, None)
             if callable(specialized_builder):
@@ -4546,6 +5235,7 @@ class StratagemManager(
         text_blob = self._tool_action_text_blob(stratagem, original_ctx)
         max_units = self._tool_action_max_unit_count(stratagem, original_ctx)
         descriptor_target = str(getattr(descriptor, "target", "") or "")
+        target_text = descriptor_target.strip().lower()
         requires_friendly_unit = self._tool_action_descriptor_requires_friendly_unit(descriptor_target)
         requires_enemy_unit = self._tool_action_descriptor_requires_enemy_unit(descriptor_target)
         requires_objective = self._tool_action_descriptor_requires_objective(descriptor_target)
@@ -4725,18 +5415,26 @@ class StratagemManager(
             if unit is None:
                 continue
             for model in list(unit_model_candidates or []):
+                model_source_unit = self._tool_action_model_parent_unit(model)
+                probe_kwargs = {
+                    **base_ctx,
+                    "unit": unit,
+                    "target_unit": unit,
+                    "model": model,
+                    "target_model": model,
+                    "source_model": model,
+                }
+                if model_source_unit is not None:
+                    probe_kwargs.setdefault("source_unit", model_source_unit)
+                    if self._tool_action_model_has_keyword(model, "PSYKER"):
+                        probe_kwargs.setdefault("psyker_unit", model_source_unit)
+                        probe_kwargs.setdefault("source_psyker_unit", model_source_unit)
                 self._tool_action_add_probe(
                     specs=specs,
                     seen=seen,
                     stratagem=stratagem,
                     item=item,
-                    kwargs={
-                        **base_ctx,
-                        "unit": unit,
-                        "target_unit": unit,
-                        "model": model,
-                        "target_model": model,
-                    },
+                    kwargs=probe_kwargs,
                     label_suffix=f"{self._tool_action_label_value(unit)} -> {self._tool_action_label_value(model)}",
                 )
 
@@ -4790,19 +5488,36 @@ class StratagemManager(
             for support_unit in list(support_candidates or []):
                 if support_unit is unit:
                     continue
+                probe_kwargs = {
+                    **base_ctx,
+                    "unit": unit,
+                    "target_unit": unit,
+                    "secondary_unit": support_unit,
+                    "support_unit": support_unit,
+                    "battle_shocked_unit": support_unit,
+                    "selected_units": [support_unit],
+                    "units": [support_unit],
+                    "friendly_units": [support_unit],
+                    "friendly_candidates": list(support_candidates or []),
+                }
+                if "regiment" in target_text:
+                    probe_kwargs.setdefault("regiment_unit", unit)
+                    probe_kwargs.setdefault("regiment", unit)
+                if "squadron" in target_text:
+                    probe_kwargs.setdefault("squadron_unit", support_unit)
+                    probe_kwargs.setdefault("squadron", support_unit)
+                if "war_dog" in target_text:
+                    probe_kwargs.setdefault("war_dog_units", [support_unit])
+                    probe_kwargs.setdefault("war_dog_candidates", list(support_candidates or []))
+                if "armiger" in target_text or bool(effect_params.get("requires_bondsman", False)):
+                    probe_kwargs.setdefault("armiger_units", [support_unit])
+                    probe_kwargs.setdefault("selected_armigers", [support_unit])
                 self._tool_action_add_probe(
                     specs=specs,
                     seen=seen,
                     stratagem=stratagem,
                     item=item,
-                    kwargs={
-                        **base_ctx,
-                        "unit": unit,
-                        "target_unit": unit,
-                        "secondary_unit": support_unit,
-                        "support_unit": support_unit,
-                        "battle_shocked_unit": support_unit,
-                    },
+                    kwargs=probe_kwargs,
                     label_suffix=f"{self._tool_action_label_value(unit)} + {self._tool_action_label_value(support_unit)}",
                 )
 
@@ -4855,7 +5570,6 @@ class StratagemManager(
                         ),
                     )
 
-        target_text = descriptor_target.strip().lower()
         needs_enemy = explicit_enemy is None and bool(enemy_units) and (
             bool(original_ctx.get("enemy_candidates") or []) or bool(enemy_by_unit) or "enemy" in target_text or "attacker" in target_text
         )
@@ -5070,14 +5784,21 @@ class StratagemManager(
 
         if needs_model:
             for model in list(model_candidates or []):
+                model_source_unit = self._tool_action_model_parent_unit(model)
                 probe_kwargs = {
                     **base_ctx,
                     "model": model,
                     "target_model": model,
+                    "source_model": model,
                 }
                 if explicit_unit is not None:
                     probe_kwargs["unit"] = explicit_unit
                     probe_kwargs["target_unit"] = explicit_unit
+                if model_source_unit is not None:
+                    probe_kwargs.setdefault("source_unit", model_source_unit)
+                    if self._tool_action_model_has_keyword(model, "PSYKER"):
+                        probe_kwargs.setdefault("psyker_unit", model_source_unit)
+                        probe_kwargs.setdefault("source_psyker_unit", model_source_unit)
                 self._tool_action_add_probe(
                     specs=specs,
                     seen=seen,
@@ -7618,6 +8339,14 @@ class StratagemManager(
         ia_tool_action = self._ia_can_use_veiled_blade_tool_action(name_u, context)
         if ia_tool_action is not None:
             if bool(ia_tool_action):
+                result["available"] = True
+                result["reason"] = None
+            else:
+                result["reason"] = "Requires valid target"
+            return result
+        drukhari_tool_action = self._drukhari_can_use_tool_action(name_u, context)
+        if drukhari_tool_action is not None:
+            if bool(drukhari_tool_action):
                 result["available"] = True
                 result["reason"] = None
             else:
@@ -23780,6 +24509,9 @@ class StratagemManager(
         ia_result = self._ia_can_use_veiled_blade_tool_action(name_u, kwargs)
         if ia_result is not None and not ia_result:
             return False
+        drukhari_result = self._drukhari_can_use_tool_action(name_u, kwargs)
+        if drukhari_result is not None and not drukhari_result:
+            return False
         if name_u == "BENEVOLENCE OF THE OMNISSIAH" and not self._admech_can_use_cohort_benevolence_tool_action(kwargs):
             return False
         if name_u == "TRANSCENDENT COGITATION" and not self._admech_can_use_cohort_transcendent_cogitation_tool_action(kwargs):
@@ -32673,6 +33405,13 @@ class StratagemManager(
             )
             if aeldari_seer_context is not None:
                 return dict(aeldari_seer_context)
+        descriptor_bound_context = self._tool_action_descriptor_bound_phase_context(
+            stratagem,
+            phase_name=phase_label,
+            is_active_turn=bool(is_active_turn),
+        )
+        if descriptor_bound_context is not None:
+            return dict(descriptor_bound_context)
         if not is_active_turn:
             return {}
         if name_u == "AUTO-DIVINATORY TARGETING":
@@ -32796,6 +33535,13 @@ class StratagemManager(
             if phase_label.lower() != "shooting phase":
                 return {"candidates": []}
             return {"candidates": self._drukhari_skysplinter_skyborne_annihilation_candidates()}
+        drukhari_context = self._drukhari_tool_action_context(
+            name_u,
+            phase_name=phase_label,
+            is_active_turn=bool(is_active_turn),
+        )
+        if drukhari_context is not None:
+            return dict(drukhari_context)
         if name_u == "ERE WE GO":
             if phase_label.lower() != "movement phase":
                 return {}
@@ -32996,6 +33742,7 @@ class StratagemManager(
                 name_u in REACTION_ONLY_STRATAGEM_NAMES
                 or self._get_defensive_reaction_spec(s) is not None
                 or self._get_consolidate_move_spec(s) is not None
+                or self._tool_action_requires_trigger_context(s)
             )
             if name_u in pending_names and is_reaction_only:
                 continue
@@ -33009,6 +33756,11 @@ class StratagemManager(
                     availability["reason"] = "No trigger"
                 elif availability["reason"] in (None, "", "Requires valid trigger or target"):
                     availability["reason"] = "No trigger"
+            elif availability["available"]:
+                missing_bound_context = self._tool_action_missing_bound_context_keys(s, ctx)
+                if missing_bound_context:
+                    availability["available"] = False
+                    availability["reason"] = "Requires bound context: " + ", ".join(missing_bound_context)
             target_hint = self._stratagem_target_hint(s.name)
             items.append({
                 "name": s.name,

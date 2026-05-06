@@ -25,6 +25,99 @@ TOOL_ACTION_HELPER_CONTEXT_KEYS = {
     "choice_options",
 }
 
+GENERIC_TOOL_ACTION_SYNTHESIZABLE_CONTEXT_KEYS = frozenset(
+    {
+        "choice_key",
+        "enemy_unit",
+        "objective",
+        "terrain",
+        "transport",
+        "unit",
+    }
+)
+
+GENERIC_DESCRIPTOR_BOUND_CONTEXT_KEYS = frozenset({"model", "support_unit"})
+
+
+def descriptor_requires_trigger_context(descriptor: Any) -> bool:
+    """Return True when a stratagem descriptor needs event/reaction context.
+
+    These descriptors describe windows such as "after an enemy selected targets"
+    or "when a model is destroyed". A broad phase scan cannot safely construct
+    those payloads from battlefield state alone, even if the descriptor also
+    names a friendly unit.
+    """
+    timing_text = str(getattr(descriptor, "timing", "") or "").strip().lower()
+    target_text = str(getattr(descriptor, "target", "") or "").strip().lower()
+    effect_text = str(getattr(descriptor, "effect", "") or "").strip().lower()
+    combined_text = f"{timing_text} {target_text} {effect_text}"
+
+    timing_trigger_markers = (
+        "after_",
+        "_after_",
+        "end_of_",
+        "when_",
+        "_when_",
+        "on_attack",
+        "on_battle_shock",
+        "on_destroyed",
+        "on_enemy_",
+        "on_friendly_",
+        "on_model_destroyed",
+        "on_mortal",
+        "on_roll",
+        "on_unit_destroyed",
+        "_phase_end",
+        "targets_selected",
+        "target_selected",
+        "attack_allocated",
+        "attacks_allocated",
+        "mortal_wound_allocated",
+        "battle_shock_test",
+        "roll_made",
+        "before_removal",
+        "before_removed",
+        "destroyed_before",
+    )
+    if any(marker in timing_text for marker in timing_trigger_markers):
+        return True
+
+    target_trigger_markers = (
+        "attacker_unit",
+        "attacking_unit",
+        "destroyed_model",
+        "destroyed_unit",
+        "enemy_unit_that_destroyed",
+        "enemy_unit_that_just",
+        "just_destroyed",
+        "selected_as_attack_target",
+        "selected_as_shooting_target",
+        "that_destroyed",
+        "that_just",
+    )
+    if any(marker in target_text for marker in target_trigger_markers):
+        return True
+
+    effect_trigger_markers = (
+        "attacking_unit_finishes",
+        "deadly_demise",
+        "deferred_until_attacker",
+        "fight_on_death",
+        "reactive_move",
+        "reactive_normal_move",
+    )
+    return any(marker in combined_text for marker in effect_trigger_markers)
+
+
+def bound_context_keys_required_for_tool_action(stratagem: Any, context: dict[str, Any]) -> tuple[str, ...]:
+    """Return missing context keys broad generic scans cannot synthesize safely."""
+    contract = ToolActionProviderContract.inspect(stratagem, context)
+    return tuple(
+        key
+        for key in contract.missing_context_keys
+        if key not in GENERIC_TOOL_ACTION_SYNTHESIZABLE_CONTEXT_KEYS
+    )
+
 
 def descriptor_requires_model_binding(descriptor_target: str) -> bool:
     target_text = str(descriptor_target or "").strip().lower()
@@ -154,17 +247,23 @@ def _requires_enemy_unit(target_text: str) -> bool:
 
 
 def _requires_support_unit(target_text: str, effect_params: dict[str, Any]) -> bool:
+    support_optional = (
+        "up_to_" in target_text
+        or "up to " in target_text
+        or bool(effect_params.get("secondary_optional", False))
+    )
     return (
-        "source_and" in target_text
-        or ("within_6" in target_text and "_and_" in target_text)
-        or bool(effect_params.get("requires_support_unit", False))
-        or bool(effect_params.get("support_unit_keyword") and not effect_params.get("secondary_optional", False))
-        or bool(effect_params.get("support_required_keywords_any") and not effect_params.get("secondary_optional", False))
-        or bool(effect_params.get("support_required_keywords_all") and not effect_params.get("secondary_optional", False))
-        or bool(effect_params.get("support_unit_keywords_all") and not effect_params.get("secondary_optional", False))
+        ("source_and" in target_text and not support_optional)
+        or ("within_6" in target_text and "_and_" in target_text and not support_optional)
+        or bool(effect_params.get("requires_support_unit", False) and not support_optional)
+        or bool(effect_params.get("support_unit_keyword") and not support_optional)
+        or bool(effect_params.get("support_required_keywords_any") and not support_optional)
+        or bool(effect_params.get("support_required_keywords_all") and not support_optional)
+        or bool(effect_params.get("support_unit_keywords_all") and not support_optional)
         or bool(effect_params.get("paired_support_keywords_any"))
         or (
             "_and_" in target_text
+            and not support_optional
             and any(
                 token in target_text
                 for token in (
