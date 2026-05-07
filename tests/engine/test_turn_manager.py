@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine import turn_manager
+from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
+from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 
 
@@ -74,3 +76,27 @@ def test_turn_manager_does_not_start_sixth_battle_round_hooks() -> None:
     event_names = [event_name for event_name, _payload in game.event_system.events]
     assert "phase_start" not in event_names
     assert "battle_round_started" not in event_names
+
+
+def test_controller_driven_deployment_uses_selected_mission(monkeypatch) -> None:
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[])
+    game.selected_mission_info = {"deployment": "Hammer and Anvil"}
+    seen_missions: list[str] = []
+
+    class _DeploymentManager:
+        def __init__(self, _game, mission_name: str = "Crucible of Battle") -> None:
+            seen_missions.append(str(mission_name))
+
+        def execute_deployment_sequence(self, decision_makers: dict) -> dict:
+            assert decision_makers == {"player:1": object_marker}
+            return {"deployment_positions": {}}
+
+    object_marker = object()
+    monkeypatch.setattr(
+        "warhammer40k_ai.engine.deployment.DeploymentManager",
+        _DeploymentManager,
+    )
+
+    game.execute_deploy_armies_phase(decision_makers={"player:1": object_marker})
+
+    assert seen_missions == ["Hammer and Anvil"]

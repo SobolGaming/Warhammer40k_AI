@@ -37,12 +37,12 @@ from .placement_zone_heuristics import (
 )
 from .reserve_entry_geometry import build_model_positions_from_anchor as _build_reserves_model_positions_from_anchor
 from .reserve_entry_geometry import (
+    _unit_owner_player_id,
     is_valid_strategic_reserves_edge as _is_valid_strategic_reserves_edge,
     strategic_edge_footprint_metrics as _strategic_edge_footprint_metrics,
     strategic_edge_touch_offset_for_model as _strategic_edge_touch_offset_for_model,
     strategic_reserves_edges as _strategic_reserves_edges,
 )
-from .reserve_entry_rules import masters_of_void_enemy_dz_override_active
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
@@ -2352,9 +2352,9 @@ class HeadlessPolicyDecisionController(DecisionController):
         mid_y = float(height) * 0.5
         row_zones = [
             (
-                "own_half",
+                "upper_half",
                 {
-                    "name": "own_half",
+                    "name": "upper_half",
                     "x_range": [0.0, float(width)],
                     "y_range": [0.0, mid_y],
                     "forward_axis": "y",
@@ -2362,9 +2362,9 @@ class HeadlessPolicyDecisionController(DecisionController):
                 },
             ),
             (
-                "enemy_half",
+                "lower_half",
                 {
-                    "name": "enemy_half",
+                    "name": "lower_half",
                     "x_range": [0.0, float(width)],
                     "y_range": [mid_y, float(height)],
                     "forward_axis": "y",
@@ -2467,16 +2467,29 @@ class HeadlessPolicyDecisionController(DecisionController):
 
         valid_edges: list[str] = []
         checker = getattr(game, "is_valid_strategic_reserves_edge", None)
+        player_id = _unit_owner_player_id(unit)
         for edge in list(_strategic_reserves_edges()):
             if callable(checker):
                 try:
-                    if not bool(checker(edge, turn=effective_turn)):
+                    if not bool(
+                        call_with_supported_kwargs(
+                            checker,
+                            edge,
+                            turn=effective_turn,
+                            player_id=player_id,
+                            unit=unit,
+                        )
+                    ):
                         continue
                 except (TypeError, ValueError):
                     continue
-            elif not _is_valid_strategic_reserves_edge(game, edge, turn=effective_turn):
-                continue
-            if edge == "enemy" and effective_turn == 2 and not masters_of_void_enemy_dz_override_active(unit, game):
+            elif not _is_valid_strategic_reserves_edge(
+                game,
+                edge,
+                turn=effective_turn,
+                player_id=player_id,
+                unit=unit,
+            ):
                 continue
             valid_edges.append(str(edge))
         return valid_edges

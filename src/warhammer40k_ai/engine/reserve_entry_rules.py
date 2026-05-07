@@ -15,6 +15,7 @@ from .reserve_entry_geometry import (
     strategic_reserves_edges,
 )
 from ..utility.entity_ids import get_entity_id
+from ..utility.call_utils import call_with_supported_kwargs
 
 
 def _resolve_unit_by_id(game: object, unit_id: str) -> object | None:
@@ -490,11 +491,25 @@ def _evaluate_reserves_arrival_prospective(
             checker = getattr(game, "is_valid_strategic_reserves_edge", None)
             if callable(checker):
                 try:
-                    if not bool(checker(edge, turn=effective_turn)):
+                    if not bool(
+                        call_with_supported_kwargs(
+                            checker,
+                            edge,
+                            turn=effective_turn,
+                            player_id=player_id,
+                            unit=unit,
+                        )
+                    ):
                         continue
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     continue
-            elif not is_valid_strategic_reserves_edge(game, edge, turn=effective_turn):
+            elif not is_valid_strategic_reserves_edge(
+                game,
+                edge,
+                turn=effective_turn,
+                player_id=player_id,
+                unit=unit,
+            ):
                 continue
             if effective_turn == 2 and player_id and not masters_of_void_enemy_dz_override_active(unit, game):
                 any_in_enemy_dz = False

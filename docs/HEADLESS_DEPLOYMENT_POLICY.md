@@ -74,7 +74,7 @@ This document describes deterministic headless placement behavior for deployment
     - Deep Strike / non-strategic arrivals still probe board landmarks before broader scans;
     - Strategic reserves still probe the primary edge-band anchors before broader scans.
   - then reuse the same zone-based packing heuristics used by pre-game deployment, but against reserve-legal search zones:
-    - Deep Strike search applies deployment-style row packers over battlefield sectors plus a bounded battlefield lattice;
+    - Deep Strike search applies deployment-style row packers over neutral battlefield sectors plus a bounded battlefield lattice, with no mission-relative edge filtering;
     - Strategic reserves apply deployment-style row packers over legal edge-band zones;
     - units in Strategic Reserves that can also Deep Strike search edge-band zones first, then battlefield Deep Strike zones.
   - Strategic reserves:

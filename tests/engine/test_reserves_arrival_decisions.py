@@ -3,9 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_handlers.movement import validate_move_unit_payload
+from warhammer40k_ai.engine.reserve_entry_geometry import (
+    enemy_deployment_battlefield_edges,
+    is_valid_strategic_reserves_edge,
+)
 from warhammer40k_ai.engine.reserve_entry_rules import evaluate_reserves_arrival_positions
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
-from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType
+from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType, MissionRegistry
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.engine.state_blob_units import unit_entries
 from warhammer40k_ai.engine import turn_manager
@@ -240,6 +244,143 @@ def test_strategic_reserves_edge_offsets_allow_large_single_model_bases() -> Non
     assert any(abs(x - 5.0) < 1e-6 for x, _y in primary_points)
     assert all(5.0 <= x <= 55.0 for x, _y in primary_points)
     assert all(5.0 <= y <= 39.0 for _x, y in primary_points)
+
+
+def test_turn_two_strategic_reserves_enemy_edge_is_mission_relative() -> None:
+    player, _army, unit = _build_reserve_unit()
+    enemy_player = SimpleNamespace(id="player:enemy")
+    player.get_army = lambda: player.army
+    game = SimpleNamespace(
+        turn=2,
+        battlefield=SimpleNamespace(width=60.0, height=44.0),
+        map=SimpleNamespace(width=60.0, height=44.0, units=[]),
+        players=[player, enemy_player],
+        deployment_zones={
+            player.id: {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Own Hammer and Anvil Zone",
+                        DeploymentZoneType.ATTACKER,
+                        [(42.0, 0.0), (42.0, 44.0), (60.0, 44.0), (60.0, 0.0)],
+                    )
+                ]
+            },
+            enemy_player.id: {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Enemy Hammer and Anvil Zone",
+                        DeploymentZoneType.DEFENDER,
+                        [(0.0, 0.0), (0.0, 44.0), (18.0, 44.0), (18.0, 0.0)],
+                    )
+                ]
+            },
+        },
+    )
+
+    assert enemy_deployment_battlefield_edges(game, player.id) == ("left",)
+    assert is_valid_strategic_reserves_edge(game, "left", turn=2, unit=unit) is False
+    assert is_valid_strategic_reserves_edge(game, "enemy", turn=2, unit=unit) is True
+    assert is_valid_strategic_reserves_edge(game, "left", turn=3, unit=unit) is True
+
+
+def test_turn_two_strategic_reserves_enemy_edges_are_inferred_for_all_registered_missions() -> None:
+    expected_edges = {
+        "Crucible of Battle": {
+            DeploymentZoneType.ATTACKER: ("left", "enemy"),
+            DeploymentZoneType.DEFENDER: ("own", "right"),
+        },
+        "Dawn of War": {
+            DeploymentZoneType.ATTACKER: ("enemy",),
+            DeploymentZoneType.DEFENDER: ("own",),
+        },
+        "Hammer and Anvil": {
+            DeploymentZoneType.ATTACKER: ("left",),
+            DeploymentZoneType.DEFENDER: ("right",),
+        },
+        "Tipping Point": {
+            DeploymentZoneType.ATTACKER: ("left",),
+            DeploymentZoneType.DEFENDER: ("right",),
+        },
+        "Search and Destroy": {
+            DeploymentZoneType.ATTACKER: ("left", "enemy"),
+            DeploymentZoneType.DEFENDER: ("own", "right"),
+        },
+        "Sweeping Engagement": {
+            DeploymentZoneType.ATTACKER: ("enemy",),
+            DeploymentZoneType.DEFENDER: ("own",),
+        },
+    }
+
+    for mission_name in MissionRegistry.get_available_missions():
+        mission = MissionRegistry.get_mission(mission_name)
+        attacker_zones = mission.get_attacker_zones()
+        defender_zones = mission.get_defender_zones()
+        assert attacker_zones
+        assert defender_zones
+        for owner_type, enemy_type in (
+            (DeploymentZoneType.ATTACKER, DeploymentZoneType.DEFENDER),
+            (DeploymentZoneType.DEFENDER, DeploymentZoneType.ATTACKER),
+        ):
+            player = SimpleNamespace(id=f"player:{owner_type.value}")
+            enemy_player = SimpleNamespace(id=f"player:{enemy_type.value}")
+            game = SimpleNamespace(
+                turn=2,
+                battlefield=SimpleNamespace(width=60.0, height=44.0),
+                map=SimpleNamespace(width=60.0, height=44.0, units=[]),
+                players=[player, enemy_player],
+                deployment_zones={
+                    player.id: {
+                        "mission_zones": attacker_zones if owner_type == DeploymentZoneType.ATTACKER else defender_zones
+                    },
+                    enemy_player.id: {
+                        "mission_zones": attacker_zones if enemy_type == DeploymentZoneType.ATTACKER else defender_zones
+                    },
+                },
+            )
+
+            inferred = enemy_deployment_battlefield_edges(game, player.id)
+
+            assert inferred == expected_edges[mission_name][owner_type]
+
+
+def test_headless_turn_two_search_keeps_side_edges_for_hammer_and_anvil() -> None:
+    player, _army, unit = _build_reserve_unit()
+    enemy_player = SimpleNamespace(id="player:enemy")
+    player.get_army = lambda: player.army
+    game = SimpleNamespace(
+        turn=2,
+        battlefield=SimpleNamespace(width=60.0, height=44.0),
+        map=SimpleNamespace(width=60.0, height=44.0, units=[]),
+        players=[player, enemy_player],
+        deployment_zones={
+            player.id: {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Own Hammer and Anvil Zone",
+                        DeploymentZoneType.ATTACKER,
+                        [(42.0, 0.0), (42.0, 44.0), (60.0, 44.0), (60.0, 0.0)],
+                    )
+                ]
+            },
+            enemy_player.id: {
+                "mission_zones": [
+                    DeploymentZone(
+                        "Enemy Hammer and Anvil Zone",
+                        DeploymentZoneType.DEFENDER,
+                        [(0.0, 0.0), (0.0, 44.0), (18.0, 44.0), (18.0, 0.0)],
+                    )
+                ]
+            },
+        },
+    )
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    edges = controller._strategic_reserves_search_edges(game, unit)
+
+    assert "left" not in edges
+    assert "enemy" in edges
+    assert "own" in edges
+    assert "right" in edges
 
 
 def test_strategic_reserves_edge_offsets_use_oriented_hull_axis_extent() -> None:

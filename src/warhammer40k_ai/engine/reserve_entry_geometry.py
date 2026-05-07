@@ -6,6 +6,14 @@ from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.entity_ids import get_entity_id
 
 _STRATEGIC_RESERVES_EDGES = ("own", "left", "right", "enemy")
+_BATTLEFIELD_EDGE_NORMALS = {
+    "own": (0.0, -1.0),
+    "enemy": (0.0, 1.0),
+    "left": (-1.0, 0.0),
+    "right": (1.0, 0.0),
+}
+_EDGE_CONTACT_EPSILON = 1e-6
+_ENEMY_EDGE_SCORE_RATIO = 0.25
 
 
 def battlefield_dimensions(game: object) -> tuple[float | None, float | None]:
@@ -28,7 +36,191 @@ def strategic_reserves_edges() -> tuple[str, ...]:
     return _STRATEGIC_RESERVES_EDGES
 
 
-def is_valid_strategic_reserves_edge(game: object, battlefield_edge: str, *, turn: int | None = None) -> bool:
+def _unit_owner_player_id(unit: object | None) -> str:
+    if unit is None:
+        return ""
+    get_parent_army = getattr(unit, "get_parent_army", None)
+    army = get_parent_army() if callable(get_parent_army) else getattr(unit, "army", None)
+    player = getattr(army, "player", None)
+    player_id = getattr(player, "id", None)
+    return str(player_id or "").strip()
+
+
+def _current_player_id(game: object) -> str:
+    get_current_player = getattr(game, "get_current_player", None)
+    player = get_current_player() if callable(get_current_player) else None
+    player_id = getattr(player, "id", None)
+    return str(player_id or "").strip()
+
+
+def _battlefield_edge_line(edge: str, *, width: float, height: float):
+    from shapely.geometry import LineString
+
+    if edge == "own":
+        return LineString([(0.0, 0.0), (float(width), 0.0)])
+    if edge == "enemy":
+        return LineString([(0.0, float(height)), (float(width), float(height))])
+    if edge == "left":
+        return LineString([(0.0, 0.0), (0.0, float(height))])
+    if edge == "right":
+        return LineString([(float(width), 0.0), (float(width), float(height))])
+    return None
+
+
+def _deployment_zone_geometry(mission_zone: object):
+    from shapely.geometry import Polygon
+
+    vertices = list(getattr(mission_zone, "vertices", []) or [])
+    if len(vertices) < 3:
+        return None
+    zone_geometry = Polygon(vertices)
+    if not bool(getattr(zone_geometry, "is_valid", True)):
+        zone_geometry = zone_geometry.buffer(0)
+    if bool(getattr(zone_geometry, "is_empty", False)):
+        return None
+    for cutout in list(getattr(mission_zone, "cutouts", []) or []):
+        get_cutout_geometry = getattr(cutout, "get_shapely_geometry", None)
+        if not callable(get_cutout_geometry):
+            continue
+        cutout_geometry = get_cutout_geometry()
+        if cutout_geometry is None or bool(getattr(cutout_geometry, "is_empty", False)):
+            continue
+        if not bool(getattr(cutout_geometry, "is_valid", True)):
+            cutout_geometry = cutout_geometry.buffer(0)
+        zone_geometry = zone_geometry.difference(cutout_geometry)
+        if bool(getattr(zone_geometry, "is_empty", False)):
+            return None
+    return zone_geometry
+
+
+def _deployment_geometries_for_owner(game: object, player_id: str, *, opponents: bool) -> list[object]:
+    owner_id = str(player_id or "").strip()
+    if not owner_id:
+        return []
+    zones = getattr(game, "deployment_zones", None)
+    if not isinstance(zones, dict) or not zones:
+        return []
+
+    geometries: list[object] = []
+    for zone_player_id, zone_info in zones.items():
+        zone_owner_id = str(zone_player_id or "").strip()
+        if opponents and zone_owner_id == owner_id:
+            continue
+        if not opponents and zone_owner_id != owner_id:
+            continue
+        mission_zones = list((zone_info or {}).get("mission_zones", []) or []) if isinstance(zone_info, dict) else []
+        for mission_zone in mission_zones:
+            zone_geometry = _deployment_zone_geometry(mission_zone)
+            if zone_geometry is not None:
+                geometries.append(zone_geometry)
+    return geometries
+
+
+def _union_deployment_geometries(geometries: list[object]):
+    if not geometries:
+        return None
+    from shapely.ops import unary_union
+
+    union = unary_union(geometries)
+    if union is None or bool(getattr(union, "is_empty", False)):
+        return None
+    if not bool(getattr(union, "is_valid", True)):
+        union = union.buffer(0)
+    if bool(getattr(union, "is_empty", False)):
+        return None
+    return union
+
+
+def _deployment_edge_contact_lengths(geometry: object, *, width: float, height: float) -> dict[str, float]:
+    contact_lengths: dict[str, float] = {edge: 0.0 for edge in _STRATEGIC_RESERVES_EDGES}
+    boundary = getattr(geometry, "boundary", None)
+    if boundary is None:
+        return contact_lengths
+    for edge in _STRATEGIC_RESERVES_EDGES:
+        edge_line = _battlefield_edge_line(edge, width=float(width), height=float(height))
+        if edge_line is None:
+            continue
+        contact = boundary.intersection(edge_line)
+        contact_lengths[str(edge)] += float(getattr(contact, "length", 0.0) or 0.0)
+    return contact_lengths
+
+
+def _fallback_contact_edges(contact_lengths: dict[str, float]) -> tuple[str, ...]:
+    max_contact = max(contact_lengths.values(), default=0.0)
+    if max_contact <= _EDGE_CONTACT_EPSILON:
+        return tuple()
+    return tuple(
+        edge
+        for edge in _STRATEGIC_RESERVES_EDGES
+        if contact_lengths.get(edge, 0.0) >= max_contact - _EDGE_CONTACT_EPSILON
+    )
+
+
+def enemy_deployment_battlefield_edges(game: object, player_id: str) -> tuple[str, ...]:
+    """Infer the opponent battlefield edge(s) from mission deployment-zone geometry."""
+    owner_id = str(player_id or "").strip()
+    if not owner_id:
+        return tuple()
+    width, height = battlefield_dimensions(game)
+    if width is None or height is None:
+        return tuple()
+
+    own_geometry = _union_deployment_geometries(
+        _deployment_geometries_for_owner(game, owner_id, opponents=False)
+    )
+    opponent_geometry = _union_deployment_geometries(
+        _deployment_geometries_for_owner(game, owner_id, opponents=True)
+    )
+    if opponent_geometry is None:
+        return tuple()
+
+    contact_lengths = _deployment_edge_contact_lengths(
+        opponent_geometry,
+        width=float(width),
+        height=float(height),
+    )
+    if own_geometry is None:
+        return _fallback_contact_edges(contact_lengths)
+
+    own_centroid = own_geometry.centroid
+    opponent_centroid = opponent_geometry.centroid
+    delta_x = float(opponent_centroid.x) - float(own_centroid.x)
+    delta_y = float(opponent_centroid.y) - float(own_centroid.y)
+    magnitude = (delta_x * delta_x + delta_y * delta_y) ** 0.5
+    if magnitude <= _EDGE_CONTACT_EPSILON:
+        return _fallback_contact_edges(contact_lengths)
+
+    unit_x = delta_x / magnitude
+    unit_y = delta_y / magnitude
+    edge_scores: dict[str, float] = {}
+    for edge in _STRATEGIC_RESERVES_EDGES:
+        contact_length = float(contact_lengths.get(edge, 0.0) or 0.0)
+        if contact_length <= _EDGE_CONTACT_EPSILON:
+            continue
+        normal_x, normal_y = _BATTLEFIELD_EDGE_NORMALS[edge]
+        direction_score = max(0.0, unit_x * normal_x + unit_y * normal_y)
+        if direction_score <= _EDGE_CONTACT_EPSILON:
+            continue
+        edge_scores[edge] = contact_length * direction_score
+
+    max_score = max(edge_scores.values(), default=0.0)
+    if max_score <= _EDGE_CONTACT_EPSILON:
+        return _fallback_contact_edges(contact_lengths)
+    return tuple(
+        edge
+        for edge in _STRATEGIC_RESERVES_EDGES
+        if edge_scores.get(edge, 0.0) >= max_score * _ENEMY_EDGE_SCORE_RATIO - _EDGE_CONTACT_EPSILON
+    )
+
+
+def is_valid_strategic_reserves_edge(
+    game: object,
+    battlefield_edge: str,
+    *,
+    turn: int | None = None,
+    player_id: str | None = None,
+    unit: object | None = None,
+) -> bool:
     edge = str(battlefield_edge or "").strip().lower()
     if edge not in _STRATEGIC_RESERVES_EDGES:
         return False
@@ -39,9 +231,19 @@ def is_valid_strategic_reserves_edge(game: object, battlefield_edge: str, *, tur
         except (TypeError, ValueError):
             use_turn = getattr(game, "turn", 0)
     try:
-        return int(use_turn or 0) >= 2
+        battle_round = int(use_turn or 0)
     except (TypeError, ValueError):
         return False
+    if battle_round < 2:
+        return False
+    if battle_round >= 3:
+        return True
+
+    owner_id = str(player_id or "").strip() or _unit_owner_player_id(unit) or _current_player_id(game)
+    invalid_edges = set(enemy_deployment_battlefield_edges(game, owner_id))
+    if invalid_edges:
+        return edge not in invalid_edges
+    return True
 
 
 def distance_to_battlefield_edge(

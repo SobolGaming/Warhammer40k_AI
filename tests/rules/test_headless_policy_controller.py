@@ -2539,15 +2539,44 @@ def test_headless_policy_controller_uses_zone_packer_rows_for_deep_strike_before
         )
     ]
 
-    assert "zone_packer_rows:own_half" in sources
-    assert sources.index("zone_packer_rows:own_half") < sources.index("deep_strike_coarse")
+    assert "zone_packer_rows:upper_half" in sources
+    assert sources.index("zone_packer_rows:upper_half") < sources.index("deep_strike_coarse")
 
     resolved = controller._try_resolve_reserves_arrival_bruteforce(game, request)
 
     assert resolved is True
     metric = controller.get_reserves_arrival_search_metrics()[-1]
-    assert str(metric.get("first_valid_source", "") or "") == "zone_packer_rows:own_half"
+    assert str(metric.get("first_valid_source", "") or "") == "zone_packer_rows:upper_half"
     assert int(metric.get("build_calls", 0) or 0) < 20
+
+
+def test_headless_deep_strike_candidate_positions_do_not_use_strategic_edge_search(monkeypatch) -> None:
+    game, unit, _request = _build_reserves_search_fixture(
+        strategic=False,
+        deep_strike=True,
+        success_xy=(0.75, 0.75),
+    )
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+
+    def _fail_strategic_edge_search(_game, _unit):
+        raise AssertionError("Deep Strike candidate generation must not use Strategic Reserves edge inference.")
+
+    monkeypatch.setattr(controller, "_strategic_reserves_search_edges", _fail_strategic_edge_search)
+
+    sources = [
+        source
+        for source, _anchors in controller._reserves_arrival_anchor_candidate_groups(
+            game,
+            unit,
+            context={"placement_kind": "reserves_arrival"},
+        )
+    ]
+
+    assert "zone_packer_rows:upper_half" in sources
+    assert "zone_packer_rows:lower_half" in sources
+    assert "zone_packer_rows:own_half" not in sources
+    assert "zone_packer_rows:enemy_half" not in sources
+    assert "deep_strike_coarse" in sources
 
 
 def test_headless_policy_controller_places_strategic_zone_packers_after_primary_edge_band() -> None:

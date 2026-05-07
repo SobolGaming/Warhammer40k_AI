@@ -2035,10 +2035,25 @@ class GameSetupDeploymentReservesMixin:
             )
         )
 
-    def is_valid_strategic_reserves_edge(self, battlefield_edge: str, *, turn: Optional[int] = None) -> bool:
+    def is_valid_strategic_reserves_edge(
+        self,
+        battlefield_edge: str,
+        *,
+        turn: Optional[int] = None,
+        player_id: Optional[str] = None,
+        unit: object = None,
+    ) -> bool:
         from ..reserve_entry_geometry import is_valid_strategic_reserves_edge
 
-        return bool(is_valid_strategic_reserves_edge(self, battlefield_edge, turn=turn))
+        return bool(
+            is_valid_strategic_reserves_edge(
+                self,
+                battlefield_edge,
+                turn=turn,
+                player_id=player_id,
+                unit=unit,
+            )
+        )
 
     def get_distance_to_battlefield_edge(self, position: Tuple[float, float, float], 
                                        battlefield_edge: str) -> float:
@@ -3716,7 +3731,9 @@ class GameSetupDeploymentReservesMixin:
         elif decision_makers:
             # Use the proper deployment manager with decision makers for controller-driven
             from ..deployment import DeploymentManager
-            deployment_manager = DeploymentManager(self)
+            selected_mission_info = dict(getattr(self, "selected_mission_info", {}) or {})
+            deployment_mission = str(selected_mission_info.get("deployment", "") or "Crucible of Battle")
+            deployment_manager = DeploymentManager(self, mission_name=deployment_mission)
             deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
             
             # Store deployment results for reference
