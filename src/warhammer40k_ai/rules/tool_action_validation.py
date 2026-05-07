@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -60,7 +61,7 @@ class ToolActionCandidateValidator:
         can_use = getattr(self.manager, "can_use", None)
         if callable(can_use):
             tool_name = str(getattr(stratagem, "name", "") or "")
-            if not bool(can_use(tool_name, **probe)):
+            if not self._call_can_use_for_probe(can_use, tool_name, probe):
                 issues.append(
                     ToolActionValidationIssue(
                         code="illegal_tool_candidate_filtered_preflight",
@@ -69,6 +70,15 @@ class ToolActionCandidateValidator:
                     )
                 )
         return ToolActionSpecValidation(kwargs=probe, issues=tuple(issues))
+
+    @staticmethod
+    def _call_can_use_for_probe(can_use: Any, tool_name: str, probe: dict[str, Any]) -> bool:
+        previous_disable = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            return bool(can_use(tool_name, **probe))
+        finally:
+            logging.disable(previous_disable)
 
     def validate_serialized_payload(self, stratagem: object, payload: dict[str, Any]) -> ToolActionSpecValidation:
         raw_kwargs = dict(payload or {}).get("resolved_kwargs")
@@ -189,6 +199,30 @@ class ToolActionCandidateValidator:
         if "legiones_daemonica" in target_text:
             if not self._unit_has_any_keyword(root, ("LEGIONES DAEMONICA",)):
                 return self._descriptor_issue("unit_keywords")
+        if "speed_freeks_or_trukk" in target_text:
+            if not self._unit_has_any_keyword(root, ("SPEED FREEKS", "TRUKK")):
+                return self._descriptor_issue("unit_keywords")
+        elif "speed_freeks" in target_text:
+            if not self._unit_has_keyword(root, "SPEED FREEKS"):
+                return self._descriptor_issue("unit_keywords")
+        if "grey_knights_psyker_vehicle" in target_text:
+            if not self._unit_has_all_keywords(root, ("GREY KNIGHTS", "PSYKER", "VEHICLE")):
+                return self._descriptor_issue("unit_keywords")
+        elif "grey_knights_vehicle" in target_text:
+            if not self._unit_has_all_keywords(root, ("GREY KNIGHTS", "VEHICLE")):
+                return self._descriptor_issue("unit_keywords")
+        elif "grey_knights_infantry" in target_text:
+            if not self._unit_has_all_keywords(root, ("GREY KNIGHTS", "INFANTRY")):
+                return self._descriptor_issue("unit_keywords")
+        elif "grey_knights" in target_text:
+            if not self._unit_has_keyword(root, "GREY KNIGHTS"):
+                return self._descriptor_issue("unit_keywords")
+        if (
+            "grey_knights_psyker_vehicle" in target_text
+            and str(getattr(descriptor, "effect", "") or "").strip().lower() == "heal_model_in_unit"
+            and not self._unit_has_missing_wounds(root)
+        ):
+            return self._descriptor_issue("lost_wounds")
         if "arriving_from_deep_strike" in target_text:
             if not self._unit_is_in_reserves(root) or not self._unit_has_deep_strike(root):
                 return self._descriptor_issue("deep_strike_arrival")
@@ -204,6 +238,18 @@ class ToolActionCandidateValidator:
             getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
         ):
             return self._descriptor_issue("not_yet_shot")
+        if "not_selected_to_shoot_or_fight" in target_text:
+            if phase_name == "shooting phase":
+                game = getattr(self.manager, "game", None)
+                active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                if active_player is not getattr(self.manager, "player", None):
+                    return self._descriptor_issue("wrong_turn")
+            if phase_name == "shooting phase" and bool(
+                getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
+            ):
+                return self._descriptor_issue("not_yet_selected")
+            if phase_name == "fight phase" and self._unit_has_fought(root):
+                return self._descriptor_issue("not_yet_selected")
         if "not_yet_fought" in target_text and self._unit_has_fought(root):
             return self._descriptor_issue("not_yet_fought")
         if "not_yet_selected" in target_text:
@@ -549,6 +595,29 @@ class ToolActionCandidateValidator:
             except (AttributeError, TypeError, ValueError):
                 return False
         return bool(list(getattr(unit, "models_lost", []) or []))
+
+    @staticmethod
+    def _unit_has_missing_wounds(unit: Any) -> bool:
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        for model in models:
+            is_alive = getattr(model, "is_alive", True)
+            if callable(is_alive):
+                try:
+                    if not bool(is_alive()):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            elif not bool(is_alive):
+                continue
+            try:
+                current = int(getattr(model, "wounds", 0) or 0)
+                starting = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+            except (TypeError, ValueError):
+                continue
+            if starting > current > 0:
+                return True
+        return False
 
     def _unit_is_in_engagement_range(self, unit: Any) -> bool:
         game = getattr(self.manager, "game", None)

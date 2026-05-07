@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ from warhammer40k_ai.engine.decision_handlers.stratagems import (
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_TOOL_ACTION
 from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 
 
@@ -19,6 +21,7 @@ def _build_remote_tool_manager():
         is_authoritative=True,
         decision_queue=decision_queue,
         request_decision=decision_queue.add,
+        get_current_player=lambda: player,
         turn=2,
     )
     player = SimpleNamespace(
@@ -75,6 +78,7 @@ def _build_generic_tool_manager(
         is_authoritative=True,
         decision_queue=decision_queue,
         request_decision=decision_queue.add,
+        get_current_player=lambda: player,
         turn=2,
     )
     player = SimpleNamespace(
@@ -230,6 +234,19 @@ def test_queue_headless_tool_action_decision_builds_select_tool_action_request()
     assert payloads[0]["stratagem_id"] == "stratagem:go_to_ground"
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
     assert payloads[1]["action"] == "skip"
+
+
+def test_headless_policy_prefers_skip_for_optional_tool_actions() -> None:
+    manager, _player, game, _target_unit = _build_remote_tool_manager()
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+    ranked = controller._rank_legal_candidates(request)
+
+    assert ranked
+    assert dict(ranked[0].params or {}).get("action") == "skip"
 
 
 def test_queue_headless_tool_action_decision_normalizes_generic_stratagem_identity_payload() -> None:
@@ -930,13 +947,79 @@ def test_tool_action_firewall_filters_emitted_spec_that_fails_can_use() -> None:
     tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
     assert len(tool_payloads) == 1
     assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == valid_unit.id
-    diagnostics = manager.get_tool_action_probe_diagnostics()
-    assert len(diagnostics) == 1
-    assert diagnostics[0]["code"] == "illegal_tool_candidate_filtered_preflight"
-    assert diagnostics[0]["missing_keys"] == ["can_use"]
+    assert manager.get_tool_action_probe_diagnostics() == []
 
 
-def test_tool_action_provider_records_error_when_all_candidates_are_filtered() -> None:
+def test_tool_action_firewall_suppresses_speculative_can_use_error_logs(caplog) -> None:
+    probe_logger = logging.getLogger("tests.tool_action_probe")
+    valid_unit = SimpleNamespace(id="unit:valid", name="Valid Unit")
+    invalid_unit = SimpleNamespace(id="unit:invalid", name="Invalid Unit")
+
+    def _noisy_can_use(_name, **kwargs):
+        if kwargs.get("unit") is invalid_unit:
+            probe_logger.error("ERROR: speculative false candidate")
+            return False
+        return True
+
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="GENERIC QUIET FIREWALL TEST",
+        descriptor_target="target_unit",
+        context={"phase_name": "Shooting phase"},
+        can_use=_noisy_can_use,
+    )
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: (
+            valid_unit
+            if kind == "unit" and entity_id == valid_unit.id
+            else invalid_unit
+            if kind == "unit" and entity_id == invalid_unit.id
+            else None
+        )
+    )
+
+    def _spec_for(unit):
+        return {
+            "label": unit.name,
+            "payload": {
+                "tool_family": "stratagem",
+                "tool_type": "stratagem",
+                "tool_name": "GENERIC QUIET FIREWALL TEST",
+                "resolved_kwargs": manager._serialize_tool_action_value(
+                    {
+                        "phase_name": "Shooting phase",
+                        "unit": unit,
+                        "target_unit": unit,
+                    }
+                ),
+            },
+        }
+
+    manager._build_tool_action_specs_for_item = lambda _item: [_spec_for(invalid_unit), _spec_for(valid_unit)]
+
+    with caplog.at_level(logging.ERROR):
+        assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    assert "speculative false candidate" not in caplog.text
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_stratagem_availability_probe_suppresses_false_can_use_error_logs(caplog) -> None:
+    probe_logger = logging.getLogger("tests.stratagem_availability_probe")
+    manager = StratagemManager.__new__(StratagemManager)
+
+    def _noisy_can_use(_name, **_kwargs):
+        probe_logger.error("ERROR: noisy availability miss")
+        return False
+
+    manager.can_use = _noisy_can_use
+
+    with caplog.at_level(logging.ERROR):
+        assert manager._quiet_can_use_probe("NOISY TEST", {"phase_name": "Shooting phase"}) is False
+
+    assert "noisy availability miss" not in caplog.text
+
+
+def test_tool_action_provider_skips_silently_when_all_candidates_are_filtered() -> None:
     invalid_a = SimpleNamespace(id="unit:invalid-a", name="Invalid A")
     invalid_b = SimpleNamespace(id="unit:invalid-b", name="Invalid B")
     manager, _player, game, _stratagem = _build_generic_tool_manager(
@@ -976,16 +1059,7 @@ def test_tool_action_provider_records_error_when_all_candidates_are_filtered() -
 
     assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
     assert list(game.decision_queue.list() or []) == []
-    diagnostics = manager.get_tool_action_probe_diagnostics()
-    assert any(entry["code"] == "illegal_tool_candidate_filtered_preflight" for entry in diagnostics)
-    provider_errors = [
-        entry
-        for entry in diagnostics
-        if entry["code"] == "tool_action_candidates_all_filtered"
-    ]
-    assert len(provider_errors) == 1
-    assert provider_errors[0]["severity"] == "ERROR"
-    assert provider_errors[0]["missing_keys"] == ["valid_tool_action_candidate"]
+    assert manager.get_tool_action_probe_diagnostics() == []
 
 
 def test_tool_action_firewall_filters_unresolvable_emitted_entity_ref() -> None:
@@ -1053,6 +1127,137 @@ def test_generic_tool_action_descriptor_filters_invalid_unit_keywords_before_emi
     tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
     assert len(tool_payloads) == 1
     assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == aspect.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_descriptor_filters_speed_freeks_targets_before_emit() -> None:
+    warbikers = SimpleNamespace(
+        id="unit:warbikers",
+        name="Warbikers",
+        keywords=["MOUNTED", "SPEED FREEKS"],
+        faction_keywords=["ORKS"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    boyz = SimpleNamespace(
+        id="unit:boyz",
+        name="Boyz",
+        keywords=["INFANTRY"],
+        faction_keywords=["ORKS"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    selected_warbikers = SimpleNamespace(
+        id="unit:selected_warbikers",
+        name="Selected Warbikers",
+        keywords=["MOUNTED", "SPEED FREEKS"],
+        faction_keywords=["ORKS"],
+        round_state=SimpleNamespace(shot_this_round=True, shot_this_phase=True),
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="BLITZA FIRE",
+        descriptor_target="speed_freeks_unit_not_yet_shot",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [boyz, selected_warbikers, warbikers],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == warbikers.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_descriptor_filters_grey_knights_heal_targets_before_emit() -> None:
+    wounded_dreadknight = SimpleNamespace(
+        id="unit:wounded_dreadknight",
+        name="Grand Master in Nemesis Dreadknight",
+        keywords=["VEHICLE", "PSYKER", "CHARACTER"],
+        faction_keywords=["GREY KNIGHTS"],
+        models=[SimpleNamespace(wounds=9, _base_wounds=12, is_alive=True)],
+        round_state=SimpleNamespace(),
+    )
+    unwounded_dreadknight = SimpleNamespace(
+        id="unit:unwounded_dreadknight",
+        name="Nemesis Dreadknight",
+        keywords=["VEHICLE", "PSYKER"],
+        faction_keywords=["GREY KNIGHTS"],
+        models=[SimpleNamespace(wounds=12, _base_wounds=12, is_alive=True)],
+        round_state=SimpleNamespace(),
+    )
+    terminators = SimpleNamespace(
+        id="unit:terminators",
+        name="Brotherhood Terminator Squad",
+        keywords=["INFANTRY", "PSYKER"],
+        faction_keywords=["GREY KNIGHTS"],
+        models=[SimpleNamespace(wounds=2, _base_wounds=3, is_alive=True)],
+        round_state=SimpleNamespace(),
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="ARMOURED AEGIS",
+        descriptor_target="grey_knights_psyker_vehicle_unit",
+        context={
+            "phase_name": "Command phase",
+            "candidates": [terminators, unwounded_dreadknight, wounded_dreadknight],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+        effect_params={"heal_amount": 3},
+    )
+    _stratagem.tool_descriptor.effect = "heal_model_in_unit"
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == wounded_dreadknight.id
+    assert manager.get_tool_action_probe_diagnostics() == []
+
+
+def test_generic_tool_action_descriptor_filters_grey_knights_selection_state_before_emit() -> None:
+    strike_squad = SimpleNamespace(
+        id="unit:strike",
+        name="Strike Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["GREY KNIGHTS"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    selected_terminators = SimpleNamespace(
+        id="unit:selected_terminators",
+        name="Brotherhood Terminator Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["GREY KNIGHTS"],
+        round_state=SimpleNamespace(shot_this_round=True, shot_this_phase=True),
+    )
+    ork_boyz = SimpleNamespace(
+        id="unit:ork_boyz",
+        name="Boyz",
+        keywords=["INFANTRY"],
+        faction_keywords=["ORKS"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    manager, _player, game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="ABOMINUS-CLASS TARGETS",
+        descriptor_target="grey_knights_unit_not_selected_to_shoot_or_fight",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [selected_terminators, ork_boyz, strike_squad],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+
+    request = next(iter(game.decision_queue.list() or []))
+    payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
+    tool_payloads = [payload for payload in payloads if str(payload.get("tool_name", "") or "")]
+    assert len(tool_payloads) == 1
+    assert tool_payloads[0]["resolved_kwargs"]["unit"]["__entity_ref__"]["id"] == strike_squad.id
     assert manager.get_tool_action_probe_diagnostics() == []
 
 
@@ -1161,7 +1366,7 @@ def test_generic_tool_action_descriptor_enforces_target_aliases_on_enemy_units()
     assert manager.get_tool_action_probe_diagnostics() == []
 
 
-def test_generic_tool_action_requires_support_context_for_paired_unit_targets() -> None:
+def test_generic_tool_action_skips_paired_unit_targets_without_support_context() -> None:
     regiment = SimpleNamespace(
         id="unit:regiment",
         name="Infantry Squad",
@@ -1180,20 +1385,10 @@ def test_generic_tool_action_requires_support_context_for_paired_unit_targets() 
 
     assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
     assert list(game.decision_queue.list() or []) == []
-    diagnostics = manager.get_tool_action_probe_diagnostics()
-    assert diagnostics
-    assert any(entry["code"] == "missing_tool_action_context" for entry in diagnostics)
-    provider_errors = [
-        entry
-        for entry in diagnostics
-        if entry["code"] == "tool_action_missing_context"
-    ]
-    assert len(provider_errors) == 1
-    assert provider_errors[0]["severity"] == "ERROR"
-    assert "support_unit" in provider_errors[0]["missing_keys"]
+    assert manager.get_tool_action_probe_diagnostics() == []
 
 
-def test_tool_action_provider_records_error_when_context_has_no_candidate_source() -> None:
+def test_tool_action_provider_skips_silently_when_context_has_no_candidate_source() -> None:
     manager, _player, game, _stratagem = _build_generic_tool_manager(
         stratagem_name="GENERIC MISSING CONTEXT TEST",
         descriptor_target="target_unit",
@@ -1203,15 +1398,7 @@ def test_tool_action_provider_records_error_when_context_has_no_candidate_source
 
     assert manager.queue_headless_tool_action_decision(reactions_only=True) is False
     assert list(game.decision_queue.list() or []) == []
-    diagnostics = manager.get_tool_action_probe_diagnostics()
-    provider_errors = [
-        entry
-        for entry in diagnostics
-        if entry["code"] == "tool_action_missing_context"
-    ]
-    assert len(provider_errors) == 1
-    assert provider_errors[0]["severity"] == "ERROR"
-    assert "unit" in provider_errors[0]["missing_keys"]
+    assert manager.get_tool_action_probe_diagnostics() == []
 
 
 def test_manager_can_use_denizens_requires_selected_unit_context() -> None:
@@ -1390,6 +1577,96 @@ def test_apply_select_tool_action_uses_stratagem_and_clears_skip_marker() -> Non
     }
     assert signature not in manager._skipped_tool_action_signatures
     assert calls == [("GO TO GROUND", {"phase_name": "Shooting phase", "target_unit": target_unit})]
+
+
+def test_validate_select_tool_action_suppresses_false_can_use_error_logs(caplog) -> None:
+    probe_logger = logging.getLogger("tests.select_tool_action_validation")
+    manager, player, _game, target_unit = _build_remote_tool_manager()
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+    request = next(iter(player.stratagems.game.decision_queue.list() or []))
+    use_option = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("tool_name", "") or "") == "GO TO GROUND"
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=use_option.option_id,
+        payload={},
+    )
+    entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: (
+            player
+            if kind == "player" and entity_id == player.id
+            else target_unit
+            if kind == "unit" and entity_id == target_unit.id
+            else None
+        )
+    )
+    game = SimpleNamespace(players=[player], entity_registry=entity_registry)
+
+    def _noisy_can_use(_name, **_kwargs):
+        probe_logger.error("ERROR: rejected validation probe")
+        return False
+
+    manager.can_use = _noisy_can_use
+
+    with caplog.at_level(logging.ERROR):
+        errors = _validate_select_tool_action(game, request, result)
+
+    assert errors == ("GO TO GROUND is no longer a valid tool action.",)
+    assert "rejected validation probe" not in caplog.text
+
+
+def test_validate_select_tool_action_rejects_stale_descriptor_candidate() -> None:
+    strike_squad = SimpleNamespace(
+        id="unit:strike",
+        name="Strike Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["GREY KNIGHTS"],
+        round_state=SimpleNamespace(shot_this_round=False, shot_this_phase=False),
+    )
+    manager, player, _game, _stratagem = _build_generic_tool_manager(
+        stratagem_name="ABOMINUS-CLASS TARGETS",
+        descriptor_target="grey_knights_unit_not_selected_to_shoot_or_fight",
+        context={
+            "phase_name": "Shooting phase",
+            "candidates": [strike_squad],
+        },
+        can_use=lambda *_args, **_kwargs: True,
+    )
+
+    assert manager.queue_headless_tool_action_decision(reactions_only=True) is True
+    request = next(iter(manager.game.decision_queue.list() or []))
+    use_option = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("tool_name", "") or "") == "ABOMINUS-CLASS TARGETS"
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=use_option.option_id,
+        payload={},
+    )
+    opponent = SimpleNamespace(id="player:opponent")
+    manager.game.get_current_player = lambda: opponent
+    entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: (
+            player
+            if kind == "player" and entity_id == player.id
+            else strike_squad
+            if kind == "unit" and entity_id == strike_squad.id
+            else None
+        )
+    )
+    game = SimpleNamespace(players=[player, opponent], entity_registry=entity_registry)
+
+    errors = _validate_select_tool_action(game, request, result)
+
+    assert errors == ("ABOMINUS-CLASS TARGETS is no longer a valid tool action.",)
 
 
 def test_validate_select_tool_action_skip_is_side_effect_free_until_apply() -> None:

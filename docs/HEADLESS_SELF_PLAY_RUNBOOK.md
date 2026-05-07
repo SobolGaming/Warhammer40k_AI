@@ -136,6 +136,7 @@ Logging controls:
 - Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.
 - Battle-shock failure status lines and Shadow of Chaos Daemonic Terror mortal-wound resolution also log at `DEBUG`, not `ERROR`.
 - Failed charge movement, including automatic headless Heroic Intervention attempts, logs below `WARNING`; failed charges are normal game outcomes, not engine errors.
+- Speculative stratagem tool-action probes skip expected illegal or missing optional contexts silently, and the headless policy prefers the explicit skip candidate for optional `SELECT_TOOL_ACTION` prompts. Malformed serialized tool-action candidates still record structured diagnostics, but expected false preflight candidates do not emit stderr `ERROR` lines.
 - Deadly Demise parameters that are fixed numbers, for example `Deadly Demise 1`, are treated as fixed
   mortal-wound damage instead of dice expressions.
 - `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.

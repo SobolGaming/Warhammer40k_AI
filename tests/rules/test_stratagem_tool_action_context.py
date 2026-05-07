@@ -28,7 +28,7 @@ def test_tool_action_serializes_fight_stage_context_without_entity_id() -> None:
     assert StratagemManager._tool_action_sort_key(FightStage.FIGHT_FIRST) == "FightStage.FIGHT_FIRST"
 
 
-def test_tool_action_missing_required_context_records_visible_diagnostic() -> None:
+def test_tool_action_missing_required_context_skips_silently() -> None:
     manager = StratagemManager.__new__(StratagemManager)
     manager.player = SimpleNamespace(id="player-1")
     manager.game = SimpleNamespace(tool_action_probe_diagnostics=[])
@@ -57,13 +57,8 @@ def test_tool_action_missing_required_context_records_visible_diagnostic() -> No
     )
 
     assert specs == []
-    diagnostics = manager.get_tool_action_probe_diagnostics()
-    assert len(diagnostics) == 1
-    assert diagnostics[0]["code"] == "missing_tool_action_context"
-    assert diagnostics[0]["severity"] == "WARNING"
-    assert diagnostics[0]["tool_name"] == "Aggressive Disembarkation"
-    assert diagnostics[0]["missing_keys"] == ["transport"]
-    assert manager.game.tool_action_probe_diagnostics == diagnostics
+    assert manager.get_tool_action_probe_diagnostics() == []
+    assert manager.game.tool_action_probe_diagnostics == []
 
 
 def test_tool_action_with_required_transport_context_emits_candidate() -> None:

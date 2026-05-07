@@ -24,6 +24,7 @@ from .decision_kinds import (
     DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_TOOL_ACTION,
     DECISION_SELECT_UNIT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
@@ -3359,6 +3360,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         action = str(params.get("action", "") or "").strip().lower()
         if action in {"pass", "skip"} or bool(params.get("skipped", False)):
             score -= 1.0
+        if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_TOOL_ACTION:
+            if action in {"pass", "skip"} or bool(params.get("skipped", False)) or bool(params.get("skip", False)):
+                score += 100.0
+            else:
+                score -= 10.0
         if str(getattr(request, "decision_type", "") or "") == "SELECT_UNIT":
             phase_step = str(request_context.get("phase_step", "") or "").strip().upper()
             if action == "pass" and phase_step in {

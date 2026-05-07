@@ -116,6 +116,30 @@ def _record_escaped_malformed_tool_action(
     )
 
 
+def _tool_action_can_use_quietly(manager: object, tool_name: str, kwargs: dict[str, Any]) -> bool:
+    quiet_probe = getattr(manager, "_quiet_can_use_probe", None)
+    if callable(quiet_probe):
+        return bool(quiet_probe(tool_name, kwargs))
+    can_use = getattr(manager, "can_use", None)
+    return bool(callable(can_use) and can_use(tool_name, **kwargs))
+
+
+def _tool_action_candidate_errors(manager: object, tool_name: str, kwargs: dict[str, Any]) -> Sequence[str]:
+    get_by_name = getattr(manager, "get_by_name", None)
+    stratagem = get_by_name(tool_name) if callable(get_by_name) else None
+    if stratagem is None:
+        if not _tool_action_can_use_quietly(manager, tool_name, kwargs):
+            return (f"{tool_name} is no longer a valid tool action.",)
+        return ()
+
+    from ...rules.tool_action_validation import ToolActionCandidateValidator
+
+    validation = ToolActionCandidateValidator(manager).validate_probe(stratagem, kwargs)
+    if validation.issues:
+        return (f"{tool_name} is no longer a valid tool action.",)
+    return ()
+
+
 def _validate_select_tool_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -134,9 +158,7 @@ def _validate_select_tool_action(game: object, request: DecisionRequest, result:
     if missing:
         _record_escaped_malformed_tool_action(manager, tool_name, kwargs, missing)
         return (f"{tool_name} missing required tool context: {', '.join(missing)}.",)
-    if not bool(getattr(manager, "can_use", None) and manager.can_use(tool_name, **kwargs)):
-        return (f"{tool_name} is no longer a valid tool action.",)
-    return ()
+    return _tool_action_candidate_errors(manager, tool_name, kwargs)
 
 
 def _apply_select_tool_action(game: object, request: DecisionRequest, result: DecisionResult):

@@ -4398,8 +4398,14 @@ class StratagemManager(
             required_all.extend(["ADEPTUS ASTARTES", "INFANTRY"])
         elif "adeptus_astartes_walker" in text:
             required_all.extend(["ADEPTUS ASTARTES", "WALKER"])
+        elif "grey_knights_psyker_vehicle" in text:
+            required_all.extend(["GREY KNIGHTS", "PSYKER", "VEHICLE"])
+        elif "grey_knights_vehicle" in text:
+            required_all.extend(["GREY KNIGHTS", "VEHICLE"])
+        elif "grey_knights_infantry" in text:
+            required_all.extend(["GREY KNIGHTS", "INFANTRY"])
         elif "grey_knights" in text:
-            required_all.extend(["GREY KNIGHTS", "CHARACTER"])
+            required_all.append("GREY KNIGHTS")
         elif "cryptek" in text:
             required_all.append("CRYPTEK")
         elif "tech_priest" in text:
@@ -4415,6 +4421,10 @@ class StratagemManager(
             excluded_any.append("DAMNED")
         if "non_monster_non_vehicle" in text:
             excluded_any.extend(["MONSTER", "VEHICLE"])
+        if "speed_freeks_or_trukk" in text:
+            required_any.extend(["SPEED FREEKS", "TRUKK"])
+        elif "speed_freeks" in text:
+            required_all.append("SPEED FREEKS")
 
         return (
             tuple(value for value in required_all if str(value or "").strip()),
@@ -4487,10 +4497,63 @@ class StratagemManager(
             getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
         ):
             return False
+        if "not_selected_to_shoot_or_fight" in text:
+            if phase_key == "shooting phase" and bool(
+                getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
+            ):
+                return False
+            if phase_key == "fight phase" and bool(
+                getattr(round_state, "fought_this_phase", False) or getattr(round_state, "fought_this_round", False)
+            ):
+                return False
         if "not_yet_selected_to_fight" in text or ("not_yet_selected" in text and phase_key == "fight phase"):
             if bool(getattr(round_state, "fought_this_phase", False) or getattr(round_state, "fought_this_round", False)):
                 return False
         return True
+
+    def _tool_action_descriptor_valid_friendly_candidates(
+        self,
+        stratagem: Stratagem,
+        context: Dict[str, Any],
+    ) -> List[Any]:
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        target_text = str(getattr(descriptor, "target", "") or "").strip()
+        if not target_text or not self._tool_action_descriptor_requires_friendly_unit(target_text):
+            return []
+        if self._tool_action_requires_trigger_context(stratagem):
+            return []
+        explicit_unit = context.get("unit") or context.get("target_unit")
+        if explicit_unit is not None:
+            raw_candidates = [explicit_unit]
+        elif "candidates" in context:
+            raw_candidates = list(context.get("candidates") or [])
+        elif "source_candidates" in context:
+            raw_candidates = list(context.get("source_candidates") or [])
+        else:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        validator = ToolActionCandidateValidator(self)
+        for unit in self._tool_action_root_units(raw_candidates):
+            if unit is None:
+                continue
+            unit_id = self._tool_action_context_entity_id(unit)
+            if unit_id and unit_id in seen:
+                continue
+            probe = {**context, "unit": unit, "target_unit": unit}
+            if validator.validate_probe(stratagem, probe).issues:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            candidates.append(unit)
+        candidates.sort(key=self._tool_action_sort_key)
+        return candidates
+
+    @staticmethod
+    def _tool_action_descriptor_has_friendly_candidate_context(context: Dict[str, Any]) -> bool:
+        if context.get("unit") is not None or context.get("target_unit") is not None:
+            return True
+        return "candidates" in context or "source_candidates" in context
 
     def _tool_action_descriptor_support_candidates_for_unit(
         self,
@@ -5076,14 +5139,6 @@ class StratagemManager(
             None,
         )
         if missing_issue is not None:
-            self._record_tool_action_probe_diagnostic(
-                stratagem=stratagem,
-                kwargs=probe,
-                missing_keys=list(missing_issue.missing_keys or ()),
-                severity="WARNING",
-                code="missing_tool_action_context",
-                resolver="generic_tool_action_builder",
-            )
             return
         if validation.issues:
             return
@@ -5181,11 +5236,12 @@ class StratagemManager(
             validation = validator.validate_serialized_payload(stratagem, payload)
             if validation.issues:
                 for issue in validation.issues:
-                    self._record_tool_action_validation_issue(
-                        stratagem=stratagem,
-                        kwargs=dict(validation.kwargs or {}),
-                        issue=issue,
-                    )
+                    if str(issue.code or "") == "malformed_tool_candidate_filtered_preflight":
+                        self._record_tool_action_validation_issue(
+                            stratagem=stratagem,
+                            kwargs=dict(validation.kwargs or {}),
+                            issue=issue,
+                        )
                 continue
             filtered.append(spec)
         return filtered
@@ -5942,21 +5998,6 @@ class StratagemManager(
             raw_specs = self._build_tool_action_specs_for_item(item)
             filtered_specs = self._filter_legal_tool_action_specs(raw_specs)
             empty_specs_are_valid = self._tool_action_empty_specs_are_valid(item, stratagem)
-            if (
-                not filtered_specs
-                and not empty_specs_are_valid
-                and not self._has_tool_action_error_diagnostic(stratagem)
-            ):
-                self._record_tool_action_provider_contract_error(
-                    stratagem=stratagem,
-                    item=item,
-                    raw_spec_count=len(list(raw_specs or [])),
-                    code=(
-                        "tool_action_candidates_all_filtered"
-                        if raw_specs
-                        else "tool_action_missing_context"
-                    ),
-                )
             if not filtered_specs:
                 continue
             specs.extend(filtered_specs)
@@ -8469,7 +8510,7 @@ class StratagemManager(
         }:
             candidates = list(context.get("candidates") or [])
             if target is not None:
-                if self.can_use(stratagem.name, **context):
+                if self._quiet_can_use_probe(stratagem.name, context):
                     result["available"] = True
                     result["reason"] = None
                     return result
@@ -8483,7 +8524,7 @@ class StratagemManager(
             candidates = list(context.get("candidates") or [])
             choice_keys = self._tool_action_choice_keys(context)
             if target is not None:
-                if self.can_use(stratagem.name, **context):
+                if self._quiet_can_use_probe(stratagem.name, context):
                     result["available"] = True
                     result["reason"] = None
                     return result
@@ -8497,7 +8538,7 @@ class StratagemManager(
             source_candidates = list(context.get("source_candidates") or context.get("candidates") or [])
             war_dogs = list(context.get("war_dog_candidates") or [])
             if target is not None:
-                if self.can_use(stratagem.name, **context):
+                if self._quiet_can_use_probe(stratagem.name, context):
                     result["available"] = True
                     result["reason"] = None
                     return result
@@ -12941,7 +12982,21 @@ class StratagemManager(
             else:
                 result["reason"] = "Requires charged enemy in Engagement Range"
             return result
-        if self.can_use(stratagem.name, **context):
+        descriptor = getattr(stratagem, "tool_descriptor", None)
+        descriptor_target = str(getattr(descriptor, "target", "") or "").strip()
+        if descriptor_target and self._tool_action_descriptor_requires_friendly_unit(descriptor_target):
+            if target is not None:
+                validation = ToolActionCandidateValidator(self).validate_probe(stratagem, context)
+                if validation.issues:
+                    result["reason"] = "Requires valid target"
+                    return result
+            elif self._tool_action_descriptor_has_friendly_candidate_context(context):
+                candidates = self._tool_action_descriptor_valid_friendly_candidates(stratagem, context)
+                if not candidates:
+                    result["reason"] = "Requires valid target"
+                    return result
+                context["candidates"] = candidates
+        if self._quiet_can_use_probe(stratagem.name, context):
             result["available"] = True
             result["reason"] = None
             return result
@@ -24428,6 +24483,14 @@ class StratagemManager(
         if callable(eligible_to_fight) and not bool(eligible_to_fight(getattr(self.game, "map", None))):
             return False
         return True
+
+    def _quiet_can_use_probe(self, stratagem_name: str, context: Dict[str, Any]) -> bool:
+        previous_disable = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            return bool(self.can_use(stratagem_name, **dict(context or {})))
+        finally:
+            logging.disable(previous_disable)
 
     def can_use(self, name: str, **kwargs) -> bool:
         s = self.get_by_name(name)
