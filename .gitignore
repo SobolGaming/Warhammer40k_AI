@@ -54,3 +54,6 @@ data/headless_matchups_*/
 data/generated_rosters_we_ec_selfplay/
 data/profiled_matchups/
 data/random_self_play_*/
+data/training_gate_*/
+data/synth_*/
+profiles/

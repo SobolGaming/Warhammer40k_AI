@@ -1,0 +1,49 @@
+{
+  "components": {
+    "candidate_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:headless_candidate_ranker:v1"
+    },
+    "matchup_evaluator": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:capability_matchup:v1"
+    },
+    "playbook_selector": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:identity_playbook:v1"
+    }
+  },
+  "controller_type": "headless_self_play",
+  "created_from_commit": "148424e4c1281ddaffe996f8b88a1bb1bf63ea3b",
+  "descriptor_bundle_scope": {
+    "ids": [
+      "descriptor_bundle:current"
+    ],
+    "match_mode": "exact"
+  },
+  "event_policy_scope": {
+    "ids": [
+      "event_policy:chapter_approved_10e_singles_v1"
+    ],
+    "match_mode": "exact"
+  },
+  "fallbacks": {
+    "playbook_selector": [
+      "heuristic:identity_playbook_fallback:v1"
+    ]
+  },
+  "policy_bundle_id": "policy_bundle:heuristic_headless_baseline_v1",
+  "policy_bundle_schema_id": "policy_bundle_schema:v1",
+  "required_capability_schema_ids": [
+    "capability_schema:build_capability_v1"
+  ],
+  "required_feature_schema_ids": [
+    "feature_schema:decision_candidate_semantics_v1"
+  ],
+  "rules_bundle_scope": {
+    "ids": [
+      "rules_bundle:current"
+    ],
+    "match_mode": "exact"
+  }
+}

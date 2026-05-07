@@ -88,6 +88,12 @@ The report directory contains:
 - `per_match.csv`
 - `summary.json`
 
+Large DecisionRecord corpora are written and consumed as streamed JSON arrays.
+`decision_records_raw.json` is emitted one game at a time by self-play, and
+`decision_records_relabeled.json` plus `training_manifest.json` are produced in
+a single streaming relabel/manifest pass. Evaluation code must not load the full
+raw or relabeled corpus into memory for gate checks.
+
 Tournament-roster evaluation also writes:
 - `roster_context.json`
 - `muster_record.json`

@@ -3,6 +3,7 @@ from __future__ import annotations
 from warhammer40k_ai.engine.training_manifest import (
     PRE_ML_BASELINE_GATE_PROFILE_ID,
     build_training_manifest,
+    build_training_manifest_from_records,
     filter_training_records,
     validate_gate_profile_compliance,
     validate_training_manifest,
@@ -103,6 +104,24 @@ def test_build_training_manifest_counts_records_and_decision_types() -> None:
     assert manifest["coverage"]["records_with_semantic_candidate_metadata"] == 3
     assert manifest["coverage"]["records_with_relabel_status"] == 3
     assert validate_training_manifest(manifest) == []
+
+
+def test_streaming_training_manifest_matches_list_builder() -> None:
+    records = [
+        _record("d1", "MOVE_UNIT"),
+        _record("d2", "DECLARE_SHOTS"),
+        _record("d3", "SCOUT_MOVE"),
+    ]
+    list_manifest = build_training_manifest(records, source_tag="self_play", min_tier3_records=2).to_dict()
+    stream_manifest = build_training_manifest_from_records(
+        (dict(record) for record in records),
+        source_tag="self_play",
+        min_tier3_records=2,
+    ).to_dict()
+
+    list_manifest.pop("generated_at_utc", None)
+    stream_manifest.pop("generated_at_utc", None)
+    assert stream_manifest == list_manifest
 
 
 def test_validate_training_manifest_detects_total_count_mismatch() -> None:

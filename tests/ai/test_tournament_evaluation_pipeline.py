@@ -293,6 +293,51 @@ def test_policy_bundle_smoke_evaluation_is_deterministic_for_fixed_seed(tmp_path
     assert first["summary"]["manifest_gate"]["gate_profile_id"] == "headless_fixed_v1"
 
 
+def test_policy_bundle_evaluation_streams_records_from_path(tmp_path: Path, monkeypatch) -> None:
+    records = [
+        _record("d1", game_id="game:test:0", player_score=0, opponent_score=0),
+        _record("d2", game_id="game:test:0", player_score=12, opponent_score=8),
+    ]
+    raw_records_path = tmp_path / "raw_records.json"
+    _write_json(raw_records_path, records)
+    models_root = tmp_path / "models"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
+    _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
+
+    import warhammer40k_ai.ml.evaluation_pipeline as pipeline
+
+    def _streaming_self_play_stage(**_kwargs):
+        return {
+            "returncode": 0,
+            "stdout_path": "",
+            "stderr_path": "",
+            "records_path": str(raw_records_path),
+            "report_path": "",
+            "report": _self_play_report(records),
+            "replay_dir": "",
+        }
+
+    monkeypatch.setattr(pipeline, "run_headless_self_play_stage", _streaming_self_play_stage)
+    monkeypatch.setattr(pipeline, "audit_replay_sessions", _fake_replay_pass)
+
+    result = run_policy_bundle_evaluation(
+        policy_bundle_source=str(bundle_path),
+        models_root=models_root,
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        report_dir=tmp_path / "report",
+        games=1,
+        evaluation_mode=HEADLESS_FIXED_EVALUATION_MODE,
+    )
+
+    assert result["success"] is True
+    relabeled_path = Path(result["relabeled_records_path"])
+    assert relabeled_path.is_file()
+    relabeled = json.loads(relabeled_path.read_text(encoding="utf-8"))
+    assert len(relabeled) == 2
+    assert all(str(record.get("relabel_status", "")) for record in relabeled)
+
+
 def test_policy_bundle_evaluation_fails_when_replay_audit_fails(tmp_path: Path, monkeypatch) -> None:
     records = [_record("d1", game_id="game:test:0", player_score=4, opponent_score=4)]
     models_root = tmp_path / "models"

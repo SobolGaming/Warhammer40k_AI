@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import time
 from typing import Any
 
@@ -75,6 +76,47 @@ def _json_safe(value: Any) -> Any:
     if callable(to_dict):
         return _json_safe(to_dict())
     return str(value)
+
+
+class _JsonArrayWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._handle = None
+        self._first = True
+
+    def __enter__(self) -> "_JsonArrayWriter":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self.path.open("w", encoding="utf-8")
+        self._handle.write("[\n")
+        return self
+
+    def write(self, value: Any) -> None:
+        if self._handle is None:
+            raise RuntimeError("JSON array writer is not open.")
+        if not self._first:
+            self._handle.write(",\n")
+        json.dump(_json_safe(value), self._handle, indent=2, sort_keys=True, ensure_ascii=True)
+        self._first = False
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if self._handle is None:
+            return
+        self._handle.write("\n]\n")
+        self._handle.close()
+        self._handle = None
+
+
+def _write_json_array(path: Path, values: list[Any] | tuple[Any, ...]) -> None:
+    with _JsonArrayWriter(path) as writer:
+        for value in list(values or []):
+            writer.write(value)
+
+
+def _load_json_array(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(f"Expected JSON array at {path}.")
+    return [dict(item or {}) for item in list(payload or [])]
 
 
 def _collect_tool_action_probe_diagnostics(game: object) -> list[dict[str, Any]]:
@@ -823,7 +865,12 @@ def run_headless_self_play(
     games = max(1, int(games or 1))
     workers = max(1, int(workers or 1))
     max_phase_steps = max(1, int(max_phase_steps or 1))
-    all_records: list[dict[str, Any]] = []
+    output_path = Path(str(output))
+    spool_dir = output_path.parent / f".{output_path.name}.parts"
+    if spool_dir.exists():
+        shutil.rmtree(spool_dir)
+    spool_dir.mkdir(parents=True, exist_ok=True)
+    exported_record_count = 0
     total_phase_steps = 0
     decision_type_counts: Counter[str] = Counter()
     tool_probe_diagnostic_counts: Counter[str] = Counter()
@@ -831,6 +878,17 @@ def run_headless_self_play(
     llm_agent_trace_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
+
+    def _spool_completed_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        game_index = int(payload.get("game_index", 0) or 0)
+        result = dict(payload.get("result", {}) or {})
+        records = list(result.pop("records", []) or [])
+        part_path = spool_dir / f"game_{game_index:06d}.json"
+        _write_json_array(part_path, records)
+        payload["result"] = result
+        payload["records_part_path"] = str(part_path)
+        payload["record_count"] = int(len(records))
+        return records
 
     if workers == 1 or games == 1:
         for game_index in range(games):
@@ -855,9 +913,9 @@ def run_headless_self_play(
                 profile_lines=int(profile_lines),
                 profile_label=str(profile_label),
             )
-            per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
-            records = list(result.get("records", []) or [])
+            records = _spool_completed_payload(payload)
+            per_game_outputs.append(payload)
             game_id = str(result.get("game_id", "") or "")
             print(
                 f"Completed game {game_index + 1}/{games} ({game_id}) in "
@@ -899,10 +957,10 @@ def run_headless_self_play(
             ]
             for future in as_completed(futures):
                 payload = dict(future.result() or {})
-                per_game_outputs.append(payload)
                 game_index = int(payload.get("game_index", 0) or 0)
                 result = dict(payload.get("result", {}) or {})
-                records = list(result.get("records", []) or [])
+                records = _spool_completed_payload(payload)
+                per_game_outputs.append(payload)
                 game_id = str(result.get("game_id", "") or "")
                 print(
                     f"Completed game {game_index + 1}/{games} ({game_id}) in "
@@ -916,60 +974,61 @@ def run_headless_self_play(
                     print(f"Tool probe diagnostics for game {game_index + 1}: {diagnostic_summary}")
 
     per_game_outputs.sort(key=lambda item: int(item.get("game_index", 0) or 0))
-    for payload in per_game_outputs:
-        result = dict(payload.get("result", {}) or {})
-        records = list(result.get("records", []) or [])
-        all_records.extend(records)
-        total_phase_steps += int(result.get("phase_steps", 0) or 0)
-        winner_army_label = str(result.get("winner_army_label", "") or "")
-        winner_score_line = str(result.get("winner_score_line", "") or "")
-        scoreboard = dict(result.get("scoreboard", {}) or {})
-        game_id = str(result.get("game_id", "") or "")
-        if game_id:
-            game_outcomes[game_id] = {
-                "winner": winner_army_label or "tie",
-                "score": winner_score_line,
-                "scoreboard": scoreboard,
-            }
-        for record in records:
-            decision_type = str(record.get("decision_type", "") or "")
-            if decision_type:
-                decision_type_counts[decision_type] += 1
-        for diagnostic in list(result.get("tool_action_probe_diagnostics", []) or []):
-            item = dict(diagnostic or {})
-            tool_name = str(item.get("tool_name", "") or "<unknown>")
-            code = str(item.get("code", "") or "<unknown>")
-            severity = str(item.get("severity", "") or "WARNING")
-            tool_probe_diagnostic_counts[f"{severity}:{tool_name}:{code}"] += 1
-        for diagnostic in list(result.get("reserve_arrival_diagnostics", []) or []):
-            item = dict(diagnostic or {})
-            code = str(item.get("code", "") or "<unknown>")
-            severity = str(item.get("severity", "") or "WARNING")
-            reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
-        for trace in list(result.get("llm_agent_traces", []) or []):
-            item = dict(trace or {})
-            component = str(item.get("component_name", "") or "<unknown>")
-            legal = bool(item.get("legal", False))
-            error = str(item.get("error", "") or "")
-            status = "legal" if legal else ("error" if error else "illegal")
-            llm_agent_trace_counts[f"{component}:{status}"] += 1
+    with _JsonArrayWriter(output_path) as output_writer:
+        for payload in per_game_outputs:
+            result = dict(payload.get("result", {}) or {})
+            part_path = Path(str(payload.get("records_part_path", "") or ""))
+            records = _load_json_array(part_path) if part_path.is_file() else []
+            total_phase_steps += int(result.get("phase_steps", 0) or 0)
+            winner_army_label = str(result.get("winner_army_label", "") or "")
+            winner_score_line = str(result.get("winner_score_line", "") or "")
+            scoreboard = dict(result.get("scoreboard", {}) or {})
+            game_id = str(result.get("game_id", "") or "")
+            if game_id:
+                game_outcomes[game_id] = {
+                    "winner": winner_army_label or "tie",
+                    "score": winner_score_line,
+                    "scoreboard": scoreboard,
+                }
+            for record in records:
+                decision_type = str(record.get("decision_type", "") or "")
+                if decision_type:
+                    decision_type_counts[decision_type] += 1
+            for diagnostic in list(result.get("tool_action_probe_diagnostics", []) or []):
+                item = dict(diagnostic or {})
+                tool_name = str(item.get("tool_name", "") or "<unknown>")
+                code = str(item.get("code", "") or "<unknown>")
+                severity = str(item.get("severity", "") or "WARNING")
+                tool_probe_diagnostic_counts[f"{severity}:{tool_name}:{code}"] += 1
+            for diagnostic in list(result.get("reserve_arrival_diagnostics", []) or []):
+                item = dict(diagnostic or {})
+                code = str(item.get("code", "") or "<unknown>")
+                severity = str(item.get("severity", "") or "WARNING")
+                reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
+            for trace in list(result.get("llm_agent_traces", []) or []):
+                item = dict(trace or {})
+                component = str(item.get("component_name", "") or "<unknown>")
+                legal = bool(item.get("legal", False))
+                error = str(item.get("error", "") or "")
+                status = "legal" if legal else ("error" if error else "illegal")
+                llm_agent_trace_counts[f"{component}:{status}"] += 1
 
-    exported_records = merge_decision_records_by_id(all_records)
-    if not bool(no_reward_annotation):
-        exported_records = annotate_decision_records_with_rewards(
-            exported_records,
-            profile_id=str(reward_profile),
-        )
-    exported_records = merge_decision_records_by_id(list(_json_safe(exported_records) or []))
-
-    output_path = Path(str(output))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(exported_records, indent=2, sort_keys=True), encoding="utf-8")
+            exported_game_records = merge_decision_records_by_id(records)
+            if not bool(no_reward_annotation):
+                exported_game_records = annotate_decision_records_with_rewards(
+                    exported_game_records,
+                    profile_id=str(reward_profile),
+                )
+            exported_game_records = merge_decision_records_by_id(list(_json_safe(exported_game_records) or []))
+            for record in exported_game_records:
+                output_writer.write(record)
+                exported_record_count += 1
+    shutil.rmtree(spool_dir)
 
     print(f"Games: {games}")
     print(f"Workers: {workers}")
     print(f"Phase steps: {total_phase_steps}")
-    print(f"Decision records: {len(exported_records)}")
+    print(f"Decision records: {exported_record_count}")
     if not bool(no_reward_annotation):
         print(f"Reward profile: {reward_profile}")
     if games == 1 and game_outcomes:
@@ -1030,7 +1089,7 @@ def run_headless_self_play(
         "player2_army": str(player2_army),
         "reward_profile": None if bool(no_reward_annotation) else str(reward_profile),
         "phase_steps": int(total_phase_steps),
-        "decision_record_count": int(len(exported_records)),
+        "decision_record_count": int(exported_record_count),
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),

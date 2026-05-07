@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .training_manifest_builder import (
     build_training_manifest,
+    build_training_manifest_from_records,
     build_training_manifest_slice,
     filter_training_records,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "TrainingDataManifest",
     "TrainingManifestSlice",
     "build_training_manifest",
+    "build_training_manifest_from_records",
     "build_training_manifest_slice",
     "extract_training_records",
     "filter_training_records",

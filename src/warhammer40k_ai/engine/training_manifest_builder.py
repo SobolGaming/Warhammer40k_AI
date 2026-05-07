@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Any
+from typing import Any, Iterable
 
 from .training_manifest_schema import (
     MANIFEST_VERSION,
@@ -498,12 +498,103 @@ def _gameplay_quality(
     }
 
 
-def build_training_manifest(
-    records: list[dict[str, Any]],
+def _empty_gameplay_quality(*, gate_profile) -> dict[str, Any]:
+    return {
+        "games_observed": 0,
+        "records_with_game_id": 0,
+        "records_with_game_id_ratio": 0.0,
+        "total_tactical_decisions": 0,
+        "minimum_tactical_decisions_per_game": 0,
+        "mean_tactical_decisions_per_game": 0.0,
+        "combat_decisions": 0,
+        "combat_decision_ratio": 0.0,
+        "games_with_score_snapshots": 0,
+        "games_with_score_snapshots_ratio": 0.0,
+        "games_with_scoring_progress": 0,
+        "scoring_progress_game_ratio": 0.0,
+        "no_progress_game_ratio": 0.0,
+        "games_with_combat_or_scoring_activity": 0,
+        "combat_or_scoring_active_game_ratio": 0.0,
+        "games_with_nontrivial_vp": 0,
+        "nontrivial_vp_game_ratio": 0.0,
+        "minimum_nontrivial_total_vp": int(gate_profile.minimum_nontrivial_total_vp),
+    }
+
+
+def _finalize_gameplay_quality(
     *,
-    source_tag: str,
-    min_tier3_records: int = 10000,
-    gate_profile_id: str = PRE_ML_BASELINE_GATE_PROFILE_ID,
+    total_records: int,
+    records_with_game_id: int,
+    combat_decisions: int,
+    game_stats: dict[str, dict[str, Any]],
+    gate_profile,
+) -> dict[str, Any]:
+    if total_records <= 0:
+        return _empty_gameplay_quality(gate_profile=gate_profile)
+
+    games_observed = int(len(game_stats))
+    total_tactical = 0
+    minimum_tactical = 0
+    games_with_score_snapshots = 0
+    games_with_scoring_progress = 0
+    games_with_combat_or_scoring_activity = 0
+    games_with_nontrivial_vp = 0
+
+    if games_observed > 0:
+        tactical_values: list[int] = []
+        for stats in game_stats.values():
+            tactical = int(stats.get("tactical_decisions", 0) or 0)
+            tactical_values.append(tactical)
+            total_tactical += tactical
+            has_snapshot = bool(stats.get("has_score_snapshot", False))
+            if has_snapshot:
+                games_with_score_snapshots += 1
+            last_scores = dict(stats.get("last_scores", {}) or {})
+            final_total_vp = _safe_float(sum(float(value) for value in list(last_scores.values() or [])), default=0.0)
+            progressed = bool(stats.get("scoring_progress", False))
+            if final_total_vp > 0.0:
+                progressed = True
+            if progressed:
+                games_with_scoring_progress += 1
+            combat_count = int(stats.get("combat_decisions", 0) or 0)
+            if combat_count > 0 or progressed:
+                games_with_combat_or_scoring_activity += 1
+            if final_total_vp >= float(gate_profile.minimum_nontrivial_total_vp):
+                games_with_nontrivial_vp += 1
+
+        minimum_tactical = int(min(tactical_values or [0]))
+        mean_tactical = _ratio(total_tactical, games_observed)
+    else:
+        mean_tactical = 0.0
+
+    scoring_progress_ratio = _ratio(games_with_scoring_progress, games_observed)
+    no_progress_games = max(0, games_observed - games_with_scoring_progress)
+    no_progress_ratio = _ratio(no_progress_games, games_observed)
+
+    return {
+        "games_observed": games_observed,
+        "records_with_game_id": int(records_with_game_id),
+        "records_with_game_id_ratio": _ratio(records_with_game_id, total_records),
+        "total_tactical_decisions": int(total_tactical),
+        "minimum_tactical_decisions_per_game": int(minimum_tactical),
+        "mean_tactical_decisions_per_game": float(mean_tactical),
+        "combat_decisions": int(combat_decisions),
+        "combat_decision_ratio": _ratio(combat_decisions, total_records),
+        "games_with_score_snapshots": int(games_with_score_snapshots),
+        "games_with_score_snapshots_ratio": _ratio(games_with_score_snapshots, games_observed),
+        "games_with_scoring_progress": int(games_with_scoring_progress),
+        "scoring_progress_game_ratio": float(scoring_progress_ratio),
+        "no_progress_game_ratio": float(no_progress_ratio),
+        "games_with_combat_or_scoring_activity": int(games_with_combat_or_scoring_activity),
+        "combat_or_scoring_active_game_ratio": _ratio(games_with_combat_or_scoring_activity, games_observed),
+        "games_with_nontrivial_vp": int(games_with_nontrivial_vp),
+        "nontrivial_vp_game_ratio": _ratio(games_with_nontrivial_vp, games_observed),
+        "minimum_nontrivial_total_vp": int(gate_profile.minimum_nontrivial_total_vp),
+    }
+
+
+def _normalized_manifest_slice(
+    *,
     slice_filters: TrainingManifestSlice | None = None,
     rules_bundle_ids: list[str] | tuple[str, ...] | None = None,
     descriptor_bundle_ids: list[str] | tuple[str, ...] | None = None,
@@ -513,11 +604,8 @@ def build_training_manifest(
     deployment_descriptor_ids: list[str] | tuple[str, ...] | None = None,
     army_build_descriptor_ids: list[str] | tuple[str, ...] | None = None,
     tool_descriptor_ids: list[str] | tuple[str, ...] | None = None,
-) -> TrainingDataManifest:
-    record_list = [dict(record or {}) for record in list(records or [])]
-    filtered_records, normalized_slice = filter_training_records(
-        record_list,
-        slice_filters=slice_filters,
+) -> TrainingManifestSlice:
+    return slice_filters or build_training_manifest_slice(
         rules_bundle_ids=rules_bundle_ids,
         descriptor_bundle_ids=descriptor_bundle_ids,
         mission_descriptor_ids=mission_descriptor_ids,
@@ -527,11 +615,28 @@ def build_training_manifest(
         army_build_descriptor_ids=army_build_descriptor_ids,
         tool_descriptor_ids=tool_descriptor_ids,
     )
-    total_records = int(len(filtered_records))
-    decision_type_counts = _decision_type_counts(filtered_records)
-    coverage = _coverage(filtered_records)
+
+
+def _manifest_from_metrics(
+    *,
+    source_tag: str,
+    min_tier3_records: int,
+    gate_profile_id: str,
+    normalized_slice: TrainingManifestSlice,
+    total_records: int,
+    decision_type_counts: dict[str, int],
+    coverage: dict[str, Any],
+    gameplay_quality: dict[str, Any],
+    rules_bundle_ids: set[str],
+    descriptor_bundle_ids: set[str],
+    mission_descriptor_ids: set[str],
+    objective_descriptor_ids: set[str],
+    terrain_descriptor_ids: set[str],
+    deployment_descriptor_ids: set[str],
+    army_build_descriptor_ids: set[str],
+    tool_descriptor_ids: set[str],
+) -> TrainingDataManifest:
     gate_profile = _resolve_gate_profile(gate_profile_id)
-    gameplay_quality = _gameplay_quality(filtered_records, gate_profile=gate_profile)
     semantic_ratio = float(coverage.get("semantic_candidate_metadata_ratio", 0.0) or 0.0)
     relabel_ratio = float(coverage.get("relabel_status_ratio", 0.0) or 0.0)
     deployment_semantic_ratio = float(coverage.get("deployment_semantic_metadata_ratio", 1.0) or 0.0)
@@ -616,16 +721,16 @@ def build_training_manifest(
         manifest_version=MANIFEST_VERSION,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         source_tag=str(source_tag or ""),
-        total_records=total_records,
-        rules_bundle_ids=_rules_bundle_ids(filtered_records),
-        descriptor_bundle_ids=_descriptor_bundle_ids(filtered_records),
-        mission_descriptor_ids=_descriptor_family_ids(filtered_records, "mission_descriptor_id"),
-        objective_descriptor_ids=_descriptor_family_ids(filtered_records, "objective_descriptor_ids"),
-        terrain_descriptor_ids=_descriptor_family_ids(filtered_records, "terrain_descriptor_ids"),
-        deployment_descriptor_ids=_descriptor_family_ids(filtered_records, "deployment_descriptor_id"),
-        army_build_descriptor_ids=_descriptor_family_ids(filtered_records, "army_build_descriptor_id"),
-        tool_descriptor_ids=_descriptor_family_ids(filtered_records, "tool_descriptor_ids"),
-        decision_type_counts=decision_type_counts,
+        total_records=int(total_records),
+        rules_bundle_ids=tuple(sorted(rules_bundle_ids)),
+        descriptor_bundle_ids=tuple(sorted(descriptor_bundle_ids)),
+        mission_descriptor_ids=tuple(sorted(mission_descriptor_ids)),
+        objective_descriptor_ids=tuple(sorted(objective_descriptor_ids)),
+        terrain_descriptor_ids=tuple(sorted(terrain_descriptor_ids)),
+        deployment_descriptor_ids=tuple(sorted(deployment_descriptor_ids)),
+        army_build_descriptor_ids=tuple(sorted(army_build_descriptor_ids)),
+        tool_descriptor_ids=tuple(sorted(tool_descriptor_ids)),
+        decision_type_counts={key: int(decision_type_counts[key]) for key in sorted(decision_type_counts.keys())},
         coverage=coverage,
         gameplay_quality=gameplay_quality,
         gate_requirements=gate_requirements,
@@ -633,8 +738,225 @@ def build_training_manifest(
     )
 
 
+def build_training_manifest_from_records(
+    records: Iterable[dict[str, Any]],
+    *,
+    source_tag: str,
+    min_tier3_records: int = 10000,
+    gate_profile_id: str = PRE_ML_BASELINE_GATE_PROFILE_ID,
+    slice_filters: TrainingManifestSlice | None = None,
+    rules_bundle_ids: list[str] | tuple[str, ...] | None = None,
+    descriptor_bundle_ids: list[str] | tuple[str, ...] | None = None,
+    mission_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    objective_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    terrain_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    deployment_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    army_build_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    tool_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+) -> TrainingDataManifest:
+    normalized_slice = _normalized_manifest_slice(
+        slice_filters=slice_filters,
+        rules_bundle_ids=rules_bundle_ids,
+        descriptor_bundle_ids=descriptor_bundle_ids,
+        mission_descriptor_ids=mission_descriptor_ids,
+        objective_descriptor_ids=objective_descriptor_ids,
+        terrain_descriptor_ids=terrain_descriptor_ids,
+        deployment_descriptor_ids=deployment_descriptor_ids,
+        army_build_descriptor_ids=army_build_descriptor_ids,
+        tool_descriptor_ids=tool_descriptor_ids,
+    )
+
+    total_records = 0
+    with_semantics = 0
+    relabeled = 0
+    deployment_related = 0
+    deployment_zone_choice_records = 0
+    declare_reserves_records = 0
+    select_next_deploy_unit_records = 0
+    scout_move_records = 0
+    deployment_move_records = 0
+    deployment_semantic_records = 0
+    records_with_game_id = 0
+    combat_decisions = 0
+    decision_type_counts: dict[str, int] = {}
+    rules_bundle_id_set: set[str] = set()
+    descriptor_bundle_id_set: set[str] = set()
+    mission_descriptor_id_set: set[str] = set()
+    objective_descriptor_id_set: set[str] = set()
+    terrain_descriptor_id_set: set[str] = set()
+    deployment_descriptor_id_set: set[str] = set()
+    army_build_descriptor_id_set: set[str] = set()
+    tool_descriptor_id_set: set[str] = set()
+    game_stats: dict[str, dict[str, Any]] = {}
+
+    for raw_record in records:
+        item = dict(raw_record or {})
+        if not _record_matches_slice(item, normalized_slice):
+            continue
+        total_records += 1
+        decision_type = str(item.get("decision_type", "") or "UNKNOWN")
+        decision_type_counts[decision_type] = int(decision_type_counts.get(decision_type, 0) or 0) + 1
+
+        rules_bundle_id = str(item.get("rules_bundle_id", "") or "")
+        if rules_bundle_id:
+            rules_bundle_id_set.add(rules_bundle_id)
+        descriptor_bundle_id = _record_descriptor_bundle_id(item)
+        if descriptor_bundle_id:
+            descriptor_bundle_id_set.add(descriptor_bundle_id)
+        descriptor_ids = _record_descriptor_ids(item)
+        mission_descriptor_id = str(descriptor_ids.get("mission_descriptor_id", "") or "")
+        if mission_descriptor_id:
+            mission_descriptor_id_set.add(mission_descriptor_id)
+        deployment_descriptor_id = str(descriptor_ids.get("deployment_descriptor_id", "") or "")
+        if deployment_descriptor_id:
+            deployment_descriptor_id_set.add(deployment_descriptor_id)
+        army_build_descriptor_id = str(descriptor_ids.get("army_build_descriptor_id", "") or "")
+        if army_build_descriptor_id:
+            army_build_descriptor_id_set.add(army_build_descriptor_id)
+        objective_descriptor_id_set.update(
+            str(value) for value in list(descriptor_ids.get("objective_descriptor_ids", []) or []) if str(value)
+        )
+        terrain_descriptor_id_set.update(
+            str(value) for value in list(descriptor_ids.get("terrain_descriptor_ids", []) or []) if str(value)
+        )
+        tool_descriptor_id_set.update(
+            str(value) for value in list(descriptor_ids.get("tool_descriptor_ids", []) or []) if str(value)
+        )
+
+        if _candidates_have_semantic_metadata(item):
+            with_semantics += 1
+        if str(item.get("relabel_status", "") or ""):
+            relabeled += 1
+        is_deployment_move = _is_deployment_move_record(item)
+        is_deployment_related = decision_type in _DEPLOYMENT_DECISION_TYPES or is_deployment_move
+        if is_deployment_related:
+            deployment_related += 1
+            if _candidates_have_deployment_semantic_metadata(item):
+                deployment_semantic_records += 1
+        if decision_type == "CHOOSE_DEPLOYMENT_ZONE":
+            deployment_zone_choice_records += 1
+        if decision_type == "DECLARE_RESERVES":
+            declare_reserves_records += 1
+        if decision_type == "SELECT_NEXT_DEPLOY_UNIT":
+            select_next_deploy_unit_records += 1
+        if decision_type == "SCOUT_MOVE":
+            scout_move_records += 1
+        if is_deployment_move:
+            deployment_move_records += 1
+
+        game_id = str(item.get("game_id", "") or "")
+        if game_id:
+            records_with_game_id += 1
+        else:
+            game_id = "__missing_game_id__"
+        stats = game_stats.setdefault(
+            game_id,
+            {
+                "tactical_decisions": 0,
+                "combat_decisions": 0,
+                "has_score_snapshot": False,
+                "scoring_progress": False,
+                "last_scores": {},
+            },
+        )
+        if decision_type in _TACTICAL_DECISION_TYPES:
+            stats["tactical_decisions"] = int(stats.get("tactical_decisions", 0) or 0) + 1
+        if decision_type in _COMBAT_DECISION_TYPES:
+            stats["combat_decisions"] = int(stats.get("combat_decisions", 0) or 0) + 1
+            combat_decisions += 1
+        scores = _extract_player_scores(item)
+        if scores:
+            stats["has_score_snapshot"] = True
+            if _scores_changed(dict(stats.get("last_scores", {}) or {}), scores):
+                stats["scoring_progress"] = True
+            stats["last_scores"] = dict(scores)
+
+    deployment_semantic_ratio = (
+        1.0
+        if deployment_related <= 0
+        else _ratio(deployment_semantic_records, deployment_related)
+    )
+    coverage = {
+        "records_with_semantic_candidate_metadata": int(with_semantics),
+        "semantic_candidate_metadata_ratio": _ratio(with_semantics, total_records),
+        "records_with_relabel_status": int(relabeled),
+        "relabel_status_ratio": _ratio(relabeled, total_records),
+        "deployment_related_records": int(deployment_related),
+        "deployment_zone_choice_records": int(deployment_zone_choice_records),
+        "declare_reserves_records": int(declare_reserves_records),
+        "select_next_deploy_unit_records": int(select_next_deploy_unit_records),
+        "scout_move_records": int(scout_move_records),
+        "deployment_move_records": int(deployment_move_records),
+        "deployment_records_with_semantic_metadata": int(deployment_semantic_records),
+        "deployment_semantic_metadata_ratio": float(deployment_semantic_ratio),
+        "has_deployment_zone_choice_coverage": bool(deployment_zone_choice_records > 0),
+        "has_declare_reserves_coverage": bool(declare_reserves_records > 0),
+        "has_select_next_deploy_unit_coverage": bool(select_next_deploy_unit_records > 0),
+        "has_scout_move_coverage": bool(scout_move_records > 0),
+        "has_deployment_move_coverage": bool(deployment_move_records > 0),
+    }
+    gate_profile = _resolve_gate_profile(gate_profile_id)
+    gameplay_quality = _finalize_gameplay_quality(
+        total_records=total_records,
+        records_with_game_id=records_with_game_id,
+        combat_decisions=combat_decisions,
+        game_stats=game_stats,
+        gate_profile=gate_profile,
+    )
+    return _manifest_from_metrics(
+        source_tag=source_tag,
+        min_tier3_records=min_tier3_records,
+        gate_profile_id=gate_profile_id,
+        normalized_slice=normalized_slice,
+        total_records=total_records,
+        decision_type_counts=decision_type_counts,
+        coverage=coverage,
+        gameplay_quality=gameplay_quality,
+        rules_bundle_ids=rules_bundle_id_set,
+        descriptor_bundle_ids=descriptor_bundle_id_set,
+        mission_descriptor_ids=mission_descriptor_id_set,
+        objective_descriptor_ids=objective_descriptor_id_set,
+        terrain_descriptor_ids=terrain_descriptor_id_set,
+        deployment_descriptor_ids=deployment_descriptor_id_set,
+        army_build_descriptor_ids=army_build_descriptor_id_set,
+        tool_descriptor_ids=tool_descriptor_id_set,
+    )
+
+
+def build_training_manifest(
+    records: list[dict[str, Any]],
+    *,
+    source_tag: str,
+    min_tier3_records: int = 10000,
+    gate_profile_id: str = PRE_ML_BASELINE_GATE_PROFILE_ID,
+    slice_filters: TrainingManifestSlice | None = None,
+    rules_bundle_ids: list[str] | tuple[str, ...] | None = None,
+    descriptor_bundle_ids: list[str] | tuple[str, ...] | None = None,
+    mission_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    objective_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    terrain_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    deployment_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    army_build_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+    tool_descriptor_ids: list[str] | tuple[str, ...] | None = None,
+) -> TrainingDataManifest:
+    return build_training_manifest_from_records(
+        records,
+        source_tag=source_tag,
+        min_tier3_records=min_tier3_records,
+        gate_profile_id=gate_profile_id,
+        slice_filters=slice_filters,
+        rules_bundle_ids=rules_bundle_ids,
+        descriptor_bundle_ids=descriptor_bundle_ids,
+        mission_descriptor_ids=mission_descriptor_ids,
+        objective_descriptor_ids=objective_descriptor_ids,
+        terrain_descriptor_ids=terrain_descriptor_ids,
+        deployment_descriptor_ids=deployment_descriptor_ids,
+        army_build_descriptor_ids=army_build_descriptor_ids,
+        tool_descriptor_ids=tool_descriptor_ids,
+    )
 __all__ = [
     "build_training_manifest",
+    "build_training_manifest_from_records",
     "build_training_manifest_slice",
     "filter_training_records",
 ]

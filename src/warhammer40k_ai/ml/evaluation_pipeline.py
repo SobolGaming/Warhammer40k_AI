@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime, timezone
+import itertools
 import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
-from ..engine.relabel import relabel_decision_records
+from ..engine.relabel import relabel_decision_record
 from ..engine.replay_store import ReplayStoreReader
 from ..engine.ruleset import RulesetBundle
 from ..engine.training_manifest import (
     PRE_ML_BASELINE_GATE_PROFILE_ID,
-    build_training_manifest,
+    build_training_manifest_from_records,
     save_training_manifest,
     validate_gate_profile_compliance,
     validate_training_manifest,
@@ -122,13 +123,166 @@ def _read_json_mapping(path: Path) -> dict[str, Any]:
     return dict(payload)
 
 
-def _load_records(path: Path) -> list[dict[str, Any]]:
-    payload = _read_json_document(path)
-    if isinstance(payload, list):
-        return [dict(item or {}) for item in list(payload or [])]
-    if isinstance(payload, dict) and isinstance(payload.get("records"), list):
-        return [dict(item or {}) for item in list(payload.get("records", []) or [])]
-    raise ValueError(f"Expected a JSON array of decision records at {path}.")
+def _iter_records_from_json(path: Path, *, chunk_size: int = 1024 * 1024) -> Iterator[dict[str, Any]]:
+    decoder = json.JSONDecoder()
+    with path.open("r", encoding="utf-8") as handle:
+        buffer = ""
+        eof = False
+
+        def _read_more() -> None:
+            nonlocal buffer, eof
+            chunk = handle.read(max(1, int(chunk_size)))
+            if chunk:
+                buffer += chunk
+            else:
+                eof = True
+
+        while not buffer.strip() and not eof:
+            _read_more()
+        buffer = buffer.lstrip()
+        if not buffer:
+            return
+        opener = buffer[0]
+        buffer = buffer[1:]
+        if opener != "[":
+            document = json.loads(opener + buffer + handle.read())
+            for item in _records_from_document(document, source_path=path):
+                yield item
+            return
+
+        while True:
+            buffer = buffer.lstrip()
+            while not buffer and not eof:
+                _read_more()
+                buffer = buffer.lstrip()
+            if not buffer:
+                if eof:
+                    raise ValueError(f"Unexpected end of JSON array at {path}.")
+                continue
+            if buffer[0] == "]":
+                return
+            if buffer[0] == ",":
+                buffer = buffer[1:]
+                continue
+            while True:
+                try:
+                    item, consumed = decoder.raw_decode(buffer)
+                    break
+                except json.JSONDecodeError:
+                    if eof:
+                        raise
+                    _read_more()
+            if not isinstance(item, dict):
+                raise ValueError(f"Expected decision record object in JSON array at {path}.")
+            yield dict(item)
+            buffer = buffer[consumed:]
+
+
+def _records_from_document(document: Any, *, source_path: Path | None = None) -> Iterator[dict[str, Any]]:
+    if isinstance(document, list):
+        for item in document:
+            if not isinstance(item, dict):
+                raise ValueError(f"Expected decision record object at {source_path or '<memory>'}.")
+            yield dict(item)
+        return
+    if isinstance(document, dict) and isinstance(document.get("records"), list):
+        for item in list(document.get("records", []) or []):
+            if not isinstance(item, dict):
+                raise ValueError(f"Expected decision record object at {source_path or '<memory>'}.")
+            yield dict(item)
+        return
+    if isinstance(document, dict):
+        yield dict(document)
+        return
+    raise ValueError(f"Expected decision records JSON at {source_path or '<memory>'}.")
+
+
+class _JsonArrayWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._handle = None
+        self._first = True
+
+    def __enter__(self) -> "_JsonArrayWriter":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self.path.open("w", encoding="utf-8")
+        self._handle.write("[\n")
+        return self
+
+    def write(self, payload: Mapping[str, Any]) -> None:
+        if self._handle is None:
+            raise RuntimeError("JSON array writer is not open.")
+        if not self._first:
+            self._handle.write(",\n")
+        json.dump(_json_safe(dict(payload or {})), self._handle, indent=2, sort_keys=True, ensure_ascii=True)
+        self._first = False
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if self._handle is None:
+            return
+        self._handle.write("\n]\n")
+        self._handle.close()
+        self._handle = None
+
+
+def _record_iter_from_self_play_stage(self_play_stage: Mapping[str, Any]) -> Iterator[dict[str, Any]]:
+    records = self_play_stage.get("records")
+    if records:
+        yield from _records_from_document(list(records or []))
+        return
+    records_path = Path(str(self_play_stage.get("records_path", "") or ""))
+    if records_path.is_file():
+        yield from _iter_records_from_json(records_path)
+
+
+def _target_rules_bundle_from_record_iter(
+    records: Iterable[dict[str, Any]],
+    explicit_rules_bundle: RulesetBundle | Mapping[str, Any] | None,
+) -> tuple[RulesetBundle, Iterator[dict[str, Any]], bool]:
+    iterator = iter(records)
+    try:
+        first_record = next(iterator)
+    except StopIteration:
+        if explicit_rules_bundle is not None:
+            if isinstance(explicit_rules_bundle, RulesetBundle):
+                return explicit_rules_bundle, iter(()), False
+            return RulesetBundle.from_dict(dict(explicit_rules_bundle)), iter(()), False
+        return RulesetBundle.from_values(), iter(()), False
+
+    if explicit_rules_bundle is not None:
+        if isinstance(explicit_rules_bundle, RulesetBundle):
+            target_bundle = explicit_rules_bundle
+        else:
+            target_bundle = RulesetBundle.from_dict(dict(explicit_rules_bundle))
+    else:
+        rules_bundle = dict(first_record.get("rules_bundle", {}) or {})
+        target_bundle = RulesetBundle.from_dict(rules_bundle) if rules_bundle else RulesetBundle.from_values()
+    return target_bundle, itertools.chain([first_record], iterator), True
+
+
+def _write_relabeled_records_and_manifest(
+    records: Iterable[dict[str, Any]],
+    *,
+    output_path: Path,
+    target_rules_bundle: RulesetBundle,
+    source_tag: str,
+    min_tier3_records: int,
+) -> dict[str, Any]:
+    def _relabeled_records() -> Iterator[dict[str, Any]]:
+        with _JsonArrayWriter(output_path) as writer:
+            for record in records:
+                relabeled = relabel_decision_record(
+                    dict(record or {}),
+                    target_rules_bundle=target_rules_bundle,
+                )
+                writer.write(relabeled)
+                yield relabeled
+
+    return build_training_manifest_from_records(
+        _relabeled_records(),
+        source_tag=str(source_tag or "self_play"),
+        min_tier3_records=int(min_tier3_records),
+    ).to_dict()
 
 
 def _default_report_dir(prefix: str) -> Path:
@@ -158,21 +312,6 @@ def _army_label(path: str) -> str:
         return "unknown_army"
     parsed = Path(path_text)
     return parsed.stem or parsed.name or path_text
-
-
-def _target_rules_bundle_from_records(
-    records: Sequence[Mapping[str, Any]],
-    explicit_rules_bundle: RulesetBundle | Mapping[str, Any] | None,
-) -> RulesetBundle:
-    if explicit_rules_bundle is not None:
-        if isinstance(explicit_rules_bundle, RulesetBundle):
-            return explicit_rules_bundle
-        return RulesetBundle.from_dict(dict(explicit_rules_bundle))
-    for record in list(records or []):
-        rules_bundle = dict(record.get("rules_bundle", {}) or {})
-        if rules_bundle:
-            return RulesetBundle.from_dict(rules_bundle)
-    return RulesetBundle.from_values()
 
 
 def _load_policy_bundle(
@@ -308,9 +447,6 @@ def run_headless_self_play_stage(
             "completion_rate": 0.0,
             "games": [],
         }
-    records: list[dict[str, Any]] = []
-    if paths["raw_records"].is_file():
-        records = _load_records(paths["raw_records"])
     return {
         "returncode": int(completed.returncode),
         "stdout_path": str(paths["self_play_stdout"]),
@@ -318,7 +454,6 @@ def run_headless_self_play_stage(
         "records_path": str(paths["raw_records"]),
         "report_path": str(paths["self_play_report"]),
         "report": report_payload,
-        "records": records,
         "replay_dir": str(replay_dir),
     }
 
@@ -725,24 +860,20 @@ def run_policy_bundle_evaluation(
 
     manifest: dict[str, Any] | None = None
     gate_report: dict[str, Any]
-    relabeled_records: list[dict[str, Any]] = []
-    records = list(self_play_stage.get("records", []) or [])
-    if records:
-        target_bundle = _target_rules_bundle_from_records(records, target_rules_bundle)
-        relabeled_records = relabel_decision_records(
-            records,
-            target_rules_bundle=target_bundle,
-        )
-        paths["relabeled_records"].write_text(
-            json.dumps(_json_safe(relabeled_records), indent=2, sort_keys=True, ensure_ascii=True),
-            encoding="utf-8",
-        )
+    records_iter = _record_iter_from_self_play_stage(self_play_stage)
+    target_bundle, records_iter, has_records = _target_rules_bundle_from_record_iter(
+        records_iter,
+        target_rules_bundle,
+    )
+    if has_records:
         min_tier3_records = 1 if normalized_mode == HEADLESS_FIXED_EVALUATION_MODE else 10000
-        manifest = build_training_manifest(
-            relabeled_records,
+        manifest = _write_relabeled_records_and_manifest(
+            records_iter,
+            output_path=paths["relabeled_records"],
+            target_rules_bundle=target_bundle,
             source_tag=str(source_tag or "self_play"),
             min_tier3_records=min_tier3_records,
-        ).to_dict()
+        )
         save_training_manifest(manifest, paths["training_manifest"])
         gate_report = _evaluate_manifest_gate(manifest, evaluation_mode=normalized_mode)
     else:
@@ -792,7 +923,7 @@ def run_policy_bundle_evaluation(
         "replay_report": replay_report,
         "gate_report": gate_report,
         "manifest": manifest,
-        "relabeled_records": relabeled_records,
+        "relabeled_records_path": str(paths["relabeled_records"]),
     }
 
 
