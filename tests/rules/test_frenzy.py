@@ -5,7 +5,12 @@ from unittest.mock import patch
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_FRENZY_TARGET, DECISION_DECLARE_SHOTS, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_FRENZY_TARGET,
+    DECISION_DECLARE_MELEE_WEAPONS,
+    DECISION_DECLARE_SHOTS,
+    DECISION_MOVE_UNIT,
+)
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -443,6 +448,44 @@ class TestFrenzy(unittest.TestCase):
         )
         self.assertEqual(str((move_request.context or {}).get("movement_type", "")), "pile_in")
         self.assertTrue(bool((move_request.context or {}).get("frenzy_flow", False)))
+
+    def test_frenzy_declare_melee_followup_resolves_without_missing_decision_kind(self):
+        army1 = Army.with_detachment("Army A", detachment_type="Detachment A")
+        army2 = Army.with_detachment("Army B", detachment_type="Detachment B")
+        p1 = Player("P1", PlayerControl.REMOTE, army=army1)
+        p2 = Player("P2", PlayerControl.REMOTE, army=army2)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+        attacker = self._make_unit("Enemy", army1)
+        defender = self._make_unit("Helbrute", army2, frenzy=True)
+        army1.units = [attacker]
+        army2.units = [defender]
+        game.map.units = [attacker, defender]
+        game.rebuild_entity_registry()
+
+        resolved_declarations = [{"weapon_profile": object(), "target_unit": attacker, "models": [object()]}]
+        request = DecisionRequest.create(
+            DECISION_DECLARE_MELEE_WEAPONS,
+            "Frenzy: Declare melee weapons",
+            player_id=p2.id,
+            options=[DecisionOption.create("Confirm", payload={"action": "confirm"})],
+            context={
+                "frenzy_flow": True,
+                "phase_name": "FIGHT_PHASE",
+                "unit_id": str(get_entity_id(defender)),
+                "attacker_unit_id": str(get_entity_id(attacker)),
+            },
+        )
+        request._resolved_decision_value = list(resolved_declarations)
+        resolved = []
+        queued = []
+        game.resolve_frenzy_melee_attacks = lambda *args, **_kwargs: resolved.append(args)
+        game._queue_frenzy_fight_move_request = lambda **kwargs: queued.append(kwargs)
+
+        game._maybe_queue_frenzy_followup(request, object())
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(queued[0]["movement_type"], "consolidate")
 
 if __name__ == "__main__":
     unittest.main()

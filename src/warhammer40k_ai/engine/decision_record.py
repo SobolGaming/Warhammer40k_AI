@@ -395,6 +395,32 @@ def _build_human_candidate(game: object, request: DecisionRequest, result: Decis
     )
 
 
+def _candidate_params_match_result_payload(candidate: CandidateAction, result: DecisionResult) -> bool:
+    payload = dict(getattr(result, "payload", {}) or {})
+    if "human_action_params" in payload and isinstance(payload["human_action_params"], dict):
+        params = dict(payload["human_action_params"] or {})
+    elif "model_positions" in payload:
+        params = dict(payload)
+    else:
+        return True
+    return _canonical_json(dict(getattr(candidate, "params", {}) or {})) == _canonical_json(params)
+
+
+def _chosen_candidate_matches_result_payload(
+    request: DecisionRequest,
+    *,
+    chosen_action_id: str,
+    result: DecisionResult,
+) -> bool:
+    if not chosen_action_id:
+        return False
+    for candidate in list(getattr(request, "candidates", []) or []):
+        if str(getattr(candidate, "action_id", "") or "") != str(chosen_action_id):
+            continue
+        return _candidate_params_match_result_payload(candidate, result)
+    return False
+
+
 def _record_validation_enabled() -> bool:
     flag = str(os.getenv("WH40K_VALIDATE_DECISION_RECORDS", "1") or "1").strip().lower()
     return flag not in ("0", "false", "off", "no")
@@ -669,7 +695,13 @@ class DecisionRecordStore:
             human_action_injected = False
             chosen_action_id = request.action_id_for_option_id(getattr(result, "option_id", None))
             candidate_ids = _candidate_ids(request)
-            human_candidate = _build_human_candidate(self.game, request, result)
+            human_candidate = None
+            if not _chosen_candidate_matches_result_payload(
+                request,
+                chosen_action_id=str(chosen_action_id or ""),
+                result=result,
+            ):
+                human_candidate = _build_human_candidate(self.game, request, result)
             if human_candidate is not None and str(human_candidate.action_id) not in candidate_ids:
                 request.candidates.append(human_candidate)
                 request.mask.append(True)
