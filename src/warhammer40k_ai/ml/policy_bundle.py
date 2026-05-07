@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from .default_heuristics import default_heuristic_registry
 from .interfaces import ArtifactResolver, BundleSource, PolicyBundleHandle, PolicyBundleLoader
+from .linear_candidate_ranker import LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID, LinearCandidateRanker
 from .registry import (
     ArtifactManifest,
     ArtifactManifestStore,
@@ -73,19 +74,27 @@ class ManifestArtifactResolver:
     def __init__(self, manifest_store: ArtifactManifestStore) -> None:
         self._manifest_store = manifest_store
 
-    def resolve_artifact(self, artifact_id: str, *, component_name: str) -> ArtifactManifestReference:
+    def resolve_artifact(self, artifact_id: str, *, component_name: str) -> object:
         manifest = self._manifest_store.load_artifact_manifest(artifact_id)
         if manifest.component_type != component_name:
             raise PolicyBundleResolutionError(
                 f"Artifact {artifact_id!r} has component_type {manifest.component_type!r}, "
                 f"but bundle component {component_name!r} was requested."
             )
-        return ArtifactManifestReference(
+        reference = ArtifactManifestReference(
             artifact_id=manifest.artifact_id,
             component_name=component_name,
             manifest=manifest,
             manifest_path=self._manifest_store.artifact_manifest_path(artifact_id),
         )
+        if manifest.architecture_id == LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID:
+            return LinearCandidateRanker.from_config_path(
+                reference.manifest_path.parent / "config.json",
+                component_name=component_name,
+                artifact_id=reference.artifact_id,
+                manifest_path=str(reference.manifest_path),
+            )
+        return reference
 
 
 class JSONPolicyBundleLoader(PolicyBundleLoader):

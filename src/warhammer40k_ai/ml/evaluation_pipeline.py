@@ -33,6 +33,7 @@ from ..roster.tournament_field import TournamentFieldDistribution
 from ..waha_helper import WahaHelper
 from .interfaces import MatchupEvaluator
 from .policy_bundle import ArtifactManifestReference, JSONPolicyBundleLoader, ResolvedPolicyBundle
+from .record_stream import iter_records_from_json, records_from_document
 from .registry import ArtifactManifestStore
 
 
@@ -124,77 +125,11 @@ def _read_json_mapping(path: Path) -> dict[str, Any]:
 
 
 def _iter_records_from_json(path: Path, *, chunk_size: int = 1024 * 1024) -> Iterator[dict[str, Any]]:
-    decoder = json.JSONDecoder()
-    with path.open("r", encoding="utf-8") as handle:
-        buffer = ""
-        eof = False
-
-        def _read_more() -> None:
-            nonlocal buffer, eof
-            chunk = handle.read(max(1, int(chunk_size)))
-            if chunk:
-                buffer += chunk
-            else:
-                eof = True
-
-        while not buffer.strip() and not eof:
-            _read_more()
-        buffer = buffer.lstrip()
-        if not buffer:
-            return
-        opener = buffer[0]
-        buffer = buffer[1:]
-        if opener != "[":
-            document = json.loads(opener + buffer + handle.read())
-            for item in _records_from_document(document, source_path=path):
-                yield item
-            return
-
-        while True:
-            buffer = buffer.lstrip()
-            while not buffer and not eof:
-                _read_more()
-                buffer = buffer.lstrip()
-            if not buffer:
-                if eof:
-                    raise ValueError(f"Unexpected end of JSON array at {path}.")
-                continue
-            if buffer[0] == "]":
-                return
-            if buffer[0] == ",":
-                buffer = buffer[1:]
-                continue
-            while True:
-                try:
-                    item, consumed = decoder.raw_decode(buffer)
-                    break
-                except json.JSONDecodeError:
-                    if eof:
-                        raise
-                    _read_more()
-            if not isinstance(item, dict):
-                raise ValueError(f"Expected decision record object in JSON array at {path}.")
-            yield dict(item)
-            buffer = buffer[consumed:]
+    yield from iter_records_from_json(path, chunk_size=chunk_size)
 
 
 def _records_from_document(document: Any, *, source_path: Path | None = None) -> Iterator[dict[str, Any]]:
-    if isinstance(document, list):
-        for item in document:
-            if not isinstance(item, dict):
-                raise ValueError(f"Expected decision record object at {source_path or '<memory>'}.")
-            yield dict(item)
-        return
-    if isinstance(document, dict) and isinstance(document.get("records"), list):
-        for item in list(document.get("records", []) or []):
-            if not isinstance(item, dict):
-                raise ValueError(f"Expected decision record object at {source_path or '<memory>'}.")
-            yield dict(item)
-        return
-    if isinstance(document, dict):
-        yield dict(document)
-        return
-    raise ValueError(f"Expected decision records JSON at {source_path or '<memory>'}.")
+    yield from records_from_document(document, source_path=source_path)
 
 
 class _JsonArrayWriter:
@@ -339,6 +274,10 @@ def _bundle_resolution_report(bundle: ResolvedPolicyBundle) -> dict[str, Any]:
         if isinstance(implementation, ArtifactManifestReference):
             entry["artifact_manifest_path"] = str(implementation.manifest_path)
             entry["artifact_id"] = implementation.artifact_id
+        elif str(getattr(implementation, "artifact_id", "") or ""):
+            entry["artifact_id"] = str(getattr(implementation, "artifact_id", "") or "")
+            entry["artifact_manifest_path"] = str(getattr(implementation, "manifest_path", "") or "")
+            entry["artifact_config_path"] = str(getattr(implementation, "config_path", "") or "")
         components[component_name] = entry
 
     fallbacks: dict[str, list[dict[str, Any]]] = {}
@@ -354,6 +293,10 @@ def _bundle_resolution_report(bundle: ResolvedPolicyBundle) -> dict[str, Any]:
             if isinstance(implementation, ArtifactManifestReference):
                 entry["artifact_manifest_path"] = str(implementation.manifest_path)
                 entry["artifact_id"] = implementation.artifact_id
+            elif str(getattr(implementation, "artifact_id", "") or ""):
+                entry["artifact_id"] = str(getattr(implementation, "artifact_id", "") or "")
+                entry["artifact_manifest_path"] = str(getattr(implementation, "manifest_path", "") or "")
+                entry["artifact_config_path"] = str(getattr(implementation, "config_path", "") or "")
             fallbacks[component_name].append(entry)
     return {
         "policy_bundle_id": bundle.policy_bundle_id,
@@ -390,6 +333,8 @@ def run_headless_self_play_stage(
     seed_base: int | None,
     max_phase_steps: int,
     reward_profile: str,
+    policy_bundle_source: str | Path | Mapping[str, Any] | None = None,
+    models_root: str | Path | None = None,
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     replay_keyframe_interval: int = 10,
@@ -427,6 +372,10 @@ def run_headless_self_play_stage(
     ]
     if seed_base is not None:
         command.extend(["--seed-base", str(int(seed_base))])
+    if policy_bundle_source is not None:
+        command.extend(["--policy-bundle", str(policy_bundle_source)])
+    if models_root is not None:
+        command.extend(["--models-root", str(models_root)])
     completed = subprocess.run(
         command,
         cwd=_repo_root(),
@@ -842,11 +791,18 @@ def run_policy_bundle_evaluation(
     )
     bundle_report = _bundle_resolution_report(bundle)
     _write_json(paths["bundle_resolution"], bundle_report)
+    runtime_policy_bundle_source: str | Path | Mapping[str, Any] | None = policy_bundle_source
+    if isinstance(policy_bundle_source, Mapping):
+        runtime_bundle_path = resolved_report_dir / "policy_bundle_input.json"
+        _write_json(runtime_bundle_path, dict(policy_bundle_source))
+        runtime_policy_bundle_source = runtime_bundle_path
 
     self_play_stage = run_headless_self_play_stage(
         report_dir=resolved_report_dir,
         player1_army=player1_army,
         player2_army=player2_army,
+        policy_bundle_source=runtime_policy_bundle_source,
+        models_root=models_root,
         games=games,
         workers=workers,
         seed_base=seed_base,

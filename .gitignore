@@ -57,3 +57,6 @@ data/random_self_play_*/
 data/training_gate_*/
 data/synth_*/
 profiles/
+models/artifacts/
+models/bundles/
+models/reports/

@@ -13,6 +13,7 @@ import shutil
 import time
 from typing import Any
 
+from warhammer40k_ai.engine.ai_controller_router import AIControllerRouter
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.decision_record import merge_decision_records_by_id
@@ -31,6 +32,8 @@ from warhammer40k_ai.engine.session_store import (
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.ml.llm_agents import build_llm_router_from_config_file
+from warhammer40k_ai.ml.policy_bundle import JSONPolicyBundleLoader
+from warhammer40k_ai.ml.registry import ArtifactManifestStore
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,22 @@ def _json_safe(value: Any) -> Any:
     if callable(to_dict):
         return _json_safe(to_dict())
     return str(value)
+
+
+def _load_policy_bundle_router(
+    policy_bundle_source: str | None,
+    *,
+    models_root: str | None = None,
+) -> AIControllerRouter | None:
+    source_text = str(policy_bundle_source or "").strip()
+    if not source_text:
+        return None
+    manifest_store = None
+    models_root_text = str(models_root or "").strip()
+    if models_root_text:
+        manifest_store = ArtifactManifestStore(Path(models_root_text).expanduser().resolve())
+    bundle = JSONPolicyBundleLoader(manifest_store=manifest_store).load_bundle(source_text)
+    return AIControllerRouter.from_policy_bundle(bundle)
 
 
 class _JsonArrayWriter:
@@ -408,6 +427,19 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--policy-bundle",
+        default="",
+        help=(
+            "Optional policy bundle id or JSON manifest path for hierarchical AI rankers. "
+            "Artifacts are resolved through --models-root when an id is supplied."
+        ),
+    )
+    parser.add_argument(
+        "--models-root",
+        default="models",
+        help="Models root used for policy-bundle artifact lookup.",
+    )
+    parser.add_argument(
         "--disable-tool-decisions",
         action="store_true",
         help="Disable optional generic tool-action decisions such as opportunistic stratagem reactions.",
@@ -541,6 +573,8 @@ def _run_single_game(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
     llm_agent_config: str | None = None,
+    policy_bundle_source: str | None = None,
+    models_root: str | None = None,
     enable_tool_decisions: bool = True,
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
@@ -578,6 +612,9 @@ def _run_single_game(
         if callable(seed_fn):
             seed_fn(int(game_seed))
     ai_router = None
+    policy_bundle_text = str(policy_bundle_source or "").strip()
+    if policy_bundle_text:
+        ai_router = _load_policy_bundle_router(policy_bundle_text, models_root=models_root)
     llm_config_text = str(llm_agent_config or "").strip()
     if llm_config_text:
         ai_router = build_llm_router_from_config_file(llm_config_text)
@@ -749,6 +786,8 @@ def _run_single_game_job(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
     llm_agent_config: str | None = None,
+    policy_bundle_source: str | None = None,
+    models_root: str | None = None,
     enable_tool_decisions: bool = True,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
@@ -788,6 +827,8 @@ def _run_single_game_job(
             max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
             deployment_ranker_model=str(deployment_ranker_model or ""),
             llm_agent_config=str(llm_agent_config or ""),
+            policy_bundle_source=str(policy_bundle_source or ""),
+            models_root=str(models_root or ""),
             enable_tool_decisions=bool(enable_tool_decisions),
             log_phase_transitions=bool(log_phase_transitions),
             replay_dir=str(replay_dir or ""),
@@ -848,6 +889,8 @@ def run_headless_self_play(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str = "",
     llm_agent_config: str = "",
+    policy_bundle_source: str = "",
+    models_root: str = "models",
     enable_tool_decisions: bool = True,
     output: str = "data/headless_self_play_decision_records.json",
     reward_profile: str = "dense_vp_delta_v1",
@@ -902,6 +945,8 @@ def run_headless_self_play(
                 max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                 deployment_ranker_model=str(deployment_ranker_model),
                 llm_agent_config=str(llm_agent_config),
+                policy_bundle_source=str(policy_bundle_source),
+                models_root=str(models_root),
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_level=str(log_level),
                 log_phase_transitions=bool(log_phase_transitions),
@@ -942,6 +987,8 @@ def run_headless_self_play(
                     max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                     deployment_ranker_model=str(deployment_ranker_model),
                     llm_agent_config=str(llm_agent_config),
+                    policy_bundle_source=str(policy_bundle_source),
+                    models_root=str(models_root),
                     enable_tool_decisions=bool(enable_tool_decisions),
                     log_level=str(log_level),
                     log_phase_transitions=bool(log_phase_transitions),
@@ -1126,6 +1173,8 @@ def main() -> int:
         max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
         deployment_ranker_model=str(args.deployment_ranker_model),
         llm_agent_config=str(args.llm_agent_config),
+        policy_bundle_source=str(args.policy_bundle),
+        models_root=str(args.models_root),
         enable_tool_decisions=not bool(args.disable_tool_decisions),
         output=str(args.output),
         reward_profile=str(args.reward_profile),

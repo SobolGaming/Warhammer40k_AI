@@ -26,6 +26,13 @@ from .interfaces import (
     PolicyBundleHandle,
     PolicyBundleLoader,
 )
+from .linear_candidate_ranker import (
+    LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
+    LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID,
+    LinearCandidateRanker,
+    candidate_feature_map,
+    score_feature_map,
+)
 from .llm_agents import (
     ChatCompletionsTransport,
     LLMActionChoice,
@@ -43,6 +50,10 @@ from .llm_agents import (
     llm_training_examples_from_records,
     parse_llm_action_choice,
     request_payload_for_llm,
+)
+from .imitation_training import (
+    LinearImitationTrainingConfig,
+    train_linear_imitation_candidate_rankers,
 )
 from .policy_bundle import (
     ArtifactManifestReference,
@@ -79,6 +90,8 @@ __all__ = [
     "HeuristicRegistry",
     "IdentityPlaybookSelector",
     "JSONPolicyBundleLoader",
+    "LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID",
+    "LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID",
     "LLMActionChoice",
     "LLMConfigurationError",
     "LLMDecisionAgent",
@@ -91,6 +104,8 @@ __all__ = [
     "LLMResponseError",
     "LLMTransport",
     "LLMTransportError",
+    "LinearCandidateRanker",
+    "LinearImitationTrainingConfig",
     "ManifestArtifactResolver",
     "MatchupEvaluator",
     "PlaybookSelector",
@@ -107,6 +122,7 @@ __all__ = [
     "UnknownHeuristicError",
     "build_llm_router",
     "build_llm_router_from_config_file",
+    "candidate_feature_map",
     "default_heuristic_registry",
     "detect_ml_dependency_status",
     "find_forbidden_core_dependencies",
@@ -116,4 +132,6 @@ __all__ = [
     "parse_llm_action_choice",
     "request_payload_for_llm",
     "require_ml_dependencies",
+    "score_feature_map",
+    "train_linear_imitation_candidate_rankers",
 ]

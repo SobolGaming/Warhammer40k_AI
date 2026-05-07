@@ -78,8 +78,37 @@ boundary:
   matchup evaluation, playbook selection, artifact resolution, and bundle loading.
 - `registry.py` loads and validates manifest JSON without importing ML extras.
 - `policy_bundle.py` resolves heuristic-only bundles directly and resolves
-  artifact components to manifest-backed references until backend-specific
-  runtimes land.
+  known framework-free artifact components directly. Unknown artifact
+  architectures still resolve to manifest-backed references until their runtime
+  backend lands.
+- `linear_candidate_ranker.py` provides the first base-dependency learned
+  candidate ranker. It is a sparse linear scorer over DecisionRecord candidate
+  semantic metadata and deterministic hashed categorical features; it does not
+  require the `ml` optional extra.
+- `imitation_training.py` trains that ranker from relabeled DecisionRecords using
+  a game-id split and exports artifact manifests plus a model-backed policy
+  bundle under `models/`.
+
+First offline imitation-training command:
+
+```bash
+python scripts/train_imitation_candidate_ranker.py \
+  --records data/training_gate_20260507_100match_we_aeldari/decision_records_relabeled.json \
+  --training-manifest data/training_gate_20260507_100match_we_aeldari/training_manifest.json \
+  --models-root models \
+  --run-id linear_imitation_we_aeldari_100_v1 \
+  --policy-bundle-id policy_bundle:linear_imitation_we_aeldari_100_v1
+```
+
+The exported bundle can be evaluated through the normal policy-bundle gate:
+
+```bash
+python scripts/evaluate_policy_bundle.py \
+  --policy-bundle policy_bundle:linear_imitation_we_aeldari_100_v1 \
+  --models-root models \
+  --player1-army army_lists/WE_Daemonkin_2000.txt \
+  --player2-army army_lists/Aeldari_Warhost_2000.txt
+```
 
 ## Regression Coverage
 
@@ -95,4 +124,10 @@ boundary:
 - heuristic-only bundle manifests load from JSON with zero ML extras installed
 - bundle components resolve to concrete heuristic handlers through the registry
 - manifest-backed artifact references resolve without checkpoint loading
+- framework-free linear candidate-ranker artifacts resolve to runtime rankers
 - unknown artifact ids fail with clear diagnostics
+
+`tests/ai/test_imitation_training.py` validates:
+- game-id train/validation splitting
+- artifact and bundle export for a learned candidate ranker
+- loading the exported bundle through `AIControllerRouter`

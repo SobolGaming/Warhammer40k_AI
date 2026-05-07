@@ -140,6 +140,19 @@ This keeps evaluation usable for:
 - replay and gate regression checks
 - local tournament-evaluation experiments that do not ship learned artifacts
 
+## Model-Backed Gameplay Bundles
+
+Model-backed hierarchical gameplay bundles are routed into headless self-play.
+`scripts/evaluate_policy_bundle.py` passes the bundle source and `models_root`
+through to `scripts/run_headless_self_play.py`; the headless controller builds
+an `AIControllerRouter` from the bundle and lets artifact or heuristic component
+rankers order legal engine candidates.
+
+Learned rankers do not generate actions, bypass masks, or apply commands
+directly. They only choose among candidates already emitted and validated by the
+engine. If an artifact has no weight coverage for a decision type, the router
+uses the fallback declared by the policy bundle.
+
 Schema-selection note:
 - evaluation bundles may intentionally request `capability_schema:build_capability_v2`
   for preview combat studies while leaving `build_capability_v1` as the default

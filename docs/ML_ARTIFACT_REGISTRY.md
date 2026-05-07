@@ -69,9 +69,11 @@ Current framework-free runtime implementation:
 Runtime rules:
 - bundle loading must be able to read manifest JSON and resolve heuristic
   components with base project dependencies only
-- artifact components may resolve to manifest-backed references before checkpoint
-  runtime plumbing exists, but unknown artifact ids must fail with clear
-  diagnostics
+- artifact components with known framework-free architectures resolve to runtime
+  objects with base project dependencies only
+- unknown artifact architectures may resolve to manifest-backed references before
+  checkpoint runtime plumbing exists, but unknown artifact ids must fail with
+  clear diagnostics
 
 ## Identifier Rules
 
@@ -189,6 +191,21 @@ the form `heuristic:<component>:v1` for each hierarchical gameplay component.
 The existing `candidate_ranker`, `matchup_evaluator`, `playbook_selector`, and
 `roster_edit_ranker` component families remain valid for broader evaluation and
 mustering workflows.
+
+The first learned gameplay artifact architecture is
+`candidate_ranker_linear_v1`. Its artifact directory contains:
+
+```text
+manifest.json
+config.json
+metrics.json
+```
+
+`config.json` uses `candidate_ranker_linear_model:v1` and stores sparse
+per-decision-type feature weights. The runtime scorer only ranks legal candidates
+already supplied by the engine; if the artifact has no weights for a decision
+type, the router falls through to the component fallback declared by the policy
+bundle.
 
 ## Promotion States
 

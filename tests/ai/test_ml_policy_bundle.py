@@ -6,7 +6,8 @@ import re
 
 import pytest
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.ai_controller_router import COMPONENT_MOVEMENT_RANKER, AIControllerRouter
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.ml import (
     ArtifactManifestReference,
@@ -14,6 +15,9 @@ from warhammer40k_ai.ml import (
     CandidateRanker,
     HeuristicRegistry,
     JSONPolicyBundleLoader,
+    LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
+    LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID,
+    LinearCandidateRanker,
     MatchupEvaluator,
     PlaybookSelector,
     UnknownArtifactError,
@@ -315,6 +319,66 @@ def test_policy_bundle_loader_resolves_manifest_backed_artifacts_without_ml_extr
     assert artifact_reference.artifact_id == artifact_id
     assert artifact_reference.manifest.component_type == "matchup_evaluator"
     assert artifact_reference.manifest_path == manifest_store.artifact_manifest_path(artifact_id)
+
+
+def test_policy_bundle_loader_resolves_linear_candidate_ranker_artifacts(tmp_path: Path) -> None:
+    models_root = tmp_path / "models"
+    manifest_store = ArtifactManifestStore(models_root)
+    artifact_id = "artifact:movement_ranker:linear_test_v1"
+    bundle_id = "policy_bundle:linear_candidate_ranker_test_v1"
+    artifact_manifest = _artifact_manifest_payload(artifact_id, COMPONENT_MOVEMENT_RANKER)
+    artifact_manifest["family_id"] = "family:linear_imitation_candidate_ranker"
+    artifact_manifest["tier"] = "tier3_action_ranker"
+    artifact_manifest["architecture_id"] = LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID
+    artifact_manifest["feature_schema_id"] = "feature_schema:decision_candidate_semantics_v1"
+    _write_json(
+        manifest_store.artifact_manifest_path(artifact_id).parent / "config.json",
+        {
+            "model_schema_id": LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID,
+            "artifact_id": artifact_id,
+            "component_name": COMPONENT_MOVEMENT_RANKER,
+            "architecture_id": LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
+            "hash_bucket_count": 32,
+            "decision_type_weights": {
+                DECISION_MOVE_UNIT: {
+                    "num:projected_score_delta_next_window": 1.0,
+                }
+            },
+        },
+    )
+    _write_json(manifest_store.artifact_manifest_path(artifact_id), artifact_manifest)
+    bundle_payload = _base_bundle_payload(bundle_id)
+    bundle_payload["components"] = {
+        COMPONENT_MOVEMENT_RANKER: {
+            "resolver_kind": "artifact",
+            "resolver_ref": artifact_id,
+        }
+    }
+    bundle_payload["fallbacks"] = {}
+    bundle_payload["required_feature_schema_ids"] = ["feature_schema:decision_candidate_semantics_v1"]
+    _write_json(manifest_store.bundle_manifest_path(bundle_id), bundle_payload)
+
+    bundle = JSONPolicyBundleLoader(manifest_store=manifest_store).load_bundle(bundle_id)
+    ranker = bundle.resolve_component(COMPONENT_MOVEMENT_RANKER)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id="p1",
+        options=[
+            DecisionOption.create("A", payload={"action_id": "a"}),
+            DecisionOption.create("B", payload={"action_id": "b"}),
+        ],
+        candidates=[
+            CandidateAction("a", params={}, metadata={"projected_score_delta_next_window": 0.0}),
+            CandidateAction("b", params={}, metadata={"projected_score_delta_next_window": 2.0}),
+        ],
+        mask=[True, True],
+        context={"movement_type": "normal"},
+    )
+
+    assert isinstance(ranker, LinearCandidateRanker)
+    assert isinstance(ranker, CandidateRanker)
+    assert AIControllerRouter.from_policy_bundle(bundle).choose_action(request).action_id == "b"
 
 
 def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Path) -> None:
