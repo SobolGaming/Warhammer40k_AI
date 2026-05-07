@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -115,6 +117,20 @@ def test_catalog_enumerates_faction_datasheets_points_and_detachments(
     assert lord_options
     assert all(option.points > 0 for option in lord_options)
     assert all(option.model_count >= 1 for option in lord_options)
+    astra_options = catalog.unit_options("AM")
+    assert not any(option.name == "Centaur RSV" for option in astra_options)
+    synthesis_failures = json.loads(Path("data/unit_synthesis_failure.json").read_text(encoding="utf-8"))
+    centaur_failure = synthesis_failures["000004220"]
+    assert centaur_failure["name"] == "Centaur RSV"
+    assert centaur_failure["faction"] == "Astra Militarum"
+    assert centaur_failure["wahapedia_model_stats"] == [
+        {
+            "line": "1",
+            "name": "Centaur RSV",
+            "base_size": "Use model",
+            "base_size_descr": "",
+        }
+    ]
     detachments = catalog.detachment_options("WE")
     detachment_names = {option.name for option in detachments}
     assert "Khorne Daemonkin" in detachment_names

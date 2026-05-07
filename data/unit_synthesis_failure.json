@@ -1,0 +1,89 @@
+{
+  "000004217": {
+    "faction": "Astra Militarum",
+    "faction_id": "AM",
+    "failed_model_counts": [
+      1
+    ],
+    "failure_reason": "incomplete_model_geometry",
+    "name": "Commissar Graves",
+    "wahapedia_model_stats": [
+      {
+        "base_size": "Use model",
+        "base_size_descr": "",
+        "line": "1",
+        "name": "Commissar Graves"
+      }
+    ]
+  },
+  "000004219": {
+    "faction": "Astra Militarum",
+    "faction_id": "AM",
+    "failed_model_counts": [
+      1,
+      2
+    ],
+    "failure_reason": "incomplete_model_geometry",
+    "name": "Hippogriff AFV",
+    "wahapedia_model_stats": [
+      {
+        "base_size": "Use model",
+        "base_size_descr": "",
+        "line": "1",
+        "name": "Hippogriff AFV"
+      }
+    ]
+  },
+  "000004220": {
+    "faction": "Astra Militarum",
+    "faction_id": "AM",
+    "failed_model_counts": [
+      1
+    ],
+    "failure_reason": "incomplete_model_geometry",
+    "name": "Centaur RSV",
+    "wahapedia_model_stats": [
+      {
+        "base_size": "Use model",
+        "base_size_descr": "",
+        "line": "1",
+        "name": "Centaur RSV"
+      }
+    ]
+  },
+  "000004222": {
+    "faction": "Genestealer Cults",
+    "faction_id": "GC",
+    "failed_model_counts": [
+      1
+    ],
+    "failure_reason": "incomplete_model_geometry",
+    "name": "Centaur RSV",
+    "wahapedia_model_stats": [
+      {
+        "base_size": "Use model",
+        "base_size_descr": "",
+        "line": "1",
+        "name": "Centaur RSV"
+      }
+    ]
+  },
+  "000004223": {
+    "faction": "Genestealer Cults",
+    "faction_id": "GC",
+    "failed_model_counts": [
+      1,
+      2
+    ],
+    "failure_reason": "incomplete_model_geometry",
+    "name": "Hippogriff AFV",
+    "wahapedia_model_stats": [
+      {
+        "base_size": "Use model",
+        "base_size_descr": "",
+        "line": "1",
+        "name": "Hippogriff AFV"
+      }
+    ]
+  }
+}

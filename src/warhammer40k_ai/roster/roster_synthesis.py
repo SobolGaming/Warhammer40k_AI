@@ -14,8 +14,10 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+from pathlib import Path
 import random
 import re
+from threading import Lock
 import unicodedata
 from typing import Any
 
@@ -45,6 +47,8 @@ ROSTER_SYNTHESIS_RULES_EDITION = "10th"
 ROSTER_SYNTHESIS_POLICY_BUNDLE_ID = "policy_bundle:heuristic_roster_synthesis_v1"
 ROSTER_SYNTHESIS_FIELD_DISTRIBUTION_ID = "field_distribution:roster_synthesis_not_applicable"
 ROSTER_SYNTHESIS_EVENT_POLICY_ID = "event_policy:roster_synthesis_not_applicable"
+UNIT_SYNTHESIS_FAILURE_PATH = Path(__file__).resolve().parents[3] / "data" / "unit_synthesis_failure.json"
+_UNIT_SYNTHESIS_FAILURE_LOCK = Lock()
 
 _STYLE_ALIASES = {
     "melee": {"melee", "combat", "charge", "charges", "assault", "fight", "fighting"},
@@ -123,6 +127,39 @@ def _string_list(values: object) -> tuple[str, ...]:
         for value in list(values or [])
         if str(value or "").strip()
     )
+
+
+def _object_get(source: object, key: str, default: object = None) -> object:
+    if isinstance(source, Mapping):
+        return source.get(key, default)
+    return getattr(source, key, default)
+
+
+def _read_unit_synthesis_failures() -> dict[str, dict[str, Any]]:
+    if not UNIT_SYNTHESIS_FAILURE_PATH.exists():
+        return {}
+    with UNIT_SYNTHESIS_FAILURE_PATH.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, Mapping):
+        raise ValueError(f"{UNIT_SYNTHESIS_FAILURE_PATH} must contain a JSON object keyed by unit id.")
+    records: dict[str, dict[str, Any]] = {}
+    for unit_id, payload in raw.items():
+        if not isinstance(payload, Mapping):
+            raise ValueError(f"{UNIT_SYNTHESIS_FAILURE_PATH} entry {unit_id!r} must be a JSON object.")
+        records[str(unit_id)] = dict(payload)
+    return records
+
+
+def _write_unit_synthesis_failures(records: Mapping[str, Mapping[str, Any]]) -> None:
+    UNIT_SYNTHESIS_FAILURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ordered = {unit_id: records[unit_id] for unit_id in sorted(records)}
+    temporary_path = UNIT_SYNTHESIS_FAILURE_PATH.with_suffix(
+        UNIT_SYNTHESIS_FAILURE_PATH.suffix + ".tmp"
+    )
+    with temporary_path.open("w", encoding="utf-8") as handle:
+        json.dump(ordered, handle, indent=2, sort_keys=True, ensure_ascii=True)
+        handle.write("\n")
+    os.replace(temporary_path, UNIT_SYNTHESIS_FAILURE_PATH)
 
 
 def _positive_int(value: object, *, field_name: str) -> int:
@@ -494,6 +531,7 @@ class RosterSynthesisCatalog:
         self._waha = waha_helper
         self._detachment_rows: list[dict[str, Any]] | None = None
         self._default_wargear_cache: dict[tuple[str, int], dict[str, list[dict[str, int | str]]]] = {}
+        self._unit_instantiability_cache: dict[tuple[str, int], bool] = {}
 
     @property
     def waha_helper(self) -> WahaHelper:
@@ -598,6 +636,8 @@ class RosterSynthesisCatalog:
             for model_count, points in costs:
                 if points <= 0:
                     continue
+                if not self._unit_option_is_instantiable(datasheet, model_count):
+                    continue
                 options.append(
                     CatalogUnitOption(
                         datasheet_id=datasheet_id,
@@ -620,6 +660,105 @@ class RosterSynthesisCatalog:
                     item.model_count,
                     item.points,
                     item.datasheet_id,
+                ),
+            )
+        )
+
+    def _unit_option_is_instantiable(self, datasheet: Mapping[str, Any], model_count: int) -> bool:
+        datasheet_id = str(datasheet.get("id", "") or "")
+        cache_key = (datasheet_id, int(model_count))
+        cached = self._unit_instantiability_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        full_datasheet = self._waha.get_full_datasheet_info_by_name(
+            str(datasheet.get("name", "") or ""),
+            datasheet_id=datasheet_id,
+            faction_id=str(datasheet.get("faction_id", "") or ""),
+        )
+        if full_datasheet is None:
+            self._record_unit_synthesis_failure(
+                datasheet,
+                datasheet,
+                model_count,
+                reason="missing_full_datasheet",
+            )
+            self._unit_instantiability_cache[cache_key] = False
+            return False
+        try:
+            Unit(full_datasheet, quantity=int(model_count))
+        except ValueError as exc:
+            if "complete geometry override" not in str(exc):
+                raise
+            self._record_unit_synthesis_failure(
+                datasheet,
+                full_datasheet,
+                model_count,
+                reason="incomplete_model_geometry",
+            )
+            self._unit_instantiability_cache[cache_key] = False
+            return False
+        self._unit_instantiability_cache[cache_key] = True
+        return True
+
+    def _record_unit_synthesis_failure(
+        self,
+        datasheet: Mapping[str, Any],
+        full_datasheet: object,
+        model_count: int,
+        *,
+        reason: str,
+    ) -> None:
+        datasheet_id = str(datasheet.get("id", "") or "").strip()
+        if not datasheet_id:
+            return
+        record = {
+            "name": str(datasheet.get("name", "") or "").strip(),
+            "faction": self.faction_name(str(datasheet.get("faction_id", "") or "")),
+            "faction_id": str(datasheet.get("faction_id", "") or "").strip(),
+            "failure_reason": str(reason or "").strip(),
+            "failed_model_counts": [int(model_count)],
+            "wahapedia_model_stats": list(self._unit_synthesis_failure_model_stats(full_datasheet)),
+        }
+        with _UNIT_SYNTHESIS_FAILURE_LOCK:
+            records = _read_unit_synthesis_failures()
+            existing = records.get(datasheet_id)
+            if isinstance(existing, Mapping):
+                model_counts = sorted(
+                    {
+                        int(value)
+                        for value in list(existing.get("failed_model_counts", []) or [])
+                        if str(value or "").strip()
+                    }
+                    | {int(model_count)}
+                )
+                record["failed_model_counts"] = model_counts
+            if existing == record:
+                return
+            records[datasheet_id] = record
+            _write_unit_synthesis_failures(records)
+
+    def _unit_synthesis_failure_model_stats(self, full_datasheet: object) -> tuple[dict[str, str], ...]:
+        rows = list(_object_get(full_datasheet, "datasheets_models", []) or [])
+        stats: list[dict[str, str]] = []
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            stats.append(
+                {
+                    "line": str(row.get("line", "") or "").strip(),
+                    "name": str(row.get("name", "") or "").strip(),
+                    "base_size": str(row.get("base_size", "") or "").strip(),
+                    "base_size_descr": str(row.get("base_size_descr", "") or "").strip(),
+                }
+            )
+        return tuple(
+            sorted(
+                stats,
+                key=lambda item: (
+                    _parse_first_int(item.get("line", ""), default=999_999),
+                    _normalize_text(item.get("name", "")),
+                    item.get("base_size", ""),
+                    item.get("base_size_descr", ""),
                 ),
             )
         )

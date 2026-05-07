@@ -25474,25 +25474,25 @@ class StratagemManager(
                 if candidates:
                     shooter = max(candidates, key=lambda u: sum(1 for m in u.models for w in getattr(m, 'wargear', []) if getattr(w, 'is_ranged', lambda: False)()))
             if not shooter:
-                logger.error("ERROR: Overwatch: no eligible shooter in 24\"")
+                logger.info("INFO: Overwatch: no eligible shooter in 24\"")
                 return False
             # Even if a shooter was explicitly provided, enforce battle-shock restriction.
             if self._is_overwatch_shooter_blocked_this_turn(shooter):
-                logger.error("ERROR: Overwatch: selected unit cannot use Fire Overwatch this turn")
+                logger.info("INFO: Overwatch: selected unit cannot use Fire Overwatch this turn")
                 return False
             if _unit_cannot_be_target_of_stratagem(shooter):
-                logger.error("ERROR: Overwatch: cannot target a Battle-shocked unit")
+                logger.info("INFO: Overwatch: cannot target a Battle-shocked unit")
                 return False
             blocked_fn = getattr(enemy_unit, "is_overwatch_prevented_against", None)
             if callable(blocked_fn):
                 try:
                     if blocked_fn(shooter, game=self.game):
-                        logger.error("ERROR: Overwatch: target cannot be overwatched")
+                        logger.info("INFO: Overwatch: target cannot be overwatched")
                         return False
                 except Exception:
                     raise
             if not self._unit_can_fire_overwatch_at_enemy(shooter, enemy_unit):
-                logger.error("ERROR: Overwatch: selected unit has no legal out-of-phase shots")
+                logger.info("INFO: Overwatch: selected unit has no legal out-of-phase shots")
                 return False
             eff_cost = s.cp_cost
             apply_info = {}
@@ -25503,7 +25503,7 @@ class StratagemManager(
             except Exception:
                 raise
             if apply_info.get("denied"):
-                logger.error(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
+                logger.info(f"INFO: Overwatch: {apply_info.get('reason', 'not allowed')}")
                 return False
             traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
             eye_overwatch = bool(apply_info.get("eye_of_the_augurium_use", False))
@@ -25512,7 +25512,7 @@ class StratagemManager(
             visions_overwatch = bool(apply_info.get("visions_of_heresy_use", False))
             datasheet_overwatch = bool(apply_info.get("datasheet_overwatch_discount_use", False))
             if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch and not eye_overwatch and not datasheet_overwatch:
-                logger.error("ERROR: Overwatch already used this turn")
+                logger.info("INFO: Overwatch already used this turn")
                 return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
@@ -25535,7 +25535,7 @@ class StratagemManager(
                     return False
             declarations = self._build_fire_overwatch_declarations(shooter, enemy_unit)
             if not declarations:
-                logger.error("ERROR: Overwatch: no ranged weapons eligible")
+                logger.info("INFO: Overwatch: no ranged weapons eligible")
                 return False
             # Apply Overwatch hit restriction: only unmodified 6 hits
             ok = False

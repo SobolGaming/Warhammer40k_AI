@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_handlers.shooting import (
@@ -7,6 +8,60 @@ from warhammer40k_ai.engine.decision_handlers.shooting import (
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from warhammer40k_ai.rules.stratagems import StratagemManager
+
+
+def _fire_overwatch_manager(*, apply_info: dict | None = None) -> StratagemManager:
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.available = [SimpleNamespace(name="FIRE OVERWATCH", cp_cost=1, type="Core")]
+    manager._current_phase_name = "Movement phase"
+    manager._pending_reactions = []
+    manager._used_once_per_battle = {}
+    manager._used_stratagems_this_phase = set()
+    manager._used_this_turn = {"OVERWATCH": False}
+    manager.game = SimpleNamespace(map=object())
+    manager.player = SimpleNamespace(
+        command_points=1,
+        apply_stratagem_cp_cost=lambda *_args, **_kwargs: dict(apply_info or {"cost": 1}),
+        spend_command_points=lambda *_args, **_kwargs: True,
+    )
+
+    def _unused_faction_handler(*_args, **_kwargs):
+        return None
+
+    for name in (
+        "_use_grey_knights_warpbane_stratagem",
+        "_use_imperial_agents_veiled_blade_stratagem",
+        "_use_imperial_agents_imperialis_fleet_stratagem",
+        "_use_imperial_agents_ordo_hereticus_stratagem",
+        "_use_imperial_agents_ordo_malleus_stratagem",
+        "_use_imperial_agents_ordo_xenos_stratagem",
+        "_use_chaos_daemons_plague_legion_stratagem",
+        "_use_chaos_daemons_shadow_legion_stratagem",
+        "_use_chaos_daemons_legion_of_excess_stratagem",
+        "_use_chaos_daemons_blood_legion_stratagem",
+        "_use_chaos_knights_stratagem",
+        "_use_adeptus_custodes_stratagem",
+    ):
+        setattr(manager, name, _unused_faction_handler)
+    return manager
+
+
+def _fire_overwatch_shooter() -> SimpleNamespace:
+    return SimpleNamespace(
+        id="unit:shooter",
+        name="Shooter",
+        is_embarked=False,
+        embarked_in=None,
+        special_rules={},
+        is_battle_shocked=lambda: False,
+        can_shoot_out_of_phase_at_target=lambda _enemy, _game_map: True,
+    )
+
+
+def _fire_overwatch_enemy() -> SimpleNamespace:
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy", special_rules={})
+    enemy.is_overwatch_prevented_against = lambda _shooter, game=None: False
+    return enemy
 
 
 def _fire_overwatch_request(*, player_id: str, enemy_unit_id: str, shooter_unit_id: str) -> DecisionRequest:
@@ -319,6 +374,41 @@ def test_build_fire_overwatch_declarations_prefers_best_valid_profile() -> None:
     assert declarations[0]["weapon_profile"] is valid_profile
     assert declarations[0]["target_unit"] is enemy
     assert declarations[0]["models"] == [model]
+
+
+def test_fire_overwatch_repeat_denial_logs_info_not_error(caplog) -> None:
+    manager = _fire_overwatch_manager(apply_info={"denied": True, "reason": "Overwatch already used this turn"})
+    shooter = _fire_overwatch_shooter()
+    enemy = _fire_overwatch_enemy()
+
+    with caplog.at_level(logging.INFO, logger="warhammer40k_ai.rules.stratagems"):
+        used = manager.use("FIRE OVERWATCH", shooter_unit=shooter, enemy_unit=enemy, phase_name="Movement phase")
+
+    assert used is False
+    assert any("Overwatch already used this turn" in record.getMessage() for record in caplog.records)
+    assert not [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.ERROR and "Overwatch" in record.getMessage()
+    ]
+
+
+def test_fire_overwatch_no_weapon_declarations_logs_info_not_error(caplog) -> None:
+    manager = _fire_overwatch_manager()
+    manager._build_fire_overwatch_declarations = lambda _shooter, _enemy: []
+    shooter = _fire_overwatch_shooter()
+    enemy = _fire_overwatch_enemy()
+
+    with caplog.at_level(logging.INFO, logger="warhammer40k_ai.rules.stratagems"):
+        used = manager.use("FIRE OVERWATCH", shooter_unit=shooter, enemy_unit=enemy, phase_name="Movement phase")
+
+    assert used is False
+    assert any("no ranged weapons eligible" in record.getMessage() for record in caplog.records)
+    assert not [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.ERROR and "Overwatch" in record.getMessage()
+    ]
 
 
 def test_apply_select_overwatch_skip_clears_pending_reaction() -> None:

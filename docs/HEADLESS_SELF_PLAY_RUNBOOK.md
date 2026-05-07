@@ -95,6 +95,11 @@ Throughput controls:
 - `--reserve-policy forced_only` avoids ordinary optional reserve declarations (default; faster and more stable), but can still reserve validated oversized/Titanic overflow units when too many large footprints would otherwise fail deployment.
 - `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
 
+Random matchup batch controls:
+- `run_headless_matchup_batch.py` synthesizes two exact-point armies per matchup, reuses a matching `batch_manifest.json` when available, and reruns match outputs from scratch so fixes can be validated against the same rosters and seeds.
+- Random roster synthesis filters datasheets that cannot instantiate in the engine because their model geometry data is incomplete. Those entries remain unsupported for random batch generation until a complete in-scope geometry override is added.
+- Filtered unit-geometry failures are recorded in `data/unit_synthesis_failure.json`, keyed by Wahapedia datasheet id with faction and Wahapedia model `base_size`/`base_size_descr` rows so missing overrides can be triaged without duplicate entries.
+
 Default shooting policy:
 - Headless `DECLARE_SHOTS` synthesis declares one legal profile for each ranged weapon carried by an eligible model.
 - Hazardous profiles are eligible during default shooting.
@@ -137,6 +142,7 @@ Logging controls:
 - Battle-shock failure status lines and Shadow of Chaos Daemonic Terror mortal-wound resolution also log at `DEBUG`, not `ERROR`.
 - Failed charge movement, including automatic headless Heroic Intervention attempts, logs below `WARNING`; failed charges are normal game outcomes, not engine errors.
 - Speculative stratagem tool-action probes skip expected illegal or missing optional contexts silently, and the headless policy prefers the explicit skip candidate for optional `SELECT_TOOL_ACTION` prompts. Malformed serialized tool-action candidates still record structured diagnostics, but expected false preflight candidates do not emit stderr `ERROR` lines.
+- Failed optional Fire Overwatch eligibility paths, such as repeat-use denial or no legal ranged declaration, log below `WARNING`; missing required context and internal resolution failures still surface as errors.
 - Deadly Demise parameters that are fixed numbers, for example `Deadly Demise 1`, are treated as fixed
   mortal-wound damage instead of dice expressions.
 - `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.
