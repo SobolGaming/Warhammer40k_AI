@@ -26,7 +26,10 @@ from ..units.unit import Unit
 from ..utility.entity_ids import get_entity_id
 from .army import (
     ArmyValidationError,
+    BLACK_TEMPLARS_FORBIDDEN_UNITS,
+    DEATHWATCH_FORBIDDEN_UNITS,
     SPACE_MARINE_EXPLICIT_CHAPTERS,
+    SPACE_WOLVES_FORBIDDEN_UNITS,
     SUPPORTED_FACTION_IDS,
     get_faction_id_from_name,
 )
@@ -113,6 +116,17 @@ def _normalize_text(value: object) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+_BLACK_TEMPLARS_FORBIDDEN_UNIT_NAMES = {
+    _normalize_text(value) for value in BLACK_TEMPLARS_FORBIDDEN_UNITS
+}
+_DEATHWATCH_FORBIDDEN_UNIT_NAMES = {
+    _normalize_text(value) for value in DEATHWATCH_FORBIDDEN_UNITS
+}
+_SPACE_WOLVES_FORBIDDEN_UNIT_NAMES = {
+    _normalize_text(value) for value in SPACE_WOLVES_FORBIDDEN_UNITS
+}
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
@@ -127,6 +141,33 @@ def _string_list(values: object) -> tuple[str, ...]:
         for value in list(values or [])
         if str(value or "").strip()
     )
+
+
+def _parse_daemonic_allegiance_spec(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("daemonic_allegiance entries cannot be blank.")
+    separator = "=" if "=" in text else ":"
+    if separator not in text:
+        raise ValueError(
+            "daemonic_allegiance entries must use 'Unit Name=KEYWORD' syntax."
+        )
+    unit_name, keyword = text.split(separator, 1)
+    unit_name = unit_name.strip()
+    keyword = keyword.strip().upper()
+    if not unit_name or not keyword:
+        raise ValueError(
+            "daemonic_allegiance entries must include both a unit name and keyword."
+        )
+    return unit_name, keyword
+
+
+def _daemonic_allegiance_map(values: object) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in list(values or []):
+        unit_name, keyword = _parse_daemonic_allegiance_spec(value)
+        parsed[_normalize_text(unit_name)] = keyword
+    return parsed
 
 
 def _object_get(source: object, key: str, default: object = None) -> object:
@@ -239,6 +280,7 @@ class RosterSynthesisSeed:
     description_text: str | None = None
     include_units: tuple[str, ...] = field(default_factory=tuple)
     exclude_units: tuple[str, ...] = field(default_factory=tuple)
+    daemonic_allegiances: tuple[str, ...] = field(default_factory=tuple)
     battle_size: str | None = None
     schema_id: str = ROSTER_SYNTHESIS_SEED_SCHEMA_ID
     rules_edition: str = ROSTER_SYNTHESIS_RULES_EDITION
@@ -275,6 +317,9 @@ class RosterSynthesisSeed:
         )
         object.__setattr__(self, "include_units", _string_list(self.include_units))
         object.__setattr__(self, "exclude_units", _string_list(self.exclude_units))
+        daemonic_allegiances = _string_list(self.daemonic_allegiances)
+        _daemonic_allegiance_map(daemonic_allegiances)
+        object.__setattr__(self, "daemonic_allegiances", daemonic_allegiances)
         object.__setattr__(
             self,
             "battle_size",
@@ -311,6 +356,7 @@ class RosterSynthesisSeed:
             "description_text": self.description_text,
             "include_units": list(self.include_units),
             "exclude_units": list(self.exclude_units),
+            "daemonic_allegiances": list(self.daemonic_allegiances),
             "battle_size": self.battle_size,
             "normalized_style_tags": list(self.normalized_style_tags),
         }
@@ -334,6 +380,7 @@ class RosterSynthesisSeed:
             description_text=data.get("description_text"),
             include_units=tuple(data.get("include_units", []) or []),
             exclude_units=tuple(data.get("exclude_units", []) or []),
+            daemonic_allegiances=tuple(data.get("daemonic_allegiances", []) or []),
             battle_size=data.get("battle_size"),
             schema_id=str(data.get("schema_id", ROSTER_SYNTHESIS_SEED_SCHEMA_ID) or ""),
             rules_edition=str(data.get("rules_edition", ROSTER_SYNTHESIS_RULES_EDITION) or ""),
@@ -385,6 +432,8 @@ class CatalogUnitOption:
     points: int
     keywords: tuple[str, ...] = field(default_factory=tuple)
     faction_keywords: tuple[str, ...] = field(default_factory=tuple)
+    ability_names: tuple[str, ...] = field(default_factory=tuple)
+    ability_descriptions: tuple[str, ...] = field(default_factory=tuple)
     attached_to_datasheet_ids: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -416,7 +465,13 @@ class CatalogUnitOption:
 
     @property
     def is_supreme_commander(self) -> bool:
-        return "supreme commander" in self.keyword_set
+        ability_names = {_normalize_text(value) for value in self.ability_names}
+        if "supreme commander" in self.keyword_set or "supreme commander" in ability_names:
+            return True
+        return any(
+            "must be your warlord" in _normalize_text(description)
+            for description in self.ability_descriptions
+        )
 
     @property
     def is_vehicle_or_monster(self) -> bool:
@@ -437,6 +492,7 @@ class CatalogUnitOption:
             "points": self.points,
             "keywords": list(self.keywords),
             "faction_keywords": list(self.faction_keywords),
+            "ability_names": list(self.ability_names),
             "attached_to_datasheet_ids": list(self.attached_to_datasheet_ids),
         }
 
@@ -532,6 +588,7 @@ class RosterSynthesisCatalog:
         self._detachment_rows: list[dict[str, Any]] | None = None
         self._default_wargear_cache: dict[tuple[str, int], dict[str, list[dict[str, int | str]]]] = {}
         self._unit_instantiability_cache: dict[tuple[str, int], bool] = {}
+        self._daemonic_allegiance_options_cache: dict[str, tuple[tuple[str, str], ...]] = {}
 
     @property
     def waha_helper(self) -> WahaHelper:
@@ -628,6 +685,7 @@ class RosterSynthesisCatalog:
                 continue
             costs = self._cost_rows_for_datasheet(datasheet)
             keywords, faction_keywords = self._keywords_for_datasheet(datasheet)
+            ability_names, ability_descriptions = self._abilities_for_datasheet(datasheet)
             attached_to = tuple(
                 str(value or "").strip()
                 for value in list(datasheet.get("attached_to", []) or [])
@@ -649,6 +707,8 @@ class RosterSynthesisCatalog:
                         points=points,
                         keywords=keywords,
                         faction_keywords=faction_keywords,
+                        ability_names=ability_names,
+                        ability_descriptions=ability_descriptions,
                         attached_to_datasheet_ids=attached_to,
                     )
                 )
@@ -699,6 +759,45 @@ class RosterSynthesisCatalog:
             return False
         self._unit_instantiability_cache[cache_key] = True
         return True
+
+    @staticmethod
+    def _abilities_for_datasheet(datasheet: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        names: list[str] = []
+        descriptions: list[str] = []
+        for row in list(datasheet.get("datasheets_abilities", []) or []):
+            if not isinstance(row, Mapping):
+                continue
+            name = str(row.get("name", "") or "").strip()
+            description = str(row.get("description", "") or "").strip()
+            if name:
+                names.append(name)
+            if description:
+                descriptions.append(description)
+        return tuple(names), tuple(descriptions)
+
+    def daemonic_allegiance_options(self, option: CatalogUnitOption) -> tuple[tuple[str, str], ...]:
+        datasheet_id = str(option.datasheet_id or "").strip()
+        if not datasheet_id:
+            return ()
+        cached = self._daemonic_allegiance_options_cache.get(datasheet_id)
+        if cached is not None:
+            return cached
+        full_datasheet = self._waha.get_full_datasheet_info_by_name(
+            str(option.name or ""),
+            datasheet_id=datasheet_id,
+            faction_id=str(option.faction_id or ""),
+        )
+        if full_datasheet is None:
+            self._daemonic_allegiance_options_cache[datasheet_id] = ()
+            return ()
+        unit = Unit(full_datasheet, quantity=int(option.model_count or 1))
+        options = tuple(
+            (str(keyword or "").strip().upper(), str(wargear or "").strip())
+            for keyword, wargear in list(unit.get_daemonic_allegiance_options() or [])
+            if str(keyword or "").strip()
+        )
+        self._daemonic_allegiance_options_cache[datasheet_id] = options
+        return options
 
     def _record_unit_synthesis_failure(
         self,
@@ -969,6 +1068,25 @@ def _option_matches_army_faction(
         blueprint_chapter = _normalize_text(blueprint_faction)
         if explicit_chapters and blueprint_chapter not in explicit_chapters:
             return False
+        option_name = option.normalized_name
+        if blueprint_chapter == "deathwatch" and "deathwatch" not in explicit_chapters:
+            return False
+        if (
+            blueprint_chapter == "black templars"
+            and option_name in _BLACK_TEMPLARS_FORBIDDEN_UNIT_NAMES
+            and "black templars" not in faction_keywords
+        ):
+            return False
+        if (
+            blueprint_chapter == "deathwatch"
+            and option_name in _DEATHWATCH_FORBIDDEN_UNIT_NAMES
+        ):
+            return False
+        if (
+            blueprint_chapter == "space wolves"
+            and option_name in _SPACE_WOLVES_FORBIDDEN_UNIT_NAMES
+        ):
+            return False
     return bool(faction_keywords & _faction_keyword_aliases(faction_id, blueprint_faction))
 
 
@@ -1175,6 +1293,7 @@ def _entry_for_option(
     is_warlord: bool = False,
     primary_faction_id: str = "",
     ally_metadata: Mapping[str, str] | None = None,
+    daemonic_allegiance: str | None = None,
 ) -> RosterEntry:
     wargear_by_model = catalog.default_wargear_by_model(option)
     flattened_wargear: list[str] = []
@@ -1190,9 +1309,25 @@ def _entry_for_option(
         "role": option.role,
         "keywords": list(option.keywords),
         "faction_keywords": list(option.faction_keywords),
+        "ability_names": list(option.ability_names),
+        "ability_descriptions": list(option.ability_descriptions),
         "catalog_faction_id": option.faction_id,
         "wargear_by_model": wargear_by_model,
     }
+    allegiance_options = catalog.daemonic_allegiance_options(option)
+    if allegiance_options:
+        metadata["daemonic_allegiance_options"] = [
+            {"keyword": keyword, "wargear": wargear}
+            for keyword, wargear in allegiance_options
+        ]
+        selected = str(daemonic_allegiance or allegiance_options[0][0]).strip().upper()
+        valid_keywords = {keyword.upper() for keyword, _wargear in allegiance_options}
+        if selected not in valid_keywords:
+            raise ValueError(
+                f"Daemonic Allegiance selection {selected!r} is not valid for {option.name}. "
+                f"Valid selections: {', '.join(sorted(valid_keywords))}."
+            )
+        metadata["daemonic_allegiance"] = selected
     if ally_metadata:
         metadata.update(dict(ally_metadata))
         metadata["ally_context"] = dict(ally_metadata)
@@ -1714,6 +1849,7 @@ def _construct_candidate_blueprint(
     entries: list[RosterEntry] = []
     used_names: Counter[str] = Counter()
     used_datasheets: Counter[str] = Counter()
+    requested_daemonic_allegiances = _daemonic_allegiance_map(seed.daemonic_allegiances)
 
     def can_add(option: CatalogUnitOption, points_so_far: int) -> bool:
         if points_so_far + option.points > seed.max_points:
@@ -1738,14 +1874,13 @@ def _construct_candidate_blueprint(
             return False
         if option.is_supreme_commander and _has_warlord(entries):
             return False
-        if option.is_epic_hero and option.is_character and _has_warlord(entries):
-            return False
         return True
 
     def add_option(option: CatalogUnitOption, *, is_warlord: bool = False) -> bool:
         points_so_far = sum(int((entry.metadata or {}).get("catalog_points", 0) or 0) for entry in entries)
         if not can_add(option, points_so_far):
             return False
+        daemonic_allegiance = requested_daemonic_allegiances.get(option.normalized_name)
         entries.append(
             _entry_for_option(
                 option,
@@ -1759,6 +1894,7 @@ def _construct_candidate_blueprint(
                     detachment_name=detachment.name,
                     option=option,
                 ),
+                daemonic_allegiance=daemonic_allegiance,
             )
         )
         used_names[option.normalized_name] += 1
@@ -1767,10 +1903,18 @@ def _construct_candidate_blueprint(
 
     required_options = sorted(
         include_options.values(),
-        key=lambda option: (_normalize_text(option.name), option.points, option.datasheet_id),
+        key=lambda option: (
+            not option.is_supreme_commander,
+            _normalize_text(option.name),
+            option.points,
+            option.datasheet_id,
+        ),
     )
     for option in required_options:
-        add_option(option, is_warlord=option.is_character and not _has_warlord(entries))
+        add_option(
+            option,
+            is_warlord=option.is_supreme_commander or (option.is_character and not _has_warlord(entries)),
+        )
 
     if not _has_warlord(entries):
         character_options = [
@@ -1781,6 +1925,7 @@ def _construct_candidate_blueprint(
         character_options = sorted(
             character_options,
             key=lambda option: (
+                not option.is_supreme_commander,
                 -_style_unit_score(option, style_tags),
                 option.points,
                 _normalize_text(option.name),

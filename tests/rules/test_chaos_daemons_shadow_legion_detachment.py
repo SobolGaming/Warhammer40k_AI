@@ -96,6 +96,14 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
         with self.assertRaises(ArmyValidationError):
             army.validate_detachment_rules()
 
+    def test_non_shadow_legion_rejects_heretic_astartes_thralls(self):
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Daemonic Incursion")
+        army.faction_id = "CD"
+        army.add_unit(_make_unit("Chaos Lord", keywords=["HERETIC ASTARTES"]))
+
+        with self.assertRaisesRegex(ArmyValidationError, "require the Shadow Legion"):
+            army.validate_detachment_rules()
+
     def test_shadow_legion_enforces_heretic_astartes_points_cap(self):
         army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion", points_limit=2000)
         army.faction_id = "CD"

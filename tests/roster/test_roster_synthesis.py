@@ -138,6 +138,10 @@ def test_catalog_enumerates_faction_datasheets_points_and_detachments(
     enhancement_options = catalog.enhancement_options("WE", detachment_name="Khorne Daemonkin")
     assert any(option.name == "Disciple of Khorne" for option in enhancement_options)
 
+    chaos_daemons_options = catalog.unit_options("CD")
+    belakor = next(option for option in chaos_daemons_options if option.name == "Be'lakor")
+    assert belakor.is_supreme_commander
+
 
 def test_catalog_accepts_source_case_votann_faction_id(waha_helper: WahaHelper) -> None:
     catalog = RosterSynthesisCatalog(waha_helper)
@@ -421,6 +425,78 @@ def test_synthesizes_valid_space_marine_chapter_constrained_candidate(
 
 
 @pytest.mark.integration
+def test_synthesizes_space_wolves_with_multiple_epic_hero_characters(
+    waha_helper: WahaHelper,
+) -> None:
+    report = synthesize_rosters(
+        RosterSynthesisSeed(
+            max_points=1000,
+            max_under_cap_allowance=200,
+            chapter="Space Wolves",
+            detachment="Champions of Fenris",
+            style_tags=("melee", "objective-control"),
+            include_units=("Logan Grimnar", "Ragnar Blackmane"),
+        ),
+        waha_helper=waha_helper,
+        rules_bundle_id=RULES_BUNDLE_ID,
+        top_k=1,
+        random_seed=20260507,
+    )
+    assert report.candidates, report.diagnostics
+    candidate = report.candidates[0]
+    names = {entry.name for entry in candidate.army_blueprint.unit_entries}
+    assert {"Logan Grimnar", "Ragnar Blackmane"}.issubset(names)
+    assert names.isdisjoint({"Apothecary", "Devastator Squad", "Tactical Squad"})
+    ArmyMusterer(waha_helper).validate_runtime_legality(candidate.army_blueprint)
+
+
+@pytest.mark.integration
+def test_synthesizes_tzeentch_soul_grinder_and_belakor_warlord(
+    waha_helper: WahaHelper,
+) -> None:
+    report = synthesize_rosters(
+        RosterSynthesisSeed(
+            max_points=1000,
+            max_under_cap_allowance=100,
+            faction="Chaos Daemons",
+            detachment="Daemonic Incursion",
+            include_units=("Be'lakor", "Skarbrand", "Soul Grinder", "Skull Cannon"),
+            daemonic_allegiances=("Soul Grinder=TZEENTCH",),
+            style_tags=("monster", "vehicle"),
+        ),
+        waha_helper=waha_helper,
+        rules_bundle_id=RULES_BUNDLE_ID,
+        top_k=1,
+        random_seed=20260507,
+    )
+
+    assert report.candidates, report.diagnostics
+    candidate = report.candidates[0]
+    entries = {entry.name: entry for entry in candidate.army_blueprint.unit_entries}
+    assert entries["Be'lakor"].is_warlord is True
+    assert entries["Soul Grinder"].metadata["daemonic_allegiance"] == "TZEENTCH"
+    assert "Daemonic Allegiance: TZEENTCH" in candidate.export_text
+
+    army = ArmyMusterer(waha_helper).validate_runtime_legality(candidate.army_blueprint)
+    belakor = next(unit for unit in army.units if unit.name == "Be'lakor")
+    soul_grinder = next(unit for unit in army.units if unit.name == "Soul Grinder")
+    assert belakor.is_warlord is True
+    assert getattr(soul_grinder, "daemonic_allegiance", "") == "TZEENTCH"
+    assert "TZEENTCH" in soul_grinder.keywords
+    assert any(wargear.name == "Warp gaze" for model in soul_grinder.models for wargear in model.wargear)
+
+    parsed_army = parse_army_list_text(
+        candidate.export_text,
+        waha_helper,
+        list_name="synthesized_tzeentch_soul_grinder",
+    )
+    parsed_army.validate()
+    parsed_soul_grinder = next(unit for unit in parsed_army.units if unit.name == "Soul Grinder")
+    assert getattr(parsed_soul_grinder, "daemonic_allegiance", "") == "TZEENTCH"
+    assert "TZEENTCH" in parsed_soul_grinder.keywords
+
+
+@pytest.mark.integration
 def test_omitted_faction_searches_multiple_supported_factions_deterministically(
     waha_helper: WahaHelper,
 ) -> None:
@@ -504,7 +580,7 @@ def test_synthesis_assigns_legal_enhancements_when_points_allow(
 ) -> None:
     report = synthesize_rosters(
         RosterSynthesisSeed(
-            max_points=500,
+            max_points=503,
             faction="World Eaters",
             detachment="Khorne Daemonkin",
             include_units=("Lord on Juggernaut",),

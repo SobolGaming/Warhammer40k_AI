@@ -314,6 +314,9 @@ def materialize_roster_entry(
     )
     unit = Unit(datasheet)
     entry_metadata = dict(entry.metadata or {})
+    daemonic_allegiance = str(entry_metadata.get("daemonic_allegiance", "") or "").strip()
+    if daemonic_allegiance:
+        unit.daemonic_allegiance = daemonic_allegiance.upper()
     ally_context = dict(entry_metadata.get("ally_context", {}) or {})
     if ally_context:
         build_metadata = dict(getattr(unit, "build_metadata", {}) or {})

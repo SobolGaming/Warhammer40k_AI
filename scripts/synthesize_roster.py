@@ -47,6 +47,15 @@ def main() -> None:
         help="Hard excluded unit name. Repeat for multiple excluded units.",
     )
     parser.add_argument(
+        "--daemonic-allegiance",
+        action="append",
+        default=[],
+        help=(
+            "Required Daemonic Allegiance selection in 'Unit Name=KEYWORD' form. "
+            "Repeat for multiple units, e.g. 'Soul Grinder=TZEENTCH'."
+        ),
+    )
+    parser.add_argument(
         "--top-k",
         type=int,
         default=5,
@@ -82,6 +91,7 @@ def main() -> None:
         description_text=args.description,
         include_units=tuple(args.include_unit or []),
         exclude_units=tuple(args.exclude_unit or []),
+        daemonic_allegiances=tuple(args.daemonic_allegiance or []),
     )
     report = synthesize_rosters(
         seed,

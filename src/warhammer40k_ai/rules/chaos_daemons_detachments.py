@@ -205,7 +205,18 @@ class ChaosDaemonsDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
+        if not self._army_faction_matches(self.faction_id):
+            return errors
         if not self.is_shadow_legion_detachment():
+            for unit in self._iter_army_units():
+                if unit is None:
+                    continue
+                if self._unit_is_heretic_astartes(unit) or self._unit_is_damned(unit):
+                    unit_name = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+                    errors.append(
+                        "Chaos Daemons: HERETIC ASTARTES and DAMNED selections require "
+                        f"the Shadow Legion detachment ('{unit_name}' is not allowed)."
+                    )
             return errors
         self.apply_shadow_legion_keywords()
         army = self.army

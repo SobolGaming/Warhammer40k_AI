@@ -25,6 +25,7 @@ report = synthesize_rosters(
         detachment="Khorne Daemonkin",
         style_tags=("melee", "offensive", "daemonkin"),
         include_units=("Lord on Juggernaut",),
+        daemonic_allegiances=(),
     ),
     waha_helper=WahaHelper(),
     rules_bundle_id="rules_bundle:10th_local_wahapedia",
@@ -70,6 +71,11 @@ The report includes:
   faction.
 - `exclude_units`: hard excluded datasheet names. Unknown names fail before
   proposal.
+- `daemonic_allegiances`: optional `Unit Name=KEYWORD` selections for datasheets
+  that require Daemonic Allegiance choices, such as `Soul Grinder=TZEENTCH`.
+  When a synthesized unit has Daemonic Allegiance options and no explicit seed
+  choice, the synthesizer selects a deterministic legal option so the runtime
+  muster remains complete.
 
 ## Catalog And Legality
 
@@ -87,11 +93,17 @@ Out-of-scope datasheets are excluded by the existing `WahaHelper` source policy:
 Forge World, Legends, Boarding Actions, Crusade, and Kill Team content remain
 outside the synthesizer.
 
-Generated candidates are filtered for faction/chapter keyword compatibility,
-then validated through `ArmyMusterer.validate_runtime_legality()`. Runtime
+Generated candidates are filtered for faction/chapter keyword compatibility and
+chapter-specific forbidden datasheets before runtime validation. Runtime
 validation remains responsible for point caps, warlords, enhancements,
 duplicate datasheet limits, Epic Hero limits, attachment legality, detachment
-rules, and wargear legality.
+rules, and wargear legality. The synthesizer may include multiple distinct Epic
+Hero Character datasheets in one army; only one selected Character is marked as
+the warlord. Datasheet abilities named `SUPREME COMMANDER`, and equivalent
+ability text that says the unit or model must be your Warlord, are treated as
+warlord-forcing during candidate construction and runtime validation across all
+factions, even when the structured source models that rule as an ability rather
+than a keyword.
 
 Candidates must also pass the minimal Declare Battle Formations reserve
 allocation: every unit that must start in Reserves is placed in Reserves and all
@@ -112,6 +124,7 @@ python3 scripts/synthesize_roster.py \
   --detachment "Khorne Daemonkin" \
   --style "melee offensive daemonkin" \
   --include-unit "Lord on Juggernaut" \
+  --daemonic-allegiance "Soul Grinder=TZEENTCH" \
   --top-k 3 \
   --output-dir /tmp/world_eaters_synth
 ```

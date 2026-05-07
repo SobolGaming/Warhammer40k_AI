@@ -4612,15 +4612,29 @@ class StateAttachmentMixin:
 
     @property
     def is_supreme_commander(self) -> bool:
+        def _normalize_ability_text(value) -> str:
+            text = str(value or "").replace("\u2019", "'").replace("\u2018", "'")
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"[^a-z0-9]+", " ", text.lower())
+            return re.sub(r"\s+", " ", text).strip()
+
         # Wahapedia encodes this as a datasheet-sourced ability row (ability_id == ""),
-        # e.g. name == "SUPREME COMMANDER".
+        # e.g. name == "SUPREME COMMANDER"; keep a description fallback for
+        # equivalent structured sources.
         for ab in getattr(self, "possible_abilities", []) or []:
             if isinstance(ab, str):
-                if ab.strip().upper() == "SUPREME COMMANDER":
+                if _normalize_ability_text(ab) == "supreme commander":
                     return True
                 continue
-            name = str(getattr(ab, "name", "") or "")
-            if name.strip().upper() == "SUPREME COMMANDER":
+            if isinstance(ab, dict):
+                name = ab.get("name", "")
+                description = ab.get("description", "")
+            else:
+                name = getattr(ab, "name", "")
+                description = getattr(ab, "description", "")
+            if _normalize_ability_text(name) == "supreme commander":
+                return True
+            if "must be your warlord" in _normalize_ability_text(description):
                 return True
         return False
 

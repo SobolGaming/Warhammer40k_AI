@@ -176,6 +176,7 @@ def _append_parsed_build_entry(
     wargear_dict: Dict[str, Set[Tuple[str, int]]],
     enhancement: Enhancement | None,
     is_warlord: bool,
+    daemonic_allegiance: str | None = None,
 ) -> None:
     wargear, wargear_metadata = _serialize_wargear_dict(wargear_dict)
     entry = RosterEntry(
@@ -190,6 +191,12 @@ def _append_parsed_build_entry(
             "source": "army_list_parse",
             "raw_model_count": int(model_count or 0),
             "wargear_by_model": wargear_metadata,
+            **(
+                {"daemonic_allegiance": str(daemonic_allegiance or "").strip().upper()}
+                if str(daemonic_allegiance or "").strip()
+                and str(daemonic_allegiance or "").strip().upper() != "UNSET"
+                else {}
+            ),
         },
     )
     unit_entries.append(entry)
@@ -306,6 +313,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                     wargear_dict=current_wargear,
                     enhancement=current_enhancement,
                     is_warlord=is_warlord,
+                    daemonic_allegiance=getattr(current_unit, "daemonic_allegiance", None),
                 )
                 current_unit = None
                 current_model_name = None
@@ -419,6 +427,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             wargear_dict=current_wargear,
             enhancement=current_enhancement,
             is_warlord=is_warlord,
+            daemonic_allegiance=getattr(current_unit, "daemonic_allegiance", None),
         )
 
     validated_muster = ValidatedMuster(
