@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from types import MethodType, SimpleNamespace
 import uuid
 
@@ -289,6 +290,40 @@ def test_replay_store_record_resolution_is_idempotent_by_decision_id(tmp_path) -
     assert step.event_start_id is not None
     assert step.event_end_id is not None
     assert step.event_end_id >= step.event_start_id
+
+
+def test_replay_store_decision_count_uses_max_index_when_autoincrement_has_gap(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "gapped_decision_idx.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-gapped-index",
+        label="Gapped Replay Index",
+    )
+    first = _queue_confirmation(game, player)
+    _resolve_option(game, first, option_index=0)
+
+    with sqlite3.connect(str(replay_path)) as conn:
+        conn.execute("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'decision_steps'")
+
+    second = _queue_confirmation(game, player)
+    _resolve_option(game, second, option_index=1)
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+    assert [step.decision_idx for step in steps] == [1, 3]
+    assert reader.decision_count() == 3
+    assert reader.get_step(3).decision_id == second.decision_id
+    try:
+        reader.get_step(2)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("missing decision_idx=2 should not resolve by ordinal offset")
+
+    reader.reconstruct_game_at_decision(reader.decision_count(), strict=True)
 
 
 def test_pack_json_normalizes_dice_roll_state_objects() -> None:

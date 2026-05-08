@@ -55,6 +55,7 @@ _UNIT_STATE_EXCLUDE = {
     "possible_wargear",
     "possible_abilities",
     "wargear_options",
+    "_wargear_constraints",
     "models",
     "models_lost",
     "status_effects",

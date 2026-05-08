@@ -547,7 +547,7 @@ class ReplayStoreRecorder:
 
     def decision_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS c FROM decision_steps").fetchone()
+            row = conn.execute("SELECT MAX(decision_idx) AS c FROM decision_steps").fetchone()
         return int(row["c"] or 0) if row is not None else 0
 
     def keyframe_count(self) -> int:
@@ -594,7 +594,7 @@ class ReplayStoreReader:
 
     def decision_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS c FROM decision_steps").fetchone()
+            row = conn.execute("SELECT MAX(decision_idx) AS c FROM decision_steps").fetchone()
         return int(row["c"] or 0) if row is not None else 0
 
     def keyframe_count(self) -> int:
@@ -652,10 +652,47 @@ class ReplayStoreReader:
         return steps
 
     def get_step(self, decision_idx: int) -> ReplayDecisionStep:
-        steps = self.list_steps(offset=max(0, int(decision_idx) - 1), limit=1)
-        if not steps or steps[0].decision_idx != int(decision_idx):
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    decision_idx,
+                    decision_id,
+                    turn_id,
+                    phase,
+                    actor_player_id,
+                    controller_kind,
+                    decision_type,
+                    chosen_option_id,
+                    chosen_action_id,
+                    valid,
+                    wall_clock_ms,
+                    time_budget_ms,
+                    event_start_id,
+                    event_end_id
+                FROM decision_steps
+                WHERE decision_idx = ?
+                """,
+                (int(decision_idx),),
+            ).fetchone()
+        if row is None:
             raise IndexError(f"Decision step not found: {decision_idx}")
-        return steps[0]
+        return ReplayDecisionStep(
+            decision_idx=int(row["decision_idx"]),
+            decision_id=str(row["decision_id"] or ""),
+            turn_id=int(row["turn_id"] or 0),
+            phase=str(row["phase"] or ""),
+            actor_player_id=str(row["actor_player_id"] or ""),
+            controller_kind=str(row["controller_kind"] or ""),
+            decision_type=str(row["decision_type"] or ""),
+            chosen_option_id=str(row["chosen_option_id"] or ""),
+            chosen_action_id=str(row["chosen_action_id"] or ""),
+            valid=bool(int(row["valid"] or 0)),
+            wall_clock_ms=int(row["wall_clock_ms"] or 0),
+            time_budget_ms=(int(row["time_budget_ms"]) if row["time_budget_ms"] is not None else None),
+            event_start_id=(int(row["event_start_id"]) if row["event_start_id"] is not None else None),
+            event_end_id=(int(row["event_end_id"]) if row["event_end_id"] is not None else None),
+        )
 
     def get_decision_record(self, decision_idx: int) -> dict[str, Any]:
         with self._connect() as conn:

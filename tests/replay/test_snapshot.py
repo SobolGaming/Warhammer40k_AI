@@ -732,6 +732,7 @@ def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_help
     game, unit_one, _, player_one, _ = _build_game(waha_helper)
 
     unit_one.snapshot_runtime_base = Base(BaseType.CIRCULAR, 1.0)
+    unit_one._wargear_constraints = {}
     player_one.stratagems.snapshot_runtime_hooks = [
         {
             "unit": unit_one,
@@ -740,6 +741,9 @@ def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_help
     ]
 
     snapshot = snapshot_game(game)
+    unit_payload = next(entry for entry in list(snapshot["units"] or []) if entry["id"] == unit_one.id)
+    assert "_wargear_constraints" not in dict(unit_payload.get("state", {}) or {})
+
     loaded = load_game_snapshot(snapshot)
     loaded_players = {player.id: player for player in list(loaded.players or [])}
     loaded_player_one = loaded_players[player_one.id]
