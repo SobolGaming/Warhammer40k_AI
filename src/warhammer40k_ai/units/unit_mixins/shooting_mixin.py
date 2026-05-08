@@ -4439,6 +4439,57 @@ class ShootingMixin:
         else:
             logger.info(f"{self.name} cannot embark onto {transport_unit.name}.")
 
+    def _disembark_collides_with_placed_models(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        positions: List[Tuple[float, float, float, float]],
+        models: List[Model],
+        *,
+        model: Model,
+    ) -> bool:
+        if not positions:
+            return False
+        new_base = self._create_potential_base(x, y, z, facing, model=model)
+        for other_model, pos in zip(list(models or []), list(positions or [])):
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3], model=other_model)
+            if new_base.collides_with(other_base):
+                return True
+        return False
+
+    def _disembark_is_coherent_with_placed_models(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        positions: List[Tuple[float, float, float, float]],
+        models: List[Model],
+        *,
+        model: Model,
+    ) -> bool:
+        if not positions:
+            return True
+        required_neighbors = 1 if len(positions) == 1 else int(getattr(self, "required_neighbors", 1) or 1)
+        if required_neighbors <= 0:
+            return True
+        new_base = self._create_potential_base(x, y, z, facing, model=model)
+        neighbors = 0
+        for other_model, pos in zip(list(models or []), list(positions or [])):
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3], model=other_model)
+            try:
+                horizontal = new_base.get_base_shape().distance(other_base.get_base_shape())
+                vertical = abs(float(getattr(new_base, "z", 0.0)) - float(getattr(other_base, "z", 0.0)))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if horizontal <= float(getattr(self, "coherency_distance", 2.0) or 2.0) + 1e-6 and vertical <= 5.0 + 1e-6:
+                neighbors += 1
+                if neighbors >= required_neighbors:
+                    return True
+        return False
+
     def _find_disembark_positions(
         self,
         transport_base,
@@ -4453,7 +4504,12 @@ class ShootingMixin:
         """
         if transport_base is None:
             return None
-        if not self.models:
+        placement_models = [
+            model
+            for model in list(self.get_models_for_collision() or [])
+            if getattr(model, "is_alive", False)
+        ]
+        if not placement_models:
             return []
 
         # Determine anchor point & radii
@@ -4477,9 +4533,8 @@ class ShootingMixin:
         placed: List[Tuple[float, float, float, float]] = []
         facing = 0.0
 
-        for idx, model in enumerate(self.models):
-            if not model.is_alive:
-                continue
+        placed_models: List[Model] = []
+        for model in placement_models:
             try:
                 mr = float(model.model_base.get_longest_radius())
             except Exception:
@@ -4533,9 +4588,25 @@ class ShootingMixin:
 
                     # Collision checks within this unit
                     try:
-                        if self._collides_with_unit_models(x, y, z, facing, placed, model=model):
+                        if self._disembark_collides_with_placed_models(
+                            x,
+                            y,
+                            z,
+                            facing,
+                            placed,
+                            placed_models,
+                            model=model,
+                        ):
                             continue
-                        if not self._is_coherent_within_unit(x, y, z, facing, placed, model=model):
+                        if not self._disembark_is_coherent_with_placed_models(
+                            x,
+                            y,
+                            z,
+                            facing,
+                            placed,
+                            placed_models,
+                            model=model,
+                        ):
                             continue
                     except Exception:
                         # If coherency logic fails, allow placement but still avoid collisions.
@@ -4581,6 +4652,7 @@ class ShootingMixin:
             if found is None:
                 return None
             placed.append(found)
+            placed_models.append(model)
 
         return placed
 
@@ -4592,6 +4664,7 @@ class ShootingMixin:
         game_map: 'Map',
         max_distance: float,
         placed: List[Tuple[float, float, float, float]],
+        placed_models: Optional[List[Model]] = None,
         require_not_in_engagement: bool = True,
         min_enemy_horizontal_distance: Optional[float] = None,
     ) -> Optional[Tuple[float, float, float, float]]:
@@ -4658,9 +4731,33 @@ class ShootingMixin:
 
                 # Collision checks within this unit
                 try:
-                    if self._collides_with_unit_models(x, y, z, facing, placed, model=model):
+                    if placed_models is not None:
+                        collides = self._disembark_collides_with_placed_models(
+                            x,
+                            y,
+                            z,
+                            facing,
+                            placed,
+                            list(placed_models or []),
+                            model=model,
+                        )
+                    else:
+                        collides = self._collides_with_unit_models(x, y, z, facing, placed, model=model)
+                    if collides:
                         continue
-                    if not self._is_coherent_within_unit(x, y, z, facing, placed, model=model):
+                    if placed_models is not None:
+                        coherent = self._disembark_is_coherent_with_placed_models(
+                            x,
+                            y,
+                            z,
+                            facing,
+                            placed,
+                            list(placed_models or []),
+                            model=model,
+                        )
+                    else:
+                        coherent = self._is_coherent_within_unit(x, y, z, facing, placed, model=model)
+                    if not coherent:
                         continue
                 except Exception:
                     pass
@@ -5560,7 +5657,11 @@ class ShootingMixin:
             if destroyed_transport and emergency:
                 # Emergency disembarkation: models that cannot be set up are destroyed (not necessarily the whole unit).
                 logger.warning(f"WARN: {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
-                alive_models = [m for m in self.models if getattr(m, "is_alive", False)]
+                alive_models = [
+                    m
+                    for m in list(self.get_models_for_collision() or [])
+                    if getattr(m, "is_alive", False)
+                ]
                 placed_positions: List[Tuple[float, float, float, float]] = []
                 placed_models: List[Model] = []
                 unplaced_models: List[Model] = []
@@ -5571,6 +5672,7 @@ class ShootingMixin:
                         game_map=game_map,
                         max_distance=6.0,
                         placed=placed_positions,
+                        placed_models=placed_models,
                         require_not_in_engagement=require_not_in_engagement,
                         min_enemy_horizontal_distance=min_enemy_horizontal_distance,
                     )

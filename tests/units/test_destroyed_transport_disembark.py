@@ -131,6 +131,54 @@ def test_normal_disembark_final_validation_failure_logs_warning_not_error(caplog
     assert "ERROR: Passengers disembark failed: map placement validation failed" not in caplog.text
 
 
+def test_normal_disembark_places_attached_leader_collision_models():
+    bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+    army = Army.with_detachment("Test", "Detachment")
+    player = Player("P1", PlayerControl.LOCAL, army)
+    game = Game(bf, players=[player])
+
+    transport = _make_unit("Transport", keywords=["Transport"], transport="Transport Capacity 10")
+    passenger = _make_unit("Passengers", keywords=["Infantry"])
+    leader = _make_unit("Leader", keywords=["Character", "Infantry"])
+
+    passenger.attached_leaders = [leader]
+    leader.attached_to = passenger
+
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    army.add_unit(leader)
+    game.rebuild_entity_registry()
+
+    transport.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    assert game.map.place_unit(transport) is True
+
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+    leader.embarked_in = transport
+
+    placements = passenger._find_disembark_positions(transport.models[0].model_base, game.map, 3.0)
+    assert placements is not None
+    assert len(placements) == 2
+
+    ok = passenger.disembark(
+        game_map=game.map,
+        transport_unit=transport,
+        destroyed_transport=False,
+        emergency=False,
+        current_turn=1,
+    )
+
+    assert ok is True
+    assert passenger.embarked_in is None
+    assert leader.embarked_in is None
+    assert transport.transport_passengers == []
+    assert passenger in game.map.units
+    assert leader not in game.map.units
+    for model in passenger.get_models_for_collision():
+        x, y, _z, _facing = model.get_location()
+        assert (round(x, 3), round(y, 3)) != (0.0, 0.0)
+
+
 def test_finalize_manual_disembark_final_validation_failure_logs_warning_not_error(caplog):
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     army = Army.with_detachment("Test", "Detachment")
