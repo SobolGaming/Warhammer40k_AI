@@ -462,6 +462,14 @@ def _parse_args() -> argparse.Namespace:
         help="Disable reward annotation and export raw engine DecisionRecords.",
     )
     parser.add_argument(
+        "--skip-record-export",
+        action="store_true",
+        help=(
+            "Skip DecisionRecord serialization and write an empty records array. "
+            "Use this for replay-only evaluation where score/report and replay artifacts are sufficient."
+        ),
+    )
+    parser.add_argument(
         "--replay-dir",
         default="",
         help=(
@@ -579,6 +587,7 @@ def _run_single_game(
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+    export_records: bool = True,
 ) -> dict[str, Any]:
     stable_game_id = str(game_id or "")
     player1_label, player2_label = _army_labels_from_paths(player1_army_file, player2_army_file)
@@ -745,7 +754,11 @@ def _run_single_game(
             label=replay_label,
         )
         game.session_id = stable_game_id
-    records = _export_decision_records(list(getattr(game.decision_record_store, "records", []) or []))
+    records = (
+        _export_decision_records(list(getattr(game.decision_record_store, "records", []) or []))
+        if bool(export_records)
+        else []
+    )
     tool_action_probe_diagnostics = _collect_tool_action_probe_diagnostics(game)
     reserve_arrival_diagnostics = _collect_reserve_arrival_diagnostics(game)
     get_reserves_metrics = getattr(controller, "get_reserves_arrival_search_metrics", None)
@@ -793,6 +806,7 @@ def _run_single_game_job(
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+    export_records: bool = True,
     profile: bool = False,
     profile_dir: str = "profiles",
     profile_sort: str = "tottime",
@@ -833,6 +847,7 @@ def _run_single_game_job(
             log_phase_transitions=bool(log_phase_transitions),
             replay_dir=str(replay_dir or ""),
             replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
+            export_records=bool(export_records),
         )
         elapsed_s = float(time.perf_counter() - started_at)
     finally:
@@ -897,6 +912,7 @@ def run_headless_self_play(
     no_reward_annotation: bool = False,
     replay_dir: str = "",
     replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+    skip_record_export: bool = False,
     report_output: str = "",
     profile: bool = False,
     profile_dir: str = "profiles",
@@ -925,7 +941,8 @@ def run_headless_self_play(
     def _spool_completed_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         game_index = int(payload.get("game_index", 0) or 0)
         result = dict(payload.get("result", {}) or {})
-        records = list(result.pop("records", []) or [])
+        raw_records = list(result.pop("records", []) or [])
+        records = [] if bool(skip_record_export) else raw_records
         part_path = spool_dir / f"game_{game_index:06d}.json"
         _write_json_array(part_path, records)
         payload["result"] = result
@@ -952,6 +969,7 @@ def run_headless_self_play(
                 log_phase_transitions=bool(log_phase_transitions),
                 replay_dir=str(replay_dir),
                 replay_keyframe_interval=int(replay_keyframe_interval),
+                export_records=not bool(skip_record_export),
                 profile=bool(profile),
                 profile_dir=str(profile_dir),
                 profile_sort=str(profile_sort),
@@ -994,6 +1012,7 @@ def run_headless_self_play(
                     log_phase_transitions=bool(log_phase_transitions),
                     replay_dir=str(replay_dir),
                     replay_keyframe_interval=int(replay_keyframe_interval),
+                    export_records=not bool(skip_record_export),
                     profile=bool(profile),
                     profile_dir=str(profile_dir),
                     profile_sort=str(profile_sort),
@@ -1076,6 +1095,8 @@ def run_headless_self_play(
     print(f"Workers: {workers}")
     print(f"Phase steps: {total_phase_steps}")
     print(f"Decision records: {exported_record_count}")
+    if bool(skip_record_export):
+        print("Decision record export: skipped")
     if not bool(no_reward_annotation):
         print(f"Reward profile: {reward_profile}")
     if games == 1 and game_outcomes:
@@ -1137,6 +1158,7 @@ def run_headless_self_play(
         "reward_profile": None if bool(no_reward_annotation) else str(reward_profile),
         "phase_steps": int(total_phase_steps),
         "decision_record_count": int(exported_record_count),
+        "record_export_skipped": bool(skip_record_export),
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
@@ -1181,6 +1203,7 @@ def main() -> int:
         no_reward_annotation=bool(args.no_reward_annotation),
         replay_dir=str(args.replay_dir),
         replay_keyframe_interval=int(args.replay_keyframe_interval),
+        skip_record_export=bool(args.skip_record_export),
         report_output=str(args.report_output),
         profile=bool(args.profile),
         profile_dir=str(args.profile_dir),

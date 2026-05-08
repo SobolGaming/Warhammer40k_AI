@@ -38,10 +38,13 @@ from .registry import ArtifactManifestStore
 
 
 HEADLESS_FIXED_EVALUATION_MODE = "headless_fixed"
+REPLAY_ONLY_EVALUATION_MODE = "replay_only"
 TRAINING_GRADE_EVALUATION_MODE = "training_grade"
 HEADLESS_FIXED_GATE_PROFILE_ID = "headless_fixed_v1"
+REPLAY_ONLY_GATE_PROFILE_ID = "replay_only_v1"
 _ALLOWED_EVALUATION_MODES = {
     HEADLESS_FIXED_EVALUATION_MODE,
+    REPLAY_ONLY_EVALUATION_MODE,
     TRAINING_GRADE_EVALUATION_MODE,
 }
 _REPORT_FILENAMES = {
@@ -338,6 +341,7 @@ def run_headless_self_play_stage(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     replay_keyframe_interval: int = 10,
+    skip_record_export: bool = False,
 ) -> dict[str, Any]:
     paths = _report_paths(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -370,6 +374,8 @@ def run_headless_self_play_stage(
         "--replay-keyframe-interval",
         str(max(1, int(replay_keyframe_interval))),
     ]
+    if bool(skip_record_export):
+        command.append("--skip-record-export")
     if seed_base is not None:
         command.extend(["--seed-base", str(int(seed_base))])
     if policy_bundle_source is not None:
@@ -404,6 +410,7 @@ def run_headless_self_play_stage(
         "report_path": str(paths["self_play_report"]),
         "report": report_payload,
         "replay_dir": str(replay_dir),
+        "record_export_skipped": bool(skip_record_export),
     }
 
 
@@ -427,7 +434,7 @@ def audit_replay_sessions(self_play_report: Mapping[str, Any]) -> dict[str, Any]
             decision_count = reader.decision_count()
             total_decisions += int(decision_count)
             reader.reconstruct_game_at_decision(decision_count, strict=True)
-        except (FileNotFoundError, RuntimeError, ValueError, IndexError) as exc:
+        except (FileNotFoundError, RuntimeError, ValueError, IndexError, KeyError, TypeError) as exc:
             failure = {
                 "game_id": game_id,
                 "replay_path": replay_path,
@@ -809,6 +816,7 @@ def run_policy_bundle_evaluation(
         max_phase_steps=max_phase_steps,
         reward_profile=reward_profile,
         replay_keyframe_interval=replay_keyframe_interval,
+        skip_record_export=(normalized_mode == REPLAY_ONLY_EVALUATION_MODE),
     )
 
     replay_report = audit_replay_sessions(dict(self_play_stage.get("report", {}) or {}))
@@ -816,35 +824,61 @@ def run_policy_bundle_evaluation(
 
     manifest: dict[str, Any] | None = None
     gate_report: dict[str, Any]
-    records_iter = _record_iter_from_self_play_stage(self_play_stage)
-    target_bundle, records_iter, has_records = _target_rules_bundle_from_record_iter(
-        records_iter,
-        target_rules_bundle,
-    )
-    if has_records:
-        min_tier3_records = 1 if normalized_mode == HEADLESS_FIXED_EVALUATION_MODE else 10000
-        manifest = _write_relabeled_records_and_manifest(
-            records_iter,
-            output_path=paths["relabeled_records"],
-            target_rules_bundle=target_bundle,
-            source_tag=str(source_tag or "self_play"),
-            min_tier3_records=min_tier3_records,
-        )
-        save_training_manifest(manifest, paths["training_manifest"])
-        gate_report = _evaluate_manifest_gate(manifest, evaluation_mode=normalized_mode)
-    else:
-        gate_report = {
-            "gate_profile_id": (
-                HEADLESS_FIXED_GATE_PROFILE_ID
-                if normalized_mode == HEADLESS_FIXED_EVALUATION_MODE
-                else PRE_ML_BASELINE_GATE_PROFILE_ID
+    if normalized_mode == REPLAY_ONLY_EVALUATION_MODE:
+        self_play_report = dict(self_play_stage.get("report", {}) or {})
+        games_requested = int(self_play_report.get("games_requested", 0) or 0)
+        games_completed = int(self_play_report.get("games_completed", 0) or 0)
+        checks = {
+            "record_export_skipped": bool(
+                self_play_stage.get("record_export_skipped", False)
+                or self_play_report.get("record_export_skipped", False)
             ),
-            "evaluation_mode": normalized_mode,
-            "passed": False,
-            "validation_errors": [],
-            "gate_failures": ["no_decision_records_available"],
-            "checks": {},
+            "self_play_completed": games_requested > 0 and games_completed == games_requested,
+            "manifest_not_required": True,
         }
+        gate_failures = [
+            f"{name} was not satisfied"
+            for name, passed in checks.items()
+            if not bool(passed)
+        ]
+        gate_report = {
+            "gate_profile_id": REPLAY_ONLY_GATE_PROFILE_ID,
+            "evaluation_mode": normalized_mode,
+            "passed": not gate_failures,
+            "validation_errors": [],
+            "gate_failures": gate_failures,
+            "checks": checks,
+        }
+    else:
+        records_iter = _record_iter_from_self_play_stage(self_play_stage)
+        target_bundle, records_iter, has_records = _target_rules_bundle_from_record_iter(
+            records_iter,
+            target_rules_bundle,
+        )
+        if has_records:
+            min_tier3_records = 1 if normalized_mode == HEADLESS_FIXED_EVALUATION_MODE else 10000
+            manifest = _write_relabeled_records_and_manifest(
+                records_iter,
+                output_path=paths["relabeled_records"],
+                target_rules_bundle=target_bundle,
+                source_tag=str(source_tag or "self_play"),
+                min_tier3_records=min_tier3_records,
+            )
+            save_training_manifest(manifest, paths["training_manifest"])
+            gate_report = _evaluate_manifest_gate(manifest, evaluation_mode=normalized_mode)
+        else:
+            gate_report = {
+                "gate_profile_id": (
+                    HEADLESS_FIXED_GATE_PROFILE_ID
+                    if normalized_mode == HEADLESS_FIXED_EVALUATION_MODE
+                    else PRE_ML_BASELINE_GATE_PROFILE_ID
+                ),
+                "evaluation_mode": normalized_mode,
+                "passed": False,
+                "validation_errors": [],
+                "gate_failures": ["no_decision_records_available"],
+                "checks": {},
+            }
     _write_json(paths["gate_report"], gate_report)
     _write_per_match_csv(
         paths["per_match"],

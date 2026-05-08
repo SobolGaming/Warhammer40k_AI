@@ -119,6 +119,70 @@ def _build_materialized_muster_army(waha_helper: WahaHelper) -> Army:
     return army
 
 
+def test_snapshot_roundtrip_preserves_stale_destruction_context_as_ids(waha_helper):
+    game, unit_one, unit_two, _player_one, _player_two = _build_game(waha_helper)
+    attacker_model = unit_two.models[0]
+    attacker_profile = attacker_model.wargear[0].profiles["default"] if attacker_model.wargear else None
+    unit_two.parent_army.units.remove(unit_two)
+    game.map.units = [unit for unit in game.map.units if unit is not unit_two]
+
+    unit_one._last_destroyed_by_unit = unit_two
+    unit_one._last_destroyed_by_model = attacker_model
+    unit_one._coherency_causal_attacker_unit = unit_two
+    unit_one._coherency_causal_attacker_model = attacker_model
+    if attacker_profile is not None:
+        unit_one._last_destroyed_by_weapon_profile = attacker_profile
+
+    snapshot = snapshot_game(game)
+    unit_payload = next(item for item in snapshot["units"] if item["id"] == unit_one.id)
+    state = unit_payload["state"]
+    assert state["_last_destroyed_by_unit"] == unit_two.id
+    assert state["_last_destroyed_by_model"] == attacker_model.id
+    assert state["_coherency_causal_attacker_unit"] == unit_two.id
+    assert state["_coherency_causal_attacker_model"] == attacker_model.id
+    if attacker_profile is not None:
+        profile_payload = state["_last_destroyed_by_weapon_profile"]["__wargear_profile__"]
+        assert "parent_wargear_id" not in profile_payload
+
+    loaded = load_game_snapshot(snapshot)
+    loaded_unit = next(unit for unit in loaded.players[0].army.units if unit.id == unit_one.id)
+    assert loaded_unit._last_destroyed_by_unit == unit_two.id
+    assert loaded_unit._last_destroyed_by_model == attacker_model.id
+    assert loaded_unit._coherency_causal_attacker_unit == unit_two.id
+    assert loaded_unit._coherency_causal_attacker_model == attacker_model.id
+
+
+def test_load_snapshot_accepts_legacy_stale_transient_context_refs(waha_helper):
+    game, unit_one, unit_two, _player_one, _player_two = _build_game(waha_helper)
+    unit_two.parent_army.units.remove(unit_two)
+    game.map.units = [unit for unit in game.map.units if unit is not unit_two]
+
+    snapshot = snapshot_game(game)
+    unit_payload = next(item for item in snapshot["units"] if item["id"] == unit_one.id)
+    unit_payload["state"]["_last_destroyed_by_unit"] = {"__ref__": {"kind": "unit", "id": unit_two.id}}
+    unit_payload["state"]["_last_destroyed_by_model"] = {"__ref__": {"kind": "model", "id": unit_two.models[0].id}}
+    unit_payload["state"]["_coherency_causal_attacker_unit"] = {
+        "__ref__": {"kind": "unit", "id": unit_two.id}
+    }
+    unit_payload["state"]["_coherency_causal_attacker_model"] = {
+        "__ref__": {"kind": "model", "id": unit_two.models[0].id}
+    }
+    unit_payload["state"]["_last_destroyed_by_weapon_profile"] = {
+        "__wargear_profile__": {
+            "parent_wargear_id": "stale-wargear",
+            "profile_name": "default",
+        }
+    }
+
+    loaded = load_game_snapshot(snapshot)
+    loaded_unit = next(unit for unit in loaded.players[0].army.units if unit.id == unit_one.id)
+    assert loaded_unit._last_destroyed_by_unit == unit_two.id
+    assert loaded_unit._last_destroyed_by_model == unit_two.models[0].id
+    assert loaded_unit._coherency_causal_attacker_unit == unit_two.id
+    assert loaded_unit._coherency_causal_attacker_model == unit_two.models[0].id
+    assert loaded_unit._last_destroyed_by_weapon_profile is None
+
+
 def test_phoenix_gem_pending_queue_does_not_store_raw_map(waha_helper):
     game, unit_one, _unit_two, _player_one, _player_two = _build_game(waha_helper)
 

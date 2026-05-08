@@ -477,6 +477,52 @@ def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_
     assert persisted["games"][0]["result"]["winner_army_label"] == "chaos_test"
 
 
+def test_run_headless_self_play_can_skip_record_export(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+
+    def _fake_run_single_game_job(*_args, **kwargs):
+        assert kwargs["export_records"] is False
+        return {
+            "game_index": 0,
+            "elapsed_seconds": 0.25,
+            "result": {
+                "game_id": "selfplay:000000",
+                "records": [{"decision_type": "MOVE_UNIT"}],
+                "phase_steps": 12,
+                "winner_player_id": "player-1",
+                "winner_army_label": "chaos_test",
+                "winner_score_line": "<SCORE: 45 vs 32>",
+                "scoreboard": {"chaos_test": 45, "aeldari_test": 32},
+                "replay_session_id": "selfplay:000000",
+                "replay_path": "/tmp/replays/selfplay:000000/replay.sqlite3",
+                "snapshot_path": "/tmp/replays/selfplay:000000/snapshot.json",
+            },
+        }
+
+    monkeypatch.setattr(mod, "_run_single_game_job", _fake_run_single_game_job)
+    output_path = tmp_path / "records.json"
+    report_path = tmp_path / "report.json"
+
+    report = mod.run_headless_self_play(
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        games=1,
+        workers=1,
+        max_phase_steps=80,
+        output=str(output_path),
+        no_reward_annotation=True,
+        skip_record_export=True,
+        report_output=str(report_path),
+    )
+
+    assert report["decision_record_count"] == 0
+    assert report["record_export_skipped"] is True
+    assert json.loads(output_path.read_text(encoding="utf-8")) == []
+    persisted = json.loads(report_path.read_text(encoding="utf-8"))
+    assert persisted["record_export_skipped"] is True
+    assert "records" not in persisted["games"][0]["result"]
+
+
 def test_run_headless_self_play_report_includes_profile_artifact_paths(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
 

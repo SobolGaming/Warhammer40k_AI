@@ -39,9 +39,9 @@ from ..roster.player import Player, PlayerControl
 from ..units.model import Model
 from ..units.status_effects import BattleShockEffect, StatusEffect
 from ..units.unit import Unit, UnitRoundState
-from ..units.wargear import Wargear
+from ..units.wargear import Wargear, WargearProfile
 from ..utility.calcs import clear_enemy_model_cache
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
@@ -76,6 +76,18 @@ _UNIT_STATE_EXCLUDE = {
     "_shoot_on_death_pending_models",
     "_melee_fight_on_death_pending_models",
     "_melee_fight_on_death_pending_metadata",
+}
+
+_UNIT_TRANSIENT_REF_CONTEXT_FIELDS = {
+    "_last_destroyed_by_unit": "unit",
+    "_last_destroyed_by_model": "model",
+    "_coherency_causal_attacker_unit": "unit",
+    "_coherency_causal_attacker_model": "model",
+}
+
+_UNIT_TRANSIENT_PROFILE_CONTEXT_FIELDS = {
+    "_last_destroyed_by_weapon_profile",
+    "_coherency_causal_weapon_profile",
 }
 
 _MODEL_STATE_EXCLUDE = {
@@ -206,6 +218,92 @@ def _sanitize_snapshot_state_value(value: Any) -> Any:
             if (sanitized := _sanitize_snapshot_state_value(item)) is not _SNAPSHOT_OMIT
         }
     return value
+
+
+def _add_live_entity_id(live_entity_ids: dict[str, set[str]], kind: str, entity: Any) -> None:
+    entity_id = maybe_entity_id(entity)
+    if entity_id:
+        live_entity_ids.setdefault(kind, set()).add(entity_id)
+
+
+def _live_entity_ids_for_snapshot(players: list[Player]) -> dict[str, set[str]]:
+    live_entity_ids: dict[str, set[str]] = {"unit": set(), "model": set(), "wargear": set()}
+    for player in list(players or []):
+        army = getattr(player, "army", None)
+        if army is None:
+            continue
+        for unit in list(getattr(army, "units", []) or []):
+            _add_live_entity_id(live_entity_ids, "unit", unit)
+            for model in list(getattr(unit, "models", []) or []) + list(getattr(unit, "models_lost", []) or []):
+                _add_live_entity_id(live_entity_ids, "model", model)
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    _add_live_entity_id(live_entity_ids, "wargear", wargear)
+    return live_entity_ids
+
+
+def _detached_profile_for_snapshot(profile: WargearProfile) -> WargearProfile:
+    wargear_data = {
+        "range": str(getattr(profile, "_raw_range", "") or ""),
+        "A": str(getattr(profile, "_raw_attacks", "") or ""),
+        "BS_WS": str(getattr(profile, "_raw_skill", "") or ""),
+        "S": str(getattr(profile, "_raw_strength", "") or ""),
+        "AP": str(getattr(profile, "_raw_ap", "") or ""),
+        "D": str(getattr(profile, "_raw_damage", "") or ""),
+        "description": str(getattr(profile, "_raw_description", "") or ""),
+    }
+    return WargearProfile(str(getattr(profile, "name", "") or "default"), wargear_data, parent_wargear=None)
+
+
+def _sanitize_unit_transient_context_value(
+    key: str,
+    value: Any,
+    live_entity_ids: dict[str, set[str]],
+) -> Any:
+    kind = _UNIT_TRANSIENT_REF_CONTEXT_FIELDS.get(key)
+    if kind is not None:
+        entity_id = maybe_entity_id(value)
+        if entity_id and entity_id not in live_entity_ids.get(kind, set()):
+            return entity_id
+        return value
+    if key in _UNIT_TRANSIENT_PROFILE_CONTEXT_FIELDS and isinstance(value, WargearProfile):
+        parent_wargear_id = maybe_entity_id(getattr(value, "parent_wargear", None))
+        if parent_wargear_id and parent_wargear_id not in live_entity_ids.get("wargear", set()):
+            return _detached_profile_for_snapshot(value)
+    return value
+
+
+def _legacy_transient_ref_id(value: Any) -> str | None:
+    if isinstance(value, dict):
+        ref = value.get("__ref__")
+        if isinstance(ref, dict):
+            entity_id = ref.get("id")
+            return str(entity_id) if entity_id else None
+    return None
+
+
+def _legacy_transient_profile_value(value: Any) -> WargearProfile | None:
+    if not isinstance(value, dict):
+        return None
+    payload = value.get("__wargear_profile__")
+    if not isinstance(payload, dict):
+        return None
+    wargear_data = payload.get("wargear_data")
+    if not isinstance(wargear_data, dict):
+        return None
+    return WargearProfile(str(payload.get("profile_name", "") or "default"), dict(wargear_data), parent_wargear=None)
+
+
+def _decode_unit_state_value(key: str, value: Any, registry: EntityRegistry) -> Any:
+    try:
+        return decode_refs(value, registry)
+    except KeyError:
+        if key in _UNIT_TRANSIENT_REF_CONTEXT_FIELDS:
+            entity_id = _legacy_transient_ref_id(value)
+            if entity_id:
+                return entity_id
+        if key in _UNIT_TRANSIENT_PROFILE_CONTEXT_FIELDS:
+            return _legacy_transient_profile_value(value)
+        raise
 
 
 def _serialize_polygon(poly: Polygon | None) -> dict | None:
@@ -522,14 +620,16 @@ def _apply_round_state(unit: Unit, data: dict, registry: EntityRegistry) -> None
     unit.round_state = rs
 
 
-def _serialize_unit(unit: Unit) -> dict:
+def _serialize_unit(unit: Unit, *, live_entity_ids: dict[str, set[str]] | None = None) -> dict:
     datasheet = getattr(unit, "_datasheet", None)
     state: dict[str, Any] = {}
+    live_ids = live_entity_ids or {"unit": set(), "model": set(), "wargear": set()}
     for key, value in unit.__dict__.items():
         if key in _UNIT_STATE_EXCLUDE:
             continue
         if callable(value):
             continue
+        value = _sanitize_unit_transient_context_value(key, value, live_ids)
         sanitized = _sanitize_snapshot_state_value(value)
         if sanitized is _SNAPSHOT_OMIT:
             continue
@@ -564,7 +664,9 @@ def _serialize_unit(unit: Unit) -> dict:
 def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
     unit._id = str(data.get("id") or unit._id)
     state = data.get("state", {}) or {}
-    decoded_state = decode_refs(state, registry)
+    decoded_state = {}
+    for key, value in state.items():
+        decoded_state[key] = _decode_unit_state_value(str(key), value, registry)
     for key, value in decoded_state.items():
         if key in _UNIT_STATE_EXCLUDE:
             continue
@@ -1547,6 +1649,7 @@ def snapshot_game(game: Game) -> dict:
         raise RuntimeError("Snapshots are only allowed once battle round 1 has started.")
 
     players = list(getattr(game, "players", []) or [])
+    live_entity_ids = _live_entity_ids_for_snapshot(players)
     armies = []
     units = []
     for player in players:
@@ -1555,7 +1658,7 @@ def snapshot_game(game: Game) -> dict:
             continue
         armies.append(_serialize_army(army))
         for unit in list(getattr(army, "units", []) or []):
-            units.append(_serialize_unit(unit))
+            units.append(_serialize_unit(unit, live_entity_ids=live_entity_ids))
 
     decision_queue = getattr(game, "decision_queue", None)
     decisions = decision_queue.list() if decision_queue is not None else []

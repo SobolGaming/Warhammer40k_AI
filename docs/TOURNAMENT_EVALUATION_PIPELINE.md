@@ -41,7 +41,29 @@ parallel evaluation stack:
 
 ## Evaluation Modes
 
-Two evaluation modes are supported.
+Three evaluation modes are supported.
+
+### `replay_only`
+
+Use `replay_only` for same-seed policy comparisons when the immediate question is:
+- does headless self-play complete
+- do saved replay sessions round-trip under strict replay
+- what are the per-game score and winner metrics
+
+This mode skips DecisionRecord export, relabeling, and manifest construction.
+It still writes `self_play_report.json`, `replay_report.json`, `per_match.csv`,
+and `summary.json`, but `decision_records_raw.json`,
+`decision_records_relabeled.json`, and `training_manifest.json` are intentionally
+empty or absent. Use this mode before generating larger corpora when replay
+determinism is the gate.
+
+The fixed gate profile for this mode is:
+- `replay_only_v1`
+
+`replay_only_v1` requires:
+- record export was explicitly skipped
+- all requested self-play games completed
+- strict replay audit passes
 
 ### `headless_fixed`
 

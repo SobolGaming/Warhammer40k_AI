@@ -9,6 +9,7 @@ from warhammer40k_ai.engine.ruleset import RulesetBundle
 from warhammer40k_ai.ml import ArtifactManifestStore
 from warhammer40k_ai.ml.evaluation_pipeline import (
     HEADLESS_FIXED_EVALUATION_MODE,
+    REPLAY_ONLY_EVALUATION_MODE,
     TRAINING_GRADE_EVALUATION_MODE,
     run_policy_bundle_evaluation,
     run_tournament_roster_evaluation,
@@ -252,6 +253,30 @@ def _fake_replay_fail(_report):
     }
 
 
+def test_replay_audit_reports_snapshot_key_errors(monkeypatch) -> None:
+    import warhammer40k_ai.ml.evaluation_pipeline as pipeline
+
+    class _Reader:
+        def __init__(self, _path):
+            pass
+
+        def decision_count(self):
+            return 3
+
+        def reconstruct_game_at_decision(self, _decision_count, *, strict: bool = True):
+            raise KeyError("Unknown ref model:stale")
+
+    monkeypatch.setattr(pipeline, "ReplayStoreReader", _Reader)
+
+    report = pipeline.audit_replay_sessions(_self_play_report([]))
+
+    assert report["passed"] is False
+    assert report["games_audited"] == 1
+    assert report["games_passed"] == 0
+    assert report["per_game"]["game:test:0"]["ok"] is False
+    assert "KeyError: 'Unknown ref model:stale'" in report["per_game"]["game:test:0"]["error"]
+
+
 def test_policy_bundle_smoke_evaluation_is_deterministic_for_fixed_seed(tmp_path: Path, monkeypatch) -> None:
     records = [
         _record("d1", game_id="game:test:0", player_score=0, opponent_score=0),
@@ -336,6 +361,54 @@ def test_policy_bundle_evaluation_streams_records_from_path(tmp_path: Path, monk
     relabeled = json.loads(relabeled_path.read_text(encoding="utf-8"))
     assert len(relabeled) == 2
     assert all(str(record.get("relabel_status", "")) for record in relabeled)
+
+
+def test_policy_bundle_replay_only_evaluation_skips_record_manifest_outputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    records: list[dict[str, object]] = []
+    models_root = tmp_path / "models"
+    bundle_path = ArtifactManifestStore(models_root).bundle_manifest_path("policy_bundle:heuristic_eval_v1")
+    _write_json(bundle_path, _bundle_payload("policy_bundle:heuristic_eval_v1"))
+
+    import warhammer40k_ai.ml.evaluation_pipeline as pipeline
+
+    def _replay_only_self_play_stage(**kwargs):
+        assert kwargs["skip_record_export"] is True
+        report = _self_play_report(records)
+        report["decision_record_count"] = 0
+        report["record_export_skipped"] = True
+        return {
+            "returncode": 0,
+            "stdout_path": "",
+            "stderr_path": "",
+            "records_path": str(tmp_path / "records.json"),
+            "report_path": "",
+            "report": report,
+            "replay_dir": "",
+            "record_export_skipped": True,
+        }
+
+    monkeypatch.setattr(pipeline, "run_headless_self_play_stage", _replay_only_self_play_stage)
+    monkeypatch.setattr(pipeline, "audit_replay_sessions", _fake_replay_pass)
+
+    result = run_policy_bundle_evaluation(
+        policy_bundle_source=str(bundle_path),
+        models_root=models_root,
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        report_dir=tmp_path / "report",
+        games=1,
+        evaluation_mode=REPLAY_ONLY_EVALUATION_MODE,
+    )
+
+    assert result["success"] is True
+    assert result["manifest"] is None
+    assert result["gate_report"]["gate_profile_id"] == "replay_only_v1"
+    assert result["gate_report"]["checks"]["record_export_skipped"] is True
+    assert not Path(result["relabeled_records_path"]).exists()
+    assert not (Path(result["report_dir"]) / "training_manifest.json").exists()
 
 
 def test_policy_bundle_evaluation_fails_when_replay_audit_fails(tmp_path: Path, monkeypatch) -> None:

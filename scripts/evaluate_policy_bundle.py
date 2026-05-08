@@ -6,6 +6,7 @@ import argparse
 from warhammer40k_ai.engine.ruleset import RulesetBundle
 from warhammer40k_ai.ml.evaluation_pipeline import (
     HEADLESS_FIXED_EVALUATION_MODE,
+    REPLAY_ONLY_EVALUATION_MODE,
     TRAINING_GRADE_EVALUATION_MODE,
     run_policy_bundle_evaluation,
 )
@@ -26,7 +27,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--reward-profile", default="dense_vp_delta_v1")
     parser.add_argument(
         "--evaluation-mode",
-        choices=(HEADLESS_FIXED_EVALUATION_MODE, TRAINING_GRADE_EVALUATION_MODE),
+        choices=(HEADLESS_FIXED_EVALUATION_MODE, REPLAY_ONLY_EVALUATION_MODE, TRAINING_GRADE_EVALUATION_MODE),
         default=HEADLESS_FIXED_EVALUATION_MODE,
     )
     parser.add_argument("--report-dir", default="", help="Optional output report directory.")

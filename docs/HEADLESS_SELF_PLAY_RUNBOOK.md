@@ -89,6 +89,15 @@ What `--max-phase-steps 80` means:
 
 By default, this script also applies reward annotation using `dense_vp_delta_v1`.
 
+Replay-only evaluation:
+- Pass `--skip-record-export` when the run is only intended to validate
+  completion, score metrics, and saved replay reconstruction.
+- The self-play report and replay artifacts are still written, but the
+  DecisionRecord output is an empty JSON array and `record_export_skipped` is
+  recorded in the machine-readable report.
+- This is the preferred mode for larger same-seed replay-confidence checks
+  before generating more training corpora.
+
 Throughput controls:
 - `--workers <N>` runs games in parallel processes.
 - `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
