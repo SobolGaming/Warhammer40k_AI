@@ -78,6 +78,12 @@ def test_replay_model_id_map_preserves_stable_ids_when_payload_order_differs() -
     }
 
     assert ReplayStoreReader._runtime_model_id_map(game, payload, {}) == {}
+    translated = ReplayStoreReader._request_payload_for_runtime(game, payload, {"omniscient_state": {}})
+    translated_positions = translated["options"][0]["payload"]["model_positions"]
+    assert translated_positions == [
+        {"model_id": "model:b", "position": [2.0, 0.0, 0.0]},
+        {"model_id": "model:a", "position": [1.0, 0.0, 0.0]},
+    ]
 
 
 def test_replay_model_id_map_remaps_generated_ids_when_no_stable_ids_match() -> None:
