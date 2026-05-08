@@ -512,7 +512,7 @@ def _pose_matches_entry(pose: Any, entry: dict[str, Any], *, tolerance: float = 
     )
 
 
-def _positions_match(lhs: dict[str, Any], rhs: dict[str, Any], *, tolerance: float = 1e-4) -> bool:
+def _positions_match(lhs: dict[str, Any], rhs: dict[str, Any], *, tolerance: float = 1e-3) -> bool:
     lhs_pos = list(dict(lhs or {}).get("position") or [])
     rhs_pos = list(dict(rhs or {}).get("position") or [])
     while len(lhs_pos) < 3:

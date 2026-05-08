@@ -1026,10 +1026,28 @@ class ReplayStoreReader:
         runtime_model_ids = [str(getattr(model, "id", "") or "") for model in runtime_models]
         if not recorded_model_ids or len(recorded_model_ids) != len(runtime_model_ids):
             return {}
+        runtime_model_id_set = {model_id for model_id in runtime_model_ids if model_id}
+        recorded_model_id_set = {model_id for model_id in recorded_model_ids if model_id}
+        if recorded_model_id_set and recorded_model_id_set.issubset(runtime_model_id_set):
+            return {}
+        if recorded_model_id_set.intersection(runtime_model_id_set):
+            unmapped_recorded_ids = [
+                model_id for model_id in recorded_model_ids if model_id not in runtime_model_id_set
+            ]
+            available_runtime_ids = [
+                model_id for model_id in runtime_model_ids if model_id not in recorded_model_id_set
+            ]
+            if len(unmapped_recorded_ids) != len(available_runtime_ids):
+                return {}
+            return {
+                recorded_model_id: runtime_model_id
+                for recorded_model_id, runtime_model_id in zip(unmapped_recorded_ids, available_runtime_ids)
+                if recorded_model_id and runtime_model_id and recorded_model_id != runtime_model_id
+            }
         return {
             recorded_model_id: runtime_model_id
             for recorded_model_id, runtime_model_id in zip(recorded_model_ids, runtime_model_ids)
-            if recorded_model_id and runtime_model_id
+            if recorded_model_id and runtime_model_id and recorded_model_id != runtime_model_id
         }
 
     @classmethod

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from types import SimpleNamespace
 
 import pytest
 from shapely.geometry import Polygon
@@ -11,8 +12,10 @@ from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.fight_move import _positions_match
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.replay import replay_decision_records
+from warhammer40k_ai.engine.replay_store import ReplayStoreReader
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, RosterEntry, ValidatedMuster
@@ -38,6 +41,80 @@ def _queue_confirmation(game: Game, player: Player) -> DecisionRequest:
     )
     game.request_decision(request)
     return request
+
+
+class _ReplayEntityRegistry:
+    def __init__(self, units: dict[str, object]) -> None:
+        self._units = dict(units)
+
+    def get(self, entity_id: str, *, kind: str | None = None) -> object | None:
+        if kind != "unit":
+            return None
+        return self._units.get(str(entity_id))
+
+
+def _replay_game_with_model_ids(model_ids: list[str]) -> object:
+    unit = SimpleNamespace(
+        id="unit:stable",
+        models=[SimpleNamespace(id=model_id) for model_id in list(model_ids)],
+    )
+    return SimpleNamespace(entity_registry=_ReplayEntityRegistry({unit.id: unit}))
+
+
+def test_replay_model_id_map_preserves_stable_ids_when_payload_order_differs() -> None:
+    game = _replay_game_with_model_ids(["model:a", "model:b"])
+    payload = {
+        "context": {"unit_id": "unit:stable"},
+        "options": [
+            {
+                "payload": {
+                    "model_positions": [
+                        {"model_id": "model:b", "position": [2.0, 0.0, 0.0]},
+                        {"model_id": "model:a", "position": [1.0, 0.0, 0.0]},
+                    ]
+                }
+            }
+        ],
+    }
+
+    assert ReplayStoreReader._runtime_model_id_map(game, payload, {}) == {}
+
+
+def test_replay_model_id_map_remaps_generated_ids_when_no_stable_ids_match() -> None:
+    game = _replay_game_with_model_ids(["runtime:a", "runtime:b"])
+    payload = {
+        "context": {"unit_id": "unit:stable"},
+        "options": [
+            {
+                "payload": {
+                    "model_positions": [
+                        {"model_id": "recorded:a", "position": [1.0, 0.0, 0.0]},
+                        {"model_id": "recorded:b", "position": [2.0, 0.0, 0.0]},
+                    ]
+                }
+            }
+        ],
+    }
+
+    assert ReplayStoreReader._runtime_model_id_map(game, payload, {}) == {
+        "recorded:a": "runtime:a",
+        "recorded:b": "runtime:b",
+    }
+
+
+def test_fight_move_position_match_tolerates_replay_snapshot_rounding() -> None:
+    assert _positions_match(
+        {
+            "model_id": "model:a",
+            "position": [32.944, 20.05, 0.0],
+            "facing": 1.5059,
+        },
+        {
+            "model_id": "model:a",
+            "position": [32.943725706299475, 20.05049485625641, 0.0],
+            "facing": 1.505885938984541,
+        },
+    )
 
 
 def _build_complex_replay_game() -> tuple[Game, Player]:
