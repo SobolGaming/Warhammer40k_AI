@@ -141,6 +141,10 @@ Field intent:
 - `component_type`: the runtime role this artifact fills, such as
   `matchup_evaluator`, `playbook_selector`, or `roster_edit_ranker`.
 - `tier`: logical placement in the controller stack, not a framework detail.
+- `feature_schema_id`: the exact runtime feature extractor contract. Current
+  framework-free linear candidate rankers export
+  `feature_schema:decision_candidate_semantics_v2`, which excludes runtime
+  entity ids from learned categorical hash buckets.
 - `training_manifest_path` and `training_manifest_hash`: the exact dataset gate
   provenance that produced the artifact.
 - `parent_artifact_ids`: immutable lineage links for fine-tunes, adapters, or

@@ -84,7 +84,12 @@ boundary:
 - `linear_candidate_ranker.py` provides the first base-dependency learned
   candidate ranker. It is a sparse linear scorer over DecisionRecord candidate
   semantic metadata and deterministic hashed categorical features; it does not
-  require the `ml` optional extra.
+  require the `ml` optional extra. The exported
+  `feature_schema:decision_candidate_semantics_v2` feature set intentionally
+  excludes runtime entity ids such as `action_id`, `unit_id`, and `target_unit_id`
+  from learned hash buckets, and instead hashes stable semantic fields such as
+  action type, candidate label, ability name, tool id, phase, and selection
+  purpose.
 - `imitation_training.py` trains that ranker from relabeled DecisionRecords using
   a game-id split and exports artifact manifests plus a model-backed policy
   bundle under `models/`.

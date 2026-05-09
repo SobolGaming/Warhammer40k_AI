@@ -19,6 +19,7 @@ from ..engine.decision_kinds import (
 from .linear_candidate_ranker import (
     DEFAULT_HASH_BUCKET_COUNT,
     LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
+    LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID,
     LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID,
     candidate_feature_map,
     score_feature_map,
@@ -546,7 +547,7 @@ def _write_artifacts_and_bundle(
             "component_type": component_name,
             "tier": "tier3_action_ranker",
             "architecture_id": LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
-            "feature_schema_id": "feature_schema:decision_candidate_semantics_v1",
+            "feature_schema_id": LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID,
             "capability_schema_id": "capability_schema:build_capability_v1",
             "training_manifest_path": str(config.training_manifest_path),
             "training_manifest_hash": training_manifest_hash,
@@ -601,7 +602,7 @@ def _write_artifacts_and_bundle(
         "components": components,
         "fallbacks": fallbacks,
         "required_feature_schema_ids": [
-            "feature_schema:decision_candidate_semantics_v1",
+            LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID,
             "feature_schema:roster_matchup_v1",
         ],
         "required_capability_schema_ids": ["capability_schema:build_capability_v1"],

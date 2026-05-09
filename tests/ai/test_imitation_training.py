@@ -6,7 +6,12 @@ from pathlib import Path
 from warhammer40k_ai.engine.ai_controller_router import COMPONENT_MOVEMENT_RANKER, AIControllerRouter
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
-from warhammer40k_ai.ml import ArtifactManifestStore, JSONPolicyBundleLoader, LinearCandidateRanker
+from warhammer40k_ai.ml import (
+    ArtifactManifestStore,
+    JSONPolicyBundleLoader,
+    LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID,
+    LinearCandidateRanker,
+)
 from warhammer40k_ai.ml.imitation_training import (
     LinearImitationTrainingConfig,
     _split_name,
@@ -103,7 +108,10 @@ def test_linear_imitation_training_exports_artifact_bundle_and_split_metrics(tmp
     assert result["validation"]["overall"]["examples"] == 1
     assert result["validation"]["overall"]["top1_accuracy"] == 1.0
     artifact_id = result["artifact_ids_by_component"][COMPONENT_MOVEMENT_RANKER]
-    assert ArtifactManifestStore(tmp_path / "models").artifact_manifest_path(artifact_id).is_file()
+    artifact_manifest_path = ArtifactManifestStore(tmp_path / "models").artifact_manifest_path(artifact_id)
+    assert artifact_manifest_path.is_file()
+    artifact_manifest = json.loads(artifact_manifest_path.read_text(encoding="utf-8"))
+    assert artifact_manifest["feature_schema_id"] == LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID
 
     bundle = JSONPolicyBundleLoader(manifest_store=ArtifactManifestStore(tmp_path / "models")).load_bundle(
         "policy_bundle:linear_imitation_test_v1"

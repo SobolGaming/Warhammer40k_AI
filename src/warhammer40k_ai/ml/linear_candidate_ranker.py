@@ -14,6 +14,7 @@ from ..engine.decisions import CandidateAction, DecisionRequest
 
 LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID = "candidate_ranker_linear_v1"
 LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID = "candidate_ranker_linear_model:v1"
+LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID = "feature_schema:decision_candidate_semantics_v2"
 DEFAULT_HASH_BUCKET_COUNT = 512
 
 _EXTRA_NUMERIC_METADATA_KEYS = (
@@ -100,7 +101,6 @@ def candidate_feature_map(
     payload = _candidate_payload(candidate)
     params = dict(payload.get("params", {}) or {})
     metadata = dict(payload.get("metadata", {}) or {})
-    action_id = str(payload.get("action_id", "") or "")
     count = max(1, int(candidate_count or 1))
     legal = max(1, int(legal_count or 1))
     index = max(0, int(candidate_index or 0))
@@ -136,17 +136,33 @@ def candidate_feature_map(
                 features[f"meta_num:{key}"] = numeric
 
     context = dict(request_context or {})
+    # Runtime entity ids are intentionally excluded here. They are replay-stable
+    # within one game but not transferable training features across generated games.
     categorical_values = {
         "decision_type": str(decision_type or ""),
         "phase": str(phase or context.get("phase", "") or context.get("phase_step", "") or ""),
-        "action_id": action_id,
         "candidate_kind": str(metadata.get("candidate_kind", "") or ""),
+        "metadata.label": str(metadata.get("label", "") or ""),
         "semantic_projection_kind": str(metadata.get("semantic_projection_kind", "") or ""),
         "params.action": str(params.get("action", "") or ""),
+        "params.action_type": str(params.get("action_type", "") or ""),
+        "params.ability_key": str(params.get("ability_key", "") or ""),
+        "params.ability_name": str(params.get("ability_name", "") or ""),
+        "params.card_name": str(params.get("card_name", "") or ""),
         "params.choice": str(params.get("choice", "") or ""),
+        "params.choice_key": str(params.get("choice_key", "") or ""),
+        "params.keyword": str(params.get("keyword", "") or ""),
         "params.movement_type": str(params.get("movement_type", "") or ""),
-        "params.target_unit_id": str(params.get("target_unit_id", "") or ""),
-        "params.unit_id": str(params.get("unit_id", "") or ""),
+        "params.selection_kind": str(params.get("selection_kind", "") or ""),
+        "params.stratagem_name": str(params.get("stratagem_name", "") or ""),
+        "params.tool_id": str(params.get("tool_id", "") or ""),
+        "params.tool_type": str(params.get("tool_type", "") or ""),
+        "context.ability": str(context.get("ability", "") or ""),
+        "context.ability_name": str(context.get("ability_name", "") or ""),
+        "context.movement_type": str(context.get("movement_type", "") or ""),
+        "context.phase_step": str(context.get("phase_step", "") or ""),
+        "context.placement_kind": str(context.get("placement_kind", "") or ""),
+        "context.selection_purpose": str(context.get("selection_purpose", "") or ""),
     }
     combination = params.get("combination")
     if isinstance(combination, Mapping):
@@ -259,6 +275,7 @@ __all__ = [
     "LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID",
     "LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID",
     "LinearCandidateRanker",
+    "LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID",
     "candidate_feature_map",
     "score_feature_map",
 ]

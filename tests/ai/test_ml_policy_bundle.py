@@ -21,6 +21,7 @@ from warhammer40k_ai.ml import (
     MatchupEvaluator,
     PlaybookSelector,
     UnknownArtifactError,
+    candidate_feature_map,
 )
 
 
@@ -61,6 +62,75 @@ class _StaticMatchupEvaluator:
             "utility": pressure,
             "status": "ok",
         }
+
+
+def test_linear_candidate_features_ignore_runtime_entity_ids() -> None:
+    first = CandidateAction(
+        "MOVE_UNIT:runtime-player-a:runtime-unit-a:advance",
+        params={"unit_id": "runtime-unit-a", "target_unit_id": "runtime-target-a", "action_type": "advance"},
+        metadata={"label": "Advance", "candidate_kind": "move", "projected_score_delta_next_window": 1.0},
+    )
+    second = CandidateAction(
+        "MOVE_UNIT:runtime-player-b:runtime-unit-b:advance",
+        params={"unit_id": "runtime-unit-b", "target_unit_id": "runtime-target-b", "action_type": "advance"},
+        metadata={"label": "Advance", "candidate_kind": "move", "projected_score_delta_next_window": 1.0},
+    )
+
+    first_features = candidate_feature_map(
+        decision_type=DECISION_MOVE_UNIT,
+        candidate=first,
+        candidate_index=0,
+        candidate_count=2,
+        legal_count=2,
+        phase="MOVEMENT_PHASE",
+        request_context={"phase_step": "MOVE_UNITS", "movement_type": "advance"},
+        hash_bucket_count=64,
+    )
+    second_features = candidate_feature_map(
+        decision_type=DECISION_MOVE_UNIT,
+        candidate=second,
+        candidate_index=0,
+        candidate_count=2,
+        legal_count=2,
+        phase="MOVEMENT_PHASE",
+        request_context={"phase_step": "MOVE_UNITS", "movement_type": "advance"},
+        hash_bucket_count=64,
+    )
+
+    assert first_features == second_features
+
+
+def test_linear_candidate_features_distinguish_stable_action_semantics() -> None:
+    advance_features = candidate_feature_map(
+        decision_type=DECISION_MOVE_UNIT,
+        candidate=CandidateAction(
+            "runtime:a",
+            params={"unit_id": "runtime-unit", "action_type": "advance"},
+            metadata={"label": "Advance", "candidate_kind": "move"},
+        ),
+        candidate_index=0,
+        candidate_count=2,
+        legal_count=2,
+        phase="MOVEMENT_PHASE",
+        request_context={"phase_step": "MOVE_UNITS"},
+        hash_bucket_count=64,
+    )
+    move_features = candidate_feature_map(
+        decision_type=DECISION_MOVE_UNIT,
+        candidate=CandidateAction(
+            "runtime:b",
+            params={"unit_id": "runtime-unit", "action_type": "move"},
+            metadata={"label": "Move", "candidate_kind": "move"},
+        ),
+        candidate_index=0,
+        candidate_count=2,
+        legal_count=2,
+        phase="MOVEMENT_PHASE",
+        request_context={"phase_step": "MOVE_UNITS"},
+        hash_bucket_count=64,
+    )
+
+    assert advance_features != move_features
 
 
 def _extract_json_block(markdown: str, heading: str) -> dict[str, object]:

@@ -28,6 +28,7 @@ from .interfaces import (
 )
 from .linear_candidate_ranker import (
     LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID,
+    LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID,
     LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID,
     LinearCandidateRanker,
     candidate_feature_map,
@@ -91,6 +92,7 @@ __all__ = [
     "IdentityPlaybookSelector",
     "JSONPolicyBundleLoader",
     "LINEAR_CANDIDATE_RANKER_ARCHITECTURE_ID",
+    "LINEAR_CANDIDATE_RANKER_FEATURE_SCHEMA_ID",
     "LINEAR_CANDIDATE_RANKER_MODEL_SCHEMA_ID",
     "LLMActionChoice",
     "LLMConfigurationError",
