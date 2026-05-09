@@ -175,6 +175,18 @@ directly. They only choose among candidates already emitted and validated by the
 engine. If an artifact has no weight coverage for a decision type, the router
 uses the fallback declared by the policy bundle.
 
+For paired policy studies that need setup held constant, `evaluate_policy_bundle.py`
+and `run_headless_self_play.py` accept repeated `--ai-router-ignore-decision-type`
+arguments. Ignored decision types stay on the built-in headless heuristic even
+when a policy bundle is loaded; this is useful for keeping battle-formation setup
+such as `ATTACH_LEADER` and `ASSIGN_TRANSPORT` out of a learned tactical-only
+comparison.
+Use `--ai-router-ignore-setup-decisions` when the comparison should keep the
+entire setup/deployment phase heuristic-controlled, including start-of-battle
+keyword/mode picks such as `CHOOSE_START_OF_BATTLE_KEYWORD`, while still allowing
+learned rankers to handle in-game movement, shooting, charges, fights, tools,
+reactions, and allocations.
+
 Schema-selection note:
 - evaluation bundles may intentionally request `capability_schema:build_capability_v2`
   for preview combat studies while leaving `build_capability_v1` as the default

@@ -46,6 +46,35 @@ def _iter_units(units: Iterable[object] | None) -> List[object]:
     return [u for u in list(units or []) if u is not None]
 
 
+def _unit_stable_sort_key(unit: object) -> tuple[object, ...]:
+    name = str(getattr(unit, "name", "") or "")
+    datasheet_id = str(getattr(unit, "datasheet_id", "") or getattr(unit, "datasheet_key", "") or "")
+    faction = str(getattr(unit, "faction", "") or "")
+    keywords = tuple(sorted(str(value or "") for value in list(getattr(unit, "keywords", []) or [])))
+    models = list(getattr(unit, "models", []) or [])
+    get_cost = getattr(unit, "get_unit_cost", None)
+    try:
+        points = int(get_cost()) if callable(get_cost) else 0
+    except (TypeError, ValueError):
+        points = 0
+    return (
+        faction,
+        name,
+        datasheet_id,
+        int(points),
+        int(len(models)),
+        bool(getattr(unit, "is_leader", False)),
+        bool(getattr(unit, "is_transport", False)),
+        keywords,
+    )
+
+
+def _stable_sorted_units(units: Iterable[object] | None) -> List[object]:
+    entries = list(enumerate(_iter_units(units)))
+    entries.sort(key=lambda entry: (_unit_stable_sort_key(entry[1]), int(entry[0])))
+    return [unit for _index, unit in entries]
+
+
 def _iter_players(players: Iterable[object] | None) -> List[object]:
     return [p for p in list(players or []) if p is not None]
 
@@ -1514,7 +1543,7 @@ def build_leader_attachment_requests(
     *,
     queue_requests: bool = True,
 ) -> List[DecisionRequest]:
-    all_units = _iter_units(units)
+    all_units = _stable_sorted_units(units)
     leaders = [u for u in all_units if bool(getattr(u, "is_leader", False))]
     bodyguards = [
         u for u in all_units
@@ -1578,7 +1607,7 @@ def build_support_artillery_attachment_requests(
     *,
     queue_requests: bool = True,
 ) -> List[DecisionRequest]:
-    all_units = _iter_units(units)
+    all_units = _stable_sorted_units(units)
     supports = [
         u for u in all_units
         if bool(getattr(u, "has_joined_support_ability", lambda: False)())
@@ -1621,7 +1650,7 @@ def build_transport_assignment_requests(
     *,
     queue_requests: bool = True,
 ) -> List[DecisionRequest]:
-    all_units = _iter_units(units)
+    all_units = _stable_sorted_units(units)
     transports = [u for u in all_units if bool(getattr(u, "is_transport", False))]
     requests: List[DecisionRequest] = []
     for unit in all_units:
@@ -1758,8 +1787,7 @@ def _reserve_group_roots(army: object) -> list[object]:
             if bool(getattr(unit, "is_joined_support", False)):
                 continue
             roots.append(unit)
-    roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
-    return roots
+    return _stable_sorted_units(roots)
 
 
 def _unit_supports_standard_reserves(army: object, unit: object) -> bool:
@@ -1802,7 +1830,6 @@ def _forced_reserves_decisions(army: object) -> dict[str, str]:
 
 
 def _reserve_unit_priority(army: object, unit: object) -> float:
-    unit_id = str(get_entity_id(unit) or "")
     has_deep_strike = 1.0 if _unit_supports_standard_reserves(army, unit) else 0.0
     has_infiltrate = 0.0
     has_scout = 0.0
@@ -1831,7 +1858,8 @@ def _reserve_unit_priority(army: object, unit: object) -> float:
     score += is_transport * 30.0
     score += is_titanic * 90.0
     score -= is_leader * 15.0
-    tie = int(hashlib.sha256(unit_id.encode("utf-8")).hexdigest()[:8], 16) if unit_id else 0
+    tie_blob = json.dumps(_unit_stable_sort_key(unit), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    tie = int(hashlib.sha256(tie_blob.encode("utf-8")).hexdigest()[:8], 16)
     return float(score + (float(tie % 1000) / 10000.0))
 
 
@@ -1889,7 +1917,7 @@ def _reserves_greedy_decisions(
     roots = _reserve_group_roots(army)
     ranked = sorted(
         [unit for unit in roots if not _must_start_in_reserves(unit)],
-        key=lambda unit: (-_reserve_unit_priority(army, unit), str(get_entity_id(unit) or "")),
+        key=lambda unit: (-_reserve_unit_priority(army, unit), _unit_stable_sort_key(unit)),
     )
     for unit in ranked:
         unit_id = str(get_entity_id(unit) or "")
@@ -1938,7 +1966,7 @@ def _reserves_strategy_decisions(
         roots = _reserve_group_roots(army)
         ranked = sorted(
             [unit for unit in roots if not _must_start_in_reserves(unit)],
-            key=lambda unit: (-_reserve_unit_priority(army, unit), str(get_entity_id(unit) or "")),
+            key=lambda unit: (-_reserve_unit_priority(army, unit), _unit_stable_sort_key(unit)),
         )
         flip = True
         for unit in ranked:
@@ -2306,19 +2334,19 @@ def build_select_next_deploy_unit_request(
     extra_context: Optional[dict] = None,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
-    unit_entries: list[tuple[str, object]] = []
-    for unit in _iter_units(units):
+    unit_entries: list[tuple[tuple[object, ...], int, str, object]] = []
+    for source_index, unit in enumerate(_iter_units(units)):
         unit_id = str(maybe_entity_id(unit) or "")
         if not unit_id:
             continue
-        unit_entries.append((unit_id, unit))
+        unit_entries.append((_unit_stable_sort_key(unit), int(source_index), unit_id, unit))
     if not unit_entries:
         return None
 
-    unit_entries.sort(key=lambda entry: entry[0])
+    unit_entries.sort(key=lambda entry: (entry[0], entry[1]))
     player_id = getattr(player, "id", None) if player is not None else None
     options: list[DecisionOption] = []
-    for unit_id, unit in unit_entries:
+    for _sort_key, _source_index, unit_id, unit in unit_entries:
         unit_name = str(getattr(unit, "name", "Unit") or "Unit")
         options.append(
             DecisionOption.create(
@@ -2334,7 +2362,7 @@ def build_select_next_deploy_unit_request(
     context: dict[str, object] = {
         "selection_kind": "deployment_next_unit",
         "phase": "deploy_armies",
-        "unit_ids": [unit_id for unit_id, _unit in unit_entries],
+        "unit_ids": [unit_id for _sort_key, _source_index, unit_id, _unit in unit_entries],
         "undeployed_count": int(len(unit_entries)),
     }
     deployed_ids: list[str] = []
@@ -2406,12 +2434,26 @@ def build_reserves_allocation_request(
         raise _no_legal_reserves_allocation_error(army)
     options: list[DecisionOption] = []
     option_refs: list[dict[str, object]] = []
+    reserve_roots = _reserve_group_roots(army)
+    reserve_root_order = {
+        str(get_entity_id(unit) or ""): index
+        for index, unit in enumerate(reserve_roots)
+        if str(get_entity_id(unit) or "")
+    }
     for idx, entry in enumerate(list(option_entries or [])):
         label = str(dict(entry or {}).get("label", "") or f"Allocation {int(idx) + 1}")
         payload = dict(dict(entry or {}).get("payload", {}) or {})
         buckets = dict(payload.get("unit_ids_by_bucket", {}) or {})
+        buckets = {
+            str(bucket): sorted(
+                [str(unit_id) for unit_id in list(unit_ids or [])],
+                key=lambda unit_id: (reserve_root_order.get(str(unit_id), 10**9), str(unit_id)),
+            )
+            for bucket, unit_ids in sorted(buckets.items())
+        }
+        payload["unit_ids_by_bucket"] = buckets
         bucket_key = json.dumps(
-            {k: sorted(str(unit_id) for unit_id in list(v or [])) for k, v in sorted(buckets.items())},
+            {k: list(v or []) for k, v in sorted(buckets.items())},
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
@@ -2438,7 +2480,7 @@ def build_reserves_allocation_request(
     if isinstance(extra_context, dict):
         zone_type = str(dict(extra_context or {}).get("deployment_zone_type", "") or "")
     default_intent = _default_deployment_intent(zone_type=zone_type)
-    root_unit_ids = [str(get_entity_id(unit) or "") for unit in _reserve_group_roots(army)]
+    root_unit_ids = [str(get_entity_id(unit) or "") for unit in reserve_roots]
     root_unit_ids = [unit_id for unit_id in root_unit_ids if unit_id]
     context: dict[str, object] = {
         "army_id": get_entity_id(army),

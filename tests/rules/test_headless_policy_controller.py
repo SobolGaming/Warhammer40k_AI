@@ -11,6 +11,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_ASSIGN_TRANSPORT,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
@@ -398,6 +399,160 @@ def test_headless_policy_controller_picks_best_legal_candidate_and_applies_candi
     payload = dict(game.commands[0].payload or {})
     assert str(payload.get("option_id", "")) == str(options[1].option_id)
     assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_can_ignore_ai_router_for_decision_type() -> None:
+    class _PreferFirstRouter:
+        def rank_legal_candidates(self, request, *, fallback_order=None):
+            del request
+            candidates = list(fallback_order or [])
+            return sorted(candidates, key=lambda candidate: str(candidate.action_id) != "a")
+
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(
+        game=None,
+        auto_attach=False,
+        ai_router=_PreferFirstRouter(),
+        ai_router_ignored_decision_types=[DECISION_CONFIRM_YES_NO],
+    )
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+        DecisionOption.create("Option B", payload={"action_id": "b"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        candidates=[
+            CandidateAction(action_id="a", params={"choice": "A"}, metadata={"projected_score_delta_next_window": 1.0}),
+            CandidateAction(action_id="b", params={"choice": "B"}, metadata={"projected_score_delta_next_window": 3.0}),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_can_ignore_ai_router_for_setup_context() -> None:
+    class _PreferFirstRouter:
+        def rank_legal_candidates(self, request, *, fallback_order=None):
+            del request
+            candidates = list(fallback_order or [])
+            return sorted(candidates, key=lambda candidate: str(candidate.action_id) != "a")
+
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(
+        game=None,
+        auto_attach=False,
+        ai_router=_PreferFirstRouter(),
+        ai_router_ignore_setup_decisions=True,
+    )
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+        DecisionOption.create("Option B", payload={"action_id": "b"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        context={"phase": "declare_battle_formations"},
+        candidates=[
+            CandidateAction(action_id="a", params={"choice": "A"}, metadata={"projected_score_delta_next_window": 1.0}),
+            CandidateAction(action_id="b", params={"choice": "B"}, metadata={"projected_score_delta_next_window": 3.0}),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_treats_start_of_battle_keyword_as_setup() -> None:
+    class _PreferFirstRouter:
+        def rank_legal_candidates(self, request, *, fallback_order=None):
+            del request
+            candidates = list(fallback_order or [])
+            return sorted(candidates, key=lambda candidate: str(candidate.action_id) != "a")
+
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(
+        game=None,
+        auto_attach=False,
+        ai_router=_PreferFirstRouter(),
+        ai_router_ignore_setup_decisions=True,
+    )
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+        DecisionOption.create("Option B", payload={"action_id": "b"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        context={"selection_kind": "reroll_ones"},
+        candidates=[
+            CandidateAction(action_id="a", params={"keyword": "A"}, metadata={"projected_score_delta_next_window": 1.0}),
+            CandidateAction(action_id="b", params={"keyword": "B"}, metadata={"projected_score_delta_next_window": 3.0}),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"keyword": "B"}
+
+
+def test_headless_policy_tie_break_is_independent_of_request_uuid() -> None:
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    candidates = [
+        CandidateAction(
+            action_id="attach:runtime-a",
+            params={"leader_id": "11111111-1111-4111-8111-111111111111", "bodyguard_id": None},
+            metadata={"label": "Unattached"},
+        ),
+        CandidateAction(
+            action_id="attach:runtime-b",
+            params={
+                "leader_id": "22222222-2222-4222-8222-222222222222",
+                "bodyguard_id": "33333333-3333-4333-8333-333333333333",
+            },
+            metadata={"label": "Khorne Berzerkers"},
+        ),
+    ]
+    first = DecisionRequest.create(
+        DECISION_ATTACH_LEADER,
+        "Attach leader",
+        player_id="p1",
+        candidates=candidates,
+        mask=[True, True],
+    )
+    second = DecisionRequest.create(
+        DECISION_ATTACH_LEADER,
+        "Attach leader",
+        player_id="p1",
+        candidates=candidates,
+        mask=[True, True],
+    )
+
+    assert first.decision_id != second.decision_id
+    assert [candidate.action_id for candidate in controller._rank_legal_candidates(first)] == [
+        candidate.action_id for candidate in controller._rank_legal_candidates(second)
+    ]
 
 
 def test_headless_policy_controller_respects_mask_and_skips_illegal_candidates() -> None:

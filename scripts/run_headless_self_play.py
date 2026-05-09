@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import time
-from typing import Any
+from typing import Any, Iterable
 
 from warhammer40k_ai.engine.ai_controller_router import AIControllerRouter
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
@@ -136,6 +136,26 @@ def _load_json_array(path: Path) -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise ValueError(f"Expected JSON array at {path}.")
     return [dict(item or {}) for item in list(payload or [])]
+
+
+def _normalized_decision_type_list(values: Iterable[str] | str | None) -> tuple[str, ...]:
+    if values is None:
+        return ()
+    raw_values: list[str]
+    if isinstance(values, str):
+        raw_values = [values]
+    else:
+        raw_values = [str(value or "") for value in list(values or [])]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        for part in str(raw or "").split(","):
+            text = part.strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+    return tuple(normalized)
 
 
 def _collect_tool_action_probe_diagnostics(game: object) -> list[dict[str, Any]]:
@@ -435,6 +455,23 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--ai-router-ignore-decision-type",
+        action="append",
+        default=[],
+        help=(
+            "Decision type to keep on the built-in headless heuristic even when --policy-bundle "
+            "or --llm-agent-config provides an AI router. Repeat or pass comma-separated values."
+        ),
+    )
+    parser.add_argument(
+        "--ai-router-ignore-setup-decisions",
+        action="store_true",
+        help=(
+            "Keep all setup/deployment-phase decisions on the built-in headless heuristic while still "
+            "routing in-game decisions through the AI router."
+        ),
+    )
+    parser.add_argument(
         "--models-root",
         default="models",
         help="Models root used for policy-bundle artifact lookup.",
@@ -583,6 +620,8 @@ def _run_single_game(
     llm_agent_config: str | None = None,
     policy_bundle_source: str | None = None,
     models_root: str | None = None,
+    ai_router_ignored_decision_types: Iterable[str] | None = None,
+    ai_router_ignore_setup_decisions: bool = False,
     enable_tool_decisions: bool = True,
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
@@ -633,6 +672,8 @@ def _run_single_game(
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         reserve_policy=str(reserve_policy or "forced_only"),
         ai_router=ai_router,
+        ai_router_ignored_decision_types=ai_router_ignored_decision_types,
+        ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
         enable_tool_decisions=bool(enable_tool_decisions),
     )
     game._headless_disable_generic_tool_decisions = not bool(enable_tool_decisions)
@@ -801,6 +842,8 @@ def _run_single_game_job(
     llm_agent_config: str | None = None,
     policy_bundle_source: str | None = None,
     models_root: str | None = None,
+    ai_router_ignored_decision_types: Iterable[str] | None = None,
+    ai_router_ignore_setup_decisions: bool = False,
     enable_tool_decisions: bool = True,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
@@ -843,6 +886,8 @@ def _run_single_game_job(
             llm_agent_config=str(llm_agent_config or ""),
             policy_bundle_source=str(policy_bundle_source or ""),
             models_root=str(models_root or ""),
+            ai_router_ignored_decision_types=ai_router_ignored_decision_types,
+            ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
             enable_tool_decisions=bool(enable_tool_decisions),
             log_phase_transitions=bool(log_phase_transitions),
             replay_dir=str(replay_dir or ""),
@@ -906,6 +951,8 @@ def run_headless_self_play(
     llm_agent_config: str = "",
     policy_bundle_source: str = "",
     models_root: str = "models",
+    ai_router_ignored_decision_types: Iterable[str] | str | None = None,
+    ai_router_ignore_setup_decisions: bool = False,
     enable_tool_decisions: bool = True,
     output: str = "data/headless_self_play_decision_records.json",
     reward_profile: str = "dense_vp_delta_v1",
@@ -937,6 +984,7 @@ def run_headless_self_play(
     llm_agent_trace_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
+    ignored_decision_types = _normalized_decision_type_list(ai_router_ignored_decision_types)
 
     def _spool_completed_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         game_index = int(payload.get("game_index", 0) or 0)
@@ -964,6 +1012,8 @@ def run_headless_self_play(
                 llm_agent_config=str(llm_agent_config),
                 policy_bundle_source=str(policy_bundle_source),
                 models_root=str(models_root),
+                ai_router_ignored_decision_types=ignored_decision_types,
+                ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_level=str(log_level),
                 log_phase_transitions=bool(log_phase_transitions),
@@ -1007,6 +1057,8 @@ def run_headless_self_play(
                     llm_agent_config=str(llm_agent_config),
                     policy_bundle_source=str(policy_bundle_source),
                     models_root=str(models_root),
+                    ai_router_ignored_decision_types=ignored_decision_types,
+                    ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
                     enable_tool_decisions=bool(enable_tool_decisions),
                     log_level=str(log_level),
                     log_phase_transitions=bool(log_phase_transitions),
@@ -1159,6 +1211,8 @@ def run_headless_self_play(
         "phase_steps": int(total_phase_steps),
         "decision_record_count": int(exported_record_count),
         "record_export_skipped": bool(skip_record_export),
+        "ai_router_ignored_decision_types": list(ignored_decision_types),
+        "ai_router_ignore_setup_decisions": bool(ai_router_ignore_setup_decisions),
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
@@ -1197,6 +1251,8 @@ def main() -> int:
         llm_agent_config=str(args.llm_agent_config),
         policy_bundle_source=str(args.policy_bundle),
         models_root=str(args.models_root),
+        ai_router_ignored_decision_types=_normalized_decision_type_list(args.ai_router_ignore_decision_type),
+        ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
         enable_tool_decisions=not bool(args.disable_tool_decisions),
         output=str(args.output),
         reward_profile=str(args.reward_profile),

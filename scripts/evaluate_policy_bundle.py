@@ -40,6 +40,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--points-id", default="")
     parser.add_argument("--faction-pack-id", default="")
     parser.add_argument("--detachment-pack-id", default="")
+    parser.add_argument(
+        "--ai-router-ignore-decision-type",
+        action="append",
+        default=[],
+        help=(
+            "Decision type to keep on the built-in headless heuristic while evaluating a policy bundle. "
+            "Repeat for multiple decision types."
+        ),
+    )
+    parser.add_argument(
+        "--ai-router-ignore-setup-decisions",
+        action="store_true",
+        help="Keep setup/deployment-phase decisions on the built-in headless heuristic during bundle evaluation.",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
         evaluation_mode=str(args.evaluation_mode),
         source_tag=str(args.source_tag),
         target_rules_bundle=_target_rules_bundle(args),
+        ai_router_ignored_decision_types=[
+            str(value or "").strip()
+            for value in list(args.ai_router_ignore_decision_type or [])
+            if str(value or "").strip()
+        ],
+        ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
     )
     print(f"Report directory: {result['report_dir']}")
     print(f"Summary: {result['summary_path']}")

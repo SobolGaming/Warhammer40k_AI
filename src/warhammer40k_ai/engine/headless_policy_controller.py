@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -16,6 +18,7 @@ from .decision_kinds import (
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
@@ -68,6 +71,10 @@ _HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
 }
 
 _STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE = 1e-4
+_UUID_VALUE_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +116,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         reserve_policy: str = "forced_only",
         require_authoritative: bool = True,
         ai_router: AIControllerRouter | None = None,
+        ai_router_ignored_decision_types: Iterable[str] | None = None,
+        ai_router_ignore_setup_decisions: bool = False,
         auto_attach: bool = True,
         enable_tool_decisions: bool = True,
     ) -> None:
@@ -129,6 +138,12 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
         self._ai_router = ai_router
+        self._ai_router_ignored_decision_types = {
+            str(value or "").strip()
+            for value in list(ai_router_ignored_decision_types or [])
+            if str(value or "").strip()
+        }
+        self._ai_router_ignore_setup_decisions = bool(ai_router_ignore_setup_decisions)
         self._enable_tool_decisions = bool(enable_tool_decisions)
         self._attached = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
@@ -163,7 +178,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
 
         ranked = self._rank_legal_candidates(request)
-        if self._ai_router is not None:
+        if self._ai_router is not None and self._should_use_ai_router(request, observed_game):
             ranked = self._ai_router.rank_legal_candidates(request, fallback_order=ranked)
         if self._is_reserves_arrival_request(request):
             ranked_move = [candidate for candidate in ranked if not self._candidate_requests_skip(candidate)]
@@ -189,6 +204,34 @@ class HeadlessPolicyDecisionController(DecisionController):
         if self._try_resolve_reserves_arrival_bruteforce(resolution_game, request):
             return
         self._resolve_first_legal_option(resolution_game, request)
+
+    def _should_use_ai_router(self, request: DecisionRequest, game: object | None = None) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        if decision_type in self._ai_router_ignored_decision_types:
+            return False
+        return not (self._ai_router_ignore_setup_decisions and self._request_is_setup_request(request, game))
+
+    @staticmethod
+    def _request_is_setup_request(request: DecisionRequest, game: object | None = None) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "").strip().upper()
+        if decision_type == DECISION_CHOOSE_START_OF_BATTLE_KEYWORD:
+            return True
+        is_setup = getattr(game, "is_in_setup_phase", None)
+        if callable(is_setup) and bool(is_setup()):
+            return True
+        context = dict(getattr(request, "context", {}) or {})
+        phase = str(context.get("phase", context.get("phase_name", "")) or "").strip().lower()
+        if phase in {"declare_battle_formations", "deploy_armies", "deployment", "setup"}:
+            return True
+        placement_kind = str(context.get("placement_kind", "") or "").strip().lower()
+        if placement_kind == "deployment":
+            return True
+        selection_kind = str(context.get("selection_kind", "") or "").strip().lower()
+        return selection_kind in {
+            "deployment_next_unit",
+            "deployment_zone",
+            "reserves_allocation",
+        }
 
     def _resolve_first_legal_option(self, game: object, request: DecisionRequest) -> None:
         for option in list(getattr(request, "options", []) or []):
@@ -3400,8 +3443,60 @@ class HeadlessPolicyDecisionController(DecisionController):
         return float(score)
 
     def _stable_tie_break(self, request: DecisionRequest, candidate: CandidateAction) -> str:
-        token = f"{request.decision_id}:{candidate.action_id}:{self._tie_break_salt}"
+        metadata = dict(getattr(candidate, "metadata", {}) or {})
+        token_payload = {
+            "decision_type": str(getattr(request, "decision_type", "") or ""),
+            "context": self._tie_break_context(dict(getattr(request, "context", {}) or {})),
+            "label": str(metadata.get("label", "") or ""),
+            "candidate_kind": str(metadata.get("candidate_kind", "") or ""),
+            "params": self._tie_break_value(dict(getattr(candidate, "params", {}) or {})),
+            "salt": self._tie_break_salt,
+        }
+        token = json.dumps(token_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _tie_break_context(cls, context: dict[str, Any]) -> dict[str, Any]:
+        stable_keys = (
+            "ability",
+            "ability_name",
+            "movement_type",
+            "phase",
+            "phase_name",
+            "phase_step",
+            "placement_kind",
+            "selection_kind",
+            "selection_purpose",
+            "tool_name",
+        )
+        return {
+            key: cls._tie_break_value(dict(context or {}).get(key))
+            for key in stable_keys
+            if key in dict(context or {})
+        }
+
+    @classmethod
+    def _tie_break_value(cls, value: Any) -> Any:
+        if value is None or isinstance(value, (int, bool)):
+            return value
+        if isinstance(value, float):
+            return round(float(value), 6)
+        if isinstance(value, str):
+            text = str(value)
+            if _UUID_VALUE_RE.match(text):
+                return "<uuid>"
+            return text
+        if isinstance(value, dict):
+            normalized: dict[str, Any] = {}
+            for key, inner in sorted(dict(value or {}).items(), key=lambda item: str(item[0])):
+                key_text = str(key)
+                if key_text in {"allocation_id", "created_at", "decision_id", "option_id", "player_id", "roll_id"}:
+                    continue
+                normalized[key_text] = cls._tie_break_value(inner)
+            return normalized
+        if isinstance(value, (list, tuple)):
+            return [cls._tie_break_value(inner) for inner in list(value)]
+        return str(value)
 
     def _u01(self, token: str) -> float:
         digest = hashlib.sha256(str(token).encode("utf-8")).digest()

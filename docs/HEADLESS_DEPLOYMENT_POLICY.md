@@ -30,6 +30,9 @@ This document describes deterministic headless placement behavior for deployment
     - tuned deployment weights/affordances for the current player and zone.
 - Reserve choices in `balanced` mode still obey reserve limits and validation, but candidate ranking now includes teacher reserve preference scoring.
 - Reserve choices in `forced_only` mode still keep ordinary optional units deployed. If an army has more than two oversized/Titanic deployment footprints, the policy may place validated overflow units into Strategic Reserves so crowded headless deployments do not destroy large models before the game starts.
+- Declare Battle Formations and deployment request ordering uses semantic unit
+  keys instead of generated runtime UUIDs where possible, so same-roster
+  headless setup is stable across separate same-seed processes.
 - Optional imitation/ranking model integration:
   - `DeterministicDeploymentDecisionMaker(..., ranker_model_path=...)` can load a linear deployment ranker model.
   - When loaded, zone, reserves-allocation, next-unit, scout, and deployment-placement choices can be selected directly from request candidates via ranker scores.

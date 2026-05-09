@@ -342,6 +342,8 @@ def run_headless_self_play_stage(
     max_reserves_arrival_seconds: float = 10.0,
     replay_keyframe_interval: int = 10,
     skip_record_export: bool = False,
+    ai_router_ignored_decision_types: Iterable[str] | None = None,
+    ai_router_ignore_setup_decisions: bool = False,
 ) -> dict[str, Any]:
     paths = _report_paths(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -382,6 +384,12 @@ def run_headless_self_play_stage(
         command.extend(["--policy-bundle", str(policy_bundle_source)])
     if models_root is not None:
         command.extend(["--models-root", str(models_root)])
+    for decision_type in list(ai_router_ignored_decision_types or []):
+        decision_type_text = str(decision_type or "").strip()
+        if decision_type_text:
+            command.extend(["--ai-router-ignore-decision-type", decision_type_text])
+    if bool(ai_router_ignore_setup_decisions):
+        command.append("--ai-router-ignore-setup-decisions")
     completed = subprocess.run(
         command,
         cwd=_repo_root(),
@@ -786,6 +794,8 @@ def run_policy_bundle_evaluation(
     source_tag: str = "self_play",
     replay_keyframe_interval: int = 10,
     target_rules_bundle: RulesetBundle | Mapping[str, Any] | None = None,
+    ai_router_ignored_decision_types: Iterable[str] | None = None,
+    ai_router_ignore_setup_decisions: bool = False,
 ) -> dict[str, Any]:
     normalized_mode = _normalize_evaluation_mode(evaluation_mode)
     resolved_report_dir = Path(report_dir).expanduser().resolve() if report_dir is not None else _default_report_dir("policy_bundle_eval")
@@ -817,6 +827,8 @@ def run_policy_bundle_evaluation(
         reward_profile=reward_profile,
         replay_keyframe_interval=replay_keyframe_interval,
         skip_record_export=(normalized_mode == REPLAY_ONLY_EVALUATION_MODE),
+        ai_router_ignored_decision_types=ai_router_ignored_decision_types,
+        ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
     )
 
     replay_report = audit_replay_sessions(dict(self_play_stage.get("report", {}) or {}))
