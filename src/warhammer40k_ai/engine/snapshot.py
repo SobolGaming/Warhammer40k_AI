@@ -254,6 +254,44 @@ def _detached_profile_for_snapshot(profile: WargearProfile) -> WargearProfile:
     return WargearProfile(str(getattr(profile, "name", "") or "default"), wargear_data, parent_wargear=None)
 
 
+def _stale_entity_ref_id(value: Any, live_entity_ids: dict[str, set[str]]) -> str | None:
+    if isinstance(value, Unit):
+        kind = "unit"
+    elif isinstance(value, Model):
+        kind = "model"
+    elif isinstance(value, Wargear):
+        kind = "wargear"
+    else:
+        return None
+    entity_id = maybe_entity_id(value)
+    if entity_id and entity_id not in live_entity_ids.get(kind, set()):
+        return entity_id
+    return None
+
+
+def _sanitize_stale_refs_for_snapshot(value: Any, live_entity_ids: dict[str, set[str]]) -> Any:
+    stale_id = _stale_entity_ref_id(value, live_entity_ids)
+    if stale_id:
+        return stale_id
+    if isinstance(value, WargearProfile):
+        parent_wargear_id = maybe_entity_id(getattr(value, "parent_wargear", None))
+        if parent_wargear_id and parent_wargear_id not in live_entity_ids.get("wargear", set()):
+            return _detached_profile_for_snapshot(value)
+        return value
+    if isinstance(value, dict):
+        sanitized: dict[Any, Any] = {}
+        for key, inner in value.items():
+            sanitized[key] = _sanitize_stale_refs_for_snapshot(inner, live_entity_ids)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_stale_refs_for_snapshot(item, live_entity_ids) for item in list(value)]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_stale_refs_for_snapshot(item, live_entity_ids) for item in value)
+    if isinstance(value, set):
+        return {_sanitize_stale_refs_for_snapshot(item, live_entity_ids) for item in value}
+    return value
+
+
 def _sanitize_unit_transient_context_value(
     key: str,
     value: Any,
@@ -291,6 +329,29 @@ def _legacy_transient_profile_value(value: Any) -> WargearProfile | None:
     if not isinstance(wargear_data, dict):
         return None
     return WargearProfile(str(payload.get("profile_name", "") or "default"), dict(wargear_data), parent_wargear=None)
+
+
+def _decode_refs_preserve_missing_entity_ids(value: Any, registry: EntityRegistry) -> Any:
+    if isinstance(value, dict):
+        if "__ref__" in value:
+            try:
+                return decode_refs(value, registry)
+            except KeyError:
+                entity_id = _legacy_transient_ref_id(value)
+                if entity_id:
+                    return entity_id
+                raise
+        if "__wargear_profile__" in value:
+            try:
+                return decode_refs(value, registry)
+            except KeyError:
+                return _legacy_transient_profile_value(value)
+        if "__enum__" in value or "__modifier__" in value:
+            return decode_refs(value, registry)
+        return {key: _decode_refs_preserve_missing_entity_ids(inner, registry) for key, inner in value.items()}
+    if isinstance(value, list):
+        return [_decode_refs_preserve_missing_entity_ids(item, registry) for item in value]
+    return value
 
 
 def _decode_unit_state_value(key: str, value: Any, registry: EntityRegistry) -> Any:
@@ -1202,14 +1263,20 @@ def _get_card_registry() -> dict[str, dict[str, type]]:
     return _CARD_REGISTRY
 
 
-def _serialize_card(card: MissionCard | None) -> dict | None:
+def _serialize_card(
+    card: MissionCard | None,
+    *,
+    live_entity_ids: dict[str, set[str]] | None = None,
+) -> dict | None:
     if card is None:
         return None
     kind = "primary" if isinstance(card, PrimaryMissionCard) else "secondary"
     state: dict[str, Any] = {}
+    live_ids = live_entity_ids or {"unit": set(), "model": set(), "wargear": set()}
     for key, value in card.__dict__.items():
         if callable(value):
             continue
+        value = _sanitize_stale_refs_for_snapshot(value, live_ids)
         sanitized = _sanitize_snapshot_state_value(value)
         if sanitized is _SNAPSHOT_OMIT:
             continue
@@ -1227,14 +1294,19 @@ def _deserialize_card(data: dict | None, registry: EntityRegistry) -> MissionCar
     if cls is None:
         raise KeyError(f"Unknown mission card {kind}:{name}")
     card = cls()
-    state = decode_refs(data.get("state", {}) or {}, registry)
+    state = _decode_refs_preserve_missing_entity_ids(data.get("state", {}) or {}, registry)
     for key, value in state.items():
         setattr(card, key, value)
     return card
 
 
-def _serialize_player(player: Player) -> dict:
+def _serialize_player(
+    player: Player,
+    *,
+    live_entity_ids: dict[str, set[str]] | None = None,
+) -> dict:
     state: dict[str, Any] = {}
+    live_ids = live_entity_ids or {"unit": set(), "model": set(), "wargear": set()}
     for key, value in player.__dict__.items():
         if key in _PLAYER_STATE_EXCLUDE:
             continue
@@ -1250,10 +1322,17 @@ def _serialize_player(player: Player) -> dict:
         "control": player.control.name if isinstance(player.control, Enum) else str(player.control),
         "state": state,
         "army_id": get_entity_id(player.army) if getattr(player, "army", None) else None,
-        "primary_mission": _serialize_card(getattr(player, "primary_mission", None)),
-        "secondary_deck": [_serialize_card(c) for c in list(getattr(player, "secondary_deck", []) or [])],
-        "active_secondaries": [_serialize_card(c) for c in list(getattr(player, "active_secondaries", []) or [])],
-        "discarded_secondaries": [_serialize_card(c) for c in list(getattr(player, "discarded_secondaries", []) or [])],
+        "primary_mission": _serialize_card(getattr(player, "primary_mission", None), live_entity_ids=live_ids),
+        "secondary_deck": [
+            _serialize_card(c, live_entity_ids=live_ids) for c in list(getattr(player, "secondary_deck", []) or [])
+        ],
+        "active_secondaries": [
+            _serialize_card(c, live_entity_ids=live_ids) for c in list(getattr(player, "active_secondaries", []) or [])
+        ],
+        "discarded_secondaries": [
+            _serialize_card(c, live_entity_ids=live_ids)
+            for c in list(getattr(player, "discarded_secondaries", []) or [])
+        ],
         "stratagems_state": _serialize_manager_state(getattr(player, "stratagems", None)),
     }
 
@@ -1670,7 +1749,7 @@ def snapshot_game(game: Game) -> dict:
         "fixed_point_scale": POSITION_SCALE,
         "angle_scale": ANGLE_SCALE,
         "game": _serialize_game_state(game),
-        "players": [_serialize_player(p) for p in players],
+        "players": [_serialize_player(p, live_entity_ids=live_entity_ids) for p in players],
         "armies": armies,
         "units": units,
         "map": _serialize_map(getattr(game, "map", None)),

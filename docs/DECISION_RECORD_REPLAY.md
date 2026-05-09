@@ -46,6 +46,10 @@ Replay-store persistence note:
 - Snapshot-loaded rule manager state restores existing set-typed runtime fields
   as sets so replayed stratagem bookkeeping keeps the same mutation semantics as
   live play.
+- Snapshot mission-card state preserves live entity references, but stale unit,
+  model, or wargear references are stored and restored as stable ids. This keeps
+  strict replay keyframes loadable when a secondary objective still records a
+  target that has since left the live game graph.
 
 ## Rules-Bundle Reproducibility Matrix (PR-AI-012)
 

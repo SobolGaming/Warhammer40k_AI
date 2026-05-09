@@ -183,6 +183,46 @@ def test_load_snapshot_accepts_legacy_stale_transient_context_refs(waha_helper):
     assert loaded_unit._last_destroyed_by_weapon_profile is None
 
 
+def test_snapshot_roundtrip_preserves_stale_mission_card_targets_as_ids(waha_helper):
+    game, _unit_one, unit_two, player_one, _player_two = _build_game(waha_helper)
+    card = MarkedForDeathSecondary()
+    card.gamma_target = unit_two
+    card.alpha_targets = [unit_two]
+    player_one.active_secondaries = [card]
+    unit_two.parent_army.units.remove(unit_two)
+    game.map.units = [unit for unit in game.map.units if unit is not unit_two]
+
+    snapshot = snapshot_game(game)
+    player_payload = next(item for item in snapshot["players"] if item["id"] == player_one.id)
+    card_payload = player_payload["active_secondaries"][0]
+    assert card_payload["state"]["gamma_target"] == unit_two.id
+    assert card_payload["state"]["alpha_targets"] == [unit_two.id]
+
+    loaded = load_game_snapshot(snapshot)
+    loaded_card = loaded.players[0].active_secondaries[0]
+    assert loaded_card.gamma_target == unit_two.id
+    assert loaded_card.alpha_targets == [unit_two.id]
+
+
+def test_load_snapshot_accepts_legacy_stale_mission_card_refs(waha_helper):
+    game, _unit_one, unit_two, player_one, _player_two = _build_game(waha_helper)
+    card = MarkedForDeathSecondary()
+    player_one.active_secondaries = [card]
+    unit_two.parent_army.units.remove(unit_two)
+    game.map.units = [unit for unit in game.map.units if unit is not unit_two]
+
+    snapshot = snapshot_game(game)
+    player_payload = next(item for item in snapshot["players"] if item["id"] == player_one.id)
+    card_payload = player_payload["active_secondaries"][0]
+    card_payload["state"]["gamma_target"] = {"__ref__": {"kind": "unit", "id": unit_two.id}}
+    card_payload["state"]["alpha_targets"] = [{"__ref__": {"kind": "unit", "id": unit_two.id}}]
+
+    loaded = load_game_snapshot(snapshot)
+    loaded_card = loaded.players[0].active_secondaries[0]
+    assert loaded_card.gamma_target == unit_two.id
+    assert loaded_card.alpha_targets == [unit_two.id]
+
+
 def test_phoenix_gem_pending_queue_does_not_store_raw_map(waha_helper):
     game, unit_one, _unit_two, _player_one, _player_two = _build_game(waha_helper)
 
