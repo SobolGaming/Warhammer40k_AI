@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+import uuid
 
 
 def _load_script_module():
@@ -16,6 +17,33 @@ def _load_script_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _install_inline_process_pool(monkeypatch, mod, captured: dict[str, object] | None = None) -> None:
+    class _FakeFuture:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def result(self):
+            return self.payload
+
+    class _FakeExecutor:
+        def __init__(self, *, max_workers, max_tasks_per_child):
+            if captured is not None:
+                captured["max_workers"] = int(max_workers)
+                captured["max_tasks_per_child"] = int(max_tasks_per_child)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            return _FakeFuture(fn(*args, **kwargs))
+
+    monkeypatch.setattr(mod, "ProcessPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr(mod, "as_completed", lambda futures: list(futures))
 
 
 def test_phase_state_summary_reports_pre_deployment_setup_phase() -> None:
@@ -60,6 +88,22 @@ def test_game_id_for_index_uses_seed_base_when_present() -> None:
 
     assert mod._game_id_for_index(3, seed_base=200) == "selfplay:203"
     assert mod._game_id_for_index(3, seed_base=None) == "selfplay:000003"
+
+
+def test_deterministic_uuid4_context_is_seed_reproducible() -> None:
+    mod = _load_script_module()
+    original_uuid4 = uuid.uuid4
+
+    with mod._deterministic_uuid4_context(123):
+        first = [str(uuid.uuid4()), str(uuid.uuid4())]
+    with mod._deterministic_uuid4_context(123):
+        second = [str(uuid.uuid4()), str(uuid.uuid4())]
+    with mod._deterministic_uuid4_context(124):
+        third = [str(uuid.uuid4()), str(uuid.uuid4())]
+
+    assert first == second
+    assert first != third
+    assert uuid.uuid4 is original_uuid4
 
 
 def test_parse_args_supports_profile_options(monkeypatch, tmp_path) -> None:
@@ -136,6 +180,96 @@ def test_allocate_replay_session_id_suffixes_conflicts(monkeypatch, tmp_path) ->
 
     assert attempted_session_ids == ["selfplay:000000", "selfplay:000000:run001"]
     assert session_id == "selfplay:000000:run001"
+
+
+def test_run_single_game_uses_active_game_context_for_phase_execution(monkeypatch) -> None:
+    mod = _load_script_module()
+    from warhammer40k_ai.utility.game_context import get_active_game
+    from warhammer40k_ai.utility.dice import get_roll
+
+    observed: dict[str, object] = {}
+
+    class _FakeRandomSource:
+        def seed(self, seed):
+            observed["seed"] = int(seed)
+
+        def randint(self, _low, _high):
+            return 4
+
+    class _FakeQueue:
+        def peek(self):
+            return None
+
+    class _FakeGame:
+        def __init__(self, _battlefield, players):
+            self.players = list(players or [])
+            self.random_source = _FakeRandomSource()
+            self.decision_queue = _FakeQueue()
+            self.decision_record_store = SimpleNamespace(records=[])
+            self.session_id = ""
+
+        def get_winner(self):
+            return None
+
+    class _FakeController:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_reserves_arrival_search_metrics(self):
+            return []
+
+    class _FakeDeploymentDecisionMaker:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get_deployment_search_metrics(self):
+            return []
+
+    class _FakeSession:
+        def __init__(self):
+            self.done = False
+
+        def is_in_setup_phase(self):
+            return False
+
+        def is_game_over(self):
+            return bool(self.done)
+
+        def next_phase(self):
+            observed["phase_active_game"] = get_active_game() is observed["game"]
+            observed["phase_roll"] = get_roll("D6")
+            self.done = True
+
+    class _FakeRuntime:
+        def __init__(self, game, **_kwargs):
+            observed["game"] = game
+            observed["runtime_active_game"] = get_active_game() is game
+            self.game_proxy = _FakeSession()
+
+        def is_driver_managed_setup_phase(self):
+            return False
+
+    monkeypatch.setattr(mod, "Game", _FakeGame)
+    monkeypatch.setattr(mod, "HeadlessPolicyDecisionController", _FakeController)
+    monkeypatch.setattr(mod, "DeterministicDeploymentDecisionMaker", _FakeDeploymentDecisionMaker)
+    monkeypatch.setattr(mod, "LocalAuthoritativeRuntime", _FakeRuntime)
+    monkeypatch.setattr(mod, "_winner_summary", lambda **_kwargs: ("tie", "<SCORE: 0 vs 0>", {}))
+    monkeypatch.setattr(mod, "_collect_tool_action_probe_diagnostics", lambda _game: [])
+    monkeypatch.setattr(mod, "_collect_reserve_arrival_diagnostics", lambda _game: [])
+
+    result = mod._run_single_game(
+        game_id="selfplay:test",
+        player1_army_file="army_lists/WE_Daemonkin_2000.txt",
+        player2_army_file="army_lists/Aeldari_Warhost_2000.txt",
+        max_phase_steps=1,
+        game_seed=123,
+    )
+
+    assert result["phase_steps"] == 1
+    assert observed["seed"] == 123
+    assert observed["runtime_active_game"] is True
+    assert observed["phase_active_game"] is True
+    assert observed["phase_roll"] == 4
 
 
 def test_export_decision_records_normalizes_uncopyable_objects() -> None:
@@ -433,6 +567,7 @@ def test_run_single_game_preserves_stable_game_id_when_replay_session_suffixes(m
 
 def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
+    _install_inline_process_pool(monkeypatch, mod)
 
     def _fake_run_single_game_job(*_args, **_kwargs):
         return {
@@ -479,6 +614,7 @@ def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_
 
 def test_run_headless_self_play_can_skip_record_export(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
+    _install_inline_process_pool(monkeypatch, mod)
 
     def _fake_run_single_game_job(*_args, **kwargs):
         assert kwargs["export_records"] is False
@@ -523,8 +659,69 @@ def test_run_headless_self_play_can_skip_record_export(monkeypatch, tmp_path) ->
     assert "records" not in persisted["games"][0]["result"]
 
 
+def test_run_headless_self_play_isolates_multi_game_batches(monkeypatch, tmp_path) -> None:
+    mod = _load_script_module()
+    captured: dict[str, object] = {}
+
+    class _FakeFuture:
+        def __init__(self, game_index: int):
+            self.game_index = int(game_index)
+
+        def result(self):
+            return {
+                "game_index": self.game_index,
+                "elapsed_seconds": 0.25,
+                "result": {
+                    "game_id": f"selfplay:{self.game_index:06d}",
+                    "records": [{"decision_type": "MOVE_UNIT"}],
+                    "phase_steps": 12,
+                    "winner_player_id": "player-1",
+                    "winner_army_label": "chaos_test",
+                    "winner_score_line": "<SCORE: 45 vs 32>",
+                    "scoreboard": {"chaos_test": 45, "aeldari_test": 32},
+                    "replay_session_id": f"selfplay:{self.game_index:06d}",
+                    "replay_path": f"/tmp/replays/selfplay:{self.game_index:06d}/replay.sqlite3",
+                    "snapshot_path": f"/tmp/replays/selfplay:{self.game_index:06d}/snapshot.json",
+                },
+            }
+
+    class _FakeExecutor:
+        def __init__(self, *, max_workers, max_tasks_per_child):
+            captured["max_workers"] = int(max_workers)
+            captured["max_tasks_per_child"] = int(max_tasks_per_child)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def submit(self, _fn, game_index, **_kwargs):
+            return _FakeFuture(int(game_index))
+
+    monkeypatch.setattr(mod, "ProcessPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr(mod, "as_completed", lambda futures: list(futures))
+    output_path = tmp_path / "records.json"
+
+    report = mod.run_headless_self_play(
+        player1_army="army_lists/chaos_test.txt",
+        player2_army="army_lists/aeldari_test.txt",
+        games=2,
+        workers=1,
+        max_phase_steps=80,
+        output=str(output_path),
+        no_reward_annotation=True,
+    )
+
+    assert captured["max_workers"] == 1
+    assert captured["max_tasks_per_child"] == 1
+    assert report["games_completed"] == 2
+    assert report["decision_record_count"] == 2
+
+
 def test_run_headless_self_play_report_includes_profile_artifact_paths(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
+    _install_inline_process_pool(monkeypatch, mod)
 
     def _fake_run_single_game_job(*_args, **_kwargs):
         return {

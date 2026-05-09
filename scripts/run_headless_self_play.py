@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import logging
 import os
 from pathlib import Path
+import random
 import shutil
 import time
 from typing import Any, Iterable
+import uuid
 
 from warhammer40k_ai.engine.ai_controller_router import AIControllerRouter
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
@@ -34,9 +37,28 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.ml.llm_agents import build_llm_router_from_config_file
 from warhammer40k_ai.ml.policy_bundle import JSONPolicyBundleLoader
 from warhammer40k_ai.ml.registry import ArtifactManifestStore
+from warhammer40k_ai.utility.game_context import game_context
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _deterministic_uuid4_context(seed: int | None):
+    if seed is None:
+        yield
+        return
+    original_uuid4 = uuid.uuid4
+    rng = random.Random(f"headless-self-play-uuid:{int(seed)}")
+
+    def _uuid4():
+        return uuid.UUID(int=rng.getrandbits(128), version=4)
+
+    uuid.uuid4 = _uuid4
+    try:
+        yield
+    finally:
+        uuid.uuid4 = original_uuid4
 
 
 def _safe_profile_label(value: str) -> str:
@@ -677,12 +699,13 @@ def _run_single_game(
         enable_tool_decisions=bool(enable_tool_decisions),
     )
     game._headless_disable_generic_tool_decisions = not bool(enable_tool_decisions)
-    runtime = LocalAuthoritativeRuntime(
-        game,
-        player1_army_file=player1_army_file,
-        player2_army_file=player2_army_file,
-        manual_phases=False,
-    )
+    with game_context(game):
+        runtime = LocalAuthoritativeRuntime(
+            game,
+            player1_army_file=player1_army_file,
+            player2_army_file=player2_army_file,
+            manual_phases=False,
+        )
     session_game = runtime.game_proxy
 
     deployment_decision_makers = {
@@ -706,13 +729,14 @@ def _run_single_game(
     )
     while session_game.is_in_setup_phase():
         if runtime.is_driver_managed_setup_phase():
-            runtime.run_setup_autosteps()
-            last_state = _drain_pending_decisions(
-                game,
-                game_id=str(game_id or ""),
-                log_phase_transitions=bool(log_phase_transitions),
-                last_state=last_state,
-            )
+            with game_context(game):
+                runtime.run_setup_autosteps()
+                last_state = _drain_pending_decisions(
+                    game,
+                    game_id=str(game_id or ""),
+                    log_phase_transitions=bool(log_phase_transitions),
+                    last_state=last_state,
+                )
             last_state = _log_phase_state_if_changed(
                 game,
                 game_id=str(game_id or ""),
@@ -727,20 +751,21 @@ def _run_single_game(
         phase_name = str(getattr(session_game.get_current_setup_phase(), "name", "") or "")
         if phase_name == "DEPLOY_ARMIES":
             setup_kwargs["decision_makers"] = deployment_decision_makers
-        session_game.execute_current_setup_phase(**setup_kwargs)
-        last_state = _drain_pending_decisions(
-            game,
-            game_id=str(game_id or ""),
-            log_phase_transitions=bool(log_phase_transitions),
-            last_state=last_state,
-        )
-        session_game.advance_setup_phase()
-        last_state = _drain_pending_decisions(
-            game,
-            game_id=str(game_id or ""),
-            log_phase_transitions=bool(log_phase_transitions),
-            last_state=last_state,
-        )
+        with game_context(game):
+            session_game.execute_current_setup_phase(**setup_kwargs)
+            last_state = _drain_pending_decisions(
+                game,
+                game_id=str(game_id or ""),
+                log_phase_transitions=bool(log_phase_transitions),
+                last_state=last_state,
+            )
+            session_game.advance_setup_phase()
+            last_state = _drain_pending_decisions(
+                game,
+                game_id=str(game_id or ""),
+                log_phase_transitions=bool(log_phase_transitions),
+                last_state=last_state,
+            )
         last_state = _log_phase_state_if_changed(
             game,
             game_id=str(game_id or ""),
@@ -758,19 +783,20 @@ def _run_single_game(
     while not session_game.is_game_over():
         if phase_steps >= int(max_phase_steps):
             raise RuntimeError(f"Headless game hit max phase steps ({max_phase_steps}) before game over.")
-        last_state = _drain_pending_decisions(
-            game,
-            game_id=str(game_id or ""),
-            log_phase_transitions=bool(log_phase_transitions),
-            last_state=last_state,
-        )
-        session_game.next_phase()
-        last_state = _drain_pending_decisions(
-            game,
-            game_id=str(game_id or ""),
-            log_phase_transitions=bool(log_phase_transitions),
-            last_state=last_state,
-        )
+        with game_context(game):
+            last_state = _drain_pending_decisions(
+                game,
+                game_id=str(game_id or ""),
+                log_phase_transitions=bool(log_phase_transitions),
+                last_state=last_state,
+            )
+            session_game.next_phase()
+            last_state = _drain_pending_decisions(
+                game,
+                game_id=str(game_id or ""),
+                log_phase_transitions=bool(log_phase_transitions),
+                last_state=last_state,
+            )
         phase_steps += 1
         last_state = _log_phase_state_if_changed(
             game,
@@ -874,26 +900,27 @@ def _run_single_game_job(
         profile_controller.enable()
     started_at = time.perf_counter()
     try:
-        result = _run_single_game(
-            game_id=str(game_id),
-            player1_army_file=player1_army_file,
-            player2_army_file=player2_army_file,
-            max_phase_steps=max_phase_steps,
-            game_seed=game_seed,
-            reserve_policy=str(reserve_policy or "forced_only"),
-            max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
-            deployment_ranker_model=str(deployment_ranker_model or ""),
-            llm_agent_config=str(llm_agent_config or ""),
-            policy_bundle_source=str(policy_bundle_source or ""),
-            models_root=str(models_root or ""),
-            ai_router_ignored_decision_types=ai_router_ignored_decision_types,
-            ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
-            enable_tool_decisions=bool(enable_tool_decisions),
-            log_phase_transitions=bool(log_phase_transitions),
-            replay_dir=str(replay_dir or ""),
-            replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
-            export_records=bool(export_records),
-        )
+        with _deterministic_uuid4_context(game_seed):
+            result = _run_single_game(
+                game_id=str(game_id),
+                player1_army_file=player1_army_file,
+                player2_army_file=player2_army_file,
+                max_phase_steps=max_phase_steps,
+                game_seed=game_seed,
+                reserve_policy=str(reserve_policy or "forced_only"),
+                max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+                deployment_ranker_model=str(deployment_ranker_model or ""),
+                llm_agent_config=str(llm_agent_config or ""),
+                policy_bundle_source=str(policy_bundle_source or ""),
+                models_root=str(models_root or ""),
+                ai_router_ignored_decision_types=ai_router_ignored_decision_types,
+                ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+                enable_tool_decisions=bool(enable_tool_decisions),
+                log_phase_transitions=bool(log_phase_transitions),
+                replay_dir=str(replay_dir or ""),
+                replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
+                export_records=bool(export_records),
+            )
         elapsed_s = float(time.perf_counter() - started_at)
     finally:
         if profile_controller is not None:
@@ -998,9 +1025,16 @@ def run_headless_self_play(
         payload["record_count"] = int(len(records))
         return records
 
-    if workers == 1 or games == 1:
-        for game_index in range(games):
-            payload = _run_single_game_job(
+    max_workers = min(workers, games)
+    # Spawned workers read this at interpreter startup. Keeping it fixed avoids
+    # hash-order-dependent candidate ordering drift between same-seed runs.
+    os.environ.setdefault("PYTHONHASHSEED", "0")
+    # Isolate every game from process-global caches, UUID/random fallback state,
+    # and other mutable module state that can otherwise leak across a batch.
+    with ProcessPoolExecutor(max_workers=max_workers, max_tasks_per_child=1) as executor:
+        futures = [
+            executor.submit(
+                _run_single_game_job,
                 game_index,
                 player1_army_file=str(player1_army),
                 player2_army_file=str(player2_army),
@@ -1026,6 +1060,11 @@ def run_headless_self_play(
                 profile_lines=int(profile_lines),
                 profile_label=str(profile_label),
             )
+            for game_index in range(games)
+        ]
+        for future in as_completed(futures):
+            payload = dict(future.result() or {})
+            game_index = int(payload.get("game_index", 0) or 0)
             result = dict(payload.get("result", {}) or {})
             records = _spool_completed_payload(payload)
             per_game_outputs.append(payload)
@@ -1040,56 +1079,6 @@ def run_headless_self_play(
             )
             if diagnostic_summary:
                 print(f"Tool probe diagnostics for game {game_index + 1}: {diagnostic_summary}")
-    else:
-        max_workers = min(workers, games)
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(
-                    _run_single_game_job,
-                    game_index,
-                    player1_army_file=str(player1_army),
-                    player2_army_file=str(player2_army),
-                    max_phase_steps=max_phase_steps,
-                    seed_base=seed_base,
-                    reserve_policy=str(reserve_policy),
-                    max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
-                    deployment_ranker_model=str(deployment_ranker_model),
-                    llm_agent_config=str(llm_agent_config),
-                    policy_bundle_source=str(policy_bundle_source),
-                    models_root=str(models_root),
-                    ai_router_ignored_decision_types=ignored_decision_types,
-                    ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
-                    enable_tool_decisions=bool(enable_tool_decisions),
-                    log_level=str(log_level),
-                    log_phase_transitions=bool(log_phase_transitions),
-                    replay_dir=str(replay_dir),
-                    replay_keyframe_interval=int(replay_keyframe_interval),
-                    export_records=not bool(skip_record_export),
-                    profile=bool(profile),
-                    profile_dir=str(profile_dir),
-                    profile_sort=str(profile_sort),
-                    profile_lines=int(profile_lines),
-                    profile_label=str(profile_label),
-                )
-                for game_index in range(games)
-            ]
-            for future in as_completed(futures):
-                payload = dict(future.result() or {})
-                game_index = int(payload.get("game_index", 0) or 0)
-                result = dict(payload.get("result", {}) or {})
-                records = _spool_completed_payload(payload)
-                per_game_outputs.append(payload)
-                game_id = str(result.get("game_id", "") or "")
-                print(
-                    f"Completed game {game_index + 1}/{games} ({game_id}) in "
-                    f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
-                    f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
-                )
-                diagnostic_summary = _tool_action_probe_diagnostic_summary(
-                    list(result.get("tool_action_probe_diagnostics", []) or [])
-                )
-                if diagnostic_summary:
-                    print(f"Tool probe diagnostics for game {game_index + 1}: {diagnostic_summary}")
 
     per_game_outputs.sort(key=lambda item: int(item.get("game_index", 0) or 0))
     with _JsonArrayWriter(output_path) as output_writer:
