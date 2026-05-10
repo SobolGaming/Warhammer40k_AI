@@ -3584,6 +3584,9 @@ class LateGameplayMixin:
         # Reserves arrivals count as having made a Normal move this turn (reinforced).
         try:
             self.round_state.reinforced_this_round = True
+            self.round_state.moved_this_round = True
+            self.round_state.advanced_this_round = False
+            self.round_state.fell_back_this_round = False
             self.round_state.remained_stationary_this_round = False
         except Exception:
             pass

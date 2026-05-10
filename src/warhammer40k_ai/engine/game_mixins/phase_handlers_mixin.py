@@ -57,6 +57,26 @@ class GamePhaseHandlersMixin:
             eligible.append(unit)
         return eligible
 
+    def _mark_movement_phase_unselected_units_stationary(self, player=None) -> list[object]:
+        active_player = player if player is not None else self.get_current_player()
+        marked: list[object] = []
+        try:
+            from warhammer40k_ai.units.unit import MovementAction
+            from ..decision_requests import _available_move_action_names
+        except ImportError:
+            return marked
+
+        for unit in list(self._movement_phase_move_units_eligible_units(active_player) or []):
+            action_names = _available_move_action_names(unit, game_map=getattr(self, "map", None))
+            if "stationary" not in action_names:
+                continue
+            execute_action = getattr(unit, "_execute_action", None)
+            if not callable(execute_action):
+                continue
+            if execute_action(MovementAction.REMAIN_STATIONARY.value, (0.0, 0.0, 0.0), getattr(self, "map", None)):
+                marked.append(unit)
+        return marked
+
     def _pending_movement_move_units_select_unit_request(self):
         return self._pending_select_unit_request(phase_name="MOVEMENT_PHASE", phase_step="MOVE_UNITS")
 

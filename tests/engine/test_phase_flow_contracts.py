@@ -22,6 +22,7 @@ from warhammer40k_ai.engine.fight_phase_manager import FightStage
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
+from warhammer40k_ai.engine import turn_manager
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import MovementAction, Unit
@@ -500,6 +501,63 @@ def test_real_game_headless_movement_phase_records_stationary_units(build_phase_
     assert second_unit.round_state.moved_this_round is True
     assert second_unit.round_state.remained_stationary_this_round is True
     assert list(game.decision_queue.list() or []) == []
+
+
+def test_movement_phase_next_phase_marks_unselected_stationary_units(build_phase_game) -> None:
+    fixture = build_phase_game(enemy_distance=24.0)
+    game = fixture.game
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.REMAIN_STATIONARY.value]
+
+    turn_manager.next_phase(game)
+
+    assert game.phase == BattleRoundPhases.SHOOTING_PHASE
+    assert fixture.active_unit.round_state.moved_this_round is True
+    assert fixture.active_unit.round_state.remained_stationary_this_round is True
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    assert pending[0].decision_type == DECISION_SELECT_UNIT
+    assert pending[0].context["phase_name"] == "SHOOTING_PHASE"
+
+
+def test_movement_phase_next_phase_queues_for_units_that_cannot_remain_stationary(build_phase_game) -> None:
+    fixture = build_phase_game(enemy_distance=24.0)
+    game = fixture.game
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.MOVE.value]
+
+    turn_manager.next_phase(game)
+
+    pending = list(game.decision_queue.list() or [])
+    assert game.phase == BattleRoundPhases.MOVEMENT_PHASE
+    assert len(pending) == 1
+    assert pending[0].decision_type == DECISION_SELECT_UNIT
+    assert pending[0].context["phase_step"] == "MOVE_UNITS"
+    assert fixture.active_unit.round_state.moved_this_round is False
+
+
+def test_reserves_arrival_counts_as_completed_normal_move(build_phase_game) -> None:
+    fixture = build_phase_game(enemy_distance=24.0)
+    unit = fixture.active_unit
+    game = fixture.game
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    unit.deployed = False
+    unit.set_reserve_status("reserves")
+    unit.round_state.moved_this_round = False
+    unit.round_state.reinforced_this_round = False
+    unit.round_state.remained_stationary_this_round = True
+
+    assert unit._finalize_reserves_arrival(turn=2, game_map=game.map) is True
+
+    assert unit.deployed is True
+    assert unit.reserve_status == "deployed"
+    assert unit.arrived_from_reserves_this_turn is True
+    assert unit.round_state.reinforced_this_round is True
+    assert unit.round_state.moved_this_round is True
+    assert unit.round_state.advanced_this_round is False
+    assert unit.round_state.fell_back_this_round is False
+    assert unit.round_state.remained_stationary_this_round is False
+    assert game._movement_phase_move_units_eligible_units(fixture.current_player) == []
 
 
 @pytest.mark.integration

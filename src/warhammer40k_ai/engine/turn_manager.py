@@ -33,6 +33,19 @@ def next_phase(game: "Game") -> None:
                         return
                 game.end_reinforcements_step()
             else:
+                if pending_requests:
+                    return
+                mark_stationary = getattr(game, "_mark_movement_phase_unselected_units_stationary", None)
+                if callable(mark_stationary):
+                    mark_stationary(player=game.get_current_player())
+                queue_move_units = getattr(game, "_queue_movement_phase_move_units_selection", None)
+                if callable(queue_move_units):
+                    queued = queue_move_units(player=game.get_current_player())
+                    pending_after_move_units = (
+                        list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+                    )
+                    if queued is not None or pending_after_move_units:
+                        return
                 game.handle_reserves_arrival_phase()
                 pending_after = list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
                 if pending_after:

@@ -1,5 +1,7 @@
 ﻿import unittest
 
+from warhammer40k_ai.units.unit import MovementAction
+
 
 class _MockDatasheet:
     def __init__(
@@ -111,8 +113,45 @@ class TestTransportDisembarkAbilities(unittest.TestCase):
         ok = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=1)
         self.assertTrue(ok)
         self.assertTrue(passenger.round_state.disembarked_from_moved_transport)
+        self.assertTrue(passenger.round_state.moved_this_round)
+        self.assertFalse(passenger.round_state.advanced_this_round)
+        self.assertFalse(passenger.round_state.fell_back_this_round)
+        self.assertFalse(passenger.round_state.remained_stationary_this_round)
         self.assertFalse(passenger.round_state.disembarked_cannot_charge)
         self.assertTrue(passenger.can_declare_charge_against(enemy, game))
+
+    def test_disembark_before_transport_moves_remains_eligible_but_not_stationary(self):
+        game, army1, army2 = self._build_game()
+        transport = _make_unit(
+            "Transport",
+            keywords=["Transport"],
+            transport="Transport Capacity 10",
+        )
+        passenger = _make_unit("Passengers")
+        enemy = _make_unit("Enemy", keywords=["Infantry"])
+
+        army1.add_unit(transport)
+        army1.add_unit(passenger)
+        army2.add_unit(enemy)
+
+        transport.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        enemy.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+        game.map.place_unit(transport)
+        game.map.place_unit(enemy)
+
+        self._embark(transport, passenger)
+        ok = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=1)
+
+        self.assertTrue(ok)
+        self.assertTrue(passenger.round_state.disembarked_this_round)
+        self.assertTrue(passenger.round_state.cannot_remain_stationary_after_disembark)
+        self.assertFalse(passenger.round_state.disembarked_from_moved_transport)
+        self.assertFalse(passenger.round_state.moved_this_round)
+        self.assertFalse(passenger.round_state.remained_stationary_this_round)
+        available = passenger.get_available_move_actions("none")
+        self.assertIn(MovementAction.MOVE.value, available)
+        self.assertIn(MovementAction.ADVANCE.value, available)
+        self.assertNotIn(MovementAction.REMAIN_STATIONARY.value, available)
 
     def test_assault_vehicle_allows_disembark_after_advance_but_blocks_charge(self):
         assault_vehicle = {
@@ -159,6 +198,10 @@ class TestTransportDisembarkAbilities(unittest.TestCase):
         ok = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=1)
         self.assertTrue(ok)
         self.assertTrue(passenger.round_state.disembarked_from_moved_transport)
+        self.assertTrue(passenger.round_state.moved_this_round)
+        self.assertFalse(passenger.round_state.advanced_this_round)
+        self.assertFalse(passenger.round_state.fell_back_this_round)
+        self.assertFalse(passenger.round_state.remained_stationary_this_round)
         self.assertTrue(passenger.round_state.disembarked_cannot_charge)
 
         # Even if the unit would normally charge after advancing, disembark should block it.

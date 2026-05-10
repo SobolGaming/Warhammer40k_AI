@@ -298,6 +298,7 @@ def _unit_has_resolved_round_movement(unit: object) -> bool:
         getattr(round_state, "moved_this_round", False)
         or getattr(round_state, "advanced_this_round", False)
         or getattr(round_state, "fell_back_this_round", False)
+        or getattr(round_state, "reinforced_this_round", False)
     )
 
 
