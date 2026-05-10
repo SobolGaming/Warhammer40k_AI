@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield
+from warhammer40k_ai.engine.dice_rolls import register_roll_handler
 from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.utility.dice import get_roll, suppress_get_roll_requests
@@ -60,6 +61,56 @@ def test_dice_roll_sum_success_lte():
     assert state.status == "rolled"
     assert state.total == 7
     assert state.sum_success is True
+
+
+def test_headless_auto_roll_callbacks_drain_iteratively_without_truncating_deep_chains():
+    state = {"handled": 0}
+    handler_key = f"test_headless_auto_roll_chain_{id(state)}"
+
+    def _chain_next_roll(game, roll_state):
+        state["handled"] += 1
+        remaining = int(roll_state.spec.get("remaining", 0) or 0)
+        if remaining <= 0:
+            return None
+        return game.request_dice_roll(
+            player_id=roll_state.player_id,
+            spec={
+                "dice_count": 1,
+                "faces": 6,
+                "fixed_dice": [4],
+                "reason": f"Auto roll chain {remaining}",
+                "roll_type": "test_auto_roll_chain",
+                "handler_key": handler_key,
+                "remaining": remaining - 1,
+            },
+            prompt=f"Auto roll chain {remaining}",
+        )
+
+    register_roll_handler(handler_key, _chain_next_roll)
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = True
+    game.setup_complete = True
+    game.session_id = "test:auto-roll-chain"
+
+    depth = 90
+    req = game.request_dice_roll(
+        player_id="p1",
+        spec={
+            "dice_count": 1,
+            "faces": 6,
+            "fixed_dice": [4],
+            "reason": "Auto roll chain",
+            "roll_type": "test_auto_roll_chain",
+            "handler_key": handler_key,
+            "remaining": depth,
+        },
+        prompt="Auto roll chain",
+    )
+
+    assert req.decision_type == DECISION_REQUEST_DICE_ROLL
+    assert state["handled"] == depth + 1
+    assert game.decision_queue.peek() is None
+    assert len(game.decision_record_store.records) == depth + 1
 
 
 def test_dice_roll_one_reroll_per_die():

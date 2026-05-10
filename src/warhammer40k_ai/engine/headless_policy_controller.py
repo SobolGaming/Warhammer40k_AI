@@ -287,7 +287,10 @@ class HeadlessPolicyDecisionController(DecisionController):
                 player_id=getattr(request, "player_id", None),
                 metadata=self._command_metadata_for_candidate(candidate, strategy="first_legal_option"),
             )
-            if apply_result is not None and bool(getattr(apply_result, "ok", False)):
+            if (
+                (apply_result is not None and bool(getattr(apply_result, "ok", False)))
+                or self._request_no_longer_pending(game, request)
+            ):
                 return
 
     def _try_resolve_candidate(self, game: object, request: DecisionRequest, candidate: CandidateAction) -> bool:
@@ -320,7 +323,19 @@ class HeadlessPolicyDecisionController(DecisionController):
             player_id=getattr(request, "player_id", None),
             metadata=self._command_metadata_for_candidate(candidate, strategy="ranked_candidate"),
         )
+        if self._request_no_longer_pending(game, request):
+            return True
         return bool(apply_result is not None and getattr(apply_result, "ok", False))
+
+    @staticmethod
+    def _request_no_longer_pending(game: object, request: DecisionRequest) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return False
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not decision_id:
+            return False
+        return queue.get(decision_id) is None
 
     def _safe_resolve_decision_command(
         self,

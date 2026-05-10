@@ -7,6 +7,9 @@ from .decision_controller import DecisionController
 from ..utility.decision_utils import resolve_decision_command
 
 
+_MAX_AUTO_DICE_DRAIN_ATTEMPTS = 10000
+
+
 class HeadlessDecisionAgent(DecisionController):
     """Auto-resolve dice roll decisions for authoritative/headless games."""
 
@@ -15,6 +18,8 @@ class HeadlessDecisionAgent(DecisionController):
         self._game = game
         self._group = str(group or "headless:auto_decisions")
         self._attached = False
+        self._auto_resolve_depth = 0
+        self._draining_auto_dice = False
         self.attach()
 
     def attach(self) -> None:
@@ -55,12 +60,68 @@ class HeadlessDecisionAgent(DecisionController):
         if not bool(getattr(game, "auto_resolve_dice_rolls", False)):
             return
         decision_type = str(getattr(request, "decision_type", "") or "")
-        if decision_type == DECISION_REQUEST_DICE_ROLL:
-            self._auto_resolve_roll(request, game)
-        elif decision_type == DECISION_SELECT_DICE_REROLL:
-            self._auto_resolve_reroll(request, game)
+        if decision_type not in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+            return
+        if self._auto_resolve_depth > 0:
+            return
+        self._auto_resolve_request(request, game)
+        if self._request_is_pending(request, game):
+            return
+        self._drain_pending_auto_dice_requests(game)
 
-    def _auto_resolve_roll(self, request, game: object) -> None:
+    @staticmethod
+    def _request_is_pending(request, game: object) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return True
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not decision_id:
+            return True
+        return queue.get(decision_id) is not None
+
+    @staticmethod
+    def _is_auto_dice_request(request) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        return decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL)
+
+    def _auto_resolve_request(self, request, game: object):
+        if request is None or game is None:
+            return None
+        if not self._is_auto_dice_request(request):
+            return None
+        self._auto_resolve_depth += 1
+        try:
+            decision_type = str(getattr(request, "decision_type", "") or "")
+            if decision_type == DECISION_REQUEST_DICE_ROLL:
+                return self._auto_resolve_roll(request, game)
+            if decision_type == DECISION_SELECT_DICE_REROLL:
+                return self._auto_resolve_reroll(request, game)
+            return None
+        finally:
+            self._auto_resolve_depth = max(0, self._auto_resolve_depth - 1)
+
+    def _drain_pending_auto_dice_requests(self, game: object) -> None:
+        if self._draining_auto_dice:
+            return
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "peek"):
+            return
+        self._draining_auto_dice = True
+        try:
+            attempts = 0
+            while attempts < _MAX_AUTO_DICE_DRAIN_ATTEMPTS:
+                request = queue.peek()
+                if request is None or not self._is_auto_dice_request(request):
+                    return
+                decision_id = str(getattr(request, "decision_id", "") or "")
+                self._auto_resolve_request(request, game)
+                attempts += 1
+                if decision_id and self._request_is_pending(request, game):
+                    return
+        finally:
+            self._draining_auto_dice = False
+
+    def _auto_resolve_roll(self, request, game: object):
         option_id = None
         for opt in list(getattr(request, "options", []) or []):
             payload = dict(getattr(opt, "payload", {}) or {})
@@ -71,7 +132,7 @@ class HeadlessDecisionAgent(DecisionController):
             option_id = request.options[0].option_id
         if not option_id:
             return
-        resolve_decision_command(
+        return resolve_decision_command(
             game,
             request,
             option_id,
@@ -79,7 +140,7 @@ class HeadlessDecisionAgent(DecisionController):
             player_id=getattr(request, "player_id", None),
         )
 
-    def _auto_resolve_reroll(self, request, game: object) -> None:
+    def _auto_resolve_reroll(self, request, game: object):
         mgr = getattr(game, "roll_manager", None)
         if mgr is None:
             return
@@ -110,7 +171,7 @@ class HeadlessDecisionAgent(DecisionController):
         payload = {}
         if selected is not None:
             payload["selected_die_ids"] = list(selected)
-        resolve_decision_command(
+        return resolve_decision_command(
             game,
             request,
             option_id,

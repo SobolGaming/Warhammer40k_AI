@@ -28,7 +28,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_SELECT_UNIT,
     DECISION_SHADOW_ASSIGNMENT,
 )
-from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionQueue, DecisionRequest
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 
 
@@ -45,6 +45,44 @@ class _FakeGame:
     def apply_command(self, command):
         self.commands.append(command)
         return _ApplyResult(ok=True)
+
+
+class _QueuePoppingFakeGame:
+    def __init__(self, request: DecisionRequest) -> None:
+        self.is_authoritative = True
+        self.commands = []
+        self.decision_queue = DecisionQueue()
+        self.decision_queue.add(request)
+
+    def apply_command(self, command):
+        self.commands.append(command)
+        payload = dict(getattr(command, "payload", {}) or {})
+        self.decision_queue.pop(str(payload.get("decision_id", "") or ""))
+        return _ApplyResult(ok=False)
+
+
+def test_headless_policy_stops_retrying_when_apply_side_effect_removes_request() -> None:
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Choose once",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Alpha", payload={"action_id": "TEST:alpha", "choice": True}),
+            DecisionOption.create("Beta", payload={"action_id": "TEST:beta", "choice": False}),
+        ],
+        candidates=[
+            CandidateAction("TEST:alpha", {"choice": True}, metadata={"projected_score_delta_round": 1.0}),
+            CandidateAction("TEST:beta", {"choice": False}, metadata={"projected_score_delta_round": 0.0}),
+        ],
+        mask=[True, True],
+    )
+    game = _QueuePoppingFakeGame(request)
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    assert game.decision_queue.get(request.decision_id) is None
 
 
 class _ReserveSearchBase:
