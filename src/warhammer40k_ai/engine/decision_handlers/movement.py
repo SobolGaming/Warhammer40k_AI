@@ -58,6 +58,27 @@ def _movement_members(unit) -> list:
     return members or [unit]
 
 
+def _mark_move_units_movement_status(unit, movement_type: str) -> None:
+    movement_key = str(movement_type or "").strip().lower()
+    if movement_key not in {"move", "advance", "fall_back"}:
+        return
+    for member in _movement_members(unit):
+        round_state = getattr(member, "round_state", None)
+        if round_state is None:
+            continue
+        round_state.moved_this_round = True
+        round_state.remained_stationary_this_round = False
+        if movement_key == "advance":
+            round_state.advanced_this_round = True
+        elif movement_key == "fall_back":
+            round_state.fell_back_this_round = True
+        round_state.move_modifier_choice = None
+        round_state.move_modifier_choice_pending = False
+        if movement_key == "advance":
+            round_state.advance_modifier_choice = None
+            round_state.advance_modifier_choice_pending = False
+
+
 def _clear_battle_focus_reactive_flags(unit) -> None:
     for member in _movement_members(unit):
         sr = getattr(member, "special_rules", None)
@@ -2827,6 +2848,10 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         or action in {"skip", "pass"}
     )
     if is_skip:
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
+        if phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
+            _mark_move_units_movement_status(unit, movement_type)
         if movement_type == "charge":
             target_unit_ids = [
                 str(value or "")

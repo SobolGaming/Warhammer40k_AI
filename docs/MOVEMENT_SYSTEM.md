@@ -126,6 +126,19 @@ a transport Remains Stationary or completes a Normal move. `EMBARK` choices are 
 after a unit completes a qualifying Normal move, Advance, or Fall Back and before the
 next Move Units selection is requested.
 
+The Move Units step does not use a phase-level `SELECT_UNIT:PASS`. Every eligible
+non-embarked unit must resolve a `SELECT_MOVEMENT_ACTION` activation: Normal move,
+Advance, Fall Back when eligible, or Remain Stationary. A unit that does not physically
+change position must still select `REMAIN_STATIONARY`; if a lower-level `MOVE_UNIT`
+placement is skipped after Move/Advance/Fall Back was selected, the selected movement
+mode still consumes that unit's movement activation for state and replay purposes.
+
+Headless controllers can resolve child decisions synchronously while the parent
+`SELECT_UNIT` request is still unwinding. The Move Units loop must ignore that
+currently resolving parent request when checking for an already-pending
+`SELECT_UNIT`; otherwise the first moved unit can suppress the next unit-selection
+request and prematurely end the active player's Movement phase.
+
 The action handler also gates movement due to transport disembark restrictions,
 including immediate disembarks after a reserves transport is set up, and publishes
 movement-start/finish events for reaction windows.
@@ -136,6 +149,13 @@ a later Normal move or Advance, but it cannot choose Remain Stationary and does 
 retain remained-stationary state. A unit that disembarks after its transport made a
 Normal move counts as moved, cannot move again in that Movement phase, and cannot
 declare a charge that turn unless an explicit transport rule overrides that.
+
+Embarked passengers are not independently selected for Move Units while they remain
+embarked; core rules say embarked units cannot do anything or be affected unless a
+rule says otherwise. A passenger that embarks after a qualifying move keeps the movement
+state from that move. If a special rule lets a passenger disembark after an Advanced
+or Fall Back transport, the engine applies the rule's explicit disembark status to the
+passenger rather than blindly mirroring the transport's movement flags.
 
 Embark candidates require an actual qualifying Normal, Advance, or Fall Back move.
 Reserve arrival state is tracked separately as `reinforced_this_round`; that state

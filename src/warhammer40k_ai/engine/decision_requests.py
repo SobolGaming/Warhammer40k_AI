@@ -19,6 +19,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_CHARGE,
+    DECISION_DECLARE_FIRING_DECK,
     DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
@@ -782,6 +783,195 @@ def _unit_has_ranged_weapon(unit: object) -> bool:
             except Exception:
                 continue
     return False
+
+
+def _source_root_for_model(model: object) -> object | None:
+    source_unit = getattr(model, "parent_unit", None)
+    if source_unit is None:
+        return None
+    root_fn = getattr(source_unit, "get_attached_unit_root", None)
+    if callable(root_fn):
+        try:
+            return root_fn()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return source_unit
+    return source_unit
+
+
+def firing_deck_selection_entries(transport: object) -> list[dict[str, object]]:
+    if transport is None:
+        return []
+    has_fd = False
+    fd_x = 0
+    has_fd_fn = getattr(transport, "has_firing_deck", None)
+    if callable(has_fd_fn):
+        try:
+            has_fd, fd_x = has_fd_fn()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            has_fd, fd_x = (False, 0)
+    if not bool(has_fd) or int(fd_x or 0) <= 0:
+        return []
+
+    passengers = list(getattr(transport, "transport_passengers", []) or [])
+    passengers.sort(key=lambda unit: str(maybe_entity_id(unit) or ""))
+    entries: list[dict[str, object]] = []
+    for passenger in passengers:
+        root_fn = getattr(passenger, "get_attached_unit_root", None)
+        if callable(root_fn):
+            try:
+                source_root = root_fn()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                source_root = passenger
+        else:
+            source_root = passenger
+        if source_root is None:
+            continue
+        if getattr(source_root, "embarked_in", None) is not transport and source_root not in passengers:
+            continue
+        if _unit_has_consumed_normal_shooting(source_root):
+            continue
+        source_unit_id = str(maybe_entity_id(source_root) or "")
+        for model in _attached_alive_models(source_root):
+            if _source_root_for_model(model) is not source_root:
+                continue
+            model_id = str(maybe_entity_id(model) or "")
+            if not model_id:
+                continue
+            try:
+                selection_cost = max(1, int(transport.get_firing_deck_selection_cost(model) or 1))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                selection_cost = 1
+            wargear_items = sorted(
+                list(getattr(model, "wargear", []) or []),
+                key=lambda item: (str(maybe_entity_id(item) or ""), str(getattr(item, "name", "") or "")),
+            )
+            for wargear in wargear_items:
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+                wargear_id = str(maybe_entity_id(wargear) or "")
+                if not wargear_id:
+                    continue
+                profiles = dict(getattr(wargear, "profiles", {}) or {})
+                for profile_name, profile in sorted(profiles.items(), key=lambda item: str(item[0])):
+                    if profile is None:
+                        continue
+                    is_one_shot = getattr(profile, "is_one_shot", None)
+                    if callable(is_one_shot):
+                        try:
+                            if bool(is_one_shot()):
+                                continue
+                        except (AttributeError, RuntimeError, TypeError, ValueError):
+                            continue
+                    entries.append(
+                        {
+                            "model": model,
+                            "wargear": wargear,
+                            "profile": profile,
+                            "profile_name": str(profile_name or ""),
+                            "passenger_unit": source_root,
+                            "source_unit_id": source_unit_id,
+                            "selection_cost": int(selection_cost),
+                        }
+                    )
+    entries.sort(
+        key=lambda entry: (
+            str(entry.get("source_unit_id", "") or ""),
+            str(maybe_entity_id(entry.get("model")) or ""),
+            str(maybe_entity_id(entry.get("wargear")) or ""),
+            str(entry.get("profile_name", "") or ""),
+        )
+    )
+    return entries
+
+
+def _firing_deck_candidate_payload(entries: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for entry in list(entries or []):
+        model_id = str(maybe_entity_id(entry.get("model")) or "")
+        wargear_id = str(maybe_entity_id(entry.get("wargear")) or "")
+        profile_name = str(entry.get("profile_name", "") or "")
+        if not model_id or not wargear_id or not profile_name:
+            continue
+        payload.append(
+            {
+                "model_id": model_id,
+                "wargear_id": wargear_id,
+                "profile_name": profile_name,
+                "source_unit_id": str(entry.get("source_unit_id", "") or ""),
+                "selection_cost": int(entry.get("selection_cost", 1) or 1),
+            }
+        )
+    return payload
+
+
+def build_declare_firing_deck_request(
+    transport: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if transport is None:
+        return None
+    transport_id = str(get_entity_id(transport) or "").strip()
+    if not transport_id:
+        return None
+    entries = firing_deck_selection_entries(transport)
+    if not entries:
+        return None
+    try:
+        _has_fd, fd_x = transport.has_firing_deck()
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        fd_x = 0
+    if int(fd_x or 0) <= 0:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(transport)
+    label = str(getattr(transport, "name", "") or "Transport").strip() or "Transport"
+    request_context = dict(context or {})
+    request_context.setdefault("transport_id", transport_id)
+    request_context.setdefault("firing_deck_x", int(fd_x or 0))
+    request_context.setdefault("candidate_entries", _firing_deck_candidate_payload(entries))
+    options = [
+        DecisionOption.create("Confirm", payload={"action": "confirm", "transport_id": transport_id}),
+        DecisionOption.create("Skip", payload={"action": "skip", "transport_id": transport_id}),
+    ]
+    return DecisionRequest.create(
+        DECISION_DECLARE_FIRING_DECK,
+        str(prompt or "").strip() or f"Declare Firing Deck weapons for {label}",
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_declare_firing_deck_request(
+    game: object,
+    transport: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_declare_firing_deck_request(
+        transport,
+        prompt=prompt,
+        player_id=player_id,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
 
 
 def _unit_has_melee_weapon(unit: object) -> bool:

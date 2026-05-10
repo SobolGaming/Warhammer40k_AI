@@ -19,6 +19,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
     DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+    DECISION_DECLARE_FIRING_DECK,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
@@ -352,6 +353,12 @@ class HeadlessPolicyDecisionController(DecisionController):
                     default_declarations = self._default_shooting_declarations(game, request, normalized)
                     if default_declarations:
                         normalized["declarations"] = default_declarations
+        if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_FIRING_DECK:
+            action = str(normalized.get("action", "") or "").strip().lower()
+            if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
+                entries = normalized.get("selected_entries")
+                if not isinstance(entries, list):
+                    normalized["selected_entries"] = self._default_firing_deck_entries(game, request, normalized)
         if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
             action = str(normalized.get("action", "") or "").strip().lower()
             if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
@@ -1446,6 +1453,17 @@ class HeadlessPolicyDecisionController(DecisionController):
                 return False
         return False
 
+    @staticmethod
+    def _firing_deck_source_model_ids(unit: object, profile: object) -> list[str]:
+        sources = getattr(unit, "_firing_deck_virtual_sources", {}) or {}
+        profile_id = str(maybe_entity_id(profile) or "")
+        source_models = list(sources.get(profile_id, []) or []) if profile_id else []
+        return [
+            str(maybe_entity_id(model) or "")
+            for model in source_models
+            if str(maybe_entity_id(model) or "")
+        ]
+
     @classmethod
     def _default_shooting_declarations(
         cls,
@@ -1533,12 +1551,16 @@ class HeadlessPolicyDecisionController(DecisionController):
                                 str(profile_name or ""),
                             )
                             if best_key is None or key > best_key:
-                                best_key = key
-                                best_declaration = {
+                                declaration: dict[str, object] = {
                                     "wargear_id": wargear_id,
                                     "profile_name": str(profile_name or ""),
                                     "model_ids": [model_id],
                                 }
+                                source_model_ids = cls._firing_deck_source_model_ids(unit, profile)
+                                if source_model_ids:
+                                    declaration["firing_deck_source_model_ids"] = source_model_ids
+                                best_key = key
+                                best_declaration = declaration
                         continue
                     for target in targets:
                         target_id = str(maybe_entity_id(target) or "")
@@ -1559,18 +1581,99 @@ class HeadlessPolicyDecisionController(DecisionController):
                             str(profile_name or ""),
                         )
                         if best_key is None or key > best_key:
-                            best_key = key
-                            best_declaration = {
+                            declaration = {
                                 "wargear_id": wargear_id,
                                 "profile_name": str(profile_name or ""),
                                 "model_ids": [model_id],
                                 "target_unit_id": target_id,
                             }
+                            source_model_ids = cls._firing_deck_source_model_ids(unit, profile)
+                            if source_model_ids:
+                                declaration["firing_deck_source_model_ids"] = source_model_ids
+                            best_key = key
+                            best_declaration = declaration
                 if best_declaration is not None:
                     declarations.append(best_declaration)
                     if max_declarations > 0 and len(declarations) >= max_declarations:
                         return declarations[:max_declarations]
         return declarations
+
+    @classmethod
+    def _default_firing_deck_entries(
+        cls,
+        game: object | None,
+        request: DecisionRequest | None,
+        payload: dict[str, Any],
+    ) -> list[dict[str, object]]:
+        ctx = dict(getattr(request, "context", {}) or {}) if request is not None else {}
+        transport_id = str(payload.get("transport_id", "") or ctx.get("transport_id", "") or "").strip()
+        transport = cls._resolve_unit(game, transport_id)
+        if transport is None:
+            return []
+        try:
+            _has_fd, fd_x = transport.has_firing_deck()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            fd_x = 0
+        if int(fd_x or 0) <= 0:
+            return []
+
+        try:
+            from .decision_requests import firing_deck_selection_entries
+        except ImportError:
+            return []
+        entries = firing_deck_selection_entries(transport)
+        if not entries:
+            return []
+
+        best_by_model: dict[str, tuple[tuple[float, str, str, str], dict[str, object], int]] = {}
+        for entry in entries:
+            model = entry.get("model")
+            wargear = entry.get("wargear")
+            profile = entry.get("profile")
+            model_id = str(maybe_entity_id(model) or "")
+            wargear_id = str(maybe_entity_id(wargear) or "")
+            profile_name = str(entry.get("profile_name", "") or "")
+            if not model_id or not wargear_id or not profile_name or profile is None:
+                continue
+            try:
+                selection_cost = max(1, int(entry.get("selection_cost", 1) or 1))
+            except (TypeError, ValueError):
+                selection_cost = 1
+            payload_entry = {
+                "model_id": model_id,
+                "wargear_id": wargear_id,
+                "profile_name": profile_name,
+                "selection_cost": int(selection_cost),
+            }
+            score = (
+                cls._profile_damage_score(profile, None),
+                str(getattr(wargear, "name", "") or ""),
+                profile_name,
+                wargear_id,
+            )
+            existing = best_by_model.get(model_id)
+            if existing is None or score > existing[0]:
+                best_by_model[model_id] = (score, payload_entry, int(selection_cost))
+
+        ranked = sorted(
+            best_by_model.items(),
+            key=lambda item: (
+                -float(item[1][0][0]),
+                str(item[0]),
+                str(item[1][1].get("wargear_id", "") or ""),
+                str(item[1][1].get("profile_name", "") or ""),
+            ),
+        )
+        selected: list[dict[str, object]] = []
+        used_slots = 0
+        for _model_id, (_score, payload_entry, selection_cost) in ranked:
+            if used_slots + int(selection_cost) > int(fd_x or 0):
+                continue
+            selected.append(dict(payload_entry))
+            used_slots += int(selection_cost)
+            if used_slots >= int(fd_x or 0):
+                break
+        return selected
 
     @staticmethod
     def _candidate_requests_skip(candidate: CandidateAction | None) -> bool:
@@ -1628,6 +1731,12 @@ class HeadlessPolicyDecisionController(DecisionController):
             if isinstance(model_positions, list) and bool(model_positions):
                 return True
             return self._move_request_can_synthesize_positions(request, params)
+        if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_FIRING_DECK:
+            params = dict(payload or {})
+            action = str(params.get("action", "") or "").strip().lower()
+            if action in {"pass", "skip"} or bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+                return True
+            return isinstance(params.get("selected_entries"), list)
         if str(getattr(request, "decision_type", "") or "") != DECISION_DECLARE_SHOTS:
             if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS:
                 params = dict(payload or {})
@@ -1686,6 +1795,17 @@ class HeadlessPolicyDecisionController(DecisionController):
             unit_id = str(payload.get("unit_id", "") or "").strip()
             if not unit_id:
                 return False
+            unit = cls._resolve_unit(game, unit_id)
+            if unit is None:
+                return False
+            try:
+                from .decision_requests import firing_deck_selection_entries
+            except ImportError:
+                firing_deck_entries = []
+            else:
+                firing_deck_entries = [] if bool(getattr(unit, "_firing_deck_declared_this_phase", False)) else firing_deck_selection_entries(unit)
+            if firing_deck_entries:
+                return True
             declarations = cls._default_shooting_declarations(
                 game,
                 request,

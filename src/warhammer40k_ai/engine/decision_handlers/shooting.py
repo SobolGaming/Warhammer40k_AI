@@ -18,6 +18,59 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _source_root_for_model(model: object) -> object | None:
+    source_unit = getattr(model, "parent_unit", None)
+    if source_unit is None:
+        return None
+    root_fn = getattr(source_unit, "get_attached_unit_root", None)
+    if callable(root_fn):
+        try:
+            return root_fn()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return source_unit
+    return source_unit
+
+
+def _model_carries_wargear(model: object, wargear_id: str) -> bool:
+    carried_ids = {
+        str(maybe_entity_id(item) or "")
+        for item in list(getattr(model, "wargear", []) or [])
+        if str(maybe_entity_id(item) or "")
+    }
+    return str(wargear_id or "") in carried_ids
+
+
+def _unit_has_consumed_normal_shooting(unit: object | None) -> bool:
+    if unit is None:
+        return False
+    round_state = getattr(unit, "round_state", None)
+    if round_state is None:
+        return False
+    if not bool(getattr(round_state, "shot_this_round", False)):
+        return False
+    action_shoot_exception_available = bool(
+        getattr(round_state, "action_locked_until_turn_end", False)
+        and not bool(getattr(round_state, "action_permitted_shoot_used", False))
+    )
+    return not action_shoot_exception_available
+
+
+def _mark_firing_deck_source_model(model: object) -> None:
+    setattr(model, "_shot_via_firing_deck_this_round", True)
+    source_root = _source_root_for_model(model)
+    round_state = getattr(source_root, "round_state", None) if source_root is not None else None
+    if round_state is not None:
+        round_state.shot_this_round = True
+
+
+def _clear_firing_deck_state(unit: object) -> None:
+    clear_virtual = getattr(unit, "clear_firing_deck_virtual_wargear", None)
+    if callable(clear_virtual):
+        clear_virtual()
+    if hasattr(unit, "_firing_deck_declared_this_phase"):
+        unit._firing_deck_declared_this_phase = False
+
+
 def _validate_select_weapon(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -434,6 +487,7 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         clear_rerolls = getattr(unit, "clear_selected_to_shoot_rerolls", None)
         if callable(clear_rerolls):
             clear_rerolls()
+        _clear_firing_deck_state(unit)
         return False
     game_map = getattr(game, "map", None)
     out_of_phase = bool(request.context.get("out_of_phase", False))
@@ -539,6 +593,7 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
             unit._clear_formless_horror_allowed()
     except Exception:
         pass
+    _clear_firing_deck_state(unit)
     return bool(success)
 
 
@@ -583,18 +638,26 @@ def _validate_firing_deck(game: object, request: DecisionRequest, result: Decisi
         model = get_model(game, model_id)
         if model is None:
             return ("Firing deck model not found.",)
+        if not bool(getattr(model, "is_alive", True)):
+            return ("Firing deck model is not alive.",)
+        if not _model_carries_wargear(model, wargear_id):
+            return ("Firing deck weapon is not equipped by the selected model.",)
         if profile_name not in (getattr(wargear, "profiles", {}) or {}):
             return ("Firing deck profile not found on wargear.",)
+        profile = (getattr(wargear, "profiles", {}) or {}).get(profile_name)
+        is_one_shot = getattr(profile, "is_one_shot", None)
+        if callable(is_one_shot):
+            try:
+                if bool(is_one_shot()):
+                    return ("Firing deck cannot select ONE SHOT weapons.",)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return ("Firing deck cannot verify ONE SHOT status.",)
         if model_id in selected_model_ids:
             return ("Firing deck can select at most one weapon per embarked model.",)
         selected_model_ids.add(model_id)
-        source_unit = getattr(model, "parent_unit", None)
-        if source_unit is None:
+        source_root = _source_root_for_model(model)
+        if source_root is None:
             return ("Firing deck model has no source unit.",)
-        try:
-            source_root = source_unit.get_attached_unit_root()
-        except Exception:
-            source_root = source_unit
         if (
             source_root is None
             or (
@@ -603,6 +666,8 @@ def _validate_firing_deck(game: object, request: DecisionRequest, result: Decisi
             )
         ):
             return ("Firing deck model is not embarked in this transport.",)
+        if _unit_has_consumed_normal_shooting(source_root):
+            return ("Firing deck source unit has already shot this phase.",)
         try:
             total_slots += max(1, int(transport.get_firing_deck_selection_cost(model) or 1))
         except Exception:
@@ -619,6 +684,7 @@ def _apply_firing_deck(game: object, request: DecisionRequest, result: DecisionR
     if transport is None:
         raise RuntimeError("Firing deck transport missing.")
     selections = []
+    source_models = []
     for entry in list(result.payload.get("selected_entries") or []):
         wargear = get_wargear(game, str(entry.get("wargear_id", "") or ""))
         model = get_model(game, str(entry.get("model_id", "") or ""))
@@ -636,7 +702,11 @@ def _apply_firing_deck(game: object, request: DecisionRequest, result: DecisionR
                 "profile_name": profile_name,
             }
         )
+        source_models.append(model)
     transport.apply_firing_deck_virtual_wargear(selections)
+    transport._firing_deck_declared_this_phase = True
+    for model in source_models:
+        _mark_firing_deck_source_model(model)
     return None
 
 

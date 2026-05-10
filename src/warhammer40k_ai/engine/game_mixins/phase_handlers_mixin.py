@@ -13,6 +13,8 @@ class GamePhaseHandlersMixin:
         for request in list(queue.list() or []):
             if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
                 continue
+            if bool(getattr(request, "_resolution_in_progress", False)):
+                continue
             ctx = dict(getattr(request, "context", {}) or {})
             if str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name or "").strip().upper():
                 continue
@@ -443,7 +445,7 @@ class GamePhaseHandlersMixin:
             phase_name="MOVEMENT_PHASE",
             phase_step="MOVE_UNITS",
             selection_purpose="ACTIVATE_MOVEMENT_UNIT",
-            allow_pass=True,
+            allow_pass=False,
             context={"battle_round": int(getattr(self, "turn", 0) or 0)},
         )
 
@@ -512,6 +514,7 @@ class GamePhaseHandlersMixin:
             return []
         from ..decision_requests import (
             _eligible_units_for_phase_step,
+            firing_deck_selection_entries,
             _unit_has_consumed_normal_shooting,
             build_declare_shots_request,
         )
@@ -523,7 +526,11 @@ class GamePhaseHandlersMixin:
                 continue
             if _unit_has_consumed_normal_shooting(unit):
                 continue
-            if build_declare_shots_request(
+            has_firing_deck_choices = (
+                not bool(getattr(unit, "_firing_deck_declared_this_phase", False))
+                and bool(firing_deck_selection_entries(unit))
+            )
+            if not has_firing_deck_choices and build_declare_shots_request(
                 unit,
                 player_id=getattr(active_player, "id", None),
                 out_of_phase=False,
@@ -561,7 +568,21 @@ class GamePhaseHandlersMixin:
     def _queue_shooting_phase_declare_shots_request(self, unit: object):
         if unit is None:
             return None
-        from ..decision_requests import queue_declare_shots_request
+        from ..decision_requests import queue_declare_firing_deck_request, queue_declare_shots_request
+
+        if not bool(getattr(unit, "_firing_deck_declared_this_phase", False)):
+            firing_deck_request = queue_declare_firing_deck_request(
+                self,
+                unit,
+                player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+                context={
+                    "phase_name": "SHOOTING_PHASE",
+                    "phase_step": "SHOOT_UNITS",
+                    "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+                },
+            )
+            if firing_deck_request is not None:
+                return firing_deck_request
 
         return queue_declare_shots_request(
             self,
@@ -990,7 +1011,7 @@ class GamePhaseHandlersMixin:
             return
         ctx = dict(getattr(request, "context", {}) or {})
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
-        from ..decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_DECLARE_SHOTS
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_DECLARE_FIRING_DECK, DECISION_DECLARE_SHOTS
 
         if decision_type == DECISION_CHOOSE_QUARRY:
             if str(ctx.get("ability", "") or "").strip().lower() != "for_the_greater_good":
@@ -1022,6 +1043,14 @@ class GamePhaseHandlersMixin:
             if not bool(mgr.mark_spotted(observer_unit, target_unit, game=self, player=player)):
                 return
             self._queue_for_the_greater_good_observer_request(player=player)
+            return
+
+        if decision_type == DECISION_DECLARE_FIRING_DECK:
+            transport = self._resolve_unit_by_id(str(ctx.get("transport_id", "") or ""))
+            if transport is None:
+                return
+            if self._queue_shooting_phase_declare_shots_request(transport) is None:
+                self._queue_shooting_phase_selection(player=self.get_current_player())
             return
 
         if decision_type != DECISION_DECLARE_SHOTS:

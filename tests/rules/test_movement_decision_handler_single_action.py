@@ -126,11 +126,51 @@ def _build_move_request(unit: _UnitStub, movement_type: str) -> tuple[DecisionRe
     return request, result
 
 
+def _build_move_skip_request(unit: _UnitStub, movement_type: str) -> tuple[DecisionRequest, DecisionResult]:
+    option = DecisionOption.create(
+        "Skip",
+        payload={"unit_id": unit.id, "movement_type": movement_type, "action": "skip"},
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id="player-1",
+        options=[option],
+        context={
+            "unit_id": unit.id,
+            "movement_type": movement_type,
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "MOVE_UNITS",
+            "allow_skip": True,
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={"action": "skip"},
+    )
+    return request, result
+
+
 def test_apply_move_unit_marks_advance_as_moved() -> None:
     model = _ModelStub("model-1")
     unit = _UnitStub("unit-1", model)
     game = _GameStub(unit)
     request, result = _build_move_request(unit, "advance")
+
+    _apply_move_unit(game, request, result)
+
+    assert unit.round_state.advanced_this_round is True
+    assert unit.round_state.moved_this_round is True
+    assert unit.round_state.remained_stationary_this_round is False
+
+
+def test_apply_move_unit_skip_after_advance_consumes_movement_activation() -> None:
+    model = _ModelStub("model-skip-advance")
+    unit = _UnitStub("unit-skip-advance", model)
+    game = _GameStub(unit)
+    request, result = _build_move_skip_request(unit, "advance")
 
     _apply_move_unit(game, request, result)
 

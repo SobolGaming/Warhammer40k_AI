@@ -2869,53 +2869,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             has_fd, fd_x = (False, 0)
 
         if has_fd and int(fd_x or 0) > 0 and list(getattr(unit, "transport_passengers", []) or []):
-            entries = []
-            per_weapon_count = {}
-
             try:
-                passengers = list(getattr(unit, "transport_passengers", []) or [])
+                from ...engine.decision_requests import firing_deck_selection_entries
+                entries = firing_deck_selection_entries(unit)
             except Exception:
-                passengers = []
-
-            for punit in passengers:
-                # Include attached leaders' models as well
-                try:
-                    models = punit.get_attached_unit_models()
-                except Exception:
-                    models = list(getattr(punit, "models", []) or [])
-
-                for m in models:
-                    if not getattr(m, "is_alive", False):
-                        continue
-                    for w in list(getattr(m, "wargear", []) or []):
-                        try:
-                            if not w.is_ranged():
-                                continue
-                        except Exception:
-                            continue
-
-                        for profile_name, profile in (getattr(w, "profiles", {}) or {}).items():
-                            # Explicit requirement: do not list ONE SHOT weapons for firing deck selection
-                            if profile.is_one_shot():
-                                continue
-                            key = (str(getattr(w, "name", "Weapon")), str(profile_name))
-                            c = int(per_weapon_count.get(key, 0))
-                            if c >= int(fd_x or 0):
-                                continue
-                            per_weapon_count[key] = c + 1
-                            selection_cost = 1
-                            try:
-                                selection_cost = max(1, int(unit.get_firing_deck_selection_cost(m) or 1))
-                            except Exception:
-                                selection_cost = 1
-                            entries.append({
-                                "model": m,
-                                "wargear": w,
-                                "profile": profile,
-                                "profile_name": profile_name,
-                                "passenger_unit": punit,
-                                "selection_cost": selection_cost,
-                            })
+                entries = []
 
             if entries:
                 if not hasattr(self.game_view, "firing_deck_dialog") or self.game_view.firing_deck_dialog is None:
@@ -2927,7 +2885,8 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 def _on_confirm(chosen_entries):
                     from ...engine.decision_kinds import DECISION_DECLARE_FIRING_DECK
-                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...engine.decisions import DecisionOption
+                    from ..decision_ui_utils import option_id_for_action
                     from ...utility.decision_utils import resolve_decision_value
                     from ...utility.entity_ids import get_entity_id
 
@@ -2950,17 +2909,19 @@ class BattlePhaseHandler(BasePhaseHandler):
                         context={"transport_id": transport_id},
 
                     )
+                    option_id = option_id_for_action(req, "confirm") or options[0].option_id
                     resolve_decision_value(
                         self.game,
                         req,
-                        options[0].option_id,
+                        option_id,
                         result_payload={"selected_entries": chosen_entries},
                     )
                     _show_shooting_dialog()
 
                 def _on_cancel():
                     from ...engine.decision_kinds import DECISION_DECLARE_FIRING_DECK
-                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...engine.decisions import DecisionOption
+                    from ..decision_ui_utils import option_id_for_action
                     from ...utility.decision_utils import resolve_decision_value
                     from ...utility.entity_ids import get_entity_id
 
@@ -2983,10 +2944,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                         context={"transport_id": transport_id},
 
                     )
+                    option_id = option_id_for_action(req, "skip") or options[1].option_id
                     resolve_decision_value(
                         self.game,
                         req,
-                        options[1].option_id,
+                        option_id,
                         result_payload={"selected_entries": []},
                     )
                     _show_shooting_dialog()

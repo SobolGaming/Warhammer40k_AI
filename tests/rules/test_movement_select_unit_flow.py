@@ -124,6 +124,8 @@ def test_move_units_selection_request_is_queued_for_authoritative_movement_phase
     assert game.queued_requests == [request]
     assert request.context["phase_step"] == "MOVE_UNITS"
     assert request.context["allowed_unit_ids"] == [unit.id]
+    assert request.context["allow_pass"] is False
+    assert all(str(option.payload.get("action", "") or "") != "pass" for option in request.options)
 
 
 def test_select_unit_resolution_queues_select_movement_action_request() -> None:

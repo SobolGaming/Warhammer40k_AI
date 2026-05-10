@@ -416,6 +416,92 @@ def test_real_game_headless_movement_phase_preserves_decision_chain(build_phase_
     assert list(fixture.game.decision_queue.list() or []) == []
 
 
+def test_real_game_headless_movement_phase_continues_after_first_unit(build_phase_game) -> None:
+    fixture = build_phase_game(enemy_distance=24.0, current_control=PlayerControl.REMOTE)
+    game = fixture.game
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+    second_unit = _make_unit(
+        "Beta",
+        wargear_rows=_phase_test_wargear_rows(),
+        keywords=["INFANTRY"],
+    )
+    fixture.current_player.army.add_unit(second_unit)
+    second_unit.models[0].set_location(10.0, 20.0, 0.0, 0.0)
+    game.map.units = [fixture.active_unit, second_unit, fixture.enemy_unit]
+    game.rebuild_entity_registry()
+
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.MOVE.value]
+    second_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.MOVE.value]
+    HeadlessPolicyDecisionController(game=game, auto_attach=True)
+
+    game._queue_movement_phase_move_units_selection()
+
+    moved_unit_ids = {
+        str((getattr(event, "payload", {}) or {}).get("unit_id", "") or "")
+        for event in list(game.event_log.events or [])
+        if str(getattr(event, "event_type", "") or "") == "unit_move_ended"
+    }
+    assert fixture.active_unit.id in moved_unit_ids
+    assert second_unit.id in moved_unit_ids
+    assert list(game.decision_queue.list() or []) == []
+
+
+def test_real_game_headless_movement_phase_records_stationary_units(build_phase_game) -> None:
+    fixture = build_phase_game(enemy_distance=24.0, current_control=PlayerControl.REMOTE)
+    game = fixture.game
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+    second_unit = _make_unit(
+        "Beta Stationary",
+        wargear_rows=_phase_test_wargear_rows(),
+        keywords=["INFANTRY"],
+    )
+    fixture.current_player.army.add_unit(second_unit)
+    second_unit.models[0].set_location(10.0, 20.0, 0.0, 0.0)
+    game.map.units = [fixture.active_unit, second_unit, fixture.enemy_unit]
+    game.rebuild_entity_registry()
+
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.MOVE.value]
+    second_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.REMAIN_STATIONARY.value]
+
+    movement_action_resolutions: list[tuple[str, str]] = []
+
+    def _record_movement_action(request=None, result=None, **_kwargs) -> None:
+        if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_MOVEMENT_ACTION:
+            return
+        option = next(
+            (
+                candidate
+                for candidate in list(getattr(request, "options", []) or [])
+                if str(getattr(candidate, "option_id", "") or "") == str(getattr(result, "option_id", "") or "")
+            ),
+            None,
+        )
+        payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
+        movement_action_resolutions.append(
+            (
+                str(payload.get("unit_id", "") or ""),
+                str(payload.get("action_type", "") or ""),
+            )
+        )
+
+    game.event_system.subscribe(
+        "decision_resolved",
+        _record_movement_action,
+        group="test_phase_flow_contracts",
+    )
+    HeadlessPolicyDecisionController(game=game, auto_attach=True)
+
+    game._queue_movement_phase_move_units_selection()
+
+    assert (fixture.active_unit.id, "move") in movement_action_resolutions
+    assert (second_unit.id, "stationary") in movement_action_resolutions
+    assert second_unit.round_state.moved_this_round is True
+    assert second_unit.round_state.remained_stationary_this_round is True
+    assert list(game.decision_queue.list() or []) == []
+
+
 @pytest.mark.integration
 def test_real_game_headless_successful_charge_completes_fight_phase(build_phase_game, monkeypatch) -> None:
     fixture = build_phase_game(enemy_distance=3.0, current_control=PlayerControl.REMOTE)

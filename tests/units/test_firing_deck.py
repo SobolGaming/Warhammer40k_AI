@@ -22,10 +22,13 @@ def _mk_model(name: str) -> Model:
 
 def test_apply_and_clear_firing_deck_virtual_wargear_injects_into_transport_model():
     transport = Unit.__new__(Unit)
+    transport._id = "TRANSPORT_STABLE"
     transport.models = [_mk_model("Transport")]
+    transport.models[0]._id = "TRANSPORT_STABLE_M0"
     transport.models[0].wargear = []
 
     passenger = _mk_model("Passenger")
+    passenger._id = "PASSENGER_STABLE_M0"
     passenger_wg = Wargear(
         {
             "name": "Lasgun",
@@ -39,6 +42,7 @@ def test_apply_and_clear_firing_deck_virtual_wargear_injects_into_transport_mode
             "description": "",
         }
     )
+    passenger_wg._id = "PASSENGER_STABLE_W0"
     passenger.wargear = [passenger_wg]
 
     selection = {
@@ -56,11 +60,15 @@ def test_apply_and_clear_firing_deck_virtual_wargear_injects_into_transport_mode
     assert getattr(transport, "_firing_deck_virtual_sources")
     # Mapping points back to the passenger model
     assert passenger in list(transport._firing_deck_virtual_sources.values())[0]
+    first_virtual_id = transport.models[0].wargear[0].id
 
     transport.clear_firing_deck_virtual_wargear()
     assert len(transport.models[0].wargear) == 0
     assert transport._firing_deck_virtual_wargear == []
     assert transport._firing_deck_virtual_sources == {}
+
+    transport.apply_firing_deck_virtual_wargear([selection])
+    assert transport.models[0].wargear[0].id == first_virtual_id
 
 
 def test_firing_deck_marks_source_models_as_shot_during_execute():
@@ -114,4 +122,3 @@ def test_firing_deck_marks_source_models_as_shot_during_execute():
     assert shooter.round_state.shot_this_round is True
     assert getattr(passenger_model, "_shot_via_firing_deck_this_round") is True
     assert passenger_unit.round_state.shot_this_round is True
-

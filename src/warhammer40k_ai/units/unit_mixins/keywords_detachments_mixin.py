@@ -141,6 +141,7 @@ class KeywordsDetachmentsMixin:
         if not vw:
             self._firing_deck_virtual_wargear = []
             self._firing_deck_virtual_sources = {}
+            self._firing_deck_declared_this_phase = False
             return
         for model in list(getattr(self, "models", []) or []):
             try:
@@ -153,6 +154,7 @@ class KeywordsDetachmentsMixin:
                 continue
         self._firing_deck_virtual_wargear = []
         self._firing_deck_virtual_sources = {}
+        self._firing_deck_declared_this_phase = False
 
     def apply_firing_deck_virtual_wargear(self, selections: List[dict]) -> None:
         """
@@ -169,6 +171,9 @@ class KeywordsDetachmentsMixin:
         so shooting resolution can mark those embarked models as having shot.
         """
         import copy
+        import hashlib
+
+        from ...utility.entity_ids import maybe_entity_id
 
         # Clear any previous injection first (safe even if none)
         self.clear_firing_deck_virtual_wargear()
@@ -180,10 +185,15 @@ class KeywordsDetachmentsMixin:
         host = host_models[0]
 
         class _VirtualWargear:
-            def __init__(self, name: str, profile_obj):
+            def __init__(self, name: str, profile_obj, entity_id: str):
                 self.name = (name or "Firing Deck").replace("\u2019", "'")
+                self._id = str(entity_id or "")
                 self.type = "ranged"
                 self.profiles = {"default": profile_obj}
+
+            @property
+            def id(self) -> str:
+                return self._id
 
             def is_ranged(self) -> bool:
                 return True
@@ -207,10 +217,21 @@ class KeywordsDetachmentsMixin:
                 continue
 
             # Clone the profile so we can safely re-parent it without mutating the source model's weapon.
+            profile_name = str(s.get("profile_name", "") or getattr(src_profile, "name", "") or "default")
+            identity = "|".join(
+                [
+                    str(maybe_entity_id(self) or "transport"),
+                    str(maybe_entity_id(src_model) or getattr(src_model, "name", "") or "model"),
+                    str(maybe_entity_id(src_wargear) or getattr(src_wargear, "name", "") or "wargear"),
+                    profile_name,
+                ]
+            )
+            digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:20]
             pclone = copy.copy(src_profile)
-            pclone._id = str(uuid.uuid4())
+            virtual_wargear_id = f"firing_deck:{digest}"
+            pclone._id = f"{virtual_wargear_id}:profile"
             vname = f"{getattr(src_wargear, 'name', 'Weapon')} (Firing Deck)"
-            vwg = _VirtualWargear(vname, pclone)
+            vwg = _VirtualWargear(vname, pclone, virtual_wargear_id)
             pclone.parent_wargear = vwg
 
             try:

@@ -12569,8 +12569,12 @@ class GameRuleEventService(GameServiceBase):
         if request is None:
             return None
         from .decision_dispatcher import dispatch_decision
-        with game_context(self):
-            apply_result = dispatch_decision(self, request, result)
+        setattr(request, "_resolution_in_progress", True)
+        try:
+            with game_context(self):
+                apply_result = dispatch_decision(self, request, result)
+        finally:
+            setattr(request, "_resolution_in_progress", False)
         self.decision_record_store.record_resolution(
             request,
             result,
