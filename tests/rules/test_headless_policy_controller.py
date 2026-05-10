@@ -8,9 +8,12 @@ from shapely.geometry import Point
 import warhammer40k_ai.engine.headless_policy_controller as headless_policy_module
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_PLAYER_COLOR,
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
@@ -18,9 +21,12 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
+    DECISION_SCOUT_MOVE,
     DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_UNIT,
+    DECISION_SHADOW_ASSIGNMENT,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
@@ -515,6 +521,64 @@ def test_headless_policy_controller_treats_start_of_battle_keyword_as_setup() ->
     payload = dict(game.commands[0].payload or {})
     assert str(payload.get("option_id", "")) == str(options[1].option_id)
     assert dict(payload.get("result_payload", {}) or {}) == {"keyword": "B"}
+
+
+def test_headless_policy_controller_treats_setup_decision_types_as_setup_without_phase_context() -> None:
+    class _PreferFirstRouter:
+        def rank_legal_candidates(self, request, *, fallback_order=None):
+            del request
+            candidates = list(fallback_order or [])
+            return sorted(candidates, key=lambda candidate: str(candidate.action_id) != "a")
+
+    setup_decision_types = [
+        DECISION_ATTACH_LEADER,
+        DECISION_ATTACH_SUPPORT_ARTILLERY,
+        DECISION_ASSIGN_TRANSPORT,
+        DECISION_CHOOSE_DEPLOYMENT_ZONE,
+        DECISION_CHOOSE_MISSION,
+        DECISION_CHOOSE_PLAYER_COLOR,
+        DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+        DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+        DECISION_DECLARE_RESERVES,
+        DECISION_SCOUT_MOVE,
+        DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        DECISION_SELECT_SETUP_REACTIVE_TARGET,
+        DECISION_SHADOW_ASSIGNMENT,
+    ]
+
+    controller = HeadlessPolicyDecisionController(
+        game=None,
+        auto_attach=False,
+        ai_router=_PreferFirstRouter(),
+        ai_router_ignore_setup_decisions=True,
+    )
+    for decision_type in setup_decision_types:
+        options = [
+            DecisionOption.create("Option A", payload={"action_id": "a"}),
+            DecisionOption.create("Option B", payload={"action_id": "b"}),
+        ]
+        request = DecisionRequest.create(
+            decision_type,
+            "Pick one",
+            player_id="p1",
+            options=options,
+            context={"phase": "COMMAND_PHASE"},
+            candidates=[
+                CandidateAction(
+                    action_id="a",
+                    params={"choice": "A"},
+                    metadata={"projected_score_delta_next_window": 1.0},
+                ),
+                CandidateAction(
+                    action_id="b",
+                    params={"choice": "B"},
+                    metadata={"projected_score_delta_next_window": 3.0},
+                ),
+            ],
+            mask=[True, True],
+        )
+
+        assert not controller._should_use_ai_router(request, _FakeGame()), decision_type
 
 
 def test_headless_policy_tie_break_is_independent_of_request_uuid() -> None:

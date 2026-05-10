@@ -14,10 +14,12 @@ from .ai_controller_router import AIControllerRouter
 from .decision_controller import DecisionController
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
-    DECISION_ASSIGN_TRANSPORT,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_DECLARE_FIRING_DECK,
     DECISION_DECLARE_RESERVES,
@@ -25,11 +27,14 @@ from .decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
+    DECISION_SCOUT_MOVE,
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_TOOL_ACTION,
     DECISION_SELECT_UNIT,
+    DECISION_SHADOW_ASSIGNMENT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
@@ -63,6 +68,22 @@ _DEFAULT_SKIPPED_DECISION_TYPES = {
 
 _DRIVER_MANAGED_DECISION_TYPES = {
     DECISION_CHOOSE_MISSION,
+}
+
+_AI_ROUTER_SETUP_DECISION_TYPES = {
+    DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_PLAYER_COLOR,
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+    DECISION_DECLARE_RESERVES,
+    DECISION_SCOUT_MOVE,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
+    DECISION_SHADOW_ASSIGNMENT,
 }
 
 _HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
@@ -215,7 +236,7 @@ class HeadlessPolicyDecisionController(DecisionController):
     @staticmethod
     def _request_is_setup_request(request: DecisionRequest, game: object | None = None) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip().upper()
-        if decision_type == DECISION_CHOOSE_START_OF_BATTLE_KEYWORD:
+        if decision_type in _AI_ROUTER_SETUP_DECISION_TYPES:
             return True
         is_setup = getattr(game, "is_in_setup_phase", None)
         if callable(is_setup) and bool(is_setup()):
