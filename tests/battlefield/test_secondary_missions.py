@@ -2,6 +2,9 @@
 import pytest
 
 from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.engine.decision_handlers.abilities import _apply_discard_secondary, _validate_discard_secondary
+from warhammer40k_ai.engine.decisions import DecisionResult
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.engine.mission_cards import (
     BehindEnemyLinesSecondary,
@@ -47,6 +50,121 @@ def make_game():
     p1.army.set_player(p1)
     p2.army.set_player(p2)
     return game, p1, p2
+
+
+def _resolve_request_option(request, *, action: str | None = None, card_slots: list[int] | None = None):
+    for option in list(request.options or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if action is not None and str(payload.get("action", "") or "") != action:
+            continue
+        if card_slots is not None and list(payload.get("card_slots", []) or []) != list(card_slots):
+            continue
+        return option
+    raise AssertionError("Expected option was not found.")
+
+
+def test_tactical_end_turn_secondary_discard_decisions_queue_for_both_players_in_order():
+    game, p1, p2 = make_game()
+    game.secondary_mission_mode = "tactical"
+    p1.active_secondaries = [CleanseSecondary(), SecureNoMansLandSecondary()]
+    p2.active_secondaries = [AreaDenialSecondary()]
+
+    assert game._queue_tactical_secondary_discard_decision(p1, p1) is True
+    assert game._queue_tactical_secondary_discard_decision(p2, p1) is True
+    pending = list(game.decision_queue.list() or [])
+
+    assert [request.player_id for request in pending] == [p1.id, p2.id]
+    assert pending[0].context["discard_source"] == "tactical_end_turn"
+    assert pending[0].context["discard_timing"] == "end_of_turn"
+    assert pending[0].context["secondary_discard_reason"] == "voluntary_tactical_end_turn"
+    assert pending[0].context["gain_cp_if_discarded"] is True
+    assert pending[1].context["gain_cp_if_discarded"] is False
+
+    payloads = [dict(option.payload or {}) for option in list(pending[0].options or [])]
+    assert any(payload.get("skip") is True for payload in payloads)
+    assert any(payload.get("card_slots") == [0, 1] for payload in payloads)
+
+
+def test_tactical_end_turn_secondary_discard_applies_multiple_cards_and_one_cp():
+    game, p1, _p2 = make_game()
+    game.secondary_mission_mode = "tactical"
+    game.turn = 2
+    first = CleanseSecondary()
+    second = SecureNoMansLandSecondary()
+    p1.active_secondaries = [first, second]
+
+    assert game._queue_tactical_secondary_discard_decision(p1, p1) is True
+    request = game.decision_queue.peek()
+    choice = _resolve_request_option(request, action="discard", card_slots=[0, 1])
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    assert _validate_discard_secondary(game, request, result) == ()
+    assert _apply_discard_secondary(game, request, result) == [first, second]
+    assert p1.active_secondaries == []
+    assert p1.discarded_secondaries[-2:] == [first, second]
+    assert p1.command_points == 1
+    assert [entry["source"] for entry in p1.cp_history if entry["delta"] > 0] == ["secondary_discard"]
+
+
+def test_tactical_end_turn_secondary_discard_default_headless_policy_prefers_skip():
+    game, p1, _p2 = make_game()
+    game.secondary_mission_mode = "tactical"
+    p1.active_secondaries = [CleanseSecondary(), SecureNoMansLandSecondary()]
+
+    assert game._queue_tactical_secondary_discard_decision(p1, p1) is True
+    request = game.decision_queue.peek()
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+    ranked = controller._rank_legal_candidates(request)
+
+    assert ranked
+    assert dict(ranked[0].params or {}).get("action") == "skip"
+
+
+def test_tactical_end_turn_opponent_secondary_discard_does_not_gain_cp():
+    game, p1, p2 = make_game()
+    game.secondary_mission_mode = "tactical"
+    p2.active_secondaries = [AreaDenialSecondary()]
+
+    assert game._queue_tactical_secondary_discard_decision(p2, p1) is True
+    request = game.decision_queue.peek()
+    choice = _resolve_request_option(request, action="discard", card_slots=[0])
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p2.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    assert _validate_discard_secondary(game, request, result) == ()
+    assert _apply_discard_secondary(game, request, result) == [p2.discarded_secondaries[-1]]
+    assert p2.active_secondaries == []
+    assert p2.command_points == 0
+    assert p2.cp_history == []
+
+
+def test_fixed_secondaries_cannot_use_tactical_end_turn_discard_decision():
+    game, p1, _p2 = make_game()
+    game.secondary_mission_mode = "tactical"
+    p1.active_secondaries = [CleanseSecondary()]
+    assert game._queue_tactical_secondary_discard_decision(p1, p1) is True
+    request = game.decision_queue.peek()
+    game.secondary_mission_mode = "fixed"
+    choice = _resolve_request_option(request, action="discard", card_slots=[0])
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    assert _validate_discard_secondary(game, request, result) == (
+        "Fixed Secondary Mission cards cannot be voluntarily discarded.",
+    )
 
 
 def new_unit(at=(5, 5), alive=True, aircraft=False, battle_shocked=False, models=1):
@@ -378,5 +496,3 @@ def test_secure_no_mans_land():
         game.map.objectives.append(obj)
     res = card.score_at_end_of_turn(game, p1)
     assert res.vp in (2, 5)
-
-

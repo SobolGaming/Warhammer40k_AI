@@ -34419,6 +34419,18 @@ def _validate_discard_secondary(game: object, request: DecisionRequest, result: 
         or payload.get("ability_key", "")
         or ""
     ).strip().lower()
+    discard_source = _discard_secondary_source(request, payload)
+    if ability == "tactical_secondary_discard" or discard_source == "tactical_end_turn":
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Tactical secondary discard player not found.",)
+        if _game_uses_fixed_secondaries(game, player):
+            return ("Fixed Secondary Mission cards cannot be voluntarily discarded.",)
+        if is_skip_choice(request, result):
+            return ()
+        if not _resolve_secondary_card_choices(game, request, result):
+            return ("Tactical secondary discard requires one or more active Secondary Mission card choices.",)
+        return ()
     if ability != "new_orders":
         return ()
     player = _resolve_player(game, request, payload)
@@ -34438,6 +34450,23 @@ def _validate_discard_secondary(game: object, request: DecisionRequest, result: 
         if not bool(can_use(stratagem_name, phase_name=phase_name)):
             return ("New Orders stratagem is not available.",)
     return ()
+
+
+def _discard_secondary_source(request: DecisionRequest, payload: dict) -> str:
+    return str(
+        request.context.get("discard_source", "")
+        or payload.get("discard_source", "")
+        or request.context.get("secondary_discard_reason", "")
+        or payload.get("secondary_discard_reason", "")
+        or ""
+    ).strip().lower()
+
+
+def _game_uses_fixed_secondaries(game: object, player: object | None = None) -> bool:
+    is_fixed = getattr(game, "_is_fixed_secondaries", None)
+    if callable(is_fixed):
+        return bool(is_fixed(player))
+    return str(getattr(game, "secondary_mission_mode", "") or "").strip().lower() == "fixed"
 
 
 def _resolve_secondary_card_choice(game: object, request: DecisionRequest, result: DecisionResult):
@@ -34466,6 +34495,61 @@ def _resolve_secondary_card_choice(game: object, request: DecisionRequest, resul
     return None
 
 
+def _resolve_secondary_card_choices(game: object, request: DecisionRequest, result: DecisionResult) -> list:
+    payload = _option_payload(request, result)
+    explicit_cards = payload.get("cards", payload.get("secondaries"))
+    if isinstance(explicit_cards, list):
+        return list(explicit_cards)
+    card = payload.get("card", payload.get("secondary"))
+    if card is not None:
+        return [card]
+
+    player = _resolve_player(game, request, payload)
+    if player is None:
+        return []
+    active_cards = list(getattr(player, "active_secondaries", []) or [])
+    resolved: list = []
+    seen_slots: set[int] = set()
+    raw_slots = payload.get("card_slots")
+    if isinstance(raw_slots, list):
+        for raw_slot in raw_slots:
+            try:
+                slot_index = int(raw_slot)
+            except (TypeError, ValueError):
+                return []
+            if slot_index in seen_slots:
+                return []
+            seen_slots.add(slot_index)
+            if not (0 <= slot_index < len(active_cards)):
+                return []
+            resolved.append(active_cards[slot_index])
+        if resolved:
+            return resolved
+
+    single = _resolve_secondary_card_choice(game, request, result)
+    if single is not None:
+        return [single]
+
+    raw_names = payload.get("card_names")
+    if not isinstance(raw_names, list):
+        return []
+    wanted_names = [str(name or "") for name in raw_names if str(name or "")]
+    if not wanted_names:
+        return []
+    remaining = list(active_cards)
+    for wanted in wanted_names:
+        match = None
+        for card_obj in remaining:
+            if str(getattr(card_obj, "name", "") or "") == wanted:
+                match = card_obj
+                break
+        if match is None:
+            return []
+        remaining.remove(match)
+        resolved.append(match)
+    return resolved
+
+
 def _apply_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult):
     payload = _option_payload(request, result)
     ability = str(
@@ -34474,6 +34558,27 @@ def _apply_discard_secondary(game: object, request: DecisionRequest, result: Dec
         or payload.get("ability_key", "")
         or ""
     ).strip().lower()
+    discard_source = _discard_secondary_source(request, payload)
+    if ability == "tactical_secondary_discard" or discard_source == "tactical_end_turn":
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            raise RuntimeError("Tactical secondary discard player not found.")
+        if is_skip_choice(request, result):
+            return None
+        cards = _resolve_secondary_card_choices(game, request, result)
+        if not cards:
+            raise RuntimeError("Tactical secondary card not found.")
+        for card in list(cards):
+            player.discard_secondary(card, gain_cp=False, source="tactical_end_turn")
+        should_gain_cp = bool(
+            request.context.get("gain_cp_if_discarded", False)
+            or payload.get("gain_cp_if_discarded", False)
+        )
+        if should_gain_cp:
+            gain_cp = getattr(player, "gain_command_points", None)
+            if callable(gain_cp):
+                gain_cp(1, reason="Discard Secondary (gain 1CP)", source="secondary_discard")
+        return cards
     if ability != "new_orders":
         return _resolve_secondary_card_choice(game, request, result)
 

@@ -48,7 +48,10 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 ## Mission And Secondaries
 
 - `CHOOSE_MISSION` - Select a mission-pack entry and terrain layout.
-- `DISCARD_SECONDARY` - Discard a secondary objective.
+- `DISCARD_SECONDARY` - Discard one or more secondary objectives. `NEW ORDERS`
+  choices discard one active Tactical Secondary and draw a replacement; Tactical
+  end-of-turn voluntary discard choices may discard one or more active Tactical
+  Secondaries and grant the turn player 1CP total through the normal CP-gain cap.
 
 ## Deployment And Pre-game
 
@@ -313,7 +316,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `SELECT_UNLEASH_HELL_VEHICLE` | Unleash Hell must choose a vehicle or transport. | UI | `Policy` | `T3` |
 | `CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET` | A post-shoot leadership-debuff rule needs a target. | UI | `Policy` | `T3` |
 | `CHOOSE_DAEMONIC_POISONS_TARGET` | Daemonic Poisons must choose a target. | UI | `Policy` | `T3` |
-| `DISCARD_SECONDARY` | Secondary discard choice opens. `NEW ORDERS` records carry `ability="new_orders"` and `discard_source="new_orders"`; achieved-secondary cleanup is automatic scoring cleanup, not this decision. | UI | `Policy` | `T1` |
+| `DISCARD_SECONDARY` | Secondary discard choice opens. `NEW ORDERS` records carry `ability="new_orders"` and `discard_source="new_orders"`. Tactical end-of-turn voluntary discards carry `ability="tactical_secondary_discard"`, `discard_source="tactical_end_turn"`, `discard_timing="end_of_turn"`, `card_slots[]`, and `card_names[]`; own-turn discards set `gain_cp_if_discarded=true`. Achieved-secondary cleanup is automatic scoring cleanup, not this decision. | UI | `Policy` | `T1` |
 | `CHOOSE_SHADOW_FORM` | Shadow Form round-start choice opens. | UI | `Policy` | `T1` |
 | `CHOOSE_VOW` | Vow battle-start choice opens. | UI | `Policy` | `T1` |
 | `ISSUE_ORDER` | An order source must choose an order and recipient. | UI | `Policy` | `T2` |

@@ -46,6 +46,206 @@ class GameMissionsScoringActionsMixin:
         mode = getattr(self, "secondary_mission_mode", None)
         return str(mode).lower() == "fixed"
 
+    def _phase_label_for_decision_context(self) -> str:
+        label_fn = getattr(self, "_current_phase_label", None)
+        if callable(label_fn):
+            label = str(label_fn() or "").strip()
+            if label:
+                return label
+        phase = getattr(self, "phase", None)
+        phase_name = getattr(phase, "name", None)
+        if phase_name:
+            return str(phase_name).replace("_", " ").title()
+        if phase is not None:
+            return str(phase)
+        return "End of turn"
+
+    @staticmethod
+    def _entity_id_text(entity: object) -> str:
+        entity_id = maybe_entity_id(entity)
+        if entity_id:
+            return str(entity_id)
+        raw_id = getattr(entity, "id", None)
+        if raw_id:
+            return str(raw_id)
+        return ""
+
+    def _has_pending_tactical_secondary_discard_decision(
+        self,
+        *,
+        player_id: str,
+        turn_ending_player_id: str,
+    ) -> bool:
+        queue = getattr(self, "decision_queue", None)
+        pending_fn = getattr(queue, "list", None)
+        if not callable(pending_fn):
+            return False
+        for request in list(pending_fn() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_DISCARD_SECONDARY:
+                continue
+            if str(getattr(request, "player_id", "") or "") != str(player_id or ""):
+                continue
+            context = dict(getattr(request, "context", {}) or {})
+            if str(context.get("discard_source", "") or "") != "tactical_end_turn":
+                continue
+            if str(context.get("turn_ending_player_id", "") or "") == str(turn_ending_player_id or ""):
+                return True
+        return False
+
+    def _queue_tactical_secondary_discard_decisions(self, turn_ending_player: Player) -> None:
+        """
+        Tactical Missions allow each Tactical player to voluntarily discard one or more
+        active Secondary Mission cards at the end of each player's turn, starting with
+        the player whose turn is ending.
+        """
+        if self._is_fixed_secondaries():
+            return
+        ordered_players: list[Player] = []
+        if turn_ending_player is not None:
+            ordered_players.append(turn_ending_player)
+        for player in list(getattr(self, "players", []) or []):
+            if player is None or player is turn_ending_player:
+                continue
+            ordered_players.append(player)
+        for player in ordered_players:
+            self._queue_tactical_secondary_discard_decision(player, turn_ending_player)
+
+    def _queue_tactical_secondary_discard_decision(
+        self,
+        player: Player,
+        turn_ending_player: Player,
+    ) -> bool:
+        if player is None:
+            return False
+        active_secondaries = list(getattr(player, "active_secondaries", []) or [])
+        if not active_secondaries:
+            return False
+
+        player_id = self._entity_id_text(player)
+        turn_ending_player_id = self._entity_id_text(turn_ending_player)
+        if not player_id:
+            return False
+        if self._has_pending_tactical_secondary_discard_decision(
+            player_id=player_id,
+            turn_ending_player_id=turn_ending_player_id,
+        ):
+            return False
+
+        is_turn_player = bool(player is turn_ending_player or (player_id and player_id == turn_ending_player_id))
+        phase_label = self._phase_label_for_decision_context()
+        card_summaries = [
+            {"card_slot": int(index), "card_name": str(getattr(card, "name", "") or "Secondary")}
+            for index, card in enumerate(active_secondaries)
+        ]
+        base_payload = {
+            "ability": "tactical_secondary_discard",
+            "ability_key": "tactical_secondary_discard",
+            "ability_name": "Tactical Mission discard",
+            "discard_source": "tactical_end_turn",
+            "discard_timing": "end_of_turn",
+            "secondary_discard_reason": "voluntary_tactical_end_turn",
+            "mission_mode": "tactical",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "player_id": player_id,
+            "turn_ending_player_id": turn_ending_player_id,
+            "is_turn_player": bool(is_turn_player),
+            "gain_cp_if_discarded": bool(is_turn_player),
+            "cp_gain": 1 if is_turn_player else 0,
+            "cp_gain_cap_applies": True,
+            "semantic_tags": ["secondary", "mission", "discard", "resource"],
+        }
+        context = {
+            **base_payload,
+            "message": "End-of-turn Tactical Mission voluntary discard.",
+            "optional": True,
+            "allow_skip": True,
+            "skip_label": "Do not discard",
+            "active_secondary_cards": card_summaries,
+        }
+
+        options: list[DecisionOption] = []
+        candidates: list[CandidateAction] = []
+
+        def _add_option(label: str, payload: dict, metadata: dict) -> None:
+            action_id = str(payload.get("action_id", "") or "")
+            if not action_id:
+                raise ValueError("Tactical secondary discard option requires action_id.")
+            options.append(DecisionOption.create(label, payload=payload))
+            candidate_params = dict(payload)
+            candidate_params.pop("action_id", None)
+            candidates.append(CandidateAction(action_id=action_id, params=candidate_params, metadata=metadata))
+
+        skip_payload = {
+            **base_payload,
+            "action": "skip",
+            "skip": True,
+            "card_slots": [],
+            "card_names": [],
+            "action_id": f"discard_secondary:tactical_end_turn:00_skip:{player_id}:{turn_ending_player_id}",
+        }
+        _add_option(
+            "Do not discard",
+            skip_payload,
+            {
+                "label": "Do not discard",
+                "candidate_kind": "noop",
+                "projected_score_delta_round": 0.0,
+                "resource_delta": 0.0,
+            },
+        )
+
+        slot_count = len(active_secondaries)
+        for mask in range(1, 1 << slot_count):
+            slots = [index for index in range(slot_count) if mask & (1 << index)]
+            names = [str(getattr(active_secondaries[index], "name", "") or "Secondary") for index in slots]
+            label_names = " + ".join(names)
+            label = f"Discard {label_names}"
+            slot_token = "_".join(str(index) for index in slots)
+            payload = {
+                **base_payload,
+                "action": "discard",
+                "card_slots": slots,
+                "card_names": names,
+                "name": label,
+                "action_id": (
+                    f"discard_secondary:tactical_end_turn:10_discard:{player_id}:"
+                    f"{turn_ending_player_id}:slots_{slot_token}"
+                ),
+            }
+            if len(slots) == 1:
+                payload["card_slot"] = int(slots[0])
+                payload["card_name"] = names[0]
+            _add_option(
+                label,
+                payload,
+                {
+                    "label": label,
+                    "candidate_kind": "mission_discard",
+                    "projected_score_delta_round": -5.0 * float(len(slots)),
+                    "resource_delta": 1.0 if is_turn_player else 0.0,
+                },
+            )
+
+        request = DecisionRequest.create(
+            DECISION_DISCARD_SECONDARY,
+            "Tactical Missions: discard one or more active Secondary Mission cards.",
+            player_id=player_id,
+            options=options,
+            candidates=candidates,
+            context=context,
+        )
+        submit = getattr(self, "request_decision", None)
+        if callable(submit):
+            submit(request)
+            return True
+        queue = getattr(self, "decision_queue", None)
+        add = getattr(queue, "add", None)
+        if callable(add):
+            add(request)
+            return True
+        return False
+
     def _cap_card_vp(self, *, card: object | None, requested_vp: int, player: Player, source: str) -> int:
         """Apply per-card per-turn/total caps (including the Fixed-mission 20VP per-card cap)."""
         if not card:
@@ -645,6 +845,8 @@ class GameMissionsScoringActionsMixin:
             if (not is_fixed) and total_secondary_vp > 0:
                 scoring_player.discard_achieved_secondaries(achieved)
 
+        self._queue_tactical_secondary_discard_decisions(turn_ending_player)
+
         # Needgaârd Oathband enhancement: optional YP gain if no YP were spent this turn.
         self._queue_dead_reckoning_end_of_turn(turn_ending_player)
 
@@ -710,9 +912,7 @@ class GameMissionsScoringActionsMixin:
                 continue
             mgr.check_end_of_turn(game=self, turn_ending_player=turn_ending_player)
 
-        # b) Allow voluntary discard for current player to gain 1CP (UI/controller should call explicitly). Here we do nothing automatically.
-
-        # c) If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)
+        # If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)
 
         # End of opponent's turn: optional abilities to move units into Strategic Reserves.
         self._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player)

@@ -16,6 +16,7 @@ class SecondaryDiscardDialog(BaseDialog):
         self.list_rect = None
         self.decision_request = None
         self._option_entries: List[dict] = []
+        self._subtitle = "Choose one active Secondary to discard"
 
     def show(
         self,
@@ -32,12 +33,20 @@ class SecondaryDiscardDialog(BaseDialog):
         if self.decision_request is not None:
             options = list(getattr(self.decision_request, "options", []) or [])
             candidates = list(cards or [])
+            context = dict(getattr(self.decision_request, "context", {}) or {})
+            if str(context.get("discard_source", "") or "") == "tactical_end_turn":
+                self._subtitle = "Choose active Secondary cards to discard"
+            else:
+                self._subtitle = "Choose one active Secondary to discard"
             for opt in options:
                 payload = dict(getattr(opt, "payload", {}) or {})
                 if bool(payload.get("skip", False)) or str(payload.get("action", "") or "").strip().lower() == "skip":
                     continue
+                card_slots = list(payload.get("card_slots", []) or []) if isinstance(payload.get("card_slots"), list) else []
                 name = str(payload.get("card_name", payload.get("name", opt.label)) or "")
-                card = next((c for c in candidates if str(getattr(c, "name", "") or "") == name), None)
+                card = None
+                if len(card_slots) <= 1:
+                    card = next((c for c in candidates if str(getattr(c, "name", "") or "") == name), None)
                 self.cards.append(card)
                 self._option_entries.append({"option_id": opt.option_id, "label": name, "card": card})
         self.selected_index = 0 if self._option_entries else None
@@ -55,6 +64,7 @@ class SecondaryDiscardDialog(BaseDialog):
         self.button_states.clear()
         self.decision_request = None
         self._option_entries = []
+        self._subtitle = "Choose one active Secondary to discard"
 
     def _create_buttons(self) -> None:
         self.buttons.clear()
@@ -81,8 +91,7 @@ class SecondaryDiscardDialog(BaseDialog):
             return
         self.draw_dialog_background(screen)
         title = "Discard a Secondary"
-        subtitle = "Choose one active Secondary to discard"
-        self.draw_title_bar(screen, title, subtitle)
+        self.draw_title_bar(screen, title, self._subtitle)
         self._update_buttons()
 
         # List area
