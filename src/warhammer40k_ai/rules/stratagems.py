@@ -50,7 +50,6 @@ logger = logging.getLogger(__name__)
 
 CORE_ONCE_PER_BATTLE_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
-    "NEW ORDERS",
 }
 
 
@@ -2413,7 +2412,6 @@ class StratagemManager(
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
-            'NEW ORDERS': False,
         }
         # Once-per-battle-round limits (e.g., SUMMONED BY SLAUGHTER)
         self._used_battle_round: Dict[str, int] = {}
@@ -2536,6 +2534,8 @@ class StratagemManager(
     def _stratagem_once_per_battle_key(self, stratagem: Stratagem | Any) -> str:
         name = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if not name:
+            return ""
+        if name == "NEW ORDERS":
             return ""
         if name in CORE_ONCE_PER_BATTLE_STRATAGEM_NAMES:
             return name
@@ -6092,8 +6092,6 @@ class StratagemManager(
         if stratagem is None:
             return False
         phase_label = str(phase_name or "").strip() or "Command phase"
-        if self._stratagem_once_per_battle_used(stratagem):
-            return False
         if not bool(stratagem.can_use(self.player, self.game, phase_name=phase_label)):
             return False
         active_secondaries = list(getattr(self.player, "active_secondaries", []) or [])
@@ -6124,6 +6122,9 @@ class StratagemManager(
                         "ability_key": "new_orders",
                         "ability_name": str(getattr(stratagem, "name", "") or "NEW ORDERS"),
                         "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                        "discard_source": "new_orders",
+                        "discard_timing": "command_phase_stratagem",
+                        "secondary_discard_reason": "new_orders",
                         "stratagem_name": "NEW ORDERS",
                         "tool_id": "stratagem:new_orders",
                         "tool_type": "stratagem",
@@ -6140,6 +6141,9 @@ class StratagemManager(
                     "ability_key": "new_orders",
                     "ability_name": str(getattr(stratagem, "name", "") or "NEW ORDERS"),
                     "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                    "discard_source": "new_orders",
+                    "discard_timing": "command_phase_stratagem",
+                    "secondary_discard_reason": "new_orders",
                     "stratagem_name": "NEW ORDERS",
                     "tool_id": "stratagem:new_orders",
                     "tool_type": "stratagem",
@@ -6159,6 +6163,9 @@ class StratagemManager(
                 "phase": phase_label,
                 "phase_name": phase_label,
                 "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+                "discard_source": "new_orders",
+                "discard_timing": "command_phase_stratagem",
+                "secondary_discard_reason": "new_orders",
                 "stratagem_name": "NEW ORDERS",
                 "tool_id": "stratagem:new_orders",
                 "tool_type": "stratagem",
@@ -15532,6 +15539,11 @@ class StratagemManager(
                                 'phase_name': 'Command phase',
                                 'stratagem': s.name,
                                 'cp_cost': s.cp_cost,
+                                'ability': 'new_orders',
+                                'ability_name': 'NEW ORDERS',
+                                'discard_source': 'new_orders',
+                                'discard_timing': 'command_phase_stratagem',
+                                'secondary_discard_reason': 'new_orders',
                                 'options': [c for c in self.player.active_secondaries],
                             }, use_timer=False)
                         self._queue_new_orders_decision(phase_name='Command phase')
@@ -26475,7 +26487,7 @@ class StratagemManager(
                 logger.info(f"INFO: New Orders: discarding '{name}' and drawing a new Secondary")
             except Exception:
                 raise
-            player_obj.discard_secondary(target_card, gain_cp=False)
+            player_obj.discard_secondary(target_card, gain_cp=False, source="new_orders")
             player_obj.draw_secondary_until_two(self.game)
             if kwargs.get('dequeue') is True:
                 self._dequeue_reaction_by_name(s.name)
@@ -26483,7 +26495,6 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            self._mark_stratagem_once_per_battle_used(s)
             return True
 
         # Special-case: RAPID INGRESS (arrive from reserves at end of opponent's Movement phase)

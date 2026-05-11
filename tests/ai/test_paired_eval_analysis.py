@@ -54,6 +54,32 @@ def test_confirm_yes_no_context_label_uses_ability_name_and_message() -> None:
     assert context["unit"] == "Warp Spiders"
 
 
+def test_discard_secondary_context_label_distinguishes_new_orders() -> None:
+    request = {
+        "decision_type": "DISCARD_SECONDARY",
+        "prompt": "NEW ORDERS: discard one active Secondary Mission card and draw a new one.",
+        "context": {
+            "ability": "new_orders",
+            "ability_name": "NEW ORDERS",
+            "discard_source": "new_orders",
+            "discard_timing": "command_phase_stratagem",
+            "message": "Command phase stratagem discard and redraw.",
+        },
+        "options": [
+            {"label": "Cleanse", "payload": {"card_name": "Cleanse", "card_slot": 0}},
+            {"label": "Do not use", "payload": {"action": "skip", "skip": True}},
+        ],
+    }
+
+    context = describe_decision_context("DISCARD_SECONDARY", request_payload=request)
+
+    assert context["decision_label"] == (
+        "DISCARD_SECONDARY: NEW ORDERS | Command phase stratagem discard and redraw."
+    )
+    assert context["ability"] == "new_orders"
+    assert context["discard_source"] == "new_orders"
+
+
 def test_paired_summary_primary_bucket_is_contextual_not_generic_confirm_yes_no(monkeypatch) -> None:
     divergences = [
         {

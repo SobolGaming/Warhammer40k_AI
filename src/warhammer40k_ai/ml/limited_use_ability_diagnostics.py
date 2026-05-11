@@ -14,6 +14,7 @@ from ..engine.limited_use_context import (
     LIMIT_SCOPE_TURN,
     limited_use_scopes_from_text,
     normalize_limited_use_scope,
+    normalize_optional_ability_limited_use_context,
 )
 from ..engine.replay_store import ReplayDecisionStep, ReplayStoreReader
 from .paired_eval_analysis import (
@@ -37,9 +38,11 @@ _USE_LABELS = ("use", "activate", "select", "apply", "spend", "trigger")
 _LIMITED_USE_DECISION_PREFIXES = ("CHOOSE", "CONFIRM", "USE")
 _LIMITED_USE_DECISION_TYPES = {
     "DECLARE_RESERVES",
+    "SELECT_OVERWATCH_SHOOTER",
     "SELECT_REALM_OF_CHAOS_UNITS",
     "SELECT_RISE_TO_CHALLENGE",
     "SELECT_TARGET_MODEL",
+    "SELECT_TOOL_ACTION",
 }
 _SKIP_SCAN_KEYS = {
     "descriptor_ids",
@@ -237,6 +240,41 @@ def detect_limited_use_info(
                 if text_scopes:
                     scopes.update(text_scopes)
                     source_keys.add(normalized_key)
+
+    if not scopes:
+        normalized_probe = dict(context)
+        for source in sources[1:]:
+            for key in (
+                "ability",
+                "ability_key",
+                "ability_name",
+                "limited_use_key",
+                "message",
+                "stratagem_name",
+                "tool_id",
+            ):
+                if key not in normalized_probe and _clean_text(source.get(key)):
+                    normalized_probe[key] = source.get(key)
+        probe_context = normalize_optional_ability_limited_use_context(
+            normalized_probe,
+            ability_key=_clean_text(
+                normalized_probe.get("ability_key")
+                or normalized_probe.get("ability")
+                or normalized_probe.get("limited_use_key")
+            ),
+            ability_name=_clean_text(normalized_probe.get("ability_name")),
+            message=_clean_text(
+                normalized_probe.get("message")
+                or request_payload.get("prompt")
+                or normalized_probe.get("stratagem_name")
+            ),
+        )
+        scope = normalize_limited_use_scope(probe_context.get("limited_use_scope"))
+        if scope:
+            scopes.add(scope)
+            source_keys.add("known_limited_use_key")
+            if not limit_key:
+                limit_key = _clean_text(probe_context.get("limited_use_key"))
 
     if not scopes:
         return None

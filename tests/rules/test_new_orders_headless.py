@@ -21,6 +21,9 @@ def _new_orders_request(*, player_id: str, card_name: str = "Cleanse") -> Decisi
                     "card_name": card_name,
                     "card_slot": 0,
                     "ability_key": "new_orders",
+                    "discard_source": "new_orders",
+                    "discard_timing": "command_phase_stratagem",
+                    "secondary_discard_reason": "new_orders",
                     "stratagem_name": "NEW ORDERS",
                 },
             ),
@@ -30,13 +33,20 @@ def _new_orders_request(*, player_id: str, card_name: str = "Cleanse") -> Decisi
                     "action": "skip",
                     "skip": True,
                     "ability_key": "new_orders",
+                    "discard_source": "new_orders",
+                    "discard_timing": "command_phase_stratagem",
+                    "secondary_discard_reason": "new_orders",
                     "stratagem_name": "NEW ORDERS",
                 },
             ),
         ],
         context={
             "ability": "new_orders",
+            "ability_name": "NEW ORDERS",
+            "discard_source": "new_orders",
+            "discard_timing": "command_phase_stratagem",
             "phase_name": "Command phase",
+            "secondary_discard_reason": "new_orders",
             "stratagem_name": "NEW ORDERS",
             "optional": True,
         },
@@ -72,6 +82,10 @@ def test_queue_new_orders_decision_publishes_optional_discard_request() -> None:
     request = pending[0]
     assert request.decision_type == DECISION_DISCARD_SECONDARY
     assert request.context["ability"] == "new_orders"
+    assert request.context["ability_name"] == "NEW ORDERS"
+    assert request.context["discard_source"] == "new_orders"
+    assert request.context["discard_timing"] == "command_phase_stratagem"
+    assert request.context["secondary_discard_reason"] == "new_orders"
     assert request.context["tool_id"] == "stratagem:new_orders"
     assert request.context["optional"] is True
     payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
@@ -85,7 +99,7 @@ def test_queue_new_orders_decision_publishes_optional_discard_request() -> None:
     assert len(list(decision_queue.list() or [])) == 1
 
 
-def test_queue_new_orders_decision_respects_once_per_battle_ledger() -> None:
+def test_queue_new_orders_decision_ignores_legacy_once_per_battle_ledger() -> None:
     manager = StratagemManager.__new__(StratagemManager)
     decision_queue = DecisionQueue()
     game = SimpleNamespace(
@@ -104,8 +118,8 @@ def test_queue_new_orders_decision_respects_once_per_battle_ledger() -> None:
     manager._used_once_per_battle = {"NEW ORDERS": True}
     manager.get_by_name = lambda name: stratagem if str(name or "").upper() == "NEW ORDERS" else None
 
-    assert manager._queue_new_orders_decision(phase_name="Command phase") is False
-    assert list(decision_queue.list() or []) == []
+    assert manager._queue_new_orders_decision(phase_name="Command phase") is True
+    assert len(list(decision_queue.list() or [])) == 1
 
 
 def test_apply_discard_secondary_uses_new_orders_stratagem() -> None:

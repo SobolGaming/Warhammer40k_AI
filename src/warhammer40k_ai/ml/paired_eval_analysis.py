@@ -7,7 +7,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_DISCARD_SECONDARY
 from ..engine.replay_store import ReplayDecisionStep, ReplayStoreReader
 
 
@@ -149,23 +149,35 @@ def describe_decision_context(
     request = _as_mapping(request_payload)
     context = _merged_request_context(request_payload, decision_record)
     prompt = _clean_text(request.get("prompt")) or _clean_text(context.get("prompt"))
-    ability_name = _clean_text(context.get("ability_name")) or prompt
+    explicit_ability_name = _clean_text(context.get("ability_name"))
+    ability_name = explicit_ability_name or prompt
     message = _clean_text(context.get("message"))
     unit = _clean_text(context.get("unit"))
     trigger = _clean_text(context.get("trigger"))
     ability = _clean_text(context.get("ability"))
+    discard_source = _clean_text(context.get("discard_source") or context.get("secondary_discard_reason"))
 
     parts = [_clean_text(decision_type)]
-    if _clean_text(decision_type) == DECISION_CONFIRM_YES_NO:
+    clean_decision_type = _clean_text(decision_type)
+    if clean_decision_type == DECISION_CONFIRM_YES_NO:
         confirm_parts = [part for part in (ability_name, message) if part]
         if confirm_parts:
             parts = [DECISION_CONFIRM_YES_NO, " | ".join(confirm_parts)]
+    elif clean_decision_type == DECISION_DISCARD_SECONDARY:
+        discard_parts = [part for part in (explicit_ability_name, message) if part]
+        if not discard_parts and discard_source:
+            discard_parts = [discard_source]
+        if not discard_parts and prompt:
+            discard_parts = [prompt]
+        if discard_parts:
+            parts = [DECISION_DISCARD_SECONDARY, " | ".join(discard_parts)]
 
     return {
-        "decision_type": _clean_text(decision_type),
+        "decision_type": clean_decision_type,
         "decision_label": ": ".join(part for part in parts if part),
         "ability": ability,
         "ability_name": ability_name,
+        "discard_source": discard_source,
         "message": message,
         "prompt": prompt,
         "trigger": trigger,

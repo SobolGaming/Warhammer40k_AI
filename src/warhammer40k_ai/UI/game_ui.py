@@ -506,21 +506,41 @@ class GameView:
             if not cards:
                 on_chosen(None)
                 return
+            request_context = dict(context or {})
+            request_context.setdefault("discard_source", "manual_secondary_discard")
             options = []
             for index, card in enumerate(cards):
                 try:
                     name = str(getattr(card, "name", "Secondary") or "Secondary")
                 except Exception:
                     name = "Secondary"
-                options.append(DecisionOption.create(name, payload={"card_name": name, "card_slot": int(index)}))
+                options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={
+                            "card_name": name,
+                            "card_slot": int(index),
+                            "discard_source": request_context.get("discard_source"),
+                        },
+                    )
+                )
             if allow_skip:
-                options.append(DecisionOption.create("Do not use", payload={"action": "skip", "skip": True}))
+                options.append(
+                    DecisionOption.create(
+                        "Do not use",
+                        payload={
+                            "action": "skip",
+                            "skip": True,
+                            "discard_source": request_context.get("discard_source"),
+                        },
+                    )
+                )
             req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DISCARD_SECONDARY,
                 "Select a secondary to discard.",
                 player_id=getattr(player, "id", None),
                 options=options,
-                context=dict(context or {}),
+                context=request_context,
 
             )
 
@@ -18951,7 +18971,14 @@ class GameView:
                     player,
                     self.game,
                     lambda _chosen: None,
-                    context={"ability": "new_orders"},
+                    context={
+                        "ability": "new_orders",
+                        "ability_name": "NEW ORDERS",
+                        "discard_source": "new_orders",
+                        "discard_timing": "command_phase_stratagem",
+                        "secondary_discard_reason": "new_orders",
+                        "stratagem_name": "NEW ORDERS",
+                    },
                     allow_skip=True,
                 )
             return

@@ -15,7 +15,7 @@ Limited-use decisions should carry normalized context fields in addition to rule
 - `once_per_battle_round_key`, `once_per_turn_key`, and `once_per_phase_key` are emitted for those shorter resource windows when available.
 - Optional `limited_use_call_number` and `limited_use_max_uses` when an ability has multiple battle-scoped uses or a detachment grants an extra use.
 
-The central decision queue path normalizes explicit limited-use metadata, legacy `once_key` context, and known optional confirmations such as `WAAAGH!` and `Shadow in the Warp` before a `DecisionRecord` is emitted. The diagnostics still detect older text-only or legacy records, but report them as missing normalized metadata.
+The central decision queue path normalizes explicit limited-use metadata, legacy `once_key` context, and known optional confirmations such as `WAAAGH!` and `Shadow in the Warp` before a `DecisionRecord` is emitted. The diagnostics still detect older text-only, legacy-key, or known-key records such as old `fire_overwatch` selector rows, but report them as missing normalized metadata.
 
 ## CLI
 

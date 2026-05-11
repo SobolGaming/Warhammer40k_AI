@@ -66,10 +66,22 @@ class PlayerMissionMixin:
             self.active_secondaries.append(card)
             logger.info("%s drew Secondary: %s", self.name, card.name)
 
-    def discard_secondary(self, card: SecondaryMissionCard, gain_cp: bool = False) -> None:
+    def discard_secondary(
+        self,
+        card: SecondaryMissionCard,
+        gain_cp: bool = False,
+        *,
+        source: str = "manual_secondary_discard",
+    ) -> None:
         if card in self.active_secondaries:
             self.active_secondaries.remove(card)
             self.discarded_secondaries.append(card)
+            logger.info(
+                "%s discarded Secondary: %s (%s)",
+                getattr(self, "name", "Player"),
+                getattr(card, "name", "Secondary"),
+                str(source or "manual_secondary_discard"),
+            )
             if gain_cp:
                 self.gain_command_points(1, reason="Discard Secondary (gain 1CP)", source="mission_rule")
 
@@ -78,3 +90,8 @@ class PlayerMissionMixin:
             if card in self.active_secondaries:
                 self.active_secondaries.remove(card)
                 self.discarded_secondaries.append(card)
+                logger.info(
+                    "%s discarded achieved Secondary: %s",
+                    getattr(self, "name", "Player"),
+                    getattr(card, "name", "Secondary"),
+                )

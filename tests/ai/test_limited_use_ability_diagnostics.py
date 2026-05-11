@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.replay_store import ReplayDecisionStep
+import warhammer40k_ai.ml.limited_use_ability_diagnostics as diagnostics_module
 from warhammer40k_ai.ml.limited_use_ability_diagnostics import (
     detect_limited_use_info,
     limited_use_decision_row,
+    limited_use_rows_from_report,
     summarize_limited_use_rows,
     summarize_paired_limited_use_reports,
 )
@@ -132,6 +135,126 @@ def test_detect_limited_use_info_uses_once_per_turn_context() -> None:
     assert info.scopes == ("turn",)
     assert info.limit_key == "fire_overwatch"
     assert info.has_normalized_metadata is True
+
+
+def test_detect_limited_use_info_flags_legacy_fire_overwatch_key_as_missing_metadata() -> None:
+    request = {
+        "decision_type": "SELECT_OVERWATCH_SHOOTER",
+        "prompt": "FIRE OVERWATCH: select a unit to shoot the enemy mover.",
+        "context": {
+            "ability": "fire_overwatch",
+            "ability_name": "FIRE OVERWATCH",
+            "stratagem_name": "FIRE OVERWATCH",
+            "tool_id": "stratagem:fire_overwatch",
+        },
+        "candidates": [
+            {
+                "action_id": "shoot",
+                "params": {
+                    "ability_key": "fire_overwatch",
+                    "stratagem_name": "FIRE OVERWATCH",
+                    "tool_id": "stratagem:fire_overwatch",
+                    "unit_id": "unit-1",
+                },
+                "metadata": {"label": "Shooter"},
+            }
+        ],
+        "chosen_action_id": "shoot",
+    }
+
+    info = detect_limited_use_info(
+        request_payload=request,
+        decision_record={},
+        chosen_candidate=request["candidates"][0],
+    )
+
+    assert info is not None
+    assert info.scopes == ("turn",)
+    assert info.limit_key == "fire_overwatch"
+    assert "known_limited_use_key" in info.source_keys
+    assert info.has_normalized_metadata is False
+
+
+def test_limited_use_rows_include_overwatch_selector_legacy_records(monkeypatch) -> None:
+    request = {
+        "decision_type": "SELECT_OVERWATCH_SHOOTER",
+        "prompt": "FIRE OVERWATCH: select a unit to shoot the enemy mover.",
+        "context": {
+            "ability": "fire_overwatch",
+            "ability_name": "FIRE OVERWATCH",
+            "stratagem_name": "FIRE OVERWATCH",
+            "tool_id": "stratagem:fire_overwatch",
+        },
+        "candidates": [
+            {
+                "action_id": "shoot",
+                "params": {"ability_key": "fire_overwatch", "unit_id": "unit-1"},
+                "metadata": {"label": "Shooter"},
+            }
+        ],
+    }
+
+    class FakeReader:
+        def __init__(self, replay_path):
+            assert replay_path == "fake.sqlite3"
+
+        def decision_count(self) -> int:
+            return 1
+
+        def list_steps(self, *, limit: int):
+            assert limit == 1
+            return [
+                ReplayDecisionStep(
+                    decision_idx=1,
+                    decision_id="d1",
+                    turn_id=3,
+                    phase="CHARGE_PHASE",
+                    actor_player_id="p1",
+                    controller_kind="ai",
+                    decision_type="SELECT_OVERWATCH_SHOOTER",
+                    chosen_option_id="",
+                    chosen_action_id="shoot",
+                    valid=True,
+                    wall_clock_ms=1,
+                    time_budget_ms=None,
+                    event_start_id=None,
+                    event_end_id=None,
+                )
+            ]
+
+        def get_request_payload(self, decision_idx: int):
+            assert decision_idx == 1
+            return request
+
+        def get_decision_record(self, decision_idx: int):
+            assert decision_idx == 1
+            return {}
+
+    monkeypatch.setattr(diagnostics_module, "ReplayStoreReader", FakeReader)
+
+    rows, errors = limited_use_rows_from_report(
+        {
+            "games": [
+                {
+                    "result": {
+                        "game_id": "selfplay:1",
+                        "replay_path": "fake.sqlite3",
+                        "scoreboard": {"Aeldari": 40, "World Eaters": 31},
+                        "winner_army_label": "Aeldari",
+                    }
+                }
+            ]
+        },
+        primary_score_label="Aeldari",
+        opponent_score_label="World Eaters",
+        limit_scopes=("turn",),
+    )
+
+    assert errors == []
+    assert len(rows) == 1
+    assert rows[0]["ability_label"] == "SELECT_OVERWATCH_SHOOTER"
+    assert rows[0]["limit_scopes"] == ["turn"]
+    assert rows[0]["limited_use_metadata_missing"] is True
 
 
 def test_limited_use_decision_row_extracts_timing_choice_and_margin() -> None:

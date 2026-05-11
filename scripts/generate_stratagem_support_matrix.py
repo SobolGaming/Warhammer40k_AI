@@ -160,7 +160,7 @@ def _support_classification(row: StratagemRow) -> Tuple[str, str]:
         "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player).",
         "FIRE OVERWATCH": "Queued when an enemy unit is set up, starts/ends a Normal/Advance/Fall Back move, or declares a charge; resolves shooting with hit-on-6s restriction.",
         "RAPID INGRESS": "Queued at end of opponent Movement phase; places a reserves unit immediately.",
-        "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw; once per battle enforced.",
+        "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw; current rules have no once-per-battle cap.",
         "TANK SHOCK": "Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6).",
         "GRENADE": "Shooting phase: pick a GRENADES unit + eligible enemy within 8\"; roll 6D6; 4+ = 1 MW.",
         "GO TO GROUND": "Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase.",

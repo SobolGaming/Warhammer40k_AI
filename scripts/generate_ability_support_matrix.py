@@ -20840,7 +20840,7 @@ def _stratagem_support(
         "GRENADE": "Shooting phase: 6D6 vs 4+ for mortal wounds within 8\".",
         "HEROIC INTERVENTION": "Charge phase: select unit to charge after enemy charge ends.",
         "INSANE BRAVERY": "Command phase: auto-pass Battle-shock once per battle.",
-        "NEW ORDERS": "Command phase: discard a Secondary and draw a new one; once per battle enforced.",
+        "NEW ORDERS": "Command phase: discard a Secondary and draw a new one; current rules have no once-per-battle cap.",
         "RAPID INGRESS": "Movement phase: place a reserves unit at end of opponent move.",
         "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
         "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",

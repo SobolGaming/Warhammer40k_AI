@@ -95,11 +95,11 @@ def test_normalizes_stratagem_once_per_battle_scope_before_target_unit() -> None
         {
             "stratagem_id": "strat-1",
             "unit_id": "target-unit",
-            "once_per_battle_key": "new_orders",
+            "once_per_battle_key": "insane_bravery",
         },
-        ability_key="new_orders",
-        ability_name="New Orders",
-        message="Use New Orders?",
+        ability_key="insane_bravery",
+        ability_name="Insane Bravery",
+        message="Use Insane Bravery?",
     )
 
     assert context["limited_use_scope"] == LIMIT_SCOPE_BATTLE
