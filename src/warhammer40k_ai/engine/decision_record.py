@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import time
 from typing import Any, Optional
 
@@ -21,6 +22,7 @@ SCHEMA_VERSION = "1.1.0"
 DEFAULT_MISSION_DESCRIPTOR_ID = "unknown_mission_descriptor"
 DEFAULT_DEPLOYMENT_DESCRIPTOR_ID = "unknown_deployment_descriptor"
 DEFAULT_ARMY_BUILD_DESCRIPTOR_ID = "unknown_army_build_descriptor"
+_STATE_BLOB_RECURSION_LIMIT = 10000
 
 
 def _repo_root() -> Path:
@@ -596,10 +598,16 @@ class DecisionRecordStore:
             getattr(self.game, "_state_blob_units_runtime_cache", None) if had_prev_state_blob_units_cache else None
         )
         setattr(self.game, "_state_blob_units_runtime_cache", {})
+        previous_recursion_limit = sys.getrecursionlimit()
+        recursion_limit_changed = previous_recursion_limit < _STATE_BLOB_RECURSION_LIMIT
+        if recursion_limit_changed:
+            sys.setrecursionlimit(_STATE_BLOB_RECURSION_LIMIT)
         try:
             omniscient_state = _default_omniscient_state(self.game)
             player_obs_state = _default_player_obs_state(self.game)
         finally:
+            if recursion_limit_changed:
+                sys.setrecursionlimit(previous_recursion_limit)
             if had_prev_state_blob_units_cache:
                 setattr(self.game, "_state_blob_units_runtime_cache", prev_state_blob_units_cache)
             else:

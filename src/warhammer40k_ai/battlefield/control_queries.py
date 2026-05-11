@@ -72,6 +72,13 @@ def control_region_shape(control_region: object, *, game_state: object | None = 
 
 
 def control_region_centroid(control_region: object, *, game_state: object | None = None) -> tuple[float, float, float]:
+    kind = str(getattr(control_region, "kind", "") or "").upper()
+    if kind == "OBJECTIVE_CONTROL_RADIUS":
+        return (
+            safe_float(getattr(control_region, "center_x", 0.0)),
+            safe_float(getattr(control_region, "center_y", 0.0)),
+            safe_float(getattr(control_region, "center_z", 0.0)),
+        )
     shape = control_region_shape(control_region, game_state=game_state)
     if shape is not None:
         try:

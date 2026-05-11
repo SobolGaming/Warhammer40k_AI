@@ -2488,14 +2488,20 @@ class Model:
         # print(f"{self.name} [{self.id}] has Died!!!")
         #self.callbacks[hook_events.ENEMY_MODEL_KILLED].append(self)
         # Trigger on-death abilities (before the model is removed from its unit)
+        parent_unit = getattr(self, "parent_unit", None)
         try:
-            if getattr(self, "parent_unit", None) is not None:
-                self.parent_unit._handle_model_destroyed(model=self, game_map=game_map)
+            if parent_unit is not None:
+                parent_unit._handle_model_destroyed(model=self, game_map=game_map)
         except Exception:
             # Never let reactive abilities crash core death/removal.
             pass
 
-        self.parent_unit.remove_model(self, False, game_map=game_map)
+        parent_unit = getattr(self, "parent_unit", None)
+        if parent_unit is None:
+            return
+        if self not in list(getattr(parent_unit, "models", []) or []):
+            return
+        parent_unit.remove_model(self, False, game_map=game_map)
 
     # Fleeing is like dying but does not trigger any rules of when a "model is destroyed"
     def flee(self, game_map: Optional['Map'] = None) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from shapely.geometry import Point, Polygon
 
+from warhammer40k_ai.battlefield import control_queries
 from warhammer40k_ai.battlefield.control_queries import objective_control_cache_scope
 from warhammer40k_ai.battlefield.objective_sites import Objective, ObjectiveCategory, ObjectiveSite
 
@@ -90,6 +91,19 @@ def test_marker_objective_site_binds_control_region_and_score_source_ids() -> No
     assert entry["geometry"]["kind"] == "MARKER"
     assert entry["control_region"]["region_id"] == f"region:objective:{objective.id}"
     assert entry["score_sources"][0]["score_source_id"] == f"score_source:objective:{objective.id}"
+
+
+def test_marker_objective_centroid_uses_center_without_shapely_point(monkeypatch) -> None:
+    site = ObjectiveSite(10.0, 12.0, 0.0, control_radius=3.0)
+
+    def _raise_if_called(*_args, **_kwargs):
+        raise RecursionError("Point construction should not be needed for radius centroid")
+
+    monkeypatch.setattr(control_queries, "Point", _raise_if_called)
+
+    entry = site.to_state_entry(objective_id="objective:test")
+
+    assert entry["geometry"]["position"] == [10.0, 12.0, 0.0]
 
 
 def test_terrain_footprint_objective_site_uses_polygon_control_region() -> None:

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_REQUEST_DICE_ROLL
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_DICE_REROLL,
+)
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -169,14 +173,52 @@ def _resolve_available_stratagem_name(player: Player, expected_name: str) -> str
 
 
 def _resolve_pending_dice_roll(game: Game, *, player_id: str) -> bool:
-    for request in list(game.decision_queue.list() or []):
-        if str(getattr(request, "decision_type", "") or "") != DECISION_REQUEST_DICE_ROLL:
+    resolved_any = False
+    while True:
+        pending = list(game.decision_queue.list() or [])
+        request = next(
+            (
+                req
+                for req in pending
+                if str(getattr(req, "decision_type", "") or "") == DECISION_REQUEST_DICE_ROLL
+            ),
+            None,
+        )
+        if request is not None:
+            option = next(opt for opt in list(getattr(request, "options", []) or []))
+            outcome = resolve_decision_command(
+                game,
+                request,
+                option.option_id,
+                player_id=str(getattr(request, "player_id", "") or player_id),
+            )
+            assert bool(getattr(outcome, "ok", False))
+            resolved_any = True
             continue
-        option = next(opt for opt in list(getattr(request, "options", []) or []))
-        outcome = resolve_decision_command(game, request, option.option_id, player_id=player_id)
+        request = next(
+            (
+                req
+                for req in pending
+                if str(getattr(req, "decision_type", "") or "") == DECISION_SELECT_DICE_REROLL
+            ),
+            None,
+        )
+        if request is None:
+            return resolved_any
+        options = list(getattr(request, "options", []) or [])
+        option = next(
+            opt
+            for opt in options
+            if str((getattr(opt, "payload", {}) or {}).get("action_id", "") or "") == "none"
+        )
+        outcome = resolve_decision_command(
+            game,
+            request,
+            option.option_id,
+            player_id=str(getattr(request, "player_id", "") or player_id),
+        )
         assert bool(getattr(outcome, "ok", False))
-        return True
-    return False
+        resolved_any = True
 
 
 def test_orks_battleshock_pressure_descriptors_registered():

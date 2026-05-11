@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+
+import warhammer40k_ai.engine.decision_record as decision_record_module
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_PLAYER_COLOR,
@@ -120,6 +123,48 @@ def test_decision_record_store_merges_duplicate_decision_id_records() -> None:
     immediate = record["outcome"]["immediate_deltas"]
     assert immediate["errors"] == ["richer-context"]
     assert immediate["value"] == {"applied": True}
+
+
+def test_decision_record_state_snapshot_has_recursion_headroom(monkeypatch) -> None:
+    monkeypatch.setenv("WH40K_VALIDATE_DECISION_RECORDS", "0")
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[DecisionOption.create("Yes", payload={"choice": True})],
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    def _deep_payload(depth: int) -> dict[str, object]:
+        if depth <= 0:
+            return {"ok": True}
+        return {"next": _deep_payload(depth - 1)}
+
+    monkeypatch.setattr(decision_record_module, "_default_omniscient_state", lambda _game: _deep_payload(220))
+    monkeypatch.setattr(decision_record_module, "_default_player_obs_state", lambda _game: {"p1": _deep_payload(220)})
+
+    previous_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(180)
+    try:
+        record = game.decision_record_store.record_resolution(
+            request,
+            result,
+            ok=True,
+            errors=(),
+            value=None,
+            wall_clock_ms=1,
+        )
+    finally:
+        sys.setrecursionlimit(previous_limit)
+
+    assert record["omniscient_state"]["next"]
+    assert sys.getrecursionlimit() == previous_limit
 
 
 def test_decision_record_store_persists_resolved_option_payload_in_candidate_metadata() -> None:
