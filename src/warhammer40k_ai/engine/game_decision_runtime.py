@@ -15,6 +15,7 @@ from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
 from .descriptor_compiler import compile_descriptor_bundle
 from .dice_rolls import DiceRollState
+from .limited_use_context import normalize_optional_ability_limited_use_context
 from .movement_intent import MovementIntent
 from .movement_solver import generate_move_unit_candidates
 from .path_witness import PathWitnessStore
@@ -49,6 +50,18 @@ def request_decision(game, request) -> None:
         return
     request.finalize_candidates()
     ctx = dict(getattr(request, "context", {}) or {})
+    ctx = normalize_optional_ability_limited_use_context(
+        ctx,
+        ability_key=str(
+            ctx.get("ability", "")
+            or ctx.get("ability_key", "")
+            or ctx.get("once_per_battle_key", "")
+            or ctx.get("once_key", "")
+            or request.decision_type
+        ),
+        ability_name=str(ctx.get("ability_name", "") or request.prompt),
+        message=str(ctx.get("message", "") or request.prompt),
+    )
     if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
         roll_id = ctx.get("roll_id")
         if roll_id is not None and game.roll_manager is not None:

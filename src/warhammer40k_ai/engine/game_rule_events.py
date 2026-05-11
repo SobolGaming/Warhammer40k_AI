@@ -1451,10 +1451,19 @@ class GameRuleEventService(GameServiceBase):
             "phase": "Command phase",
             "waaagh_call_number": int(call_number),
             "waaagh_scope": next_scope,
+            "limited_use": True,
+            "limited_use_scope": "battle",
+            "limited_use_key": "waaagh",
+            "limited_use_call_number": int(call_number),
+            "limited_use_max_uses": 2 if is_second_call else 1,
         }
         if is_second_call:
+            ctx["once_per_battle"] = False
             message = "Call second Waaagh!? (Bully Boyz: WARBOSS, Nobz, and Meganobz units only)"
         else:
+            ctx["once_per_battle"] = True
+            ctx["once_per_battle_key"] = "waaagh"
+            ctx["once_per_battle_scope"] = "army"
             message = "Call Waaagh!? (First call this battle)"
         self._queue_optional_ability_confirmation(
             player=player,

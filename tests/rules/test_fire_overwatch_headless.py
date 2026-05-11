@@ -132,6 +132,11 @@ def test_queue_fire_overwatch_decision_publishes_select_shooter_request() -> Non
     assert request.context["ability"] == "fire_overwatch"
     assert request.context["enemy_unit_id"] == "unit:enemy"
     assert request.context["tool_id"] == "stratagem:fire_overwatch"
+    assert request.context["limited_use"] is True
+    assert request.context["limited_use_scope"] == "turn"
+    assert request.context["limited_use_key"] == "fire_overwatch"
+    assert request.context["once_per_turn"] is True
+    assert request.context["once_per_turn_key"] == "fire_overwatch"
     payloads = [dict(getattr(option, "payload", {}) or {}) for option in list(request.options or [])]
     assert [payload.get("unit_id") for payload in payloads[:-1]] == ["unit:shooter-a", "unit:shooter-b"]
     assert str(payloads[-1].get("action", "")) == "skip"

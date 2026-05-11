@@ -5,6 +5,16 @@ from dataclasses import dataclass
 from statistics import mean
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
+from ..engine.limited_use_context import (
+    LIMIT_SCOPE_BATTLE,
+    LIMIT_SCOPE_BATTLE_PER_MODEL,
+    LIMIT_SCOPE_BATTLE_PER_UNIT,
+    LIMIT_SCOPE_BATTLE_ROUND,
+    LIMIT_SCOPE_PHASE,
+    LIMIT_SCOPE_TURN,
+    limited_use_scopes_from_text,
+    normalize_limited_use_scope,
+)
 from ..engine.replay_store import ReplayDecisionStep, ReplayStoreReader
 from .paired_eval_analysis import (
     PairedGameEntry,
@@ -16,12 +26,6 @@ from .paired_eval_analysis import (
 )
 
 
-LIMIT_SCOPE_BATTLE = "battle"
-LIMIT_SCOPE_BATTLE_PER_MODEL = "battle_per_model"
-LIMIT_SCOPE_BATTLE_PER_UNIT = "battle_per_unit"
-LIMIT_SCOPE_BATTLE_ROUND = "battle_round"
-LIMIT_SCOPE_TURN = "turn"
-LIMIT_SCOPE_PHASE = "phase"
 DEFAULT_LIMIT_SCOPES = (
     LIMIT_SCOPE_BATTLE,
     LIMIT_SCOPE_BATTLE_PER_MODEL,
@@ -51,6 +55,27 @@ _SKIP_SCAN_KEYS = {
     "turn_plan",
     "version_adapter_boundary",
 }
+_NORMALIZED_LIMITED_USE_KEYS = {
+    "limited_use",
+    "limited_use_scope",
+    "limited_use_key",
+    "limited_use_call_number",
+    "limited_use_max_uses",
+    "once_per_battle",
+    "once_per_battle_ability",
+    "once_per_battle_key",
+    "once_per_battle_scope",
+    "once_per_battle_per_model",
+    "once_per_model_per_battle",
+    "once_per_battle_per_unit",
+    "once_per_unit_per_battle",
+    "once_per_battle_round",
+    "once_per_battle_round_key",
+    "once_per_turn",
+    "once_per_turn_key",
+    "once_per_phase",
+    "once_per_phase_key",
+}
 
 
 @dataclass(frozen=True)
@@ -58,6 +83,7 @@ class LimitedUseInfo:
     scopes: tuple[str, ...]
     limit_key: str
     source_keys: tuple[str, ...]
+    has_normalized_metadata: bool
 
 
 def _clean_text(value: Any) -> str:
@@ -126,23 +152,7 @@ def _request_context(request_payload: Mapping[str, Any], decision_record: Mappin
 
 
 def _scopes_from_text(text: str) -> set[str]:
-    lowered = _clean_text(text).lower()
-    scopes: set[str] = set()
-    if not lowered:
-        return scopes
-    if "once per battle round" in lowered:
-        scopes.add(LIMIT_SCOPE_BATTLE_ROUND)
-    if "once per battle per model" in lowered or "once per battle for each" in lowered:
-        scopes.add(LIMIT_SCOPE_BATTLE_PER_MODEL)
-    elif "once per battle per unit" in lowered:
-        scopes.add(LIMIT_SCOPE_BATTLE_PER_UNIT)
-    elif "once per battle" in lowered:
-        scopes.add(LIMIT_SCOPE_BATTLE)
-    if "once per turn" in lowered:
-        scopes.add(LIMIT_SCOPE_TURN)
-    if "once per phase" in lowered:
-        scopes.add(LIMIT_SCOPE_PHASE)
-    return scopes
+    return set(limited_use_scopes_from_text(text))
 
 
 def detect_limited_use_info(
@@ -162,11 +172,25 @@ def detect_limited_use_info(
     scopes: set[str] = set()
     source_keys: set[str] = set()
     limit_key = ""
+    has_normalized_metadata = False
 
     for source in sources:
         for key, value in _walk_mappings(source):
             normalized_key = str(key).strip().lower()
-            if normalized_key in {"once_per_battle", "once_per_battle_ability"} and _truthy(value):
+            if normalized_key in _NORMALIZED_LIMITED_USE_KEYS:
+                has_normalized_metadata = True
+            if normalized_key == "limited_use_scope":
+                scope = normalize_limited_use_scope(value)
+                if scope:
+                    scopes.add(scope)
+                    source_keys.add(normalized_key)
+            elif normalized_key == "limited_use_key" and _clean_text(value):
+                source_keys.add(normalized_key)
+                if not limit_key:
+                    limit_key = _clean_text(value)
+            elif normalized_key == "limited_use" and _truthy(value):
+                source_keys.add(normalized_key)
+            elif normalized_key in {"once_per_battle", "once_per_battle_ability"} and _truthy(value):
                 scopes.add(LIMIT_SCOPE_BATTLE)
                 source_keys.add(normalized_key)
             elif normalized_key in {"once_per_battle_per_model", "once_per_model_per_battle"} and _truthy(value):
@@ -184,9 +208,27 @@ def detect_limited_use_info(
             elif normalized_key == "once_per_phase" and _truthy(value):
                 scopes.add(LIMIT_SCOPE_PHASE)
                 source_keys.add(normalized_key)
-            elif normalized_key in {"once_per_battle_key", "ability_key", "usage_key", "once_key"} and _clean_text(value):
-                if normalized_key == "once_per_battle_key":
-                    scopes.add(LIMIT_SCOPE_BATTLE)
+            elif normalized_key == "once_per_battle_round_key" and _clean_text(value):
+                scopes.add(LIMIT_SCOPE_BATTLE_ROUND)
+                source_keys.add(normalized_key)
+                if not limit_key:
+                    limit_key = _clean_text(value)
+            elif normalized_key == "once_per_turn_key" and _clean_text(value):
+                scopes.add(LIMIT_SCOPE_TURN)
+                source_keys.add(normalized_key)
+                if not limit_key:
+                    limit_key = _clean_text(value)
+            elif normalized_key == "once_per_phase_key" and _clean_text(value):
+                scopes.add(LIMIT_SCOPE_PHASE)
+                source_keys.add(normalized_key)
+                if not limit_key:
+                    limit_key = _clean_text(value)
+            elif normalized_key in {"once_per_battle_key", "once_key"} and _clean_text(value):
+                scopes.add(LIMIT_SCOPE_BATTLE)
+                source_keys.add(normalized_key)
+                if not limit_key:
+                    limit_key = _clean_text(value)
+            elif normalized_key in {"ability_key", "usage_key"} and _clean_text(value):
                 source_keys.add(normalized_key)
                 if not limit_key:
                     limit_key = _clean_text(value)
@@ -202,6 +244,7 @@ def detect_limited_use_info(
         scopes=tuple(sorted(scopes)),
         limit_key=limit_key,
         source_keys=tuple(sorted(source_keys)),
+        has_normalized_metadata=has_normalized_metadata,
     )
 
 
@@ -319,6 +362,8 @@ def limited_use_decision_row(
         "limit_scopes": list(limited.scopes),
         "limit_key": limited.limit_key,
         "limit_source_keys": list(limited.source_keys),
+        "limited_use_metadata_present": bool(limited.has_normalized_metadata),
+        "limited_use_metadata_missing": not bool(limited.has_normalized_metadata),
         "chosen_action_label": label,
         "choice_kind": _choice_kind(label=label, candidate=chosen_candidate),
         "final_margin": _final_margin(
@@ -438,12 +483,20 @@ def summarize_limited_use_rows(
     limit_scopes: Iterable[str] = DEFAULT_LIMIT_SCOPES,
 ) -> dict[str, Any]:
     normalized_rows = [dict(row or {}) for row in rows]
+    missing_metadata_rows = [
+        row for row in normalized_rows if bool(row.get("limited_use_metadata_missing", False))
+    ]
     return {
         "decision_count": len(normalized_rows),
         "game_count": len({_clean_text(row.get("game_id")) for row in normalized_rows if _clean_text(row.get("game_id"))}),
         "limit_scopes": sorted(_clean_text(scope) for scope in limit_scopes if _clean_text(scope)),
+        "missing_limited_use_metadata_count": len(missing_metadata_rows),
         "replay_errors": [dict(error or {}) for error in replay_errors],
         "by_ability": _bucket_summary(normalized_rows, key_name="ability_label"),
+        "missing_limited_use_metadata_by_ability": _bucket_summary(
+            missing_metadata_rows,
+            key_name="ability_label",
+        ),
         "by_ability_phase_round": _bucket_summary(
             [
                 {

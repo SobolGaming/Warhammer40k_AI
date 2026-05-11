@@ -137,6 +137,10 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
         ctx = request.context or {}
         self.assertEqual(ctx.get("ability"), "shadow_in_the_warp")
+        self.assertTrue(ctx.get("limited_use"))
+        self.assertEqual(ctx.get("limited_use_scope"), "battle")
+        self.assertEqual(ctx.get("once_per_battle_key"), "shadow_in_the_warp")
+        self.assertEqual(ctx.get("once_per_battle_scope"), "army")
 
         self._resolve_yes(game, request, tyr_player)
 
@@ -168,6 +172,12 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
         ctx = request.context or {}
         self.assertEqual(ctx.get("ability"), "waaagh")
+        self.assertTrue(ctx.get("limited_use"))
+        self.assertEqual(ctx.get("limited_use_scope"), "battle")
+        self.assertEqual(ctx.get("limited_use_call_number"), 1)
+        self.assertEqual(ctx.get("limited_use_max_uses"), 1)
+        self.assertEqual(ctx.get("once_per_battle_key"), "waaagh")
+        self.assertEqual(ctx.get("once_per_battle_scope"), "army")
 
         self._resolve_yes(game, request, ork_player)
 

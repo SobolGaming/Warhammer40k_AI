@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
 from ..decision_handlers._helpers import is_skip_choice
+from ..limited_use_context import normalize_optional_ability_limited_use_context
 
 
 class GameReactiveDecisionsMixin:
@@ -415,7 +416,12 @@ class GameReactiveDecisionsMixin:
                     break
         if existing is not None:
             return existing
-        ctx = dict(context or {})
+        ctx = normalize_optional_ability_limited_use_context(
+            context,
+            ability_key=key,
+            ability_name=ability_name,
+            message=message,
+        )
         ctx["ability"] = key
         ctx["ability_name"] = str(ability_name or "").strip() or key.replace("_", " ").title()
         if message:
