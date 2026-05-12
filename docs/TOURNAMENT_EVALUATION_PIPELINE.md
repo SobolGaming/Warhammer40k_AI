@@ -187,6 +187,15 @@ keyword/mode picks such as `CHOOSE_START_OF_BATTLE_KEYWORD`, while still allowin
 learned rankers to handle in-game movement, shooting, charges, fights, tools,
 reactions, and allocations.
 
+Use repeated `--force-skip-decision-type` arguments for paired ablations that
+must lock an optional decision family to decline/skip semantics instead of merely
+removing it from the AI router. This is narrower than disabling a decision type:
+the engine still emits and validates the decision, but the headless controller
+tries legal skip/pass candidates before learned or heuristic ranking. A typical
+use is `--force-skip-decision-type DISCARD_SECONDARY` when comparing Tactical
+Secondary/New Orders routing without allowing the fallback controller to select
+a discard.
+
 Schema-selection note:
 - evaluation bundles may intentionally request `capability_schema:build_capability_v2`
   for preview combat studies while leaving `build_capability_v1` as the default

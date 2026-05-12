@@ -54,6 +54,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep setup/deployment-phase decisions on the built-in headless heuristic during bundle evaluation.",
     )
+    parser.add_argument(
+        "--force-skip-decision-type",
+        action="append",
+        default=[],
+        help=(
+            "Decision type whose legal skip/pass candidate should be tried before policy or heuristic ranking. "
+            "Repeat or pass comma-separated values."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -96,6 +105,11 @@ def main(argv: list[str] | None = None) -> int:
             if str(value or "").strip()
         ],
         ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
+        force_skip_decision_types=[
+            str(value or "").strip()
+            for value in list(args.force_skip_decision_type or [])
+            if str(value or "").strip()
+        ],
     )
     print(f"Report directory: {result['report_dir']}")
     print(f"Summary: {result['summary_path']}")

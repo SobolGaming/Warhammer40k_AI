@@ -344,6 +344,7 @@ def run_headless_self_play_stage(
     skip_record_export: bool = False,
     ai_router_ignored_decision_types: Iterable[str] | None = None,
     ai_router_ignore_setup_decisions: bool = False,
+    force_skip_decision_types: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     paths = _report_paths(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -390,6 +391,10 @@ def run_headless_self_play_stage(
             command.extend(["--ai-router-ignore-decision-type", decision_type_text])
     if bool(ai_router_ignore_setup_decisions):
         command.append("--ai-router-ignore-setup-decisions")
+    for decision_type in list(force_skip_decision_types or []):
+        decision_type_text = str(decision_type or "").strip()
+        if decision_type_text:
+            command.extend(["--force-skip-decision-type", decision_type_text])
     completed = subprocess.run(
         command,
         cwd=_repo_root(),
@@ -796,6 +801,7 @@ def run_policy_bundle_evaluation(
     target_rules_bundle: RulesetBundle | Mapping[str, Any] | None = None,
     ai_router_ignored_decision_types: Iterable[str] | None = None,
     ai_router_ignore_setup_decisions: bool = False,
+    force_skip_decision_types: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     normalized_mode = _normalize_evaluation_mode(evaluation_mode)
     resolved_report_dir = Path(report_dir).expanduser().resolve() if report_dir is not None else _default_report_dir("policy_bundle_eval")
@@ -829,6 +835,7 @@ def run_policy_bundle_evaluation(
         skip_record_export=(normalized_mode == REPLAY_ONLY_EVALUATION_MODE),
         ai_router_ignored_decision_types=ai_router_ignored_decision_types,
         ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+        force_skip_decision_types=force_skip_decision_types,
     )
 
     replay_report = audit_replay_sessions(dict(self_play_stage.get("report", {}) or {}))

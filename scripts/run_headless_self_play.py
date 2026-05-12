@@ -494,6 +494,15 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--force-skip-decision-type",
+        action="append",
+        default=[],
+        help=(
+            "Decision type whose legal skip/pass candidate should be tried before policy or heuristic ranking. "
+            "Repeat or pass comma-separated values."
+        ),
+    )
+    parser.add_argument(
         "--models-root",
         default="models",
         help="Models root used for policy-bundle artifact lookup.",
@@ -644,6 +653,7 @@ def _run_single_game(
     models_root: str | None = None,
     ai_router_ignored_decision_types: Iterable[str] | None = None,
     ai_router_ignore_setup_decisions: bool = False,
+    force_skip_decision_types: Iterable[str] | None = None,
     enable_tool_decisions: bool = True,
     log_phase_transitions: bool = False,
     replay_dir: str | None = None,
@@ -696,6 +706,7 @@ def _run_single_game(
         ai_router=ai_router,
         ai_router_ignored_decision_types=ai_router_ignored_decision_types,
         ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+        force_skip_decision_types=force_skip_decision_types,
         enable_tool_decisions=bool(enable_tool_decisions),
     )
     game._headless_disable_generic_tool_decisions = not bool(enable_tool_decisions)
@@ -870,6 +881,7 @@ def _run_single_game_job(
     models_root: str | None = None,
     ai_router_ignored_decision_types: Iterable[str] | None = None,
     ai_router_ignore_setup_decisions: bool = False,
+    force_skip_decision_types: Iterable[str] | None = None,
     enable_tool_decisions: bool = True,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
@@ -915,6 +927,7 @@ def _run_single_game_job(
                 models_root=str(models_root or ""),
                 ai_router_ignored_decision_types=ai_router_ignored_decision_types,
                 ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+                force_skip_decision_types=force_skip_decision_types,
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_phase_transitions=bool(log_phase_transitions),
                 replay_dir=str(replay_dir or ""),
@@ -980,6 +993,7 @@ def run_headless_self_play(
     models_root: str = "models",
     ai_router_ignored_decision_types: Iterable[str] | str | None = None,
     ai_router_ignore_setup_decisions: bool = False,
+    force_skip_decision_types: Iterable[str] | str | None = None,
     enable_tool_decisions: bool = True,
     output: str = "data/headless_self_play_decision_records.json",
     reward_profile: str = "dense_vp_delta_v1",
@@ -1012,6 +1026,7 @@ def run_headless_self_play(
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
     ignored_decision_types = _normalized_decision_type_list(ai_router_ignored_decision_types)
+    forced_skip_decision_types = _normalized_decision_type_list(force_skip_decision_types)
 
     def _spool_completed_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         game_index = int(payload.get("game_index", 0) or 0)
@@ -1048,6 +1063,7 @@ def run_headless_self_play(
                 models_root=str(models_root),
                 ai_router_ignored_decision_types=ignored_decision_types,
                 ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+                force_skip_decision_types=forced_skip_decision_types,
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_level=str(log_level),
                 log_phase_transitions=bool(log_phase_transitions),
@@ -1202,6 +1218,7 @@ def run_headless_self_play(
         "record_export_skipped": bool(skip_record_export),
         "ai_router_ignored_decision_types": list(ignored_decision_types),
         "ai_router_ignore_setup_decisions": bool(ai_router_ignore_setup_decisions),
+        "forced_skip_decision_types": list(forced_skip_decision_types),
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
@@ -1242,6 +1259,7 @@ def main() -> int:
         models_root=str(args.models_root),
         ai_router_ignored_decision_types=_normalized_decision_type_list(args.ai_router_ignore_decision_type),
         ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
+        force_skip_decision_types=_normalized_decision_type_list(args.force_skip_decision_type),
         enable_tool_decisions=not bool(args.disable_tool_decisions),
         output=str(args.output),
         reward_profile=str(args.reward_profile),

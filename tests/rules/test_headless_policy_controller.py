@@ -18,6 +18,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_DECLARE_SHOTS,
+    DECISION_DISCARD_SECONDARY,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_RESOLVE_COHERENCY,
@@ -481,6 +482,56 @@ def test_headless_policy_controller_can_ignore_ai_router_for_decision_type() -> 
     payload = dict(game.commands[0].payload or {})
     assert str(payload.get("option_id", "")) == str(options[1].option_id)
     assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_can_force_skip_for_decision_type() -> None:
+    class _PreferDiscardRouter:
+        def rank_legal_candidates(self, request, *, fallback_order=None):
+            del request
+            candidates = list(fallback_order or [])
+            return sorted(candidates, key=lambda candidate: str(candidate.action_id) != "discard")
+
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(
+        game=None,
+        auto_attach=False,
+        ai_router=_PreferDiscardRouter(),
+        force_skip_decision_types=[DECISION_DISCARD_SECONDARY],
+    )
+    options = [
+        DecisionOption.create("Discard Cleanse", payload={"action_id": "discard", "card_name": "Cleanse"}),
+        DecisionOption.create("Do not use", payload={"action_id": "skip", "action": "skip", "skip": True}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_DISCARD_SECONDARY,
+        "NEW ORDERS: discard one active Secondary Mission card and draw a new one.",
+        player_id="p1",
+        options=options,
+        context={"ability": "new_orders", "optional": True},
+        candidates=[
+            CandidateAction(
+                action_id="discard",
+                params={"card_name": "Cleanse"},
+                metadata={"projected_score_delta_next_window": 10.0},
+            ),
+            CandidateAction(
+                action_id="skip",
+                params={"action": "skip", "skip": True},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    result_payload = dict(payload.get("result_payload", {}) or {})
+    assert result_payload["action"] == "skip"
+    assert result_payload["skip"] is True
+    assert result_payload["skipped"] is True
 
 
 def test_headless_policy_controller_can_ignore_ai_router_for_setup_context() -> None:

@@ -140,6 +140,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         ai_router: AIControllerRouter | None = None,
         ai_router_ignored_decision_types: Iterable[str] | None = None,
         ai_router_ignore_setup_decisions: bool = False,
+        force_skip_decision_types: Iterable[str] | None = None,
         auto_attach: bool = True,
         enable_tool_decisions: bool = True,
     ) -> None:
@@ -166,6 +167,11 @@ class HeadlessPolicyDecisionController(DecisionController):
             if str(value or "").strip()
         }
         self._ai_router_ignore_setup_decisions = bool(ai_router_ignore_setup_decisions)
+        self._force_skip_decision_types = {
+            str(value or "").strip()
+            for value in list(force_skip_decision_types or [])
+            if str(value or "").strip()
+        }
         self._enable_tool_decisions = bool(enable_tool_decisions)
         self._attached = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
@@ -200,7 +206,9 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
 
         ranked = self._rank_legal_candidates(request)
-        if self._ai_router is not None and self._should_use_ai_router(request, observed_game):
+        if self._should_force_skip_request(request):
+            ranked = self._rank_forced_skip_candidates(ranked)
+        elif self._ai_router is not None and self._should_use_ai_router(request, observed_game):
             ranked = self._ai_router.rank_legal_candidates(request, fallback_order=ranked)
         if self._is_reserves_arrival_request(request):
             ranked_move = [candidate for candidate in ranked if not self._candidate_requests_skip(candidate)]
@@ -232,6 +240,18 @@ class HeadlessPolicyDecisionController(DecisionController):
         if decision_type in self._ai_router_ignored_decision_types:
             return False
         return not (self._ai_router_ignore_setup_decisions and self._request_is_setup_request(request, game))
+
+    def _should_force_skip_request(self, request: DecisionRequest) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        return decision_type in self._force_skip_decision_types
+
+    def _rank_forced_skip_candidates(self, ranked: Iterable[CandidateAction]) -> list[CandidateAction]:
+        ordered = list(ranked or [])
+        skip_candidates = [candidate for candidate in ordered if self._candidate_requests_skip(candidate)]
+        if not skip_candidates:
+            return ordered
+        non_skip_candidates = [candidate for candidate in ordered if not self._candidate_requests_skip(candidate)]
+        return [*skip_candidates, *non_skip_candidates]
 
     @staticmethod
     def _request_is_setup_request(request: DecisionRequest, game: object | None = None) -> bool:
