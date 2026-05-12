@@ -248,6 +248,60 @@ def test_move_solver_generates_actual_forward_translation_for_melee_unit() -> No
     assert str(metadata.get("path_witness_ref", "") or "").startswith("pathwitness://")
 
 
+def test_move_solver_anchors_objective_translation_to_closest_model_not_unit_average() -> None:
+    near_model = _ModelStub("model:near", x=0.0, y=0.0, melee=False, ranged=True)
+    far_model = _ModelStub("model:far", x=100.0, y=0.0, melee=False, ranged=True)
+    mover_army = _ArmyStub([])
+    enemy_army = _ArmyStub([])
+    mover_unit = _UnitStub("unit:mover", [near_model, far_model], army=mover_army)
+    enemy_unit = _UnitStub("unit:enemy", [_ModelStub("model:enemy", x=200.0, y=0.0, melee=True, ranged=False)], army=enemy_army)
+    mover_army.units = [mover_unit]
+    enemy_army.units = [enemy_unit]
+    objective = type(
+        "ObjectiveStub",
+        (),
+        {"location": type("LocationStub", (), {"x": 6.0, "y": 0.0, "control_radius": 3.0})()},
+    )()
+    game = _LiveGameStub(
+        time_manager=TimeManager(),
+        path_witness_store=PathWitnessStore(),
+        players=[_PlayerStub(mover_army), _PlayerStub(enemy_army)],
+        map=_MapStub(),
+        objectives=[objective],
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:mover", "movement_type": "move", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:mover", "movement_type": "move", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:mover",
+            "movement_type": "move",
+            "max_distance": 6.0,
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, _mask, _wall_clock_ms, _fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
+    by_model = {
+        str(entry.get("model_id")): list(entry.get("position") or [])
+        for entry in list(dict(confirm_candidate.params or {}).get("model_positions", []) or [])
+    }
+    assert abs(float(by_model["model:near"][0]) - 6.0) <= 1e-6
+    assert abs(float(by_model["model:far"][0]) - 106.0) <= 1e-6
+
+
 def test_move_solver_generates_targeted_charge_candidate_reaching_engagement_range() -> None:
     mover_model = _ModelStub("model:mover", x=0.0, y=0.0, melee=True, ranged=False)
     enemy_model = _ModelStub("model:enemy", x=11.0, y=0.0, melee=False, ranged=True)

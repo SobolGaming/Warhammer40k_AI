@@ -58,6 +58,27 @@ def _movement_members(unit) -> list:
     return members or [unit]
 
 
+def _set_unit_anchor_position_from_model_positions(unit: object, model_positions: object) -> None:
+    if unit is None:
+        return
+    entries = sorted(
+        [dict(entry or {}) for entry in list(model_positions or []) if isinstance(entry, dict)],
+        key=lambda entry: str(entry.get("model_id", "") or ""),
+    )
+    for entry in entries:
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        unit.position = (x, y, z)
+        return
+
+
 def _mark_move_units_movement_status(unit, movement_type: str) -> None:
     movement_key = str(movement_type or "").strip().lower()
     if movement_key not in {"move", "advance", "fall_back"}:
@@ -3218,23 +3239,7 @@ def _finalize_deployment_move(game: object, unit: object, model_positions: list[
         if isinstance(units_list, list) and unit not in units_list:
             units_list.append(unit)
 
-    positions = []
-    for entry in list(model_positions or []):
-        pos = entry.get("position") or []
-        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
-            continue
-        try:
-            x = float(pos[0])
-            y = float(pos[1])
-            z = float(pos[2]) if len(pos) > 2 else 0.0
-        except (TypeError, ValueError):
-            continue
-        positions.append((x, y, z))
-    if positions:
-        ux = sum(p[0] for p in positions) / len(positions)
-        uy = sum(p[1] for p in positions) / len(positions)
-        uz = sum(p[2] for p in positions) / len(positions)
-        unit.position = (ux, uy, uz)
+    _set_unit_anchor_position_from_model_positions(unit, model_positions)
 
     if is_convergence_of_dominion_deployment_unit(unit):
         from ...utility.unit_split import split_unit_into_single_model_units
@@ -3375,24 +3380,7 @@ def _finalize_reserves_arrival_move(
     except Exception:
         pass
 
-    # Update unit centroid position for convenience.
-    positions = []
-    for entry in list(model_positions or []):
-        pos = entry.get("position") or []
-        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
-            continue
-        try:
-            x = float(pos[0])
-            y = float(pos[1])
-            z = float(pos[2]) if len(pos) > 2 else 0.0
-        except (TypeError, ValueError):
-            continue
-        positions.append((x, y, z))
-    if positions:
-        ux = sum(p[0] for p in positions) / len(positions)
-        uy = sum(p[1] for p in positions) / len(positions)
-        uz = sum(p[2] for p in positions) / len(positions)
-        unit.position = (ux, uy, uz)
+    _set_unit_anchor_position_from_model_positions(unit, model_positions)
 
     game_map = getattr(game, "map", None)
     if game_map is not None and hasattr(game_map, "units"):
@@ -3508,24 +3496,7 @@ def _finalize_hyperphasic_recall_move(
 ) -> None:
     if unit is None:
         return
-    positions: list[tuple[float, float, float]] = []
-    for entry in list(model_positions or []):
-        pos = entry.get("position") or []
-        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
-            continue
-        try:
-            x = float(pos[0])
-            y = float(pos[1])
-            z = float(pos[2]) if len(pos) > 2 else 0.0
-        except (TypeError, ValueError):
-            continue
-        positions.append((x, y, z))
-    if positions:
-        unit.position = (
-            sum(p[0] for p in positions) / len(positions),
-            sum(p[1] for p in positions) / len(positions),
-            sum(p[2] for p in positions) / len(positions),
-        )
+    _set_unit_anchor_position_from_model_positions(unit, model_positions)
 
     game_map = getattr(game, "map", None)
     if game_map is not None and hasattr(game_map, "units"):

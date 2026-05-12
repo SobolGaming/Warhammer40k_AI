@@ -69,22 +69,81 @@ def _unit_army(unit: object) -> object | None:
     return getattr(unit, "parent_army", None)
 
 
-def _position_centroid(model_positions: list[dict[str, Any]]) -> tuple[float, float]:
-    points: list[tuple[float, float]] = []
+def _entry_radius(entry: dict[str, Any]) -> float:
+    radius = list(dict(entry or {}).get("radius", []) or [])
+    if len(radius) >= 2:
+        return max(0.0, _safe_float(radius[0]), _safe_float(radius[1]))
+    if len(radius) == 1:
+        return max(0.0, _safe_float(radius[0]))
+    return 0.0
+
+
+def _model_points(model_positions: list[dict[str, Any]]) -> list[tuple[float, float, float]]:
+    points: list[tuple[float, float, float]] = []
     for entry in list(model_positions or []):
-        position = list(dict(entry or {}).get("position", []) or [])
-        if len(position) < 2:
-            continue
-        points.append((_safe_float(position[0]), _safe_float(position[1])))
+        x, y, _z = _entry_position(dict(entry or {}))
+        points.append((float(x), float(y), _entry_radius(dict(entry or {}))))
+    return points
+
+
+def _nearest_edge_distance(
+    source_points: list[tuple[float, float, float]],
+    target_points: list[tuple[float, float, float]],
+) -> float:
+    best: float | None = None
+    for sx, sy, sr in list(source_points or []):
+        for tx, ty, tr in list(target_points or []):
+            distance = max(0.0, math.hypot(float(sx) - float(tx), float(sy) - float(ty)) - float(sr) - float(tr))
+            if best is None or distance < best:
+                best = float(distance)
+    return float(best) if best is not None else 0.0
+
+
+def _distance_2d(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
+
+
+def _closest_model_anchor(
+    model_positions: list[dict[str, Any]],
+    target_points: list[tuple[float, float, float]],
+) -> tuple[float, float]:
+    points = _model_points(model_positions)
     if not points:
         return (0.0, 0.0)
-    return (
-        sum(point[0] for point in points) / float(len(points)),
-        sum(point[1] for point in points) / float(len(points)),
-    )
+    if not target_points:
+        return (float(points[0][0]), float(points[0][1]))
+    best_point = points[0]
+    best_distance = float("inf")
+    for point in points:
+        distance = _nearest_edge_distance([point], target_points)
+        if distance < best_distance:
+            best_distance = float(distance)
+            best_point = point
+    return (float(best_point[0]), float(best_point[1]))
 
 
-def _alive_unit_positions(unit: object) -> list[tuple[float, float, float]]:
+def _max_model_displacement(
+    start_positions: list[dict[str, Any]],
+    end_positions: list[dict[str, Any]],
+) -> float:
+    start_by_id = {
+        str(entry.get("model_id", "") or ""): dict(entry)
+        for entry in list(start_positions or [])
+        if entry is not None
+    }
+    max_distance = 0.0
+    for entry in list(end_positions or []):
+        model_id = str(dict(entry or {}).get("model_id", "") or "")
+        start = start_by_id.get(model_id)
+        if start is None:
+            continue
+        sx, sy, _sz = _entry_position(start)
+        ex, ey, _ez = _entry_position(dict(entry or {}))
+        max_distance = max(max_distance, math.hypot(float(ex) - float(sx), float(ey) - float(sy)))
+    return float(max_distance)
+
+
+def _alive_unit_model_points(unit: object) -> list[tuple[float, float, float]]:
     positions: list[tuple[float, float, float]] = []
     for model in _model_entries(unit):
         is_alive_value = getattr(model, "is_alive", True)
@@ -101,15 +160,15 @@ def _alive_unit_positions(unit: object) -> list[tuple[float, float, float]]:
             (
                 _safe_float(location[0]),
                 _safe_float(location[1]),
-                _safe_float(location[2] if len(location) > 2 else 0.0),
+                _safe_float(getattr(getattr(model, "model_base", None), "get_radius", lambda: 0.0)(), 0.0),
             )
         )
     return positions
 
 
-def _enemy_centroids(game: object, unit: object) -> list[tuple[float, float]]:
+def _enemy_model_points(game: object, unit: object) -> list[tuple[float, float, float]]:
     own_army = _unit_army(unit)
-    centroids: list[tuple[float, float]] = []
+    points: list[tuple[float, float, float]] = []
     for player in list(getattr(game, "players", []) or []):
         army = getattr(player, "army", None)
         if army is None:
@@ -120,39 +179,20 @@ def _enemy_centroids(game: object, unit: object) -> list[tuple[float, float]]:
         for other_unit in list(getattr(army, "units", []) or []):
             if other_unit is None:
                 continue
-            positions = _alive_unit_positions(other_unit)
-            if not positions:
-                continue
-            count = float(len(positions))
-            centroids.append(
-                (
-                    sum(point[0] for point in positions) / count,
-                    sum(point[1] for point in positions) / count,
-                )
-            )
-    return centroids
+            points.extend(_alive_unit_model_points(other_unit))
+    return points
 
 
-def _objective_points(game: object) -> list[tuple[float, float]]:
-    points: list[tuple[float, float]] = []
+def _objective_points(game: object) -> list[tuple[float, float, float]]:
+    points: list[tuple[float, float, float]] = []
     for objective in list(getattr(game, "objectives", []) or []):
         location = getattr(objective, "location", None)
         x = getattr(location, "x", None)
         y = getattr(location, "y", None)
         if x is None or y is None:
             continue
-        points.append((_safe_float(x), _safe_float(y)))
+        points.append((_safe_float(x), _safe_float(y), _safe_float(getattr(location, "control_radius", 0.0), 0.0)))
     return points
-
-
-def _distance_2d(a: tuple[float, float], b: tuple[float, float]) -> float:
-    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
-
-
-def _nearest_distance(origin: tuple[float, float], targets: list[tuple[float, float]]) -> float:
-    if not targets:
-        return 0.0
-    return min(_distance_2d(origin, target) for target in targets)
 
 
 def _resolve_target_units(game: object, target_unit_ids: list[str]) -> list[object]:
@@ -302,16 +342,14 @@ def _build_charge_candidate_action(
     if store is None:
         raise RuntimeError("Game is missing path_witness_store.")
     path_witness_ref = store.put(witness)
-    origin = _position_centroid(start_positions)
-    new_origin = _position_centroid(model_positions)
-    target_points = [
-        (_safe_float(point[0]), _safe_float(point[1]))
-        for point in (_alive_unit_positions(target_unit) or [])
-    ]
+    target_points = _alive_unit_model_points(target_unit)
     enemy_distance_delta = 0.0
     if target_points:
-        enemy_distance_delta = _nearest_distance(origin, target_points) - _nearest_distance(new_origin, target_points)
-    movement_distance = max(0.0, _distance_2d(origin, new_origin))
+        enemy_distance_delta = _nearest_edge_distance(_model_points(start_positions), target_points) - _nearest_edge_distance(
+            _model_points(model_positions),
+            target_points,
+        )
+    movement_distance = _max_model_displacement(start_positions, model_positions)
     rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
     return CandidateAction(
         action_id=str(confirm_action_id),
@@ -635,8 +673,7 @@ def _movement_goal(
     intent: MovementIntent,
     movement_type: str,
 ) -> tuple[float, float]:
-    origin = _position_centroid(start_positions)
-    enemy_points = _enemy_centroids(game, unit)
+    enemy_points = _enemy_model_points(game, unit)
     objective_points = _objective_points(game)
     weights = dict(intent.weights or {})
     score_weight = max(0.0, _safe_float(weights.get("score"), 0.0))
@@ -665,19 +702,28 @@ def _movement_goal(
     if str(movement_type or "").strip().lower() == "advance":
         enemy_focus += 0.1
 
-    best_goal = origin
+    source_points = _model_points(start_positions)
+    best_goal = (float(source_points[0][0]), float(source_points[0][1])) if source_points else (0.0, 0.0)
     best_score = float("-inf")
+    current_enemy_distance = _nearest_edge_distance(source_points, enemy_points)
+    current_objective_distance = _nearest_edge_distance(source_points, objective_points)
     for goal in list(enemy_points) + list(objective_points):
         enemy_delta = 0.0
         objective_delta = 0.0
         if enemy_points:
-            enemy_delta = _nearest_distance(origin, enemy_points) - _nearest_distance(goal, enemy_points)
+            enemy_delta = current_enemy_distance - _nearest_edge_distance(
+                [(float(goal[0]), float(goal[1]), 0.0)],
+                enemy_points,
+            )
         if objective_points:
-            objective_delta = _nearest_distance(origin, objective_points) - _nearest_distance(goal, objective_points)
+            objective_delta = current_objective_distance - _nearest_edge_distance(
+                [(float(goal[0]), float(goal[1]), 0.0)],
+                objective_points,
+            )
         score = enemy_delta * enemy_focus + objective_delta * objective_focus
         if score > best_score:
             best_score = score
-            best_goal = goal
+            best_goal = (float(goal[0]), float(goal[1]))
     return best_goal
 
 
@@ -696,7 +742,7 @@ def _translate_model_positions(
             "objective_distance_delta": 0.0,
         }
 
-    origin = _position_centroid(start_positions)
+    origin = _closest_model_anchor(start_positions, [(float(goal[0]), float(goal[1]), 0.0)])
     dx = float(goal[0]) - float(origin[0])
     dy = float(goal[1]) - float(origin[1])
     distance = math.hypot(dx, dy)
@@ -707,7 +753,7 @@ def _translate_model_positions(
             "objective_distance_delta": 0.0,
         }
 
-    enemy_points = _enemy_centroids(game, unit)
+    enemy_points = _enemy_model_points(game, unit)
     objective_points = _objective_points(game)
     desired_standoff = 9.0
     travel = min(float(max_distance), max(0.0, distance - desired_standoff))
@@ -747,13 +793,18 @@ def _translate_model_positions(
             }
         )
 
-    new_origin = _position_centroid(translated)
     enemy_delta = 0.0
     objective_delta = 0.0
     if enemy_points:
-        enemy_delta = _nearest_distance(origin, enemy_points) - _nearest_distance(new_origin, enemy_points)
+        enemy_delta = _nearest_edge_distance(_model_points(start_positions), enemy_points) - _nearest_edge_distance(
+            _model_points(translated),
+            enemy_points,
+        )
     if objective_points:
-        objective_delta = _nearest_distance(origin, objective_points) - _nearest_distance(new_origin, objective_points)
+        objective_delta = _nearest_edge_distance(_model_points(start_positions), objective_points) - _nearest_edge_distance(
+            _model_points(translated),
+            objective_points,
+        )
     return translated, {
         "movement_distance": float(travel),
         "enemy_distance_delta": float(enemy_delta),
