@@ -31,7 +31,7 @@ Blocked from core dependency lane:
 Install ML stack only when needed:
 
 ```bash
-pip install "warhammer40k_ai[ml]"
+uv sync --extra ml
 ```
 
 `pyproject.toml` exposes this extra as `project.optional-dependencies.ml`.
@@ -39,22 +39,13 @@ pip install "warhammer40k_ai[ml]"
 Recommended full setup flow from repository root:
 
 ```bash
-python -m venv .venv
-
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
-# Linux/macOS
-# source .venv/bin/activate
-
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e ".[ml]"
+uv sync --extra ml
 ```
 
 Verification command:
 
 ```bash
-python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
+uv run python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
 ```
 
 Healthy environment expectation:
@@ -97,7 +88,7 @@ boundary:
 First offline imitation-training command:
 
 ```bash
-python scripts/train_imitation_candidate_ranker.py \
+uv run python scripts/train_imitation_candidate_ranker.py \
   --records data/training_gate_20260507_100match_we_aeldari/decision_records_relabeled.json \
   --training-manifest data/training_gate_20260507_100match_we_aeldari/training_manifest.json \
   --models-root models \
@@ -108,7 +99,7 @@ python scripts/train_imitation_candidate_ranker.py \
 The exported bundle can be evaluated through the normal policy-bundle gate:
 
 ```bash
-python scripts/evaluate_policy_bundle.py \
+uv run python scripts/evaluate_policy_bundle.py \
   --policy-bundle policy_bundle:linear_imitation_we_aeldari_100_v1 \
   --models-root models \
   --player1-army army_lists/WE_Daemonkin_2000.txt \

@@ -52,17 +52,17 @@ Unless explicitly waived by developer, all are required:
 - Do not ship local-only choice behavior; if remote parity is blocked/unclear, stop and ask developer.
 
 ## 6) Testing Policy (pytest)
-- Tests are in `tests/`; framework is `pytest` with xdist settings in `setup.cfg` (`-n auto --dist loadscope`).
+- Tests are in `tests/`; framework is `pytest` with xdist settings in `pyproject.toml` (`-n auto --dist loadscope`).
 - Markers:
   - expensive deterministic tests: `@pytest.mark.slow`
   - multi-subsystem/E2E tests: `@pytest.mark.integration`
 - Commands:
-  - full coverage/default: `python -m pytest tests/`
-  - fast iteration: `python -m pytest tests/ -m "not slow and not integration"`
+  - full coverage/default: `uv run python -m pytest tests/`
+  - fast iteration: `uv run python -m pytest tests/ -m "not slow and not integration"`
 - Minimum for every change:
   - run and pass all newly added tests.
   - run relevant impacted existing tests.
-- For large feature or rule-behavior changes: also run full suite (`python -m pytest tests/`).
+- For large feature or rule-behavior changes: also run full suite (`uv run python -m pytest tests/`).
 - Ensure command timeouts in local/CI environments are long enough for suite completion.
 - Report with submissions:
   - exact pytest command(s), pass/fail, and skipped tests (skips require developer approval).

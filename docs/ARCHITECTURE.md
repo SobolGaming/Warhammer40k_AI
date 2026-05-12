@@ -15,7 +15,7 @@ Review expectations and PR status for this work are documented in
 
 ## High-level runtime modes
 
-- **Local interactive game**: `python3 scripts/main.py ...` runs the engine and pygame UI in one process.
+- **Local interactive game**: `uv run python scripts/main.py ...` runs the engine and pygame UI in one process.
   - Local composition uses `engine/local_runtime.py` (`LocalAuthoritativeRuntime`) for shared authoritative setup orchestration without websocket loopback.
   - Add `--profile` to write launch-time cProfile and section-timer artifacts for UI runs.
 - **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui|client-headless ...`.

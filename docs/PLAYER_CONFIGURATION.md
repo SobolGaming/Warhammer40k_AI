@@ -15,12 +15,12 @@ The game supports local player control for interactive gameplay and a remote-con
 
 ### Local vs Local
 ```bash
-python scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt
+uv run python scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt
 ```
 
 ### Manual Phases
 ```bash
-python scripts/main.py --manual-phases
+uv run python scripts/main.py --manual-phases
 ```
 
 ## Manual Phases Mode (`--manual-phases`)

@@ -22,7 +22,7 @@ The central decision queue path normalizes explicit limited-use metadata, legacy
 Single report:
 
 ```bash
-python3 scripts/analyze_limited_use_abilities.py \
+uv run python scripts/analyze_limited_use_abilities.py \
   --report models/reports/example_run \
   --output models/reports/example_run/limited_use_ability_diagnostics.json \
   --primary-score-label Aeldari_Warhost_2000 \
@@ -32,7 +32,7 @@ python3 scripts/analyze_limited_use_abilities.py \
 Same-seed paired reports:
 
 ```bash
-python3 scripts/analyze_limited_use_abilities.py \
+uv run python scripts/analyze_limited_use_abilities.py \
   --baseline-report models/reports/heuristic_run \
   --candidate-report models/reports/candidate_run \
   --output models/reports/candidate_run/limited_use_ability_diagnostics.json \
@@ -47,7 +47,7 @@ By default the pass includes `battle`, `battle_per_model`, and `battle_per_unit`
 Source-data scan:
 
 ```bash
-python3 scripts/scan_limited_use_sources.py --no-entries
+uv run python scripts/scan_limited_use_sources.py --no-entries
 ```
 
 This scans `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abilities.json`, `wahapedia_data/Detachment_abilities.json`, `wahapedia_data/Stratagems.json`, and `wahapedia_data/Enhancements.json` for limited-use rules text. Omit `--no-entries` or pass `--output path/to/report.json` to inspect matching entries.

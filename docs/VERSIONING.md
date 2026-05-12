@@ -17,10 +17,10 @@ compatibility checks meaningful.
 Use the helper script:
 
 ```
-python scripts/bump_version.py --patch
-python scripts/bump_version.py --minor
-python scripts/bump_version.py --major
-python scripts/bump_version.py --set 1.2.3
+uv run python scripts/bump_version.py --patch
+uv run python scripts/bump_version.py --minor
+uv run python scripts/bump_version.py --major
+uv run python scripts/bump_version.py --set 1.2.3
 ```
 
 Commit the updated `src/warhammer40k_ai/version.py` alongside your changes.
@@ -33,7 +33,7 @@ On Windows, `py -3.12` is preferred if `python` is not on PATH.
 Install repo hooks once per clone:
 
 ```
-python scripts/install_git_hooks.py
+uv run python scripts/install_git_hooks.py
 ```
 
 Hooks enforce that `src/warhammer40k_ai/version.py` is updated whenever you

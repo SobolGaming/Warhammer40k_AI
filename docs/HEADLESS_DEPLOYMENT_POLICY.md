@@ -134,7 +134,7 @@ This document describes deterministic headless placement behavior for deployment
 - Setup-only headless benchmark helper:
   - `warhammer40k_ai.engine.headless_setup_benchmark.run_setup_only_headless_benchmark(...)`
 - Local benchmark CLI:
-  - `python scripts/benchmark_headless_setup.py --player1-army army_lists/Aeldari_Warhost_2000.txt --player2-army army_lists/WE_Daemonkin_2000.txt --output data/headless_setup_benchmark.json`
+  - `uv run python scripts/benchmark_headless_setup.py --player1-army army_lists/Aeldari_Warhost_2000.txt --player2-army army_lists/WE_Daemonkin_2000.txt --output data/headless_setup_benchmark.json`
 - Optional before/after comparison:
   - pass `--baseline-json <path>` to compare current output against a previously captured benchmark JSON.
 - Benchmark output includes:

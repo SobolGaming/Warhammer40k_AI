@@ -139,7 +139,7 @@ Canonical pre-ML gate profile:
 CLI example:
 
 ```bash
-python scripts/build_training_manifest.py \
+uv run python scripts/build_training_manifest.py \
   --input data/decision_records_relabeled.json \
   --output data/training_manifest.json \
   --source-tag mixed \
@@ -149,7 +149,7 @@ python scripts/build_training_manifest.py \
 Filtered slice example:
 
 ```bash
-python scripts/build_training_manifest.py \
+uv run python scripts/build_training_manifest.py \
   --input data/decision_records_relabeled.json \
   --output data/training_manifest_gladius.json \
   --source-tag mixed \
@@ -161,7 +161,7 @@ python scripts/build_training_manifest.py \
 CI gate example:
 
 ```bash
-python scripts/build_training_manifest.py \
+uv run python scripts/build_training_manifest.py \
   --input data/decision_records_relabeled.json \
   --output data/training_manifest.json \
   --source-tag mixed \
@@ -171,7 +171,7 @@ python scripts/build_training_manifest.py \
 Reward annotation example:
 
 ```bash
-python scripts/annotate_decision_rewards.py \
+uv run python scripts/annotate_decision_rewards.py \
   --input data/decision_records_relabeled.json \
   --output data/decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
@@ -216,7 +216,7 @@ Deferred until final 11th rules land:
 Dataset build example:
 
 ```bash
-python scripts/build_deployment_ranking_dataset.py \
+uv run python scripts/build_deployment_ranking_dataset.py \
   --input data/headless_self_play_decision_records_rewarded.json \
   --output data/deployment_ranking_dataset.json
 ```
@@ -224,7 +224,7 @@ python scripts/build_deployment_ranking_dataset.py \
 Model training example:
 
 ```bash
-python scripts/train_deployment_ranker.py \
+uv run python scripts/train_deployment_ranker.py \
   --input data/deployment_ranking_dataset.json \
   --output data/deployment_ranker_model.json
 ```
@@ -232,7 +232,7 @@ python scripts/train_deployment_ranker.py \
 Runtime usage (headless self-play):
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 50 \
   --deployment-ranker-model data/deployment_ranker_model.json \
   --output data/headless_self_play_ranked.json

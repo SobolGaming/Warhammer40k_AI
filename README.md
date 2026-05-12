@@ -10,6 +10,9 @@ cleanly without carrying a long-lived dual-edition architecture. See
 `docs/implementation/11e_port_pr_plan.md` for the migration guardrails and PR
 status.
 
+Development dependencies are managed with `uv` and the checked-in `uv.lock`.
+See `docs/UV_WORKFLOW.md` for setup, test, and lockfile policy.
+
 ## Features
 
 - Official setup phases, deployment system, and battle round mechanics
@@ -22,34 +25,30 @@ status.
 
 ### Initial Setup
 
-1. **Install dependencies and the package**:
+1. **Install uv** using the official installer for your platform:
+
+<https://docs.astral.sh/uv/getting-started/installation/>
+
+2. **Create the local project environment and install dependencies**:
 ```bash
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[ui,test]"
+uv sync --extra ui --extra test
 ```
+
+Run project commands through `uv run` so imports resolve from the repo-local
+`.venv` instead of global Python site-packages.
 
 ### Optional ML Setup
 
 Install optional ML dependencies only when you are working on ML-boundary components.
 
 ```bash
-# Recommended: isolated virtual environment
-python -m venv .venv
-
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
-# Linux/macOS
-# source .venv/bin/activate
-
-python -m pip install --upgrade pip
-python -m pip install -e ".[ml]"
+uv sync --extra ml
 ```
 
 Verify optional ML dependencies are visible:
 
 ```bash
-python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
+uv run python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
 ```
 
 Expected result:
@@ -58,8 +57,8 @@ Expected result:
 
 2. **Updated Warhammer 40k Data**:
 ```bash
-python3 scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
-python3 scripts/diff_wahapedia_data.py --old wahapedia_data/Archive/ --new wahapedia_data/ --out docs/wahapedia_diff.txt
+uv run python scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
+uv run python scripts/diff_wahapedia_data.py --old wahapedia_data/Archive/ --new wahapedia_data/ --out docs/wahapedia_diff.txt
 ```
 
 Afterwards, I issue the following prompt to GPT-5.3-Codex:
@@ -72,25 +71,25 @@ Review the latest wahapedia pull resulting in docs/wahapedia_diff.txt and summar
 #### Interactive Gameplay
 ```bash
 # Local vs local
-python3 scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt
+uv run python scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt
 
 # Manual phase control
-python3 scripts/main.py --manual-phases
+uv run python scripts/main.py --manual-phases
 ```
 
 #### Network Play (Server/Client)
 ```bash
 # Server (TLS required)
-python3 -m warhammer40k_ai.network.cli server --host 0.0.0.0 --port 40000 --cert tests/fixtures/tls/server.crt --key tests/fixtures/tls/server.key
+uv run python -m warhammer40k_ai.network.cli server --host 0.0.0.0 --port 40000 --cert tests/fixtures/tls/server.crt --key tests/fixtures/tls/server.key
 
 # Client 1 (Player 1, pygame UI)
-python3 -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player One" --role player1 --army-file army_lists/chaos_test.txt --ready
+uv run python -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player One" --role player1 --army-file army_lists/chaos_test.txt --ready
 
 # Client 2 (Player 2, headless)
-python3 -m warhammer40k_ai.network.cli client --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player Two" --role player2 --army-file army_lists/aeldari_test.txt --ready
+uv run python -m warhammer40k_ai.network.cli client --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player Two" --role player2 --army-file army_lists/aeldari_test.txt --ready
 
 # Spectator (pygame UI)
-python3 -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Spectator One" --role spectator
+uv run python -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Spectator One" --role spectator
 ```
 
 Notes:
@@ -103,33 +102,33 @@ Notes:
 #### Data Exploration
 ```bash
 # Browse Wahapedia data
-python3 -m warhammer40k_ai.UI.wahapedia_ui
+uv run python -m warhammer40k_ai.UI.wahapedia_ui
 ```
 
 #### Headless Self-Play Data (Baseline)
 ```bash
 # Generate headless self-play DecisionRecords (with reward labels)
-python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt --output data/headless_self_play_decision_records.json
+uv run python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt --output data/headless_self_play_decision_records.json
 
 # Optional: also persist per-game replay sessions for UI playback
-python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test_2.txt --player2-army army_lists/aeldari_test_2.txt --output data/headless_self_play_decision_records.json --replay-dir data/headless_self_play_replays
+uv run python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test_2.txt --player2-army army_lists/aeldari_test_2.txt --output data/headless_self_play_decision_records.json --replay-dir data/headless_self_play_replays
 
 # Step through one recorded game in the replay viewer
-python scripts/replay_viewer.py --session-id selfplay:000000 --replay-dir data/headless_self_play_replays
+uv run python scripts/replay_viewer.py --session-id selfplay:000000 --replay-dir data/headless_self_play_replays
 
 # Relabel records to a target rules bundle before gate enforcement
-python scripts/relabel_decision_records.py \
+uv run python scripts/relabel_decision_records.py \
   --input data/headless_self_play_decision_records.json \
   --output data/headless_self_play_decision_records_relabeled.json
 
 # Optional: re-annotate rewards on an existing relabeled DecisionRecord file
-python scripts/annotate_decision_rewards.py \
+uv run python scripts/annotate_decision_rewards.py \
   --input data/headless_self_play_decision_records_relabeled.json \
   --output data/headless_self_play_decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
 
 # Build and enforce the canonical pre-ML manifest gate (judges whether the games were meaningful)
-python scripts/build_training_manifest.py --input data/headless_self_play_decision_records_rewarded.json --output data/training_manifest.json --source-tag self_play --enforce-gate-profile
+uv run python scripts/build_training_manifest.py --input data/headless_self_play_decision_records_rewarded.json --output data/training_manifest.json --source-tag self_play --enforce-gate-profile
 
 # Gate profile now checks dataset quality in addition to schema coverage:
 # - minimum games observed / game_id coverage
@@ -155,14 +154,14 @@ python scripts/build_training_manifest.py --input data/headless_self_play_decisi
 ## Testing
 
 ```bash
-# Full suite (parallel by default via setup.cfg)
-python -m pytest tests/
+# Full suite (parallel by default via pyproject.toml)
+uv run python -m pytest tests/
 
 # Fast feedback lane: skip long integration/slow tests
-python -m pytest tests/ -m "not slow and not integration"
+uv run python -m pytest tests/ -m "not slow and not integration"
 
 # Explicit full run with worker/process details
-python -m pytest tests/ -n auto --dist loadscope
+uv run python -m pytest tests/ -n auto --dist loadscope
 ```
 
 Marker conventions:

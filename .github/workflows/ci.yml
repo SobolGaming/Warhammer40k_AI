@@ -34,7 +34,7 @@ jobs:
           while IFS= read -r path; do
             [[ -z "$path" ]] && continue
             case "$path" in
-              .github/workflows/ci.yml|pyproject.toml|setup.cfg|tests/conftest.py|scripts/main.py)
+              .github/workflows/ci.yml|pyproject.toml|uv.lock|tests/conftest.py|scripts/main.py)
                 ui_changed=true
                 ;;
               src/warhammer40k_ai/UI/*|src/warhammer40k_ai/network/pygame_client.py)
@@ -67,23 +67,27 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          uv sync --frozen --extra test
 
       - name: Import smoke tests
         run: |
-          python -c "import warhammer40k_ai"
-          python -c "from warhammer40k_ai.engine.game import Game"
-          warhammer40k-ai --version
-          warhammer40k-ai-network --help
+          uv run python -c "import warhammer40k_ai"
+          uv run python -c "from warhammer40k_ai.engine.game import Game"
+          uv run warhammer40k-ai --version
+          uv run warhammer40k-ai-network --help
 
       - name: Run fast tests
         env:
           WARHAMMER40K_AI_SKIP_UI_TESTS: "1"
         run: |
-          python -m pytest tests/ -m "not slow and not integration and not ui"
+          uv run python -m pytest tests/ -m "not slow and not integration and not ui"
 
   ui-tests:
     name: UI Tests (Python ${{ matrix.python-version }})
@@ -103,14 +107,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test,ui-test]"
+          uv sync --frozen --extra test --extra ui-test
 
       - name: Run UI fast tests
         run: |
-          python -m pytest tests/ -m "ui and not slow and not integration"
+          uv run python -m pytest tests/ -m "ui and not slow and not integration"
 
   training-data-gate:
     name: Training Data Gate
@@ -124,9 +132,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: |
+          uv sync --frozen
+
       - name: Build relabeled DecisionRecord fixture for gate check
         run: |
-          python - <<'PY'
+          uv run python - <<'PY'
           import json
           from pathlib import Path
 
@@ -199,10 +216,8 @@ jobs:
           PY
 
       - name: Enforce canonical pre-ML training-data gate profile
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src
         run: |
-          python scripts/build_training_manifest.py \
+          uv run python scripts/build_training_manifest.py \
             --input data/ci_decision_records_relabeled.json \
             --output data/ci_training_manifest.json \
             --source-tag ci \

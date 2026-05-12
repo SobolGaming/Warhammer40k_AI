@@ -76,7 +76,7 @@ Output model includes:
 ## Headless usage
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 100 \
   --deployment-ranker-model data/deployment_ranker_model.json \
   --output data/headless_self_play_ranked.json

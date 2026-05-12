@@ -43,3 +43,13 @@ def test_runtime_dependency_groups_are_split() -> None:
     assert "pygame" in set(optional["ui-test"])
     assert "pygame" in set(optional["ui"])
     assert "torch>=2.2,<3.0" in set(optional["ml"])
+
+
+def test_pytest_and_uv_config_live_in_pyproject() -> None:
+    metadata = _project_metadata()
+
+    assert metadata["tool"]["uv"]["package"] is True
+    assert metadata["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
+    assert "slow: long-running tests" in "\n".join(
+        metadata["tool"]["pytest"]["ini_options"]["markers"]
+    )

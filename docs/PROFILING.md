@@ -5,7 +5,7 @@ Launch-time profiling is opt-in and writes diagnostic artifacts without changing
 ## UI Runner
 
 ```bash
-python scripts/main.py \
+uv run python scripts/main.py \
   --profile \
   --profile-dir profiles \
   --profile-label ui_baseline
@@ -24,7 +24,7 @@ The UI runner dumps profiles on normal exit, `KeyboardInterrupt`, and the existi
 ## Headless Self-Play
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 4 \
   --workers 4 \
   --profile \

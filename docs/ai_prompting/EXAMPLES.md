@@ -109,7 +109,7 @@
 
     Tests run:
 
-    python -m pytest tests/ (pass)
+    uv run python -m pytest tests/ (pass)
     If you want any extra edge-case tests (e.g., multiple Sanguinary Tear sources or mixed Scout distances), tell me which scenarios to cover.
     ```
 

@@ -76,7 +76,7 @@ external config file or `api_key_env` to the name of an environment variable. Th
 ## Headless Self-Play
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
@@ -100,7 +100,7 @@ python -m warhammer40k_ai.network.cli client-headless \
 Any DecisionRecord source can become supervised JSONL examples:
 
 ```bash
-python scripts/build_llm_agent_dataset.py \
+uv run python scripts/build_llm_agent_dataset.py \
   --input data/headless_self_play_decision_records.json \
   --output data/llm_agent_examples.jsonl
 ```

@@ -93,7 +93,7 @@ Supported slice filters:
 Build a manifest from one or more record files:
 
 ```bash
-python3 scripts/build_mustering_manifest.py \
+uv run python scripts/build_mustering_manifest.py \
   --input models/reports/run_a/muster_record.json \
   --input models/reports/run_b/muster_record.json \
   --output models/mustering_corpora/april/mustering_manifest.json \
@@ -104,7 +104,7 @@ python3 scripts/build_mustering_manifest.py \
 Build a rules/event/policy slice:
 
 ```bash
-python3 scripts/build_mustering_manifest.py \
+uv run python scripts/build_mustering_manifest.py \
   --input models/mustering_corpora/april/records.json \
   --output models/mustering_corpora/april/slice_space_marines.json \
   --corpus-id mustering_corpus:april_space_marines \

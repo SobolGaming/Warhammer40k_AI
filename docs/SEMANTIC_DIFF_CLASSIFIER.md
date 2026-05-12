@@ -29,7 +29,7 @@ Training scope output includes:
 CLI:
 
 ```bash
-python scripts/classify_semantic_diff.py \
+uv run python scripts/classify_semantic_diff.py \
   --source-core-rules-id core_10e \
   --source-rules-commentary-id commentary_2025q4 \
   --source-mission-pack-id mission_2025 \

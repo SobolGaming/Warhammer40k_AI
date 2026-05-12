@@ -117,7 +117,7 @@ choices are made.
 The CLI writes a report, candidate blueprints, and army-list text exports:
 
 ```bash
-python3 scripts/synthesize_roster.py \
+uv run python scripts/synthesize_roster.py \
   --max-points 2000 \
   --max-under-cap-allowance 25 \
   --faction "World Eaters" \

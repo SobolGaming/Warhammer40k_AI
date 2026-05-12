@@ -21,7 +21,7 @@ component name, evaluation reward, and a supervised-example payload. Full-game t
 ## Run UI Training
 
 ```bash
-python scripts/run_training_mode.py \
+uv run python scripts/run_training_mode.py \
   --stage mixed \
   --situations 20 \
   --seed 100 \
@@ -37,7 +37,7 @@ scenario profile, updates the lightweight preference model, and advances after t
 Headless mode is useful for tests and pipeline checks:
 
 ```bash
-python scripts/run_training_mode.py \
+uv run python scripts/run_training_mode.py \
   --stage shooting_phase \
   --situations 10 \
   --headless-auto-choice best \

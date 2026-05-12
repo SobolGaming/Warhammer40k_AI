@@ -23,11 +23,11 @@ classifiers = [
 ]
 dependencies = [
   "beautifulsoup4==4.12.2",
-  "numpy",
+  "numpy==2.1.1",
   "openpyxl",
   "pandas",
   "requests>=2.33.0,<3.0",
-  "shapely",
+  "shapely==2.0.6",
   "simple-namespace",
   "websockets==11.0.3",
 ]
@@ -74,3 +74,19 @@ version = { attr = "warhammer40k_ai.version.APP_VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -n auto --dist loadscope"
+filterwarnings = [
+  "ignore:pkg_resources is deprecated as an API\\..*:DeprecationWarning:pygame\\.pkgdata",
+  "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('google'\\)`\\..*:DeprecationWarning:pkg_resources",
+]
+markers = [
+  "slow: long-running tests that are expensive but still deterministic.",
+  "integration: end-to-end tests that cross subsystem boundaries (networking, persistence, full parsing).",
+  "ui: tests that exercise pygame/UI-facing modules and require the UI test extra.",
+]
+
+[tool.uv]
+package = true

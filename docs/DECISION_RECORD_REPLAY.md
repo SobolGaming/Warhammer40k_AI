@@ -94,7 +94,7 @@ Relabeling is supported by:
 CLI example:
 
 ```bash
-python scripts/relabel_decision_records.py \
+uv run python scripts/relabel_decision_records.py \
   --input data/decision_records.json \
   --output data/decision_records_relabeled.json \
   --core-rules-id core_11e \

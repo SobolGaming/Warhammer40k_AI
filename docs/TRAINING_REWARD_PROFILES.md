@@ -40,7 +40,7 @@ If missing, it falls back to `omniscient_state.active_player_id`.
 ## CLI usage
 
 ```bash
-python scripts/annotate_decision_rewards.py \
+uv run python scripts/annotate_decision_rewards.py \
   --input data/decision_records_relabeled.json \
   --output data/decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
@@ -49,13 +49,13 @@ python scripts/annotate_decision_rewards.py \
 ## Recommended pre-training pipeline
 
 1. Generate records:
-   - `python scripts/run_headless_self_play.py --games <N> --output data/decision_records_raw.json`
+   - `uv run python scripts/run_headless_self_play.py --games <N> --output data/decision_records_raw.json`
 2. Relabel to target rules bundle:
-   - `python scripts/relabel_decision_records.py ...`
+   - `uv run python scripts/relabel_decision_records.py ...`
 3. Annotate rewards:
-   - `python scripts/annotate_decision_rewards.py ...`
+   - `uv run python scripts/annotate_decision_rewards.py ...`
 4. Build and enforce manifest gate:
-   - `python scripts/build_training_manifest.py --input ... --output ... --source-tag self_play --enforce-gate-profile`
+   - `uv run python scripts/build_training_manifest.py --input ... --output ... --source-tag self_play --enforce-gate-profile`
 
 ## Quality notes
 

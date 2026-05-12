@@ -12,15 +12,14 @@ Related docs:
 Install the base project dependencies:
 
 ```bash
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e ".[test]"
+uv sync --extra test
 ```
 
 Optional ML dependencies are only needed for later model training code paths:
 
 ```bash
-python -m pip install -e ".[ml]"
-python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
+uv sync --extra ml
+uv run python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
 ```
 
 Optional LLM-backed domain agents do not require an SDK dependency. Provide a JSON config with a
@@ -33,7 +32,7 @@ local or remote Chat Completions compatible endpoint, then pass
 It uses the same local authoritative runtime/session shell as interactive local play (`LocalAuthoritativeRuntime` + `AuthoritativeSessionDriver`) so lifecycle progression stays on the shared command path.
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 200 \
   --workers 4 \
   --reserve-policy forced_only \
@@ -47,7 +46,7 @@ python scripts/run_headless_self_play.py \
 LLM-backed self-play example:
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
@@ -58,7 +57,7 @@ python scripts/run_headless_self_play.py \
 Optional replay capture for UI playback:
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 5 \
   --workers 2 \
   --reserve-policy forced_only \
@@ -125,7 +124,7 @@ Default shooting policy:
 - Post-command headless stratagem tool-action scans are gated until setup is complete, so deployment commands cannot trigger normal battle-phase stratagem candidate generation through the default command-phase placeholder.
 - T'au Kauyon `POINT-BLANK AMBUSH` / `WALL OF MIRRORS` and Imperial Agents Veiled Blade `PRIME TARGET` use faction-specific tool-action preflight so the headless controller only sees legal timing and target candidates.
 - Drukhari Covenite Coterie `POSTMORTALITY`, `POISONER'S ART`, `SYMPHONY OF SUFFERING`, `CONNOISSEURS OF PAIN`, and `ENFOLDING NIGHTMARE` are treated as trigger-bound reactions, while `DISTILLERS OF FEAR` emits only legal Haemonculus Covens fight targets.
-- Descriptor-backed stratagems whose timing or target requires event context are gated out of broad phase scans automatically. Broad phase descriptors that need bound model/support context use the generic descriptor context provider to synthesize deterministic model, support-unit, objective, and enemy candidate maps before headless preflight. Run `python3 scripts/audit_stratagem_tool_action_context.py --all-descriptors --show-blocked`; no `blocked` rows should remain.
+- Descriptor-backed stratagems whose timing or target requires event context are gated out of broad phase scans automatically. Broad phase descriptors that need bound model/support context use the generic descriptor context provider to synthesize deterministic model, support-unit, objective, and enemy candidate maps before headless preflight. Run `uv run python scripts/audit_stratagem_tool_action_context.py --all-descriptors --show-blocked`; no `blocked` rows should remain.
 - Selected-to-fight stratagems such as Imperial Agents Veiled Blade `PRIME TARGET` are exposed from the
   `fight_unit_selected` reaction window, not from broad Fight phase scans, so Fight phase records are not
   polluted by stratagem prompts when no unit has actually been selected to fight.
@@ -170,7 +169,7 @@ Logging controls:
 Example:
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 3 \
   --workers 3 \
   --log-level INFO \
@@ -190,7 +189,7 @@ Profiling controls:
 Example:
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 4 \
   --workers 4 \
   --profile \
@@ -219,7 +218,7 @@ Winners: {'chaos_test_2': <SCORE: 45 vs 32>}
 Open a replay session by stable session id:
 
 ```bash
-python scripts/replay_viewer.py \
+uv run python scripts/replay_viewer.py \
   --session-id selfplay:000000 \
   --replay-dir data/headless_self_play_replays
 ```
@@ -227,7 +226,7 @@ python scripts/replay_viewer.py \
 Or open the SQLite artifact directly:
 
 ```bash
-python scripts/replay_viewer.py \
+uv run python scripts/replay_viewer.py \
   --replay-path data/headless_self_play_replays/selfplay~3A000000/replay.sqlite3
 ```
 
@@ -248,7 +247,7 @@ Viewer notes:
 If your source records were produced under older rules-pack identifiers, relabel before manifest gating:
 
 ```bash
-python scripts/relabel_decision_records.py \
+uv run python scripts/relabel_decision_records.py \
   --input data/headless_self_play_decision_records.json \
   --output data/headless_self_play_decision_records_relabeled.json \
   --core-rules-id unknown_core_rules \
@@ -268,7 +267,7 @@ If you skip relabeling, ensure your records already contain `relabel_status` bec
 If you generated raw records (for example with `--no-reward-annotation`) or want a different reward profile:
 
 ```bash
-python scripts/annotate_decision_rewards.py \
+uv run python scripts/annotate_decision_rewards.py \
   --input data/headless_self_play_decision_records_relabeled.json \
   --output data/headless_self_play_decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
@@ -277,7 +276,7 @@ python scripts/annotate_decision_rewards.py \
 ## 4) Build manifest and enforce quality gate
 
 ```bash
-python scripts/build_training_manifest.py \
+uv run python scripts/build_training_manifest.py \
   --input data/headless_self_play_decision_records_rewarded.json \
   --output data/training_manifest.json \
   --source-tag self_play \
@@ -312,7 +311,7 @@ After manifest generation, inspect:
 Example:
 
 ```bash
-python -c "import json; m=json.load(open('data/training_manifest.json', encoding='utf-8')); print(json.dumps({'gameplay_quality': m['gameplay_quality'], 'gate_requirements': m['gate_requirements']}, indent=2, sort_keys=True))"
+uv run python -c "import json; m=json.load(open('data/training_manifest.json', encoding='utf-8')); print(json.dumps({'gameplay_quality': m['gameplay_quality'], 'gate_requirements': m['gate_requirements']}, indent=2, sort_keys=True))"
 ```
 
 Interpretation:
@@ -324,7 +323,7 @@ Interpretation:
 Extract deployment decision groups for imitation/ranking:
 
 ```bash
-python scripts/build_deployment_ranking_dataset.py \
+uv run python scripts/build_deployment_ranking_dataset.py \
   --input data/headless_self_play_decision_records_rewarded.json \
   --output data/deployment_ranking_dataset.json
 ```
@@ -332,7 +331,7 @@ python scripts/build_deployment_ranking_dataset.py \
 Train a linear ranker:
 
 ```bash
-python scripts/train_deployment_ranker.py \
+uv run python scripts/train_deployment_ranker.py \
   --input data/deployment_ranking_dataset.json \
   --output data/deployment_ranker_model.json
 ```
@@ -340,7 +339,7 @@ python scripts/train_deployment_ranker.py \
 Use trained deployment ranker in headless play:
 
 ```bash
-python scripts/run_headless_self_play.py \
+uv run python scripts/run_headless_self_play.py \
   --games 50 \
   --deployment-ranker-model data/deployment_ranker_model.json \
   --output data/headless_self_play_ranked.json
