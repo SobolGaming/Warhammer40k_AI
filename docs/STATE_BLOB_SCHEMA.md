@@ -29,6 +29,13 @@ Design notes:
 - `detection_markers` lists preview-gated detection-range marker state, including marker label,
   source unit, target unit, range delta, duration, detachment/source provenance, and enabled profile.
 - `hidden_shooting_exemptions` lists preview-gated unit exemptions that preserve Hidden after shooting.
+- Hidden/owning-player unit entries include `turn_provenance` and `status_tokens`.
+  `turn_provenance` normalizes set-up/reserve arrival, move kind, shooting state,
+  max per-model move distance, and Hidden shooting exemptions for rules such as
+  preview Heavy, Hidden clearing, and set-up-this-turn shooting modifiers.
+  `status_tokens` carry transient tactical conditions such as battle-shock,
+  Fights First injection, "must fight next", and temporary attack modifiers
+  without encoding those effects as faction-specific booleans.
 - Objective markers and score sources are distinct concepts when the active mission pack requires that split.
 - Objective entries now carry:
   - site geometry (`MARKER`, `POLYGON_FOOTPRINT`, or `KEYED_FEATURE`)
@@ -78,3 +85,4 @@ Version notes:
 - `1.6.0` removes centroid-derived unit `position` from unit entries, adds per-model
   base positions, and changes tactical threat flags to use model/base edge distances.
 - `1.7.0` adds preview-gated `detection_markers` and `hidden_shooting_exemptions` top-level entries.
+- `1.8.0` adds unit-level `turn_provenance` and `status_tokens` to hidden/owning-player unit entries.

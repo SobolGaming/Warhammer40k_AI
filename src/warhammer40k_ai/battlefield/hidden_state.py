@@ -113,6 +113,29 @@ def has_hidden_preserving_shooting_exemption(game_map: object, unit: object | No
     return bool(hidden_preserving_exemption_ids_for_unit(game_map, unit))
 
 
+def _provenance_bool(provenance: object, field_name: str) -> bool:
+    if isinstance(provenance, Mapping):
+        return bool(provenance.get(field_name, False))
+    return bool(getattr(provenance, field_name, False))
+
+
+def _provenance_hidden_exemptions(provenance: object) -> tuple[str, ...]:
+    if isinstance(provenance, Mapping):
+        values = provenance.get("hidden_shooting_exemptions", ())
+    else:
+        values = getattr(provenance, "hidden_shooting_exemptions", ())
+    return _clean_sources(values)
+
+
+def hidden_shot_breaks_hidden_from_provenance(unit_turn_provenance: object) -> bool:
+    if not (
+        _provenance_bool(unit_turn_provenance, "shot_this_turn")
+        or _provenance_bool(unit_turn_provenance, "shot_previous_player_turn")
+    ):
+        return False
+    return not bool(_provenance_hidden_exemptions(unit_turn_provenance))
+
+
 def hidden_shot_breaks_hidden(
     game_map: object,
     unit: object | None,
@@ -120,7 +143,10 @@ def hidden_shot_breaks_hidden(
     last_shot_turn: str,
     current_turn: str,
     previous_turn: str,
+    unit_turn_provenance: object | None = None,
 ) -> bool:
+    if unit_turn_provenance is not None:
+        return hidden_shot_breaks_hidden_from_provenance(unit_turn_provenance)
     last_shot_turn = _clean_text(last_shot_turn)
     active_turns = {_clean_text(current_turn), _clean_text(previous_turn)}
     active_turns.discard("")
@@ -167,5 +193,6 @@ __all__ = [
     "hidden_shooting_exemption_signature",
     "hidden_shooting_exemptions_on_map",
     "hidden_shot_breaks_hidden",
+    "hidden_shot_breaks_hidden_from_provenance",
     "mark_unit_shot_for_hidden",
 ]

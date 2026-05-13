@@ -1313,7 +1313,7 @@ Make 11e-style Upgrade payloads first-class in mustering without treating previe
 
 ## PR-014H — Unit turn provenance and tactical status tokens
 
-**Status:** Pending.
+**Status:** Implemented locally for PR-014H.
 
 ### Goal
 Centralize "what happened to this unit/model this turn" state used by Heavy, Hidden, reserve-entry, Bridgehead-style effects, actions, battle-shock, and future AI features.
@@ -1330,6 +1330,18 @@ Centralize "what happened to this unit/model this turn" state used by Heavy, Hid
 - Bridgehead-style "set up this turn" modifier is representable without faction-specific logic.
 - Battle-shock persistence is representable without assuming automatic Command phase cleanup.
 - Status tokens serialize through snapshot and replay.
+
+### Implemented notes
+- Added `UnitTurnProvenance`, `StatusToken` / `UnitCondition`, `PhaseBoundary`,
+  `TurnBoundary`, and `Manual` expiry records in
+  `src/warhammer40k_ai/engine/unit_turn_provenance.py`.
+- Added generic helpers for Heavy provenance evaluation, Hidden clearing,
+  set-up-this-turn modifier tokens, battle-shock persistence tokens, Fights First,
+  "must fight next", and temporary attack modifiers.
+- Threaded provenance and status tokens through unit snapshots and state blob
+  unit entries; state blobs now use version `1.8.0`.
+- Added preview-gated golden coverage under
+  `tests/preview_11e/test_unit_turn_provenance_golden.py`.
 
 ---
 

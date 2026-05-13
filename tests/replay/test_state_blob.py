@@ -117,7 +117,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
     observed = player_obs_state(game, player.id)
     army_build = dict(omniscient.get("army_build_state", {}) or {})
 
-    assert str(omniscient.get("state_blob_version", "") or "") == "1.7.0"
+    assert str(omniscient.get("state_blob_version", "") or "") == "1.8.0"
     assert army_build["army_build_descriptor_id"].startswith("army_build_descriptor:")
     assert army_build["players"][0]["army_blueprint_hash"].startswith("sha256:")
     assert army_build["players"][0]["primary_detachment_type"] == "Gladius Task Force"
@@ -176,7 +176,7 @@ def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> Non
 
     terrain_entries = {entry["terrain_id"]: entry for entry in state["terrain"]}
 
-    assert str(state.get("state_blob_version", "") or "") == "1.7.0"
+    assert str(state.get("state_blob_version", "") or "") == "1.8.0"
     assert state["objectives"][0]["geometry"]["kind"] == "POLYGON_FOOTPRINT"
     assert state["objectives"][0]["geometry"]["terrain_area_id"] == terrain_area.id
     assert state["objectives"][0]["geometry"]["layout_slot_id"] == "layout:center_ruin"

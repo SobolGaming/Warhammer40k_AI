@@ -405,7 +405,11 @@ class StateAttachmentMixin:
         Returns:
             bool: True if the unit has a BattleShockEffect status effect
         """
-        return any(isinstance(effect, BattleShockEffect) for effect in list(getattr(self, "status_effects", []) or []))
+        if any(isinstance(effect, BattleShockEffect) for effect in list(getattr(self, "status_effects", []) or [])):
+            return True
+        from ...engine.unit_turn_provenance import unit_has_status_token_kind
+
+        return unit_has_status_token_kind(self, "battle_shock")
 
     def clear_post_shoot_leadership_debuff(self) -> None:
         """Clear post-shoot Leadership/Battle-shock debuff effects from this unit."""

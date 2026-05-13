@@ -6,7 +6,8 @@ from ..battlefield.control_queries import deserialize_polygon_geometry
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
 from .state_blob_objectives import objective_entries
-from .state_blob_rules import safe_float, sorted_players
+from .state_blob_rules import json_safe, safe_float, sorted_players
+from .unit_turn_provenance import status_token_dicts_on_unit, unit_turn_provenance_on_unit
 
 
 def alive_models(unit: object) -> list[object]:
@@ -428,6 +429,14 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
                     _reserve_metadata_value(unit, "reserve_latest_arrival_round", 0) or 0
                 )
                 entry["reserve_last_arrival_failure"] = reserve_last_arrival_failure(unit)
+                entry["turn_provenance"] = json_safe(
+                    unit_turn_provenance_on_unit(
+                        unit,
+                        game=game,
+                        game_map=getattr(game, "map", None),
+                    ).to_dict()
+                )
+                entry["status_tokens"] = json_safe(status_token_dicts_on_unit(unit))
             units.append((unit_id, entry))
     units.sort(key=lambda item: item[0])
     return [entry for _unit_id, entry in units]

@@ -15,6 +15,13 @@ from .mission_cards import MissionCard, PrimaryMissionCard, SecondaryMissionCard
 from .phase import BattleRoundPhases, SetupPhase
 from .ref_codec import decode_refs, encode_refs, serialize_modifier, deserialize_modifier
 from .ruleset import RulesetBundle
+from .unit_turn_provenance import (
+    UnitTurnProvenance,
+    derive_unit_turn_provenance,
+    set_status_tokens_on_unit,
+    set_unit_turn_provenance,
+    status_token_dicts_on_unit,
+)
 from ..battlefield.map import (
     BarricadeTerrain,
     CraterTerrain,
@@ -55,7 +62,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -68,6 +75,7 @@ _UNIT_STATE_EXCLUDE = {
     "models",
     "models_lost",
     "status_effects",
+    "status_tokens",
     "transport_passengers",
     "embarked_in",
     "attached_leaders",
@@ -76,6 +84,7 @@ _UNIT_STATE_EXCLUDE = {
     "support_joined_to",
     "parent_army",
     "round_state",
+    "unit_turn_provenance",
     "_ability_cache",
     "enhancement",
     "_death_ecstasy_pending_models",
@@ -433,6 +442,15 @@ def _deserialize_status_effect(data: dict) -> StatusEffect:
     raise TypeError(f"Unsupported status effect type: {effect_type}")
 
 
+def _serialize_unit_turn_provenance(unit: Unit, game: Game | None) -> dict:
+    existing = getattr(unit, "unit_turn_provenance", None)
+    if isinstance(existing, UnitTurnProvenance):
+        return existing.to_dict()
+    if isinstance(existing, dict):
+        return UnitTurnProvenance.from_dict(existing).to_dict()
+    return derive_unit_turn_provenance(unit, game=game, game_map=getattr(game, "map", None)).to_dict()
+
+
 def _serialize_model(model: Model) -> dict:
     base = model.model_base
     radius = list(getattr(base, "radius", (0.0, 0.0)) or (0.0, 0.0))
@@ -690,7 +708,12 @@ def _apply_round_state(unit: Unit, data: dict, registry: EntityRegistry) -> None
     unit.round_state = rs
 
 
-def _serialize_unit(unit: Unit, *, live_entity_ids: dict[str, set[str]] | None = None) -> dict:
+def _serialize_unit(
+    unit: Unit,
+    *,
+    live_entity_ids: dict[str, set[str]] | None = None,
+    game: Game | None = None,
+) -> dict:
     datasheet = getattr(unit, "_datasheet", None)
     state: dict[str, Any] = {}
     live_ids = live_entity_ids or {"unit": set(), "model": set(), "wargear": set()}
@@ -718,6 +741,8 @@ def _serialize_unit(unit: Unit, *, live_entity_ids: dict[str, set[str]] | None =
         "enhancement_name": getattr(getattr(unit, "enhancement", None), "name", None),
         "state": state,
         "round_state": _serialize_round_state(unit),
+        "unit_turn_provenance": _serialize_unit_turn_provenance(unit, game),
+        "status_tokens": status_token_dicts_on_unit(unit),
         "attached_to_id": get_entity_id(unit.attached_to) if getattr(unit, "attached_to", None) else None,
         "attached_leader_ids": [get_entity_id(u) for u in list(getattr(unit, "attached_leaders", []) or [])],
         "attached_support_ids": [get_entity_id(u) for u in list(getattr(unit, "attached_support_units", []) or [])],
@@ -1759,7 +1784,7 @@ def snapshot_game(game: Game) -> dict:
             continue
         armies.append(_serialize_army(army))
         for unit in list(getattr(army, "units", []) or []):
-            units.append(_serialize_unit(unit, live_entity_ids=live_entity_ids))
+            units.append(_serialize_unit(unit, live_entity_ids=live_entity_ids, game=game))
 
     decision_queue = getattr(game, "decision_queue", None)
     decisions = decision_queue.list() if decision_queue is not None else []
@@ -1992,6 +2017,10 @@ def load_game_snapshot(snapshot: dict) -> Game:
             continue
         _apply_unit_state(unit, udata, game.entity_registry)
         _apply_round_state(unit, udata.get("round_state", {}) or {}, game.entity_registry)
+        provenance_payload = udata.get("unit_turn_provenance")
+        if isinstance(provenance_payload, dict) and provenance_payload:
+            set_unit_turn_provenance(unit, provenance_payload)
+        set_status_tokens_on_unit(unit, udata.get("status_tokens", []) or [])
         models = list(getattr(unit, "models", []) or []) + list(getattr(unit, "models_lost", []) or [])
         for model in models:
             if getattr(model, "_temporary_effects", None) is not None:
