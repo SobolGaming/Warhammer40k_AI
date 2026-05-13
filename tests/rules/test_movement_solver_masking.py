@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_MOVEMENT_ACTION
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.movement_intent import MovementIntent
-from warhammer40k_ai.engine.movement_solver import generate_move_unit_candidates
+from warhammer40k_ai.engine.movement_solver import generate_move_unit_candidates, generate_select_movement_action_candidates
 from warhammer40k_ai.engine.path_witness import PathWitnessStore
 from warhammer40k_ai.engine.time_manager import TimeManager
 
@@ -68,6 +68,7 @@ class _UnitStub:
         self.deployed = reserve_status == "deployed"
         self.embarked_in = None
         self.is_embarked = False
+        self.movement = 12
         self.models = [_ModelStub(f"{unit_id}:model-1", x=0.0, y=0.0)]
 
     def get_parent_army(self):
@@ -230,6 +231,61 @@ def test_move_solver_replaces_illegal_reserves_arrival_candidate_with_freeform_c
     )
     assert "model_positions" not in dict(confirm_candidate.params or {})
     assert str(dict(confirm_candidate.metadata or {}).get("candidate_kind", "") or "") == "freeform_confirm"
+
+
+def test_select_movement_action_masks_advance_when_planned_endpoint_is_normal_distance() -> None:
+    game = _GameStub()
+    game.arriving.reserve_status = "deployed"
+    game.arriving.deployed = True
+    request = DecisionRequest.create(
+        DECISION_SELECT_MOVEMENT_ACTION,
+        "Select movement action",
+        player_id="player:arriving",
+        options=[
+            DecisionOption.create(
+                "Move",
+                payload={
+                    "unit_id": "unit:arriving",
+                    "action_type": "move",
+                    "action_id": "select:move",
+                },
+            ),
+            DecisionOption.create(
+                "Advance",
+                payload={
+                    "unit_id": "unit:arriving",
+                    "action_type": "advance",
+                    "action_id": "select:advance",
+                },
+            ),
+            DecisionOption.create(
+                "Remain Stationary",
+                payload={
+                    "unit_id": "unit:arriving",
+                    "action_type": "stationary",
+                    "action_id": "select:stationary",
+                },
+            ),
+        ],
+        context={
+            "unit_id": "unit:arriving",
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "MOVE_UNITS",
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, mask, mask_reasons = generate_select_movement_action_candidates(game, request, intent)
+
+    mask_by_action = {candidate.action_id: bool(mask[index]) for index, candidate in enumerate(candidates)}
+    metadata_by_action = {candidate.action_id: dict(candidate.metadata or {}) for candidate in candidates}
+    assert mask_by_action["select:move"] is True
+    assert mask_by_action["select:advance"] is True
+    assert mask_reasons == [None, None, None]
+    assert (
+        metadata_by_action["select:advance"]["movement_action_distance_mismatch"]
+        == "advance_not_required_for_planned_endpoint"
+    )
 
 
 def _charge_move_game_and_request():

@@ -31,6 +31,7 @@ from .decision_kinds import (
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_MOVEMENT_ACTION,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_TOOL_ACTION,
     DECISION_SELECT_UNIT,
@@ -237,6 +238,8 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     def _should_use_ai_router(self, request: DecisionRequest, game: object | None = None) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        if decision_type == DECISION_SELECT_MOVEMENT_ACTION:
+            return False
         if decision_type in self._ai_router_ignored_decision_types:
             return False
         return not (self._ai_router_ignore_setup_decisions and self._request_is_setup_request(request, game))
@@ -3597,6 +3600,9 @@ class HeadlessPolicyDecisionController(DecisionController):
                 score += 100.0
             else:
                 score -= 10.0
+        if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_MOVEMENT_ACTION:
+            if str(metadata.get("movement_action_distance_mismatch", "") or "").strip():
+                score -= 100.0
         if str(getattr(request, "decision_type", "") or "") == "SELECT_UNIT":
             phase_step = str(request_context.get("phase_step", "") or "").strip().upper()
             if action == "pass" and phase_step in {

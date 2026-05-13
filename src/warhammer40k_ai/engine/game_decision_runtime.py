@@ -9,6 +9,7 @@ from .decision_kinds import (
     DECISION_REROLL_ROLL,
     DECISION_SCOUT_MOVE,
     DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_MOVEMENT_ACTION,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .deployment_intent import DeploymentIntent
@@ -17,7 +18,7 @@ from .descriptor_compiler import compile_descriptor_bundle
 from .dice_rolls import DiceRollState
 from .limited_use_context import normalize_optional_ability_limited_use_context
 from .movement_intent import MovementIntent
-from .movement_solver import generate_move_unit_candidates
+from .movement_solver import generate_move_unit_candidates, generate_select_movement_action_candidates
 from .path_witness import PathWitnessStore
 from .time_manager import TimeManager
 from .version_adapter import ensure_version_adapter_boundary
@@ -218,6 +219,27 @@ def request_decision(game, request) -> None:
                     solver_ms,
                     fallback_mode,
                 )
+    if request.decision_type == DECISION_SELECT_MOVEMENT_ACTION:
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
+        if phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
+            intent = MovementIntent.from_context(ctx)
+            ctx["movement_intent"] = intent.to_dict()
+            request.context = ctx
+            action_candidates, action_mask, action_mask_reasons = generate_select_movement_action_candidates(
+                game,
+                request,
+                intent,
+            )
+            if action_candidates:
+                request.candidates, request.mask, _default_reasons = _normalize_candidate_bundle(
+                    action_candidates,
+                    action_mask,
+                    solver_ms=0,
+                    fallback_mode=False,
+                )
+                if len(action_mask_reasons) == len(request.candidates):
+                    request.mask_reasons = list(action_mask_reasons)
 
     request.context = ctx
     semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")

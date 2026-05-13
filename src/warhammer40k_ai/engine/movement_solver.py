@@ -7,6 +7,12 @@ from typing import Any
 from .decision_handlers.movement import validate_move_unit_payload
 from .decisions import CandidateAction, DecisionRequest
 from .fight_move import plan_deterministic_fight_move
+from .movement_distance import (
+    MOVEMENT_DISTANCE_EPSILON,
+    movement_distance_profile,
+    movement_value_to_inches,
+    unit_normal_move_limit,
+)
 from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
 from ..utility.profiling_sections import profiled_section
@@ -812,6 +818,226 @@ def _translate_model_positions(
     }
 
 
+def _movement_metrics_for_positions(
+    game: object,
+    unit: object,
+    *,
+    start_positions: list[dict[str, Any]],
+    model_positions: list[dict[str, Any]],
+) -> dict[str, float]:
+    enemy_points = _enemy_model_points(game, unit)
+    objective_points = _objective_points(game)
+    enemy_delta = 0.0
+    objective_delta = 0.0
+    if enemy_points:
+        enemy_delta = _nearest_edge_distance(_model_points(start_positions), enemy_points) - _nearest_edge_distance(
+            _model_points(model_positions),
+            enemy_points,
+        )
+    if objective_points:
+        objective_delta = _nearest_edge_distance(_model_points(start_positions), objective_points) - _nearest_edge_distance(
+            _model_points(model_positions),
+            objective_points,
+        )
+    return {
+        "movement_distance": _max_model_displacement(start_positions, model_positions),
+        "enemy_distance_delta": float(enemy_delta),
+        "objective_distance_delta": float(objective_delta),
+    }
+
+
+def _planned_model_positions_from_context(ctx: dict[str, Any], *, movement_type: str) -> list[dict[str, Any]]:
+    planned_type = str(ctx.get("planned_movement_type", "") or "").strip().lower()
+    if planned_type and planned_type != str(movement_type or "").strip().lower():
+        return []
+    raw_positions = ctx.get("planned_model_positions")
+    if not isinstance(raw_positions, list):
+        return []
+    positions: list[dict[str, Any]] = []
+    for entry in list(raw_positions or []):
+        if isinstance(entry, dict):
+            positions.append(dict(entry))
+    return positions
+
+
+def _maximum_advance_roll_estimate(unit: object) -> float:
+    round_state = getattr(unit, "round_state", None)
+    stored = movement_value_to_inches(getattr(round_state, "advance_roll", None), 0.0)
+    if stored > 0.0:
+        return stored
+    modifier_total = 0.0
+    collector = getattr(unit, "_collect_advance_roll_modifiers", None)
+    if callable(collector):
+        try:
+            modifiers = list(collector() or [])
+        except (AttributeError, TypeError, ValueError):
+            modifiers = []
+        for modifier in modifiers:
+            if isinstance(modifier, (list, tuple)) and modifier:
+                modifier_total += movement_value_to_inches(modifier[0], 0.0)
+            else:
+                modifier_total += movement_value_to_inches(modifier, 0.0)
+    return max(0.0, 6.0 + modifier_total)
+
+
+def _build_movement_action_candidate(
+    *,
+    request: DecisionRequest,
+    option: object,
+    action_type: str,
+    game: object,
+    unit: object,
+    intent: MovementIntent,
+    start_positions: list[dict[str, Any]],
+    max_distance: float,
+    normal_limit: float,
+    rules_bundle_id: str,
+    stationary_available: bool,
+) -> tuple[CandidateAction, bool, str | None]:
+    action_id = request.action_id_for_option_id(getattr(option, "option_id", None))
+    payload = dict(getattr(option, "payload", {}) or {})
+    payload.pop("action_id", None)
+    action = str(action_type or "").strip().lower()
+    if action == "stationary":
+        return (
+            CandidateAction(
+                action_id=str(action_id),
+                params=payload,
+                metadata={
+                    "candidate_kind": "movement_action_stationary",
+                    "movement_distance_inches": 0.0,
+                    "projected_action_enablement_delta": 0.0,
+                    "projected_exposure_delta": -0.05,
+                    "resource_delta": 0.0,
+                    "rules_provenance_refs": [rules_bundle_id] if rules_bundle_id else [],
+                },
+            ),
+            True,
+            None,
+        )
+
+    goal = _movement_goal(
+        game,
+        unit,
+        start_positions,
+        intent=intent,
+        movement_type="advance" if action == "advance" else "move",
+    )
+    model_positions, movement_metrics = _translate_model_positions(
+        game,
+        start_positions=start_positions,
+        goal=goal,
+        max_distance=float(max_distance),
+        unit=unit,
+    )
+    profile = movement_distance_profile(unit, model_positions, game=game)
+    movement_distance = float(profile.max_distance)
+    payload["planned_model_positions"] = model_positions
+    payload["planned_movement_type"] = action
+    payload["planned_movement_distance_inches"] = float(round(movement_distance, 4))
+    payload["planned_normal_move_limit_inches"] = float(round(normal_limit, 4))
+    payload["movement_action_derived_from_endpoint"] = True
+    weights = dict(intent.weights or {})
+    score_weight = float(weights.get("score", 0.0))
+    deny_weight = float(weights.get("deny", 0.0))
+    action_enable_weight = float(weights.get("action_enable", 0.0))
+    safety_weight = float(weights.get("safety", 0.0))
+    enemy_distance_delta = max(0.0, _safe_float(movement_metrics.get("enemy_distance_delta"), 0.0))
+    objective_distance_delta = max(0.0, _safe_float(movement_metrics.get("objective_distance_delta"), 0.0))
+    legal = True
+    reason: str | None = None
+    if action == "advance" and profile.all_within_normal:
+        legal = False
+        reason = "advance_not_required_for_planned_endpoint"
+    elif action in {"move", "fall_back"}:
+        for entry in profile.entries:
+            if entry.distance > entry.normal_limit + MOVEMENT_DISTANCE_EPSILON:
+                legal = False
+                reason = "normal_move_distance_exceeded"
+                break
+    if stationary_available and action in {"move", "advance"} and movement_distance <= MOVEMENT_DISTANCE_EPSILON:
+        legal = False
+        reason = "movement_action_has_stationary_endpoint"
+    metadata = {
+        "candidate_kind": f"movement_action_{action}",
+        "planned_movement_type": action,
+        "planned_movement_distance_inches": float(round(movement_distance, 4)),
+        "movement_distance_inches": float(round(movement_distance, 4)),
+        "distance_to_enemy_delta": float(round(enemy_distance_delta, 4)),
+        "distance_to_objective_delta": float(round(objective_distance_delta, 4)),
+        "projected_score_delta_next_window": score_weight * (1.0 + objective_distance_delta * 0.35),
+        "projected_score_delta_round": score_weight * (1.4 + objective_distance_delta * 0.45),
+        "projected_deny_delta_next_window": deny_weight * (1.0 + enemy_distance_delta * 0.25),
+        "projected_control_delta": (score_weight + deny_weight) * (0.7 + objective_distance_delta * 0.3),
+        "projected_action_enablement_delta": action_enable_weight * (1.0 + movement_distance * 0.12),
+        "projected_exposure_delta": -safety_weight + movement_distance * 0.02,
+        "resource_delta": -0.1 if action == "advance" else 0.0,
+        "rules_provenance_refs": [rules_bundle_id] if rules_bundle_id else [],
+    }
+    if not legal and reason:
+        metadata["movement_action_distance_mismatch"] = reason
+    return (
+        CandidateAction(
+            action_id=str(action_id),
+            params=payload,
+            metadata=metadata,
+        ),
+        legal,
+        reason,
+    )
+
+
+def generate_select_movement_action_candidates(
+    game: object,
+    request: DecisionRequest,
+    intent: MovementIntent,
+) -> tuple[list[CandidateAction], list[bool], list[str | None]]:
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = str(ctx.get("unit_id", "") or "")
+    unit = _resolve_unit(game, unit_id)
+    if unit is None:
+        return [], [], []
+    start_positions = current_model_positions(unit)
+    normal_limit = unit_normal_move_limit(unit, game=game)
+    advance_limit = normal_limit + _maximum_advance_roll_estimate(unit)
+    rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
+    stationary_available = any(
+        str(dict(getattr(option, "payload", {}) or {}).get("action_type", "") or "").strip().lower() == "stationary"
+        for option in list(getattr(request, "options", []) or [])
+    )
+    candidates: list[CandidateAction] = []
+    mask: list[bool] = []
+    mask_reasons: list[str | None] = []
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        action = str(payload.get("action_type", "") or "").strip().lower()
+        if action == "advance":
+            max_distance = advance_limit
+        elif action in {"move", "fall_back"}:
+            max_distance = normal_limit
+        elif action == "stationary":
+            max_distance = 0.0
+        else:
+            continue
+        candidate, legal, reason = _build_movement_action_candidate(
+            request=request,
+            option=option,
+            action_type=action,
+            game=game,
+            unit=unit,
+            intent=intent,
+            start_positions=start_positions,
+            max_distance=float(max_distance),
+            normal_limit=float(normal_limit),
+            rules_bundle_id=rules_bundle_id,
+            stationary_available=stationary_available,
+        )
+        candidates.append(candidate)
+        mask.append(True)
+        mask_reasons.append(None)
+    return candidates, mask, mask_reasons
+
+
 def _fight_move_metrics(
     start_positions: list[dict[str, Any]],
     end_positions: list[dict[str, Any]],
@@ -1068,20 +1294,51 @@ def _solver_candidates(
             confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
             confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})
             confirm_payload.pop("action_id", None)
-            goal = _movement_goal(
-                game,
-                unit,
-                start_positions,
-                intent=intent,
-                movement_type=movement_type,
-            )
-            model_positions, movement_metrics = _translate_model_positions(
-                game,
-                start_positions=start_positions,
-                goal=goal,
-                max_distance=float(max_distance),
-                unit=unit,
-            )
+            weights = dict(intent.weights or {})
+            score_weight = float(weights.get("score", 0.0))
+            deny_weight = float(weights.get("deny", 0.0))
+            safety_weight = float(weights.get("safety", 0.0))
+            coherency_weight = float(weights.get("coherency", 0.0))
+            action_enable_weight = float(weights.get("action_enable", 0.0))
+            trade_weight = float(weights.get("trade", 0.0))
+            rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
+            planned_positions = _planned_model_positions_from_context(ctx, movement_type=movement_type)
+            if planned_positions:
+                planned_errors = validate_move_unit_payload(
+                    game,
+                    request,
+                    option_payload=dict(getattr(confirm_option, "payload", {}) or {}),
+                    result_payload={
+                        **confirm_payload,
+                        "model_positions": planned_positions,
+                        "movement_type": movement_type,
+                    },
+                )
+            else:
+                planned_errors = ("no planned endpoint",)
+            if planned_positions and not planned_errors:
+                model_positions = planned_positions
+                movement_metrics = _movement_metrics_for_positions(
+                    game,
+                    unit,
+                    start_positions=start_positions,
+                    model_positions=model_positions,
+                )
+            else:
+                goal = _movement_goal(
+                    game,
+                    unit,
+                    start_positions,
+                    intent=intent,
+                    movement_type=movement_type,
+                )
+                model_positions, movement_metrics = _translate_model_positions(
+                    game,
+                    start_positions=start_positions,
+                    goal=goal,
+                    max_distance=float(max_distance),
+                    unit=unit,
+                )
             confirm_payload["model_positions"] = model_positions
             witness = build_model_path_witness_for_unit(
                 unit=unit,
@@ -1092,17 +1349,9 @@ def _solver_candidates(
             if store is None:
                 raise RuntimeError("Game is missing path_witness_store.")
             path_witness_ref = store.put(witness)
-            weights = dict(intent.weights or {})
-            score_weight = float(weights.get("score", 0.0))
-            deny_weight = float(weights.get("deny", 0.0))
-            safety_weight = float(weights.get("safety", 0.0))
-            coherency_weight = float(weights.get("coherency", 0.0))
-            action_enable_weight = float(weights.get("action_enable", 0.0))
-            trade_weight = float(weights.get("trade", 0.0))
             movement_distance = max(0.0, _safe_float(movement_metrics.get("movement_distance"), 0.0))
             enemy_distance_delta = max(0.0, _safe_float(movement_metrics.get("enemy_distance_delta"), 0.0))
             objective_distance_delta = max(0.0, _safe_float(movement_metrics.get("objective_distance_delta"), 0.0))
-            rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
             candidates.append(
                 CandidateAction(
                     action_id=str(confirm_action_id),

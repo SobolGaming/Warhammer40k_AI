@@ -36,6 +36,7 @@ class _UnitStub:
         self.id = unit_id
         self.name = "Movement Test Unit"
         self.models = [model]
+        self.movement = 12
         model.parent_unit = self
         self.special_rules = {}
         self.round_state = SimpleNamespace(
@@ -153,6 +154,47 @@ def _build_move_skip_request(unit: _UnitStub, movement_type: str) -> tuple[Decis
     return request, result
 
 
+def _movement_phase_move_validation(
+    unit: _UnitStub,
+    *,
+    movement_type: str,
+    destination_x: float,
+    max_distance: float,
+) -> tuple[DecisionRequest, DecisionResult]:
+    option = DecisionOption.create(
+        "Confirm",
+        payload={"unit_id": unit.id, "movement_type": movement_type, "action": "confirm"},
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Move unit",
+        player_id="player-1",
+        options=[option],
+        context={
+            "unit_id": unit.id,
+            "movement_type": movement_type,
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "MOVE_UNITS",
+            "max_distance": max_distance,
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={
+            "model_positions": [
+                {
+                    "model_id": unit.models[0]._id,
+                    "position": [float(destination_x), 0.0, 0.0],
+                    "facing": 0.0,
+                }
+            ]
+        },
+    )
+    return request, result
+
+
 def test_apply_move_unit_marks_advance_as_moved() -> None:
     model = _ModelStub("model-1")
     unit = _UnitStub("unit-1", model)
@@ -164,6 +206,58 @@ def test_apply_move_unit_marks_advance_as_moved() -> None:
     assert unit.round_state.advanced_this_round is True
     assert unit.round_state.moved_this_round is True
     assert unit.round_state.remained_stationary_this_round is False
+
+
+def test_validate_move_unit_rejects_advance_when_normal_move_reaches_endpoint() -> None:
+    model = _ModelStub("model-short-advance")
+    unit = _UnitStub("unit-short-advance", model)
+    game = _GameStub(unit)
+    request, result = _movement_phase_move_validation(
+        unit,
+        movement_type="advance",
+        destination_x=10.0,
+        max_distance=18.0,
+    )
+
+    errors = _validate_move_unit(game, request, result)
+
+    assert errors
+    assert "advance selected" in str(errors[0]).lower()
+    assert "normal move" in str(errors[0]).lower()
+
+
+def test_validate_move_unit_rejects_normal_move_beyond_normal_distance() -> None:
+    model = _ModelStub("model-long-normal")
+    unit = _UnitStub("unit-long-normal", model)
+    game = _GameStub(unit)
+    request, result = _movement_phase_move_validation(
+        unit,
+        movement_type="move",
+        destination_x=13.0,
+        max_distance=12.0,
+    )
+
+    errors = _validate_move_unit(game, request, result)
+
+    assert errors
+    assert "normal move selected" in str(errors[0]).lower()
+    assert "exceeding" in str(errors[0]).lower()
+
+
+def test_validate_move_unit_allows_advance_only_when_endpoint_exceeds_normal_distance() -> None:
+    model = _ModelStub("model-long-advance")
+    unit = _UnitStub("unit-long-advance", model)
+    game = _GameStub(unit)
+    request, result = _movement_phase_move_validation(
+        unit,
+        movement_type="advance",
+        destination_x=13.0,
+        max_distance=18.0,
+    )
+
+    errors = _validate_move_unit(game, request, result)
+
+    assert errors == ()
 
 
 def test_apply_move_unit_skip_after_advance_consumes_movement_activation() -> None:

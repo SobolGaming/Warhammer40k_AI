@@ -12,6 +12,7 @@ from warhammer40k_ai.UI.rendering.range_renderer import (
     _RANGE_CIRCLE_SURFACE_CACHE,
     _clear_range_render_caches,
     _get_cached_circle_surface,
+    draw_individual_model_movement_range,
     draw_weapon_ranges,
 )
 
@@ -109,3 +110,40 @@ def test_draw_weapon_ranges_reuses_cached_circle_surface_across_frames() -> None
 
     assert first_count == 1
     assert second_count == 1
+
+
+def test_draw_movement_range_uses_normal_and_advance_circles() -> None:
+    _clear_range_render_caches()
+
+    wargear = _WargearStub("Bolt Rifle")
+    model = _ModelStub(10.0, 10.0, wargear)
+    surface = pygame.Surface((1000, 1000), pygame.SRCALPHA)
+
+    draw_individual_model_movement_range(
+        surface,
+        model,
+        "move",
+        max_distance=6.0,
+        zoom_level=1.0,
+        offset_x=0,
+        offset_y=0,
+        normal_move_distance=6.0,
+        advance_max_distance=12.0,
+    )
+    first_count = len(_RANGE_CIRCLE_SURFACE_CACHE)
+
+    draw_individual_model_movement_range(
+        surface,
+        model,
+        "move",
+        max_distance=6.0,
+        zoom_level=1.0,
+        offset_x=0,
+        offset_y=0,
+        normal_move_distance=6.0,
+        advance_max_distance=12.0,
+    )
+    second_count = len(_RANGE_CIRCLE_SURFACE_CACHE)
+
+    assert first_count == 2
+    assert second_count == 2

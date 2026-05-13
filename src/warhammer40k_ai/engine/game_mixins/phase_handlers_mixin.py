@@ -491,21 +491,31 @@ class GamePhaseHandlersMixin:
         move_kind = str(movement_type or "").strip().lower()
         if move_kind not in {"move", "advance", "fall_back"}:
             return None
-        max_distance = float(getattr(unit, "movement", 0) or 0)
-        if move_kind == "move":
-            try:
-                max_distance += float(unit.get_phase_movement_distance_bonus("move", game=self) or 0)
-            except Exception:
-                pass
-        elif move_kind == "advance":
+        from ..movement_distance import unit_normal_move_limit
+
+        max_distance = float(unit_normal_move_limit(unit, game=self))
+        if move_kind == "advance":
             try:
                 advance_roll = float(getattr(getattr(unit, "round_state", None), "advance_roll", 0) or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 advance_roll = 0.0
             if advance_roll <= 0:
                 return None
             max_distance += advance_roll
         from ..decision_requests import queue_move_unit_request
+        round_state = getattr(unit, "round_state", None)
+        planned_type = str(getattr(round_state, "planned_movement_type", "") or "").strip().lower()
+        planned_positions = getattr(round_state, "planned_movement_model_positions", None)
+        planned_distance = getattr(round_state, "planned_movement_distance_inches", None)
+        context = {
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "MOVE_UNITS",
+            "selection_purpose": "ACTIVATE_MOVEMENT_UNIT",
+        }
+        if planned_type == move_kind and isinstance(planned_positions, list) and planned_positions:
+            context["planned_movement_type"] = move_kind
+            context["planned_model_positions"] = [dict(entry) for entry in planned_positions if isinstance(entry, dict)]
+            context["planned_movement_distance_inches"] = planned_distance
 
         return queue_move_unit_request(
             self,
@@ -514,11 +524,7 @@ class GamePhaseHandlersMixin:
             player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
             max_distance=max_distance,
             allow_skip=True,
-            context={
-                "phase_name": "MOVEMENT_PHASE",
-                "phase_step": "MOVE_UNITS",
-                "selection_purpose": "ACTIVATE_MOVEMENT_UNIT",
-            },
+            context=context,
         )
 
     def _shooting_phase_eligible_units(self, player=None) -> list[object]:

@@ -89,7 +89,39 @@ def _blit_surface_clipped(
     screen.blit(source_surface, visible_rect.topleft, source_rect)
 
 
-def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None) -> None:
+def _draw_cached_range_circle(
+    screen: pygame.Surface,
+    *,
+    center_x: int,
+    center_y: int,
+    radius: int,
+    fill_color: tuple[int, int, int, int],
+    border_color: tuple[int, int, int],
+    border_width: int = 2,
+) -> None:
+    circle_surface = _get_cached_circle_surface(
+        radius=radius,
+        fill_color=fill_color,
+        border_color=border_color,
+        border_width=border_width,
+    )
+    if circle_surface is not None:
+        _blit_surface_clipped(screen, circle_surface, center_x - radius, center_y - radius)
+
+
+def draw_individual_model_movement_range(
+    screen: pygame.Surface,
+    model,
+    movement_type: str,
+    max_distance: float,
+    zoom_level: float,
+    offset_x: int,
+    offset_y: int,
+    game_map=None,
+    *,
+    normal_move_distance: float | None = None,
+    advance_max_distance: float | None = None,
+) -> None:
     """Draw a visual indicator showing the movement range for an individual model"""
     if not model or (not model.is_alive and not bool(getattr(model, "_careen_pending_move", False))) or max_distance <= 0:
         return
@@ -104,6 +136,12 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
 
     # Calculate radius in screen pixels (respect scaling)
     radius = int(max_distance * TILE_SIZE * zoom_level)
+    normal_radius = 0
+    if normal_move_distance is not None and normal_move_distance > 0:
+        normal_radius = int(float(normal_move_distance) * TILE_SIZE * zoom_level)
+    advance_radius = 0
+    if advance_max_distance is not None and advance_max_distance > 0:
+        advance_radius = int(float(advance_max_distance) * TILE_SIZE * zoom_level)
 
     # Choose color based on movement type
     if movement_type == 'scout':
@@ -134,17 +172,41 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
     # Special handling for pile-in movement
     if movement_type == 'pile_in' and game_map:
         draw_pile_in_range(screen, model, current_position, max_distance, zoom_level, offset_x, offset_y, game_map)
+    elif (
+        movement_type in {"move", "advance"}
+        and normal_radius > 0
+        and advance_radius > normal_radius
+    ):
+        _draw_cached_range_circle(
+            screen,
+            center_x=center_x,
+            center_y=center_y,
+            radius=advance_radius,
+            fill_color=(255, 0, 0, 35),
+            border_color=(220, 30, 30),
+            border_width=2,
+        )
+        _draw_cached_range_circle(
+            screen,
+            center_x=center_x,
+            center_y=center_y,
+            radius=normal_radius,
+            fill_color=(0, 255, 0, 64),
+            border_color=(0, 200, 0),
+            border_width=2,
+        )
     else:
         # Standard circular range for other movement types
         if radius > 0:
-            circle_surface = _get_cached_circle_surface(
+            _draw_cached_range_circle(
+                screen,
+                center_x=center_x,
+                center_y=center_y,
                 radius=radius,
                 fill_color=color,
                 border_color=border_color,
                 border_width=2,
             )
-            if circle_surface is not None:
-                _blit_surface_clipped(screen, circle_surface, center_x - radius, center_y - radius)
 
 
 def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, max_distance: float, 

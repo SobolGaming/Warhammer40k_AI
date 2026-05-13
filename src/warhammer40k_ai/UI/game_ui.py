@@ -12,6 +12,7 @@ from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
+from warhammer40k_ai.engine.movement_distance import model_normal_move_limit
 from warhammer40k_ai.engine.ui_decision_bridge import (
     require_pending_decision_request as _require_pending_decision_request,
 )
@@ -24959,6 +24960,14 @@ class GameView:
                 movement_type = self.individual_model_movement_dialog.movement_type
                 max_distance = self.individual_model_movement_dialog.max_distance
                 game_map = self.individual_model_movement_dialog.game_map
+                normal_move_distance = None
+                advance_max_distance = None
+                if movement_type in ("move", "advance"):
+                    normal_move_distance = model_normal_move_limit(unit, selected_model, game=getattr(self, "game", None))
+                    if movement_type == "advance":
+                        advance_max_distance = max(float(max_distance or 0.0), float(normal_move_distance or 0.0))
+                    else:
+                        advance_max_distance = float(normal_move_distance or 0.0) + 6.0
 
                 #print(f"DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
@@ -24971,6 +24980,8 @@ class GameView:
                     self.offset_x,
                     self.offset_y,
                     game_map,
+                    normal_move_distance=normal_move_distance,
+                    advance_max_distance=advance_max_distance,
                 )
 
                 # Draw real-time path preview if mouse is hovering over battlefield

@@ -15,6 +15,11 @@ Design note:
 - `objective_targets` can exist as a late-bound execution field inside Tier 0 and Tier 2, but it is not the primary strategic abstraction.
 
 Move candidate metadata includes:
+- Movement-phase `SELECT_MOVEMENT_ACTION` candidates are endpoint-aware for headless
+  control. The movement solver plans a destination first, annotates each action
+  candidate with `planned_model_positions`, and marks redundant action labels in
+  metadata. The headless controller then avoids the restrictive label when a less
+  restrictive action can realize the same endpoint.
 - `candidate_kind` (`noop`, `move`, or `charge`)
 - `solver_ms`
 - `fallback_mode`
@@ -46,3 +51,11 @@ Move candidate metadata includes:
   in a legal engagement state rather than using the generic objective/staging translation path.
 - In budgeted solving, charge candidates try bounded heuristic engagement endpoints before
   falling back to routed destination search, so headless self-play can keep charge generation responsive.
+
+Movement action distance contract:
+- Movement-phase `MOVE_UNIT` validation compares the selected action against the
+  longest actual per-model displacement.
+- `move` and `fall_back` cannot exceed the model's Normal Move distance.
+- `advance` is rejected when every model endpoint is reachable with a Normal Move.
+- Placement-style moves such as reserves arrival, redeploys, disembarks, and
+  emergency disembarks are outside this action-distance derivation path.

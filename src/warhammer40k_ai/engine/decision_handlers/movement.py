@@ -18,6 +18,7 @@ from ..decision_kinds import (
 )
 from ..decisions import DecisionOption, DecisionRequest, DecisionResult
 from ..fight_move import validate_fight_move_positions
+from ..movement_distance import MOVEMENT_DISTANCE_EPSILON, movement_distance_profile
 from ..path_witness import (
     current_model_positions,
     detect_normal_move_engagement_crossing,
@@ -1399,6 +1400,30 @@ def _validate_select_movement_action(game: object, request: DecisionRequest, res
     return ()
 
 
+def _store_selected_movement_plan(unit: object, action: str, result_payload: dict) -> None:
+    round_state = getattr(unit, "round_state", None)
+    if round_state is None:
+        return
+    planned_positions = result_payload.get("planned_model_positions")
+    if isinstance(planned_positions, list) and planned_positions:
+        round_state.planned_movement_type = str(action or "").strip().lower()
+        round_state.planned_movement_model_positions = [dict(entry) for entry in planned_positions if isinstance(entry, dict)]
+        round_state.planned_movement_distance_inches = result_payload.get("planned_movement_distance_inches")
+        return
+    round_state.planned_movement_type = None
+    round_state.planned_movement_model_positions = None
+    round_state.planned_movement_distance_inches = None
+
+
+def _clear_selected_movement_plan(unit: object) -> None:
+    round_state = getattr(unit, "round_state", None)
+    if round_state is None:
+        return
+    round_state.planned_movement_type = None
+    round_state.planned_movement_model_positions = None
+    round_state.planned_movement_distance_inches = None
+
+
 def _apply_select_movement_action(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
@@ -1406,6 +1431,7 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
     unit = get_unit(game, str(payload.get("unit_id", "") or ""))
     if unit is None:
         raise RuntimeError("Movement action unit missing.")
+    _store_selected_movement_plan(unit, action, dict(getattr(result, "payload", {}) or {}))
     if action == "stationary":
         try:
             from ...units.unit import MovementAction
@@ -1602,6 +1628,15 @@ def validate_move_unit_payload(
         or ctx.get("movement_type", "")
         or "move"
     ).strip().lower()
+    action_distance_errors = _validate_movement_action_distance_match(
+        game,
+        unit,
+        model_positions,
+        movement_type=movement_type,
+        ctx=ctx,
+    )
+    if action_distance_errors:
+        return action_distance_errors
     if movement_type in ("pile_in", "consolidate"):
         fight_move_errors = validate_fight_move_positions(
             game,
@@ -2790,6 +2825,63 @@ def _validate_context_max_distance_positions(
     return ()
 
 
+def _validate_movement_action_distance_match(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    movement_type: str,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    if str(context.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+        return ()
+    if str(context.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
+        return ()
+    if str(context.get("placement_kind", "") or "").strip():
+        return ()
+    if context.get("allowed_model_ids") is not None:
+        return ()
+
+    move_kind = str(movement_type or "").strip().lower()
+    if move_kind not in {"move", "advance", "fall_back"}:
+        return ()
+
+    profile = movement_distance_profile(unit, model_positions, game=game)
+    if not profile.entries:
+        return ()
+
+    if move_kind in {"move", "fall_back"}:
+        for entry in profile.entries:
+            if entry.distance > entry.normal_limit + MOVEMENT_DISTANCE_EPSILON:
+                label = "Fall Back" if move_kind == "fall_back" else "Normal Move"
+                return (
+                    f'Move unit: {label} selected but model {entry.model_id} moved '
+                    f'{entry.distance:.2f}", exceeding its Normal Move limit {entry.normal_limit:.2f}".',
+                )
+        return ()
+
+    try:
+        selected_limit = float(context.get("max_distance", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        selected_limit = 0.0
+    if selected_limit > 0.0:
+        for entry in profile.entries:
+            if entry.distance > selected_limit + MOVEMENT_DISTANCE_EPSILON:
+                return (
+                    f'Move unit: Advance selected but model {entry.model_id} moved '
+                    f'{entry.distance:.2f}", exceeding the selected Advance distance {selected_limit:.2f}".',
+                )
+
+    if profile.all_within_normal:
+        return (
+            f'Move unit: Advance selected but the longest model displacement '
+            f'{profile.max_distance:.2f}" is within Normal Move distance '
+            f'{profile.max_normal_limit:.2f}". Select Normal Move instead.',
+        )
+    return ()
+
+
 def _validate_deployment_positions(
     game: object,
     unit: object,
@@ -2896,6 +2988,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 )
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
+        _clear_selected_movement_plan(unit)
         if placement_kind in ("reserves_arrival", "hyperphasic_recall", "subterranean_tunnel_network"):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
@@ -3108,6 +3201,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_bestial_rage_used(game)
         if movement_type == "aggressive_leader_beast":
             member.mark_aggressive_leader_beast_used(game)
+    _clear_selected_movement_plan(unit)
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
         if str(ctx.get("reactive_move_kind", "") or "").strip() in (

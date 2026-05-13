@@ -105,6 +105,20 @@ def _position_payload(unit: Unit, positions: list[tuple[float, float, float, flo
     ]
 
 
+def _place_unit_from_positions(
+    game: Game,
+    unit: Unit,
+    positions: list[tuple[float, float, float, float]],
+    *,
+    offset_x: float,
+) -> None:
+    if unit in game.map.units:
+        game.map.units.remove(unit)
+    for model, (x, y, z, facing) in zip(unit.models, positions):
+        model.set_location(float(x) + float(offset_x), float(y), float(z), float(facing))
+    assert game.map.place_unit(unit) is True
+
+
 def _find_disembark_positions(
     game: Game,
     passenger: Unit,
@@ -240,6 +254,7 @@ def test_core_embark_after_qualifying_move_uses_real_wahapedia_transport_capacit
     game, marine_player, rhino, tactical_squad, _boyz = _core_fixture()
     _place_unit_grid(game, tactical_squad, 5.0, 5.0)
     final_positions = _find_disembark_positions(game, tactical_squad, rhino)
+    _place_unit_from_positions(game, tactical_squad, final_positions, offset_x=1.0)
 
     rhino.round_state.moved_this_round = True
     rhino.round_state.remained_stationary_this_round = False
@@ -444,6 +459,7 @@ def test_headless_policy_receives_movement_phase_embark_choice_after_real_move_w
     game, marine_player, rhino, tactical_squad, _boyz = _core_fixture()
     _place_unit_grid(game, tactical_squad, 5.0, 5.0)
     final_positions = _find_disembark_positions(game, tactical_squad, rhino)
+    _place_unit_from_positions(game, tactical_squad, final_positions, offset_x=1.0)
     router = _RecordingTransportRouter(preferred_actions=("embark",))
     HeadlessPolicyDecisionController(
         game=game,

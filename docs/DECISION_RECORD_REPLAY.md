@@ -79,6 +79,10 @@ Expected strict failure modes:
 - Mask mismatch after legality/rules changes.
 - Missing pending decision for recorded `decision_id`.
 - Chosen action that cannot be mapped back to the current decision.
+- Movement-phase `MOVE_UNIT` records whose selected movement action does not
+  match the recorded endpoint distance now fail validation. For example, an
+  `advance` record whose model endpoints were all reachable by Normal Move is
+  rejected instead of replayed as an Advance.
 
 These failures are intentional and are used to detect replay drift.
 
