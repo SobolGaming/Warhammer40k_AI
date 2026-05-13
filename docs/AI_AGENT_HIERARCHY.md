@@ -136,6 +136,41 @@ flowchart TD
   Z -->|"No"| AA["Phase/setup loop continues"]
 ```
 
+Command-phase flow is a mix of automatic engine work, optional ability decisions, mission-card upkeep, Battle-shock dice decisions, and end-of-phase stratagem windows. Battle-shock rolls are emitted as authoritative dice decisions when the engine has a game context; NEW ORDERS is represented as `DISCARD_SECONDARY` with `ability=new_orders`.
+
+```mermaid
+flowchart TD
+  A["Command phase starts through CMD_START_COMMAND_PHASE"] --> B["Clear expired Battle-shock for active player's units"]
+  B --> C["Build or reuse Tier1Plan and Tier2TaskBundle for active player"]
+  C --> D["Run start-of-command army, detachment, enhancement, and datasheet hooks"]
+  D --> E["Queue optional command-phase choices when hooks require player input"]
+  E --> F["Both players gain normal Command phase CP"]
+  F --> G["Active player resolves bonus CP sources subject to CP gain limits"]
+  G --> H["Apply command-phase healing/resource hooks and publish phase_start"]
+  H --> I["Queue start-of-command strategic choices: doctrines, vows, Waaagh, Shadow in the Warp, Power from Pain, and similar"]
+  I --> J["Active player draws Tactical Secondary Mission cards until two active cards or deck exhausted"]
+  J --> K["Notify active Secondary cards of on_turn_start snapshots"]
+  K --> L["Battle-shock step starts"]
+  L --> M{"Units below Half-strength or forced to test?"}
+  M -->|"Yes"| N["REQUEST_DICE_ROLL roll_type=battle_shock for each eligible unit"]
+  N --> O["AutoDiceDecisionController and dice/reroll policy resolve roll and reroll choices"]
+  O --> P["Apply Battle-shock outcome and publish battle_shock_test_resolved"]
+  P --> M
+  M -->|"No more tests"| Q["Battle-shock step ends"]
+  Q --> R["Resolve end-of-command effects such as Reanimation Protocols and Primary scoring"]
+  R --> S["Phase-end hooks run for command-phase stratagems and cleanup"]
+  S --> T{"NEW ORDERS legal?"}
+  T -->|"Yes"| U["DISCARD_SECONDARY ability=new_orders chooses active Secondary or skip"]
+  U --> V{"Use NEW ORDERS?"}
+  V -->|"Use"| W["Spend CP, discard selected Secondary, draw back up to two"]
+  V -->|"Skip"| X["Dequeue or mark skipped for this window"]
+  W --> Y["Resume phase transition"]
+  X --> Y
+  T -->|"No"| Y
+```
+
+Tactical Mission voluntary discard at the end of a turn is also `DISCARD_SECONDARY`, but it uses `ability=tactical_secondary_discard` and `discard_source=tactical_end_turn`; it is audited separately from the Command phase NEW ORDERS stratagem.
+
 Movement-phase activation has an additional audit constraint: every eligible alive battlefield unit must receive a movement activation, and `SELECT_MOVEMENT_ACTION` is derived from the movement endpoint rather than chosen independently from the final `MOVE_UNIT` payload.
 
 ```mermaid
@@ -259,6 +294,7 @@ Audit checklist:
 - Review `decision_requested` event order, then the matching `DecisionRecord` order.
 - For each record, verify `request_context.phase_name`, `phase_step`, `selection_purpose`, `ability`, and limited-use metadata before interpreting the choice.
 - For ranking audits, compare only legal `mask=true` candidates and confirm `chosen_action_id` appears in `candidates`.
+- For Command phase audits, inspect start-of-command optional choices, secondary draw state, `REQUEST_DICE_ROLL` records with `roll_type=battle_shock`, and `DISCARD_SECONDARY` records with `ability=new_orders` separately from end-of-turn Tactical discard records.
 - For movement audits, inspect `SELECT_MOVEMENT_ACTION` candidate metadata and the following `MOVE_UNIT` payload together; an `ADVANCE` label is invalid when the chosen model positions were reachable by a Normal Move unless a rule explicitly forces that state.
 - For shooting audits, inspect `DECLARE_FIRING_DECK` before the transport's `DECLARE_SHOTS`, then follow any dice/allocation records produced by the ranged attack sequence.
 - For charge audits, inspect `DECLARE_CHARGE`, charge dice/reroll records, and the following charge `MOVE_UNIT` as one sequence.
