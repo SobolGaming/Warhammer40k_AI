@@ -504,6 +504,12 @@
             "type": "object"
           }
         },
+        "upgrade_assignments": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
         "attachment_bindings": {
           "type": "array",
           "items": {

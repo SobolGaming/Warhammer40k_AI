@@ -9,7 +9,14 @@ from typing import Any
 from ..waha_helper import WahaHelper
 from .army import Army, ArmyValidationError
 from .army_attachments import AttachmentBinding
-from .army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from .army_build import (
+    ArmyBlueprint,
+    DetachmentSelection,
+    EnhancementAssignment,
+    RosterEntry,
+    UpgradeAssignment,
+    ValidatedMuster,
+)
 from .army_muster import ArmyMusterer
 from .build_capability_schema import json_safe
 from .event_policy import EventPolicyDescriptor
@@ -128,6 +135,10 @@ def _unique_entry_ids(blueprint: ArmyBlueprint) -> list[str]:
             for assignment in list(blueprint.enhancement_assignments or []):
                 if assignment.target_entry_id == original:
                     assignment.target_entry_id = candidate
+            for assignment in list(blueprint.upgrade_assignments or []):
+                if assignment.target_kind not in {"unit", "weapon_profile"}:
+                    continue
+                assignment.target_ids = tuple(candidate if target_id == original else target_id for target_id in assignment.target_ids)
             for binding in list(blueprint.attachment_bindings or []):
                 if binding.bodyguard_entry_id == original:
                     binding.bodyguard_entry_id = candidate
@@ -152,6 +163,17 @@ def _unique_assignment_ids(blueprint: ArmyBlueprint) -> list[str]:
         if candidate != assignment.assignment_id:
             assignment.assignment_id = candidate
             repairs.append(f"normalized enhancement assignment id to {candidate}")
+        seen.add(candidate)
+    for index, assignment in enumerate(list(blueprint.upgrade_assignments or []), start=1):
+        base = str(assignment.assignment_id or "").strip() or f"upgrade_{index}"
+        candidate = base
+        suffix = 1
+        while candidate in seen:
+            suffix += 1
+            candidate = f"{base}_{suffix}"
+        if candidate != assignment.assignment_id:
+            assignment.assignment_id = candidate
+            repairs.append(f"normalized upgrade assignment id to {candidate}")
         seen.add(candidate)
     return repairs
 
@@ -213,6 +235,42 @@ def _repair_detachment_references(blueprint: ArmyBlueprint) -> list[str]:
             )
         repaired_assignments.append(assignment)
     blueprint.enhancement_assignments = repaired_assignments
+
+    repaired_upgrades: list[UpgradeAssignment] = []
+    seen_upgrades: set[tuple[str, str, tuple[str, ...], str]] = set()
+    for assignment in list(blueprint.upgrade_assignments or []):
+        if assignment.source_detachment_id not in valid_detachment_ids:
+            if default_detachment_id:
+                assignment.source_detachment_id = default_detachment_id
+                repairs.append(
+                    f"reassigned upgrade {assignment.effective_assignment_id} to detachment {default_detachment_id}"
+                )
+            else:
+                repairs.append(
+                    f"dropped upgrade assignment {assignment.effective_assignment_id} for missing detachment "
+                    f"{assignment.source_detachment_id}"
+                )
+                continue
+        if assignment.target_kind in {"unit", "weapon_profile"}:
+            missing_targets = [target_id for target_id in assignment.target_ids if target_id not in valid_entry_ids]
+            if missing_targets:
+                repairs.append(
+                    f"dropped upgrade assignment {assignment.effective_assignment_id} for missing targets "
+                    f"{','.join(missing_targets)}"
+                )
+                continue
+        upgrade_key = (
+            assignment.upgrade_id.lower(),
+            assignment.target_kind,
+            tuple(assignment.target_ids),
+            str(assignment.selected_weapon_profile_id or ""),
+        )
+        if upgrade_key in seen_upgrades:
+            repairs.append(f"dropped duplicate upgrade assignment {assignment.effective_assignment_id}")
+            continue
+        seen_upgrades.add(upgrade_key)
+        repaired_upgrades.append(assignment)
+    blueprint.upgrade_assignments = repaired_upgrades
 
     repaired_bindings: list[AttachmentBinding] = []
     seen_bindings: set[tuple[str, str, str]] = set()

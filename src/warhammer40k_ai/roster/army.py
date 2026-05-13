@@ -294,6 +294,7 @@ class Army:
         self.build_detachments = []
         self.build_unit_entries = []
         self.build_enhancement_assignments = []
+        self.build_upgrade_assignments = []
         self.build_attachment_bindings = []
         self.attachment_bindings = []
         self.detachment_points_budget = None

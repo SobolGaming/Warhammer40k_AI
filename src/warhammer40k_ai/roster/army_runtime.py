@@ -133,6 +133,7 @@ def apply_validated_muster_to_army(army: Army, validated_muster: ValidatedMuster
     army.detachments = runtime_detachments
     army.build_unit_entries = list(blueprint.unit_entries or [])
     army.build_enhancement_assignments = list(blueprint.enhancement_assignments or [])
+    army.build_upgrade_assignments = list(blueprint.upgrade_assignments or [])
     army.build_attachment_bindings = list(blueprint.attachment_bindings or [])
     army.attachment_bindings = list(blueprint.attachment_bindings or [])
     army.detachment_points_budget = blueprint.detachment_points_budget

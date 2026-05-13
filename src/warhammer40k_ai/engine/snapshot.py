@@ -35,7 +35,14 @@ from ..battlefield.hidden_state import HiddenShootingExemption, hidden_shooting_
 from ..battlefield.objective_sites import ScoreSource
 from ..roster.army import Army
 from ..roster.army_attachments import AttachmentBinding
-from ..roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from ..roster.army_build import (
+    ArmyBlueprint,
+    DetachmentSelection,
+    EnhancementAssignment,
+    RosterEntry,
+    UpgradeAssignment,
+    ValidatedMuster,
+)
 from ..roster.army_runtime import DetachmentInstance
 from ..roster.player import Player, PlayerControl
 from ..units.model import Model
@@ -1471,6 +1478,11 @@ def _apply_army_state(army: Army, data: dict, registry: EntityRegistry) -> None:
         assignment if isinstance(assignment, EnhancementAssignment) else EnhancementAssignment.from_dict(assignment)
         for assignment in list(getattr(army, "build_enhancement_assignments", []) or [])
         if isinstance(assignment, (EnhancementAssignment, dict))
+    ]
+    army.build_upgrade_assignments = [
+        assignment if isinstance(assignment, UpgradeAssignment) else UpgradeAssignment.from_dict(assignment)
+        for assignment in list(getattr(army, "build_upgrade_assignments", []) or [])
+        if isinstance(assignment, (UpgradeAssignment, dict))
     ]
     army.build_attachment_bindings = [
         binding if isinstance(binding, AttachmentBinding) else AttachmentBinding.from_dict(binding)

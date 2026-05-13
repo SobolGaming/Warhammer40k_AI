@@ -45,7 +45,15 @@ Tool descriptor sources:
 - active stratagem descriptors on player stratagem managers (`stratagem_descriptors.py`)
 
 Army-build descriptor source:
-- per-player roster build state attached to runtime armies (`army_blueprint`, `army_blueprint_hash`, validated muster metadata, runtime detachment summary, attachment bindings, and force disposition state)
+- per-player roster build state attached to runtime armies (`army_blueprint`, `army_blueprint_hash`, validated muster metadata, runtime detachment summary, enhancement assignments, upgrade assignments, attachment bindings, and force disposition state)
+
+Army-build upgrade assignment notes:
+- `ArmyBuildDescriptor` includes `upgrade_assignments` from `ArmyBlueprint`.
+- Upgrade assignment records are hash-participating descriptor payload, so changes
+  to target kind, target ids, selected weapon profile, cardinality, points-cost
+  mode, or enhancement-budget counting behavior change the `army_build_descriptor_id`.
+- This keeps 11e-style upgrade semantics visible to deterministic mustering and
+  AI artifact selection without treating preview faction rules as live release data.
 
 Design goal:
 - learned policy inputs stay patchable by recompiling descriptors under the active rules bundle instead of hard-coding mission/objective/terrain semantics in model weights.

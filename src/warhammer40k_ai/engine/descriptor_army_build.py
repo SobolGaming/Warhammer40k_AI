@@ -9,6 +9,7 @@ from ..roster.army_build import (
     DetachmentSelection,
     EnhancementAssignment,
     RosterEntry,
+    UpgradeAssignment,
     ValidatedMuster,
 )
 from ..roster.army_runtime import DetachmentInstance
@@ -145,6 +146,45 @@ def _enhancement_assignments(values: object) -> list[EnhancementAssignment]:
     return assignments
 
 
+def _upgrade_assignments(values: object) -> list[UpgradeAssignment]:
+    assignments: list[UpgradeAssignment] = []
+    for index, value in enumerate(list(values or []), start=1):
+        if isinstance(value, UpgradeAssignment):
+            assignments.append(value)
+            continue
+        if isinstance(value, Mapping):
+            mapping = dict(value)
+            if not str(mapping.get("assignment_id", "") or "").strip():
+                mapping["assignment_id"] = f"upgrade_{index}"
+            assignments.append(UpgradeAssignment.from_dict(mapping))
+            continue
+        upgrade_id = str(getattr(value, "upgrade_id", "") or "")
+        source_detachment_id = str(
+            getattr(value, "source_detachment_id", getattr(value, "detachment_selection_id", "")) or ""
+        )
+        target_ids = tuple(str(target or "").strip() for target in list(getattr(value, "target_ids", []) or []) if str(target or "").strip())
+        if not upgrade_id or not source_detachment_id or not target_ids:
+            continue
+        assignments.append(
+            UpgradeAssignment(
+                assignment_id=getattr(value, "assignment_id", f"upgrade_{index}"),
+                upgrade_id=upgrade_id,
+                source_detachment_id=source_detachment_id,
+                target_kind=str(getattr(value, "target_kind", "unit") or "unit"),
+                target_ids=target_ids,
+                max_targets=getattr(value, "max_targets", None),
+                counts_toward_enhancement_limit=bool(
+                    getattr(value, "counts_toward_enhancement_limit", True)
+                ),
+                points_cost_mode=str(getattr(value, "points_cost_mode", "once") or "once"),
+                selected_weapon_profile_id=getattr(value, "selected_weapon_profile_id", None),
+                declaration_step=str(getattr(value, "declaration_step", "list_building") or "list_building"),
+                metadata=dict(getattr(value, "metadata", {}) or {}),
+            )
+        )
+    return assignments
+
+
 def _runtime_enhancement_assignments(entries: list[RosterEntry]) -> list[EnhancementAssignment]:
     assignments: list[EnhancementAssignment] = []
     for entry in entries:
@@ -218,6 +258,9 @@ def _fallback_blueprint(army: object) -> ArmyBlueprint | None:
     enhancement_assignments = _enhancement_assignments(
         getattr(army, "build_enhancement_assignments", []) or []
     )
+    upgrade_assignments = _upgrade_assignments(
+        getattr(army, "build_upgrade_assignments", []) or []
+    )
     if not enhancement_assignments:
         enhancement_assignments = _runtime_enhancement_assignments(unit_entries)
     attachment_bindings = _attachment_bindings(
@@ -231,6 +274,7 @@ def _fallback_blueprint(army: object) -> ArmyBlueprint | None:
         detachment_points_budget=getattr(army, "detachment_points_budget", None),
         unit_entries=unit_entries,
         enhancement_assignments=enhancement_assignments,
+        upgrade_assignments=upgrade_assignments,
         attachment_bindings=attachment_bindings,
         force_disposition=getattr(army, "force_disposition", None),
         allowed_force_dispositions=list(getattr(army, "allowed_force_dispositions", []) or []),
@@ -324,6 +368,7 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
     detachments = list(blueprint.detachments or []) if blueprint is not None else []
     unit_entries = list(blueprint.unit_entries or []) if blueprint is not None else []
     enhancement_assignments = list(blueprint.enhancement_assignments or []) if blueprint is not None else []
+    upgrade_assignments = list(blueprint.upgrade_assignments or []) if blueprint is not None else []
     attachment_bindings = list(blueprint.attachment_bindings or []) if blueprint is not None else []
     if blueprint is None:
         fallback = _fallback_blueprint(army)
@@ -332,6 +377,7 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
             detachments = list(fallback.detachments or [])
             unit_entries = list(fallback.unit_entries or [])
             enhancement_assignments = list(fallback.enhancement_assignments or [])
+            upgrade_assignments = list(fallback.upgrade_assignments or [])
             attachment_bindings = list(fallback.attachment_bindings or [])
 
     get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
@@ -362,6 +408,7 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
             "detachments": [item.to_dict() for item in detachments],
             "unit_entries": [item.to_dict() for item in unit_entries],
             "enhancement_assignments": [item.to_dict() for item in enhancement_assignments],
+            "upgrade_assignments": [item.to_dict() for item in upgrade_assignments],
             "attachment_bindings": [item.to_dict() for item in attachment_bindings],
             "detachment_points_summary": detachment_points_summary_for_army(
                 army,

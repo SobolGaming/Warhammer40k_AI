@@ -110,6 +110,17 @@ def _validate_army_build_state(value: Any, *, label: str) -> list[str]:
                     errors.append(
                         f"{label}.players[{idx}].detachments[{detachment_idx}].detachment_type must be a string"
                     )
+        if not isinstance(entry.get("upgrade_assignments", []), list):
+            errors.append(f"{label}.players[{idx}].upgrade_assignments must be a list")
+        else:
+            for upgrade_idx, upgrade in enumerate(entry.get("upgrade_assignments", []) or []):
+                if not isinstance(upgrade, dict):
+                    errors.append(f"{label}.players[{idx}].upgrade_assignments[{upgrade_idx}] must be an object")
+                    continue
+                if not isinstance(upgrade.get("upgrade_id"), str):
+                    errors.append(
+                        f"{label}.players[{idx}].upgrade_assignments[{upgrade_idx}].upgrade_id must be a string"
+                    )
         if not isinstance(entry.get("attachment_bindings"), list):
             errors.append(f"{label}.players[{idx}].attachment_bindings must be a list")
         else:

@@ -6,7 +6,14 @@ from typing import Any
 
 from .army import Army
 from .army_attachments import AttachmentBinding
-from .army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from .army_build import (
+    ArmyBlueprint,
+    DetachmentSelection,
+    EnhancementAssignment,
+    RosterEntry,
+    UpgradeAssignment,
+    ValidatedMuster,
+)
 from .army_runtime import apply_validated_muster_to_army
 from .army_validation import validate_army_muster_request
 from .unit_materialization import materialize_validated_muster_units
@@ -76,6 +83,7 @@ class ArmyMusterRequest:
     detachment_points_budget: int | None = None
     units: list[UnitSelection | RosterEntry] = field(default_factory=list)
     enhancement_assignments: list[EnhancementAssignment] = field(default_factory=list)
+    upgrade_assignments: list[UpgradeAssignment] = field(default_factory=list)
     attachment_bindings: list[AttachmentBinding] = field(default_factory=list)
     force_disposition: str | None = None
     allowed_force_dispositions: list[str] = field(default_factory=list)
@@ -106,6 +114,10 @@ class ArmyMusterRequest:
         self.enhancement_assignments = [
             EnhancementAssignment.from_dict(value)
             for value in list(self.enhancement_assignments or [])
+        ]
+        self.upgrade_assignments = [
+            UpgradeAssignment.from_dict(value)
+            for value in list(self.upgrade_assignments or [])
         ]
         self.attachment_bindings = [
             AttachmentBinding.from_dict(value)
@@ -142,6 +154,9 @@ class ArmyMusterRequest:
             "enhancement_assignments": [
                 value.to_dict() for value in list(self.enhancement_assignments or [])
             ],
+            "upgrade_assignments": [
+                value.to_dict() for value in list(self.upgrade_assignments or [])
+            ],
             "attachment_bindings": [
                 value.to_dict() for value in list(self.attachment_bindings or [])
             ],
@@ -167,6 +182,9 @@ class ArmyMusterRequest:
             detachment_points_budget=data.get("detachment_points_budget"),
             units=list(data.get("units", data.get("unit_entries", [])) or []),
             enhancement_assignments=list(data.get("enhancement_assignments", []) or []),
+            upgrade_assignments=list(
+                data.get("upgrade_assignments", data.get("roster_upgrade_assignments", [])) or []
+            ),
             attachment_bindings=list(data.get("attachment_bindings", []) or []),
             force_disposition=data.get("force_disposition"),
             allowed_force_dispositions=list(data.get("allowed_force_dispositions", []) or []),

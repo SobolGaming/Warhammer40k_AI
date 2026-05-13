@@ -12,6 +12,7 @@ from .army_build import (
     DetachmentSelection,
     EnhancementAssignment,
     RosterEntry,
+    UpgradeAssignment,
     ValidatedMuster,
 )
 
@@ -71,6 +72,17 @@ def _normalize_enhancement_assignments(values: object) -> list[EnhancementAssign
     return assignments
 
 
+def _normalize_upgrade_assignments(values: object) -> list[UpgradeAssignment]:
+    assignments: list[UpgradeAssignment] = []
+    for index, value in enumerate(list(values or []), start=1):
+        data = _to_mapping(value)
+        if data is not None and not str(data.get("assignment_id", "") or "").strip():
+            data = dict(data)
+            data["assignment_id"] = f"upgrade_{index}"
+        assignments.append(UpgradeAssignment.from_dict(data or value))
+    return assignments
+
+
 def _normalize_attachment_bindings(values: object) -> list[AttachmentBinding]:
     bindings: list[AttachmentBinding] = []
     for index, value in enumerate(list(values or []), start=1):
@@ -102,6 +114,10 @@ def build_army_blueprint_from_request(
     raw_detachments = get_value("detachments", [])
     raw_units = get_value("units", get_value("unit_entries", []))
     raw_assignments = get_value("enhancement_assignments", [])
+    raw_upgrade_assignments = get_value(
+        "upgrade_assignments",
+        get_value("roster_upgrade_assignments", []),
+    )
     raw_bindings = get_value("attachment_bindings", [])
 
     detachments = _normalize_detachments(raw_detachments)
@@ -141,6 +157,7 @@ def build_army_blueprint_from_request(
         detachment_points_budget=get_value("detachment_points_budget"),
         unit_entries=entries,
         enhancement_assignments=assignments,
+        upgrade_assignments=_normalize_upgrade_assignments(raw_upgrade_assignments),
         attachment_bindings=_normalize_attachment_bindings(raw_bindings),
         force_disposition=get_value("force_disposition"),
         allowed_force_dispositions=list(get_value("allowed_force_dispositions", []) or []),
@@ -199,6 +216,29 @@ def validate_army_blueprint(blueprint: ArmyBlueprint) -> tuple[str, int]:
             raise ArmyValidationError(
                 f"Enhancement assignment '{assignment.assignment_id}' references unknown detachment "
                 f"'{detachment_id}'."
+            )
+
+    for assignment in list(blueprint.upgrade_assignments or []):
+        if assignment.source_detachment_id not in detachment_ids:
+            raise ArmyValidationError(
+                f"Upgrade assignment '{assignment.effective_assignment_id}' references unknown detachment "
+                f"'{assignment.source_detachment_id}'."
+            )
+        if assignment.max_targets is not None and len(assignment.target_ids) > assignment.max_targets:
+            raise ArmyValidationError(
+                f"Upgrade assignment '{assignment.effective_assignment_id}' targets "
+                f"{len(assignment.target_ids)} entries, but max_targets is {assignment.max_targets}."
+            )
+        if assignment.target_kind in {"unit", "weapon_profile"}:
+            for target_id in assignment.target_ids:
+                if target_id not in entry_ids:
+                    raise ArmyValidationError(
+                        f"Upgrade assignment '{assignment.effective_assignment_id}' references unknown unit entry "
+                        f"'{target_id}'."
+                    )
+        if assignment.target_kind == "weapon_profile" and not assignment.selected_weapon_profile_id:
+            raise ArmyValidationError(
+                f"Upgrade assignment '{assignment.effective_assignment_id}' is missing selected_weapon_profile_id."
             )
 
     for binding in list(blueprint.attachment_bindings or []):

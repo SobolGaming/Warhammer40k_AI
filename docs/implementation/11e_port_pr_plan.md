@@ -289,7 +289,7 @@ shows what is done versus what remains.
 | PR-014D | Completed | Implemented `build_capability_v2`, explicit descriptor targeting, and deterministic combat-preview golden coverage on April 16, 2026. |
 | PR-014E | Implemented locally | Mechanics and keyword registry, weapon keyword runtime, movement keyword runtime, and preview-gated CLEAVE attack-dice handling are implemented in the current working tree; mark Completed once reviewed/merged. |
 | PR-014F | Implemented locally | Detection markers and Hidden-preserving shooting infrastructure are implemented in the current working tree; mark Completed once reviewed/merged. |
-| PR-014G | Pending | Upgrade assignment and enhancement-budget modes for broader 11e-style upgrade payloads. |
+| PR-014G | Implemented locally | Upgrade assignment model, validation, descriptor payloads, and preview-gated upgrade goldens are implemented in the current working tree; mark Completed once reviewed/merged. |
 | PR-014H | Pending | Unit turn provenance and tactical status tokens. |
 | PR-014I | Pending | Reactive movement and stratagem-mode decision framework. |
 | PR-014J | Pending | Make fight scheduler stages actionable decision boundaries. |
@@ -1286,7 +1286,7 @@ Replace ad hoc Hidden/detection logic with a generic marker/query system.
 
 ## PR-014G — Upgrade assignment and enhancement-budget modes
 
-**Status:** Pending.
+**Status:** Implemented locally; pending review/merge.
 
 ### Goal
 Make 11e-style Upgrade payloads first-class in mustering without treating preview faction upgrades as live data.
@@ -1302,6 +1302,12 @@ Make 11e-style Upgrade payloads first-class in mustering without treating previe
 - "Target up to three units" fixture validates cardinality.
 - Weapon-profile upgrade fixture persists selected profile identity.
 - Descriptor IDs change when upgrade assignment semantics change.
+
+### Implemented notes
+- Added `UpgradeAssignment` / `RosterUpgradeAssignment` in the build-side army model.
+- Extended `ArmyBlueprint`, `ArmyMusterRequest`, validation, runtime build metadata, snapshots, and `ArmyBuildDescriptor` payloads with `upgrade_assignments`.
+- Added validation for source detachment, unit/weapon-profile target references, max-target cardinality, points-cost mode, enhancement-budget counting mode, and selected weapon-profile identity.
+- Added preview-gated golden coverage under `tests/preview_11e/test_upgrade_assignment_golden.py`.
 
 ---
 

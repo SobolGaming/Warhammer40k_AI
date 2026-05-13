@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from .army_attachments import AttachmentBinding
 
@@ -40,6 +40,19 @@ def _positive_int(value: object, *, field_name: str) -> int:
 
 def _string_list(values: object) -> list[str]:
     return [str(value or "").strip() for value in list(values or []) if str(value or "").strip()]
+
+
+def _bool_value(value: object, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return bool(default)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(value)
 
 
 def _json_safe(value: Any) -> Any:
@@ -154,6 +167,119 @@ class EnhancementAssignment:
 
 
 @dataclass
+class UpgradeAssignment:
+    """Build-side assignment for broader upgrade payloads.
+
+    This is intentionally separate from legacy EnhancementAssignment so preview-era
+    unit/model/weapon-profile upgrade semantics do not widen 10e enhancement behavior.
+    """
+
+    upgrade_id: str
+    source_detachment_id: str
+    target_kind: Literal["unit", "model", "weapon_profile"]
+    target_ids: tuple[str, ...]
+    max_targets: int | None = None
+    counts_toward_enhancement_limit: bool = True
+    points_cost_mode: Literal["once", "per_target", "per_model"] = "once"
+    selected_weapon_profile_id: str | None = None
+    declaration_step: str = "list_building"
+    assignment_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.upgrade_id = _required_text(self.upgrade_id, field_name="upgrade_id")
+        self.source_detachment_id = _required_text(
+            self.source_detachment_id,
+            field_name="source_detachment_id",
+        )
+        target_kind = _required_text(self.target_kind, field_name="target_kind").lower()
+        if target_kind not in {"unit", "model", "weapon_profile"}:
+            raise ValueError("target_kind must be one of: unit, model, weapon_profile.")
+        self.target_kind = target_kind
+        self.target_ids = tuple(_string_list(self.target_ids))
+        if not self.target_ids:
+            raise ValueError("target_ids must include at least one target.")
+        self.max_targets = _optional_non_negative_int(self.max_targets, field_name="max_targets")
+        if self.max_targets == 0:
+            raise ValueError("max_targets must be positive when provided.")
+        if self.max_targets is not None and len(self.target_ids) > self.max_targets:
+            raise ValueError(
+                f"Upgrade assignment '{self.upgrade_id}' targets {len(self.target_ids)} entries, "
+                f"but max_targets is {self.max_targets}."
+            )
+        self.counts_toward_enhancement_limit = _bool_value(
+            self.counts_toward_enhancement_limit,
+            default=True,
+        )
+        points_cost_mode = _required_text(self.points_cost_mode, field_name="points_cost_mode").lower()
+        if points_cost_mode not in {"once", "per_target", "per_model"}:
+            raise ValueError("points_cost_mode must be one of: once, per_target, per_model.")
+        self.points_cost_mode = points_cost_mode
+        self.selected_weapon_profile_id = _optional_text(self.selected_weapon_profile_id)
+        if self.target_kind == "weapon_profile" and not self.selected_weapon_profile_id:
+            raise ValueError("selected_weapon_profile_id is required for weapon_profile upgrades.")
+        self.declaration_step = _required_text(self.declaration_step, field_name="declaration_step")
+        self.assignment_id = _optional_text(self.assignment_id)
+        self.metadata = dict(self.metadata or {})
+
+    @property
+    def effective_assignment_id(self) -> str:
+        if self.assignment_id:
+            return self.assignment_id
+        targets = "_".join(self.target_ids)
+        return f"{self.upgrade_id}:{self.source_detachment_id}:{self.target_kind}:{targets}"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "assignment_id": self.assignment_id,
+            "upgrade_id": self.upgrade_id,
+            "source_detachment_id": self.source_detachment_id,
+            "target_kind": self.target_kind,
+            "target_ids": list(self.target_ids),
+            "max_targets": self.max_targets,
+            "counts_toward_enhancement_limit": self.counts_toward_enhancement_limit,
+            "points_cost_mode": self.points_cost_mode,
+            "selected_weapon_profile_id": self.selected_weapon_profile_id,
+            "declaration_step": self.declaration_step,
+            "metadata": dict(self.metadata or {}),
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: "UpgradeAssignment | Mapping[str, Any]",
+    ) -> "UpgradeAssignment":
+        if isinstance(data, cls):
+            return data
+        if not isinstance(data, Mapping):
+            raise TypeError("UpgradeAssignment data must be a mapping or UpgradeAssignment.")
+        target_ids = data.get("target_ids")
+        if target_ids is None:
+            single_target = data.get("target_id")
+            target_ids = [] if single_target in (None, "") else [single_target]
+        source_detachment_id = data.get("source_detachment_id", data.get("detachment_selection_id"))
+        return cls(
+            assignment_id=data.get("assignment_id"),
+            upgrade_id=str(data.get("upgrade_id", data.get("enhancement_name", "")) or ""),
+            source_detachment_id=str(source_detachment_id or ""),
+            target_kind=str(data.get("target_kind", "unit") or "unit"),
+            target_ids=tuple(target_ids or ()),
+            max_targets=data.get("max_targets"),
+            counts_toward_enhancement_limit=_bool_value(
+                data.get("counts_toward_enhancement_limit"),
+                default=True,
+            ),
+            points_cost_mode=str(data.get("points_cost_mode", "once") or "once"),
+            selected_weapon_profile_id=data.get("selected_weapon_profile_id"),
+            declaration_step=str(data.get("declaration_step", "list_building") or "list_building"),
+            metadata=dict(data.get("metadata", {}) or {}),
+        )
+
+
+RosterUpgradeAssignment = UpgradeAssignment
+
+
+@dataclass
 class RosterEntry:
     """Build-side unit entry before runtime units are materialized."""
 
@@ -223,6 +349,7 @@ class ArmyBlueprint:
     detachment_points_budget: int | None = None
     unit_entries: list[RosterEntry] = field(default_factory=list)
     enhancement_assignments: list[EnhancementAssignment] = field(default_factory=list)
+    upgrade_assignments: list[UpgradeAssignment] = field(default_factory=list)
     attachment_bindings: list[AttachmentBinding] = field(default_factory=list)
     force_disposition: str | None = None
     allowed_force_dispositions: list[str] = field(default_factory=list)
@@ -243,6 +370,10 @@ class ArmyBlueprint:
         self.enhancement_assignments = [
             EnhancementAssignment.from_dict(value)
             for value in list(self.enhancement_assignments or [])
+        ]
+        self.upgrade_assignments = [
+            UpgradeAssignment.from_dict(value)
+            for value in list(self.upgrade_assignments or [])
         ]
         self.attachment_bindings = [
             AttachmentBinding.from_dict(value) for value in list(self.attachment_bindings or [])
@@ -273,6 +404,9 @@ class ArmyBlueprint:
             "enhancement_assignments": [
                 item.to_dict() for item in list(self.enhancement_assignments or [])
             ],
+            "upgrade_assignments": [
+                item.to_dict() for item in list(self.upgrade_assignments or [])
+            ],
             "attachment_bindings": [
                 item.to_dict() for item in list(self.attachment_bindings or [])
             ],
@@ -298,6 +432,9 @@ class ArmyBlueprint:
             detachment_points_budget=data.get("detachment_points_budget"),
             unit_entries=list(data.get("unit_entries", []) or []),
             enhancement_assignments=list(data.get("enhancement_assignments", []) or []),
+            upgrade_assignments=list(
+                data.get("upgrade_assignments", data.get("roster_upgrade_assignments", [])) or []
+            ),
             attachment_bindings=list(data.get("attachment_bindings", []) or []),
             force_disposition=data.get("force_disposition"),
             allowed_force_dispositions=list(data.get("allowed_force_dispositions", []) or []),
@@ -356,6 +493,8 @@ __all__ = [
     "ArmyBlueprint",
     "DetachmentSelection",
     "EnhancementAssignment",
+    "RosterUpgradeAssignment",
     "RosterEntry",
+    "UpgradeAssignment",
     "ValidatedMuster",
 ]

@@ -37,6 +37,9 @@ Design notes:
   - sticky-control metadata including any minimum Level of Control floor
   - optional `terrain_area_id` / `layout_slot_id` bindings
 - `army_build_state` carries public army-construction semantics plus the active `army_build_descriptor_id`.
+  The per-player army-build payload includes enhancement assignments and 11e-prep
+  `upgrade_assignments` so unit/model/weapon-profile upgrade semantics are visible
+  to replay and descriptor reconstruction.
 - `army_build_state.players[*].detachment_points_summary.spent` is always present, while `budget` / `remaining` may be `null` until the roster has an authored detachment-point budget.
 - Hidden state and owning-player observation unit entries expose reserve provenance:
   `reserve_source`, `reserve_mandatory_start`, `reserve_latest_arrival_round`,

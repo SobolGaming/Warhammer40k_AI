@@ -1521,6 +1521,7 @@ def _blueprint_with_enhancement_assignment(
         detachment_points_budget=blueprint.detachment_points_budget,
         unit_entries=entries,
         enhancement_assignments=list(blueprint.enhancement_assignments) + [assignment],
+        upgrade_assignments=list(blueprint.upgrade_assignments),
         attachment_bindings=list(blueprint.attachment_bindings),
         force_disposition=blueprint.force_disposition,
         allowed_force_dispositions=list(blueprint.allowed_force_dispositions),

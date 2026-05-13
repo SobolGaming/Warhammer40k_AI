@@ -23,7 +23,8 @@ units directly.
 - `ArmyBlueprint` (`src/warhammer40k_ai/roster/army_build.py`)
   - Build-time representation of army construction.
   - Holds battle size, points limit, detachment selections, unit entries,
-    enhancement assignments, attachment bindings, and Force Disposition data.
+    enhancement assignments, broader upgrade assignments, attachment bindings,
+    and Force Disposition data.
 - `DetachmentSelection` (`src/warhammer40k_ai/roster/army_build.py`)
   - Represents one selected detachment and its detachment-point cost.
 - `DetachmentInstance` (`src/warhammer40k_ai/roster/army_runtime.py`)
@@ -33,7 +34,14 @@ units directly.
   - Build-side unit entry used before runtime `Unit` objects are materialized.
 - `EnhancementAssignment` (`src/warhammer40k_ai/roster/army_build.py`)
   - Explicit enhancement-to-unit assignment record.
-  - Its metadata can now represent upgrade-tag targeting for eligible non-Character units.
+- `UpgradeAssignment` / `RosterUpgradeAssignment` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Explicit 11e-prep upgrade assignment record distinct from legacy enhancements.
+  - Tracks source detachment, unit/model/weapon-profile target kind, target ids,
+    maximum target cardinality, enhancement-budget counting behavior, points-cost
+    mode, selected weapon-profile identity, declaration step, and metadata.
+  - Preview-only fixtures can represent unit-only upgrades, model-only upgrades,
+    selected weapon-profile upgrades, and upgrades that do not count toward the
+    normal enhancement total without changing released 10e enhancement behavior.
 - `AttachmentBinding` (`src/warhammer40k_ai/roster/army_attachments.py`)
   - Explicit build-side leader/support attachment selection.
 - `ValidatedMuster` (`src/warhammer40k_ai/roster/army_build.py`)
@@ -47,6 +55,7 @@ units directly.
     - `detachment_points_budget`
     - explicit `units`
     - `enhancement_assignments`
+    - `upgrade_assignments`
     - `attachment_bindings`
     - `force_disposition` / `allowed_force_dispositions`
   - Requires explicit `detachments`; the temporary single-detachment request adapter has been removed.
@@ -66,6 +75,7 @@ units directly.
     - `army.detachment_points_summary`
     - `army.attachment_bindings`
     - build-side detachments / unit entries / enhancement assignments / attachment bindings
+    - build-side upgrade assignments
     - detachment-point budget/spend metadata
     - Force Disposition metadata
   - Uses `src/warhammer40k_ai/roster/unit_materialization.py` to resolve datasheets,
@@ -103,7 +113,10 @@ units directly.
   - normalizes raw muster requests into `ArmyBlueprint`
   - validates faction support
   - validates detachment-point budget spend
-  - validates references from unit entries, enhancement assignments, and attachment bindings
+  - validates references from unit entries, enhancement assignments, upgrade assignments,
+    and attachment bindings
+  - validates upgrade cardinality, target kind, source detachment, selected weapon-profile
+    identity for weapon-profile upgrades, points-cost mode, and enhancement-budget counting mode
   - validates chosen Force Disposition against any allowed set
   - leaves deep roster legality to runtime validation so build-side search and
     authored muster requests can share the same `Army.validate()` rules
@@ -121,8 +134,8 @@ units directly.
   - named unit caps inferred from ability text
   - Ynnari Epic Hero restrictions
   - the rest of the established roster validation currently housed in `army.py`
-- Enhancement assignment validation now also supports upgrade-tag representations for
-  eligible non-Character units.
+- Broader upgrade assignment validation now lives in `UpgradeAssignment` instead of
+  overloading legacy enhancement metadata.
 - Search and repair flows can now validate `ArmyBlueprint` candidates through the
   same runtime legality path, which is where warlord, enhancement, duplicate
   datasheet, attachment, and optional-wargear rules are ultimately enforced.
@@ -157,8 +170,8 @@ units directly.
 - `army_muster_requests` is still included in game snapshots in
   `src/warhammer40k_ai/engine/snapshot.py`.
 - `ArmyMusterRequest` now has explicit `to_dict()` / `from_dict()` support so
-  multi-detachment request payloads, enhancement assignments, and attachment bindings have
-  a stable serializable form.
+  multi-detachment request payloads, enhancement assignments, upgrade assignments,
+  and attachment bindings have a stable serializable form.
 - Runtime `DetachmentInstance` values are also serializable through army snapshot state, and
   session manifests now expose `primary_detachment_type` plus `detachment_types`.
 - Runtime units can now carry `build_entry_id` linkage to their build-side entries so
