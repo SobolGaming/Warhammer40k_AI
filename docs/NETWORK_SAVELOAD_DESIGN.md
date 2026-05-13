@@ -425,7 +425,7 @@ Machine Vengeance uses setup reactive shooting with `DECLARE_SHOTS`, `out_of_pha
 
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
-- shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]} (context may include optional `allowed_model_ids[]`, `allowed_wargear_ids[]`, `max_declarations`, `force_target_unit_id`, `out_of_phase=true`)
+- shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]} (context may include optional `allowed_model_ids[]`, `allowed_wargear_ids[]`, `allowed_target_unit_ids[]`, `shooting_target_candidates[]`, `max_declarations`, `force_target_unit_id`, `out_of_phase=true`; `shooting_target_candidates[]` binds legal target ids by `model_id`, `wargear_id`, and `profile_name`, so split-fire declarations can be validated before attacks resolve)
 - linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None, declarations[].linked_fire_mode}
 - deathstrike_action_dialog: DEATHSTRIKE_ACTION {unit_id, action, position?}
 - repair_barge_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="repair_barge"`, `source_unit_id`, `model_id`, `range=3`, `allowed_target_unit_ids`, `turn_owner`, `turn`, `optional=true`)

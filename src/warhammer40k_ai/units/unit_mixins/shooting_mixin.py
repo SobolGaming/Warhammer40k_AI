@@ -283,6 +283,44 @@ class ShootingMixin:
                         return True
         return False
 
+    def _resolve_selected_shooting_target_reactions(self, game, target_units) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not list(target_units or []):
+            return
+        try:
+            attacking_player = self.get_parent_army().player
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            attacking_player = None
+        reacting_players = [
+            player
+            for player in list(getattr(game, "players", []) or [])
+            if player is not None and player is not attacking_player
+        ]
+        if not reacting_players:
+            return
+
+        prior_depth = int(getattr(game, "_pre_attack_reaction_window_depth", 0) or 0)
+        setattr(game, "_pre_attack_reaction_window_depth", prior_depth + 1)
+        try:
+            max_passes = max(1, len(reacting_players) * 4)
+            for _pass_index in range(max_passes):
+                queued_any = False
+                for player in reacting_players:
+                    manager = getattr(player, "stratagems", None)
+                    queue_reaction_decision = getattr(manager, "queue_headless_tool_action_decision", None)
+                    if not callable(queue_reaction_decision):
+                        continue
+                    if bool(queue_reaction_decision(reactions_only=True)):
+                        queued_any = True
+                if not queued_any:
+                    break
+        finally:
+            if prior_depth > 0:
+                setattr(game, "_pre_attack_reaction_window_depth", prior_depth)
+            elif hasattr(game, "_pre_attack_reaction_window_depth"):
+                delattr(game, "_pre_attack_reaction_window_depth")
+
     def execute_shooting_declarations(self, weapon_declarations: List[dict], game_map: 'Map', *, out_of_phase: bool = False) -> bool:
         """
         Execute shooting declarations according to Warhammer 40k rules.
@@ -561,6 +599,7 @@ class ShootingMixin:
                             target_units=list(touched_targets),
                             weapon_declarations=list(weapon_declarations),
                         )
+                        self._resolve_selected_shooting_target_reactions(game, touched_targets)
         except Exception:
             pass
 

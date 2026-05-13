@@ -192,7 +192,7 @@ flowchart TD
   M --> B
 ```
 
-Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes. The default path is `DECLARE_SHOTS` for the selected unit; if that unit is a Transport with Firing Deck and has not declared its embarked shots yet, `DECLARE_FIRING_DECK` runs first and then returns to the selected Transport's normal `DECLARE_SHOTS` request. Firing Deck adds selected embarked-model shots; it does not replace the Transport's own guns.
+Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes. The default path is `DECLARE_SHOTS` for the selected unit; if that unit is a Transport with Firing Deck and has not declared its embarked shots yet, `DECLARE_FIRING_DECK` runs first and then returns to the selected Transport's normal `DECLARE_SHOTS` request. Firing Deck adds selected embarked-model shots; it does not replace the Transport's own guns. `DECLARE_SHOTS` carries legal target metadata per model/weapon/profile, and split fire is represented as multiple declaration entries. Once targets are selected, the engine publishes the selected-as-target reaction window and headless reaction tool decisions resolve before ranged attacks continue.
 
 ```mermaid
 flowchart TD
@@ -203,10 +203,15 @@ flowchart TD
   D -->|"Shooter selected"| G["DECLARE_SHOTS for selected unit"]
   D -->|"Selected unit is Transport with Firing Deck not yet declared"| F["DECLARE_FIRING_DECK selects embarked firing models/weapons"]
   F --> G
-  G --> H["Resolve ranged declarations and attacks"]
-  H --> I["REQUEST_DICE_ROLL, reroll, target-model, Precision, damage-allocation decisions as needed"]
-  I --> J["Apply damage, destruction, post-shoot ability effects, and reaction windows"]
-  J --> B
+  G --> H["Validate eligible targets and split-fire declarations"]
+  H --> I["Publish shooting_targets_selected reaction window"]
+  I --> J{"Headless reaction-only stratagem tool decision available?"}
+  J -->|"Yes"| K["Resolve reaction tool decision before attacks"]
+  K --> J
+  J -->|"No"| L["Resolve ranged declarations and attacks"]
+  L --> M["REQUEST_DICE_ROLL, reroll, target-model, Precision, damage-allocation decisions as needed"]
+  M --> N["Apply damage, destruction, and post-shoot ability effects"]
+  N --> B
 ```
 
 Charge-phase activation selects a charging unit, declares targets, rolls the charge, then queues the concrete `MOVE_UNIT` charge move only when the declaration and roll produce a legal move window.

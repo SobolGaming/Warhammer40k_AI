@@ -86,7 +86,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 - `SELECT_TOOL_ACTION` - Choose a generic stratagem tool action or skip. Only fully bound legal stratagem payloads are exposed.
 - `SELECT_WEAPON` - Choose a weapon or profile to use.
-- `DECLARE_SHOTS` - Declare shooting targets and split-fire assignments.
+- `DECLARE_SHOTS` - Declare shooting targets and split-fire assignments against legal per-model/per-weapon target candidates.
 - `DECLARE_FIRING_DECK` - Select up to the transport's Firing Deck limit as embarked model/weapon/profile entries before `DECLARE_SHOTS`.
 - `SELECT_OVERWATCH_SHOOTER` - Choose the unit that will fire Overwatch or an equivalent
   reaction.
@@ -242,7 +242,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `PICK_TERRAIN_FEATURE` | A rule requires a terrain feature. | UI | `Policy` | `T2` |
 | `SELECT_TOOL_ACTION` | A generic headless/non-local stratagem window exposes one or more legal tool actions plus skip. Target-required malformed payloads are filtered before exposure and recorded as visible tool-probe diagnostics when required context failed to bind. | UI | `Policy` | `T2/T3` |
 | `SELECT_WEAPON` | An activation needs a weapon or profile choice. | UI | `Policy` | `T3` |
-| `DECLARE_SHOTS` | A shooting unit must declare targets and split fire. | UI | `Policy` | `T3` |
+| `DECLARE_SHOTS` | A shooting unit must declare legal targets and split fire. | UI | `Policy` | `T3` |
 | `DECLARE_FIRING_DECK` | A transport with Firing Deck must choose non-ONE SHOT weapons from up to X eligible embarked models before its shooting declarations. | UI | `Policy` | `T3` |
 | `SELECT_OVERWATCH_SHOOTER` | Overwatch or equivalent reaction needs a shooter choice, including authoritative `FIRE OVERWATCH` windows. | UI | `Policy` | `T3` |
 | `SELECT_RISE_TO_CHALLENGE` | Rise to Challenge target window opens. | UI | `Policy` | `T3` |

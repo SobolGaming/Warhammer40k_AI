@@ -786,6 +786,174 @@ def _unit_has_ranged_weapon(unit: object) -> bool:
     return False
 
 
+def _shooting_enemy_units(game: object | None, unit: object) -> list[object]:
+    if game is None or unit is None:
+        return []
+    game_map = getattr(game, "map", None)
+    get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+    enemies: list[object] = []
+    if callable(get_enemy_units):
+        try:
+            enemies = list(get_enemy_units(unit) or [])
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            enemies = []
+    if not enemies:
+        own_army = getattr(unit, "parent_army", None)
+        get_army = getattr(unit, "get_parent_army", None)
+        if own_army is None and callable(get_army):
+            try:
+                own_army = get_army()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                own_army = None
+        for player in list(getattr(game, "players", []) or []):
+            army = getattr(player, "army", None)
+            if army is None:
+                getter = getattr(player, "get_army", None)
+                if callable(getter):
+                    try:
+                        army = getter()
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
+                        army = None
+            if army is None or army is own_army:
+                continue
+            enemies.extend(list(getattr(army, "units", []) or []))
+    by_id: dict[str, object] = {}
+    for enemy in list(enemies or []):
+        if enemy is None:
+            continue
+        root_getter = getattr(enemy, "get_attached_unit_root", None)
+        if callable(root_getter):
+            try:
+                root = root_getter()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                root = enemy
+        else:
+            root = enemy
+        if root is None:
+            continue
+        target_id = str(get_entity_id(root) or "").strip()
+        if not target_id or target_id in by_id:
+            continue
+        alive = getattr(root, "is_alive", True)
+        try:
+            is_alive = bool(alive() if callable(alive) else alive)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            is_alive = False
+        if not is_alive:
+            continue
+        if not bool(getattr(root, "deployed", True)):
+            continue
+        reserve_check = getattr(root, "is_in_reserves", None)
+        if callable(reserve_check):
+            try:
+                if bool(reserve_check()):
+                    continue
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            continue
+        by_id[target_id] = root
+    return [by_id[target_id] for target_id in sorted(by_id.keys())]
+
+
+def _profile_is_targetless(profile: object) -> bool:
+    is_plasma_warhead = getattr(profile, "is_plasma_warhead", None)
+    if callable(is_plasma_warhead):
+        try:
+            return bool(is_plasma_warhead())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+    return False
+
+
+def _shooting_profile_target_ids(
+    game: object | None,
+    unit: object,
+    model: object,
+    profile: object,
+    targets: list[object],
+) -> list[str]:
+    validate = getattr(unit, "_validate_shooting_declaration", None)
+    game_map = getattr(game, "map", None) if game is not None else None
+    target_ids: list[str] = []
+    for target in list(targets or []):
+        target_id = str(get_entity_id(target) or "").strip()
+        if not target_id:
+            continue
+        if callable(validate):
+            try:
+                validation = validate(profile, target, [model], game_map)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                validation = {"valid": False}
+            if not bool(isinstance(validation, dict) and validation.get("valid", False)):
+                continue
+        target_ids.append(target_id)
+    return target_ids
+
+
+def _shooting_target_candidates(
+    game: object | None,
+    unit: object,
+    *,
+    force_target_unit_id: str = "",
+) -> list[dict[str, object]]:
+    if game is None or unit is None:
+        return []
+    targets = _shooting_enemy_units(game, unit)
+    forced_target_id = str(force_target_unit_id or "").strip()
+    if forced_target_id:
+        targets = [target for target in targets if str(get_entity_id(target) or "").strip() == forced_target_id]
+    candidates: list[dict[str, object]] = []
+    for model in _attached_alive_models(unit):
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id:
+            continue
+        wargear_items = sorted(
+            list(getattr(model, "wargear", []) or []),
+            key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")),
+        )
+        for wargear in wargear_items:
+            is_ranged = getattr(wargear, "is_ranged", None)
+            if not callable(is_ranged):
+                continue
+            try:
+                if not bool(is_ranged()):
+                    continue
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+            wargear_id = str(get_entity_id(wargear) or "").strip()
+            if not wargear_id:
+                continue
+            for profile_name, profile in sorted(
+                dict(getattr(wargear, "profiles", {}) or {}).items(),
+                key=lambda item: str(item[0]),
+            ):
+                if profile is None:
+                    continue
+                entry: dict[str, object] = {
+                    "model_id": model_id,
+                    "wargear_id": wargear_id,
+                    "profile_name": str(profile_name or ""),
+                }
+                if _profile_is_targetless(profile):
+                    entry["targetless"] = True
+                    candidates.append(entry)
+                    continue
+                target_ids = _shooting_profile_target_ids(game, unit, model, profile, targets)
+                if not target_ids:
+                    continue
+                entry["target_unit_ids"] = target_ids
+                candidates.append(entry)
+    candidates.sort(
+        key=lambda entry: (
+            str(entry.get("model_id", "") or ""),
+            str(entry.get("wargear_id", "") or ""),
+            str(entry.get("profile_name", "") or ""),
+        )
+    )
+    return candidates
+
+
 def _source_root_for_model(model: object) -> object | None:
     source_unit = getattr(model, "parent_unit", None)
     if source_unit is None:
@@ -1251,6 +1419,22 @@ def queue_declare_shots_request(
     )
     if request is None:
         return None
+    target_candidates = _shooting_target_candidates(
+        game,
+        unit,
+        force_target_unit_id=str((context or {}).get("force_target_unit_id", "") or ""),
+    )
+    if target_candidates:
+        request.context.setdefault("shooting_target_candidates", target_candidates)
+        allowed_target_ids = sorted(
+            {
+                str(target_id or "").strip()
+                for candidate in target_candidates
+                for target_id in list(candidate.get("target_unit_ids", []) or [])
+                if str(target_id or "").strip()
+            }
+        )
+        request.context.setdefault("allowed_target_unit_ids", allowed_target_ids)
     request_decision = getattr(game, "request_decision", None)
     if not callable(request_decision):
         raise RuntimeError("Game does not support request_decision().")

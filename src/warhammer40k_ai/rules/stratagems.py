@@ -5977,8 +5977,14 @@ class StratagemManager(
             return None
         queue = getattr(game, "decision_queue", None)
         list_fn = getattr(queue, "list", None) if queue is not None else None
-        if callable(list_fn) and list(list_fn() or []):
-            return None
+        if callable(list_fn):
+            pending_requests = [
+                request
+                for request in list(list_fn() or [])
+                if not bool(getattr(request, "_resolution_in_progress", False))
+            ]
+            if pending_requests:
+                return None
 
         items = [
             item

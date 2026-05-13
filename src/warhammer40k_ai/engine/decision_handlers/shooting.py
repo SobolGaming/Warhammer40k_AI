@@ -71,6 +71,47 @@ def _clear_firing_deck_state(unit: object) -> None:
         unit._firing_deck_declared_this_phase = False
 
 
+def _shooting_target_candidate_map(context: dict) -> dict[tuple[str, str, str], set[str]]:
+    candidate_map: dict[tuple[str, str, str], set[str]] = {}
+    for entry in list(context.get("shooting_target_candidates", []) or []):
+        if not isinstance(entry, dict):
+            continue
+        model_id = str(entry.get("model_id", "") or "").strip()
+        wargear_id = str(entry.get("wargear_id", "") or "").strip()
+        profile_name = str(entry.get("profile_name", "") or "").strip()
+        if not model_id or not wargear_id or not profile_name:
+            continue
+        target_ids = {
+            str(target_id or "").strip()
+            for target_id in list(entry.get("target_unit_ids", []) or [])
+            if str(target_id or "").strip()
+        }
+        if target_ids:
+            candidate_map[(model_id, wargear_id, profile_name)] = target_ids
+    return candidate_map
+
+
+def _validate_target_candidate_context(
+    *,
+    target_id: str,
+    model_ids: Sequence[str],
+    wargear_id: str,
+    profile_name: str,
+    allowed_target_ids: set[str],
+    target_candidate_map: dict[tuple[str, str, str], set[str]],
+) -> Sequence[str]:
+    if allowed_target_ids and target_id not in allowed_target_ids:
+        return ("Declaration target is not an eligible shooting target.",)
+    if not target_candidate_map:
+        return ()
+    for model_id in list(model_ids or []):
+        key = (str(model_id or "").strip(), str(wargear_id or "").strip(), str(profile_name or "").strip())
+        target_ids = target_candidate_map.get(key)
+        if target_ids is None or target_id not in target_ids:
+            return ("Declaration target is not legal for the selected model/weapon/profile.",)
+    return ()
+
+
 def _validate_select_weapon(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -219,6 +260,14 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         for value in list(request.context.get("allowed_wargear_ids", []) or [])
         if str(value or "").strip()
     }
+    allowed_target_ids = {
+        str(value or "").strip()
+        for value in list(request.context.get("allowed_target_unit_ids", []) or [])
+        if str(value or "").strip()
+    }
+    target_candidate_map = _shooting_target_candidate_map(dict(request.context or {}))
+    strict_target_context = bool(allowed_target_ids or target_candidate_map)
+    game_map = getattr(game, "map", None)
     try:
         max_declarations = int(request.context.get("max_declarations", 0) or 0)
     except Exception:
@@ -320,6 +369,18 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 return ("Plasma Warhead cannot be used with a forced target unit.",)
         if not isinstance(model_ids, list) or not model_ids:
             return ("Declaration requires model_ids list.",)
+        normalized_model_ids = [str(model_id or "").strip() for model_id in list(model_ids or [])]
+        if not is_plasma_warhead:
+            candidate_errors = _validate_target_candidate_context(
+                target_id=target_id,
+                model_ids=normalized_model_ids,
+                wargear_id=wargear_id,
+                profile_name=profile_name,
+                allowed_target_ids=allowed_target_ids,
+                target_candidate_map=target_candidate_map,
+            )
+            if candidate_errors:
+                return candidate_errors
         models = []
         for model_id in model_ids:
             model_id = str(model_id or "")
@@ -366,6 +427,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         # Validate Linked Fire / Infernal Puppeteer origin unit if present
         linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
         linked_fire_mode = str(decl.get("linked_fire_mode", "") or "").strip().lower()
+        linked_fire_origin_unit = None
         if linked_fire_origin_id is not None:
             if not linked_fire_mode:
                 return ("Linked Fire origin requires linked_fire_mode.",)
@@ -374,6 +436,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
             if origin_unit is None:
                 return ("Linked Fire origin unit not found.",)
+            linked_fire_origin_unit = origin_unit
 
             # Get the shooting unit
             unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
@@ -462,6 +525,23 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 game_map = getattr(game, "map", None)
                 if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
                     return ("Linked Fire origin must be visible to the bearer unit.",)
+
+        if strict_target_context and not is_plasma_warhead:
+            validate_declaration = getattr(unit, "_validate_shooting_declaration", None)
+            if callable(validate_declaration):
+                validation = validate_declaration(
+                    profile,
+                    target_unit,
+                    models,
+                    game_map,
+                    linked_fire_origin_unit=linked_fire_origin_unit,
+                    linked_fire_mode=linked_fire_mode or None,
+                )
+                if not bool(isinstance(validation, dict) and validation.get("valid", False)):
+                    reason = "Invalid shooting declaration."
+                    if isinstance(validation, dict):
+                        reason = str(validation.get("reason", "") or reason)
+                    return (reason,)
 
     validate_ctan = getattr(unit, "validate_ctan_power_selection", None)
     if callable(validate_ctan):

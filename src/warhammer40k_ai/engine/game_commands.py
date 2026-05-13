@@ -131,7 +131,16 @@ class GameCommandService:
             return False
         queue = getattr(game, "decision_queue", None)
         list_fn = getattr(queue, "list", None) if queue is not None else None
-        if callable(list_fn) and list(list_fn() or []):
+        def _pending_not_in_progress() -> list[object]:
+            if not callable(list_fn):
+                return []
+            return [
+                request
+                for request in list(list_fn() or [])
+                if not bool(getattr(request, "_resolution_in_progress", False))
+            ]
+
+        if _pending_not_in_progress():
             return False
 
         current_player = None
@@ -158,8 +167,10 @@ class GameCommandService:
 
         if _queue_for_players(others_then_current, reactions_only=True):
             return True
-        if callable(list_fn) and list(list_fn() or []):
+        if _pending_not_in_progress():
             return True
+        if int(getattr(game, "_pre_attack_reaction_window_depth", 0) or 0) > 0:
+            return False
         return _queue_for_players(current_then_others, reactions_only=False)
 
     def apply_command(self, command: GameCommand):
