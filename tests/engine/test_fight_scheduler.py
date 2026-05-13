@@ -7,6 +7,11 @@ from warhammer40k_ai.engine.combat_timing import CombatEngagementState, unit_eng
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.engine.fight_scheduler import FightSchedulerStage
 from warhammer40k_ai.engine.ruleset import RulesetBundle
+from warhammer40k_ai.engine.unit_turn_provenance import (
+    PhaseBoundary,
+    must_fight_next_status_token,
+    set_status_tokens_on_unit,
+)
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
@@ -151,6 +156,18 @@ def _build_preview_game():
     return game, player_one, player_two, army_one, army_two
 
 
+def _resolve_pending_batch_pile_ins(manager: FightPhaseManager) -> None:
+    while manager.scheduler is not None and manager.scheduler.state.stage in {
+        FightSchedulerStage.PILE_IN_ACTIVE,
+        FightSchedulerStage.PILE_IN_REACTIVE,
+    }:
+        pending = dict(manager._pending_fight_sequence or {})
+        unit_id = str(pending.get("fighting_unit_id", "") or "")
+        if not unit_id:
+            break
+        manager.on_fight_move_resolved(unit_id=unit_id, movement_type="pile_in")
+
+
 def test_preview_fights_first_starts_with_active_player() -> None:
     game, current_player, opponent_player, army_one, army_two = _build_preview_game()
     current_unit = _Unit("unit-current", "Current Charger", army_one, x=10.0, y=10.0, charged=True)
@@ -161,8 +178,10 @@ def test_preview_fights_first_starts_with_active_player() -> None:
 
     manager = FightPhaseManager(game)
     manager.on_unit_selection_required = Mock()
+    manager._queue_fight_move_request = Mock(return_value=object())
 
     manager.start_fight_phase(current_player, opponent_player)
+    _resolve_pending_batch_pile_ins(manager)
 
     assert manager.scheduler is not None
     assert manager.scheduler.state.stage == FightSchedulerStage.FIGHTS_FIRST
@@ -172,6 +191,27 @@ def test_preview_fights_first_starts_with_active_player() -> None:
     args = manager.on_unit_selection_required.call_args.args
     assert args[0] is current_player
     assert args[1] == [current_unit]
+
+
+def test_preview_pile_in_stage_pauses_for_move_decision() -> None:
+    game, current_player, opponent_player, army_one, army_two = _build_preview_game()
+    current_unit = _Unit("unit-current", "Current", army_one, x=10.0, y=10.0)
+    opponent_unit = _Unit("unit-opponent", "Opponent", army_two, x=12.5, y=10.0)
+    army_one.units = [current_unit]
+    army_two.units = [opponent_unit]
+    game.register_units(current_unit, opponent_unit)
+
+    manager = FightPhaseManager(game)
+    manager._queue_fight_move_request = Mock(return_value=object())
+
+    manager.start_fight_phase(current_player, opponent_player)
+
+    assert manager.scheduler is not None
+    assert manager.scheduler.state.stage == FightSchedulerStage.PILE_IN_ACTIVE
+    assert manager.get_current_stage() == FightStage.PILE_IN_ACTIVE
+    assert dict(manager._pending_fight_sequence or {}).get("mode") == "pile_in_batch"
+    manager._queue_fight_move_request.assert_called_once()
+    assert manager._queue_fight_move_request.call_args.kwargs["movement_type"] == "pile_in"
 
 
 def test_preview_overrun_entitlement_survives_transport_pop_loss_of_engagement() -> None:
@@ -187,6 +227,8 @@ def test_preview_overrun_entitlement_survives_transport_pop_loss_of_engagement()
     manager._queue_fight_move_request = Mock(return_value=object())
 
     manager.start_fight_phase(current_player, opponent_player)
+    _resolve_pending_batch_pile_ins(manager)
+    manager._queue_fight_move_request.reset_mock()
 
     assert manager.scheduler is not None
     assert manager.scheduler.state.stage == FightSchedulerStage.REMAINING_COMBATANTS
@@ -217,6 +259,8 @@ def test_preview_attack_completion_hands_off_to_consolidate_batch_stage() -> Non
     manager._queue_fight_move_request = Mock(return_value=object())
 
     manager.start_fight_phase(current_player, opponent_player)
+    _resolve_pending_batch_pile_ins(manager)
+    manager._queue_fight_move_request.reset_mock()
     manager.scheduler.queue_consolidate(friendly)
 
     manager._complete_current_stage(current_player, opponent_player)
@@ -224,3 +268,67 @@ def test_preview_attack_completion_hands_off_to_consolidate_batch_stage() -> Non
     assert manager.get_current_stage() == FightStage.CONSOLIDATE_BATCH
     manager._queue_fight_move_request.assert_called_once()
     assert manager._queue_fight_move_request.call_args.kwargs["movement_type"] == "consolidate"
+
+
+def test_must_fight_next_status_token_constrains_next_selection() -> None:
+    game, current_player, opponent_player, army_one, army_two = _build_preview_game()
+    current_unit = _Unit("unit-current", "Current", army_one, x=10.0, y=10.0)
+    current_other = _Unit("unit-current-other", "Other Current", army_one, x=10.0, y=14.0)
+    opponent_unit = _Unit("unit-opponent", "Opponent", army_two, x=12.5, y=10.0)
+    opponent_other = _Unit("unit-opponent-other", "Other Opponent", army_two, x=12.5, y=14.0)
+    army_one.units = [current_unit, current_other]
+    army_two.units = [opponent_unit, opponent_other]
+    game.register_units(current_unit, current_other, opponent_unit, opponent_other)
+    set_status_tokens_on_unit(
+        current_other,
+        [
+            must_fight_next_status_token(
+                unit_id=current_other.id,
+                source_id="preview:slaanesh_stratagem",
+                expires_at=PhaseBoundary(phase="FIGHT_PHASE"),
+                payload={"requires_next_fight_selection": True},
+            )
+        ],
+    )
+
+    manager = FightPhaseManager(game)
+    manager.on_unit_selection_required = Mock()
+    manager._queue_fight_move_request = Mock(return_value=object())
+
+    manager.start_fight_phase(current_player, opponent_player)
+    _resolve_pending_batch_pile_ins(manager)
+
+    args = manager.on_unit_selection_required.call_args.args
+    assert manager.scheduler is not None
+    assert manager.scheduler.state.stage == FightSchedulerStage.REMAINING_COMBATANTS
+    assert manager.get_active_player() is current_player
+    assert args[0] is current_player
+    assert args[1] == [current_other]
+
+
+def test_consolidate_batch_decision_context_exposes_categories_and_scheduler_trace() -> None:
+    game, current_player, opponent_player, army_one, army_two = _build_preview_game()
+    friendly = _Unit("unit-friendly", "Friendly", army_one, x=10.0, y=10.0)
+    enemy = _Unit("unit-enemy", "Enemy", army_two, x=12.5, y=10.0)
+    army_one.units = [friendly]
+    army_two.units = [enemy]
+    game.register_units(friendly, enemy)
+
+    captured_requests = []
+    game.request_decision = captured_requests.append
+    manager = FightPhaseManager(game)
+    manager._queue_fight_move_request = Mock(wraps=manager._queue_fight_move_request)
+
+    manager.start_fight_phase(current_player, opponent_player)
+    _resolve_pending_batch_pile_ins(manager)
+    manager.scheduler.queue_consolidate(friendly)
+    manager._complete_current_stage(current_player, opponent_player)
+
+    consolidate_request = captured_requests[-1]
+    ctx = dict(consolidate_request.context or {})
+    assert ctx["fight_move_decision_categories"] == [
+        "consolidate_to_engage",
+        "consolidate_to_objective",
+    ]
+    assert ctx["fight_stage_boundary"]["stage"] == "CONSOLIDATE_BATCH"
+    assert ctx["fight_scheduler"]["stage_history"]

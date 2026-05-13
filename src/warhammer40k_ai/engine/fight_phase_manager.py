@@ -21,6 +21,7 @@ from . import fight_order as _fight_order
 from . import fight_resolution as _fight_resolution
 from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
+from .unit_turn_provenance import set_status_tokens_on_unit, status_tokens_on_unit
 from .decision_kinds import DECISION_CONFIRM_YES_NO
 import logging
 logger = logging.getLogger(__name__)
@@ -66,6 +67,8 @@ if TYPE_CHECKING:
     from .game import Game
 
 class FightStage(Enum):
+    PILE_IN_ACTIVE = "Pile In Active"
+    PILE_IN_REACTIVE = "Pile In Reactive"
     FIGHT_FIRST = "Fight First"
     REMAINING_COMBATANTS = "Remaining Combatants"
     CONSOLIDATE_BATCH = "Consolidate Batch"
@@ -217,6 +220,51 @@ class FightPhaseManager:
         self.active_player = current_player
         self._request_next_batch_consolidate(current_player, opponent_player)
 
+    def _start_pile_in_batch_stage(self, current_player: Player, opponent_player: Player) -> None:
+        if self.scheduler is None:
+            self._start_fight_first_stage(current_player, opponent_player)
+            return
+        if self.scheduler.state.stage == FightSchedulerStage.PILE_IN_ACTIVE:
+            logger.info("Starting Active Player Pile-in Batch Stage")
+            self.current_stage = FightStage.PILE_IN_ACTIVE
+        else:
+            logger.info("Starting Reactive Player Pile-in Batch Stage")
+            self.current_stage = FightStage.PILE_IN_REACTIVE
+        self.active_player = self.scheduler.current_stage_player()
+        self._request_next_batch_pile_in(current_player, opponent_player)
+
+    def _request_next_batch_pile_in(self, current_player: Player, opponent_player: Player) -> None:
+        if self.scheduler is None:
+            self._start_fight_first_stage(current_player, opponent_player)
+            return
+        fighting_unit = self.scheduler.next_pile_in_unit()
+        if fighting_unit is None:
+            self._complete_current_stage(current_player, opponent_player)
+            return
+        unit_id = str(get_entity_id(fighting_unit) or "")
+        boundary = self.scheduler.stage_decision_boundary(
+            player=self.active_player,
+            unit=fighting_unit,
+            decision_category=str(self.current_stage.name).lower(),
+        ).to_dict()
+        self._pending_fight_sequence = {
+            "mode": "pile_in_batch",
+            "fighting_unit_id": unit_id,
+            "target_declarations": [],
+            "step": "pile_in",
+            "fight_stage_boundary": boundary,
+        }
+        request = self._queue_fight_move_request(
+            fighting_unit=fighting_unit,
+            target_declarations={},
+            movement_type="pile_in",
+        )
+        if request is None:
+            self.on_fight_move_resolved(
+                unit_id=unit_id,
+                movement_type="pile_in",
+            )
+
     def _request_next_batch_consolidate(self, current_player: Player, opponent_player: Player) -> None:
         if self.scheduler is None:
             self._complete_fight_phase()
@@ -247,6 +295,9 @@ class FightPhaseManager:
             self._start_fight_first_stage(current_player, opponent_player)
             return
         state = self.scheduler.advance_to_actionable_stage() if advance else self.scheduler.state
+        if state.stage in {FightSchedulerStage.PILE_IN_ACTIVE, FightSchedulerStage.PILE_IN_REACTIVE}:
+            self._start_pile_in_batch_stage(current_player, opponent_player)
+            return
         if state.stage == FightSchedulerStage.FIGHTS_FIRST:
             self._start_fight_first_stage(current_player, opponent_player)
             return
@@ -260,6 +311,28 @@ class FightPhaseManager:
     
     def _request_unit_selection(self, current_player: Player, opponent_player: Player) -> None:
         """Request unit selection from the active player."""
+        if self.scheduler is not None:
+            self.scheduler.refresh_stage_injections(fought_units=self.fought_units)
+        must_fight_units = self._must_fight_next_units()
+        if must_fight_units:
+            forced = must_fight_units[0]
+            owner = self._owner_player_for_unit(forced)
+            if owner is not None:
+                self.active_player = owner
+            eligible_units = [forced]
+            logger.info(
+                "%s must be the next unit selected to fight due to a status token",
+                getattr(forced, "name", "Unit"),
+            )
+            self._queue_fight_selection_decision(
+                current_player=current_player,
+                opponent_player=opponent_player,
+                eligible_units=eligible_units,
+                reason="must_fight_next",
+            )
+            if self.on_unit_selection_required:
+                self.on_unit_selection_required(self.active_player, eligible_units, self.current_stage)
+            return
         # Counter-Offensive: force a specific unit to fight next (ignore stage).
         try:
             if self._forced_next_unit is not None and self._forced_next_player is not None:
@@ -294,15 +367,56 @@ class FightPhaseManager:
         logger.info(f"{self.active_player.name} must select a unit to fight ({self.current_stage.value} stage)")
         logger.info(f"Eligible units: {[unit.name for unit in eligible_units]}")
 
-        try:
-            queue_select = getattr(self.game, "_queue_fight_phase_selection", None)
-            if callable(queue_select):
-                queue_select(player=self.active_player, eligible_units=eligible_units, stage=self.current_stage)
-        except Exception:
-            pass
+        self._queue_fight_selection_decision(
+            current_player=current_player,
+            opponent_player=opponent_player,
+            eligible_units=eligible_units,
+            reason="stage_selection",
+        )
 
         if self.on_unit_selection_required:
             self.on_unit_selection_required(self.active_player, eligible_units, self.current_stage)
+
+    def _queue_fight_selection_decision(
+        self,
+        *,
+        current_player: Player,
+        opponent_player: Player,
+        eligible_units: List[Unit],
+        reason: str,
+    ):
+        del current_player, opponent_player
+        queue_select = getattr(self.game, "_queue_fight_phase_selection", None)
+        if not callable(queue_select):
+            return None
+        extra_context = {
+            "fight_scheduler": self.scheduler.decision_context() if self.scheduler is not None else {},
+            "fight_selection_reason": str(reason or ""),
+        }
+        if self.scheduler is not None:
+            extra_context["fight_stage_boundary"] = self.scheduler.stage_decision_boundary(
+                player=self.active_player,
+                decision_category=str(reason or "stage_selection"),
+            ).to_dict()
+        return queue_select(
+            player=self.active_player,
+            eligible_units=eligible_units,
+            stage=self.current_stage,
+            extra_context=extra_context,
+        )
+
+    def _must_fight_next_units(self) -> list[Unit]:
+        if self.scheduler is None:
+            return []
+        return list(self.scheduler.must_fight_next_units(fought_units=self.fought_units) or [])
+
+    @staticmethod
+    def _owner_player_for_unit(unit: Unit):
+        if unit is None:
+            return None
+        army_getter = getattr(unit, "get_parent_army", None)
+        army = army_getter() if callable(army_getter) else getattr(unit, "parent_army", None)
+        return getattr(army, "player", None) if army is not None else None
     
     def _get_eligible_units_for_player(self, player: Player) -> List[Unit]:
         return _fight_order._get_eligible_units_for_player(self, player)
@@ -332,6 +446,13 @@ class FightPhaseManager:
         if str(pending.get("fighting_unit_id", "") or "") == str(get_entity_id(fighting_unit) or ""):
             self._pending_fight_sequence = None
         self.fought_units.add(fighting_unit)
+        self._consume_must_fight_next_tokens(fighting_unit)
+        if self.scheduler is not None:
+            self.scheduler._record_trace(
+                "unit_fight_completed",
+                unit_id=str(get_entity_id(fighting_unit) or ""),
+                stage=str(getattr(self.current_stage, "name", "") or ""),
+            )
         try:
             fighting_unit.round_state.fought_this_phase = True
         except Exception:
@@ -370,6 +491,12 @@ class FightPhaseManager:
     def unit_selected(self, selected_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Handle unit selection from the active player."""
         selected_unit = self._canonical_unit_for_fight(selected_unit)
+        if self.scheduler is not None:
+            self.scheduler._record_trace(
+                "unit_selected_to_fight",
+                unit_id=str(get_entity_id(selected_unit) or ""),
+                stage=str(getattr(self.current_stage, "name", "") or ""),
+            )
         try:
             if self._forced_next_unit is not None and selected_unit is self._forced_next_unit:
                 self._forced_next_unit = None
@@ -498,6 +625,10 @@ class FightPhaseManager:
         self._dispatch_target_selection(unit, eligible_targets)
 
     def _fight_phase_step_name(self) -> str:
+        if self.current_stage == FightStage.PILE_IN_ACTIVE:
+            return "PILE_IN_ACTIVE"
+        if self.current_stage == FightStage.PILE_IN_REACTIVE:
+            return "PILE_IN_REACTIVE"
         if self.current_stage == FightStage.FIGHT_FIRST:
             return "FIGHT_FIRST"
         if self.current_stage == FightStage.REMAINING_COMBATANTS:
@@ -737,6 +868,14 @@ class FightPhaseManager:
             self._pending_fight_sequence = None
             return
         mode = str(sequence.get("mode", "activation") or "activation").strip().lower()
+        if mode == "pile_in_batch":
+            logger.info(f"{fighting_unit.name} pile-in batch move resolved via MOVE_UNIT")
+            stage = self.scheduler.state.stage if self.scheduler is not None else None
+            self._pending_fight_sequence = None
+            if self.scheduler is not None:
+                self.scheduler.mark_pile_in_resolved(fighting_unit, stage)
+            self._request_next_batch_pile_in(self._current_player, self._opponent_player)
+            return
         if mode == "consolidate_batch":
             logger.info(f"{fighting_unit.name} consolidate batch move resolved via MOVE_UNIT")
             self._pending_fight_sequence = None
@@ -1214,6 +1353,9 @@ class FightPhaseManager:
         if state.stage == FightSchedulerStage.FIGHTS_FIRST:
             self._start_fight_first_stage(current_player, opponent_player)
             return
+        if state.stage in {FightSchedulerStage.PILE_IN_ACTIVE, FightSchedulerStage.PILE_IN_REACTIVE}:
+            self._start_pile_in_batch_stage(current_player, opponent_player)
+            return
         if state.stage == FightSchedulerStage.REMAINING_COMBATANTS:
             self._start_remaining_combatants_stage(current_player, opponent_player)
             return
@@ -1244,6 +1386,18 @@ class FightPhaseManager:
     def is_complete(self) -> bool:
         """Check if the fight phase is complete."""
         return self.current_stage == FightStage.COMPLETE
+
+    @staticmethod
+    def _consume_must_fight_next_tokens(unit: Unit) -> None:
+        if unit is None:
+            return
+        remaining = [
+            token
+            for token in status_tokens_on_unit(unit)
+            if str(token.condition_kind or "") != "must_fight_next"
+        ]
+        if len(remaining) != len(status_tokens_on_unit(unit)):
+            set_status_tokens_on_unit(unit, remaining)
 
     def _default_melee_weapon_declarations(self, unit: Unit) -> List[dict]:
         """Default declaration payload: one primary + all extra-attacks profiles per model."""

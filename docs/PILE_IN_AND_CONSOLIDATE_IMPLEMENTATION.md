@@ -56,6 +56,10 @@ This reduces the candidate set while keeping validation correct for pile-in lega
   stage sequencing (`PILE_IN_ACTIVE`, `PILE_IN_REACTIVE`, `FIGHTS_FIRST`,
   `REMAINING_COMBATANTS`, `CONSOLIDATE_BATCH`) while keeping `fight_phase_manager.py`
   as the public façade.
+- Preview pile-in and consolidate stages are now actionable scheduler boundaries. The
+  scheduler emits a serialized `fight_stage_boundary`, pending unit queues, entitlement
+  snapshots, and `stage_history` trace events in the decision context instead of treating
+  those stages as labels that are skipped before a controller can respond.
 - Start-of-stage fight eligibility now snapshots through `fight_entitlements.py`, so preview
   overrun handling can preserve deterministic eligibility even after live engagement state
   changes mid-step.
@@ -66,10 +70,16 @@ This reduces the candidate set while keeping validation correct for pile-in lega
 - Current 10e profiles still use per-unit pile-in/attack/consolidate sequencing.
 - Preview combat profiles can now:
   - keep a deterministic entitlement snapshot for an attack stage
+  - pause `PILE_IN_ACTIVE` and `PILE_IN_REACTIVE` for explicit `MOVE_UNIT` decisions
   - queue an overrun pile-in for units that were eligible at step start but became unengaged
   - defer consolidate into a dedicated end-batch stage
+  - constrain unit selection with `must_fight_next` status tokens and inject transient
+    `fights_first` status-token eligibility into the current Fights First stage
 - End-batch consolidate planning and legality now target objective-site control regions rather
   than only ad hoc `(x, y, control_radius)` marker coordinates.
+- Consolidate `MOVE_UNIT` contexts include `fight_move_decision_categories` with
+  `consolidate_to_engage` and `consolidate_to_objective`, allowing UI/AI controllers to
+  distinguish the intended class of legal endpoint without a bespoke decision type.
 
 ## UI behavior
 - `IndividualModelMovementDialog` lists all models and disables those already in base
@@ -78,6 +88,9 @@ This reduces the candidate set while keeping validation correct for pile-in lega
 - Remote/non-authoritative clients open the same movement dialog from the queued
   `MOVE_UNIT` request when `context.phase_name="FIGHT_PHASE"` and
   `movement_type` is `pile_in` or `consolidate`.
+- Fight-phase unit-selection dialogs may carry `context.fight_stage_boundary` and
+  `context.fight_scheduler`; clients should treat those fields as replay/audit context and
+  still resolve through the normal unit-selection action payload.
 
 ## Headless behavior
 - Headless fight activations resolve pile-in/consolidate through `MOVE_UNIT`

@@ -86,6 +86,11 @@ Expected strict failure modes:
   match the recorded endpoint distance now fail validation. For example, an
   `advance` record whose model endpoints were all reachable by Normal Move is
   rejected instead of replayed as an Advance.
+- Fight-phase replay expects scheduler context to remain stable for preview
+  pile-in, unit-selection, and consolidate decisions. Drift in
+  `fight_stage_boundary`, entitlement snapshots, pending stage queues, or
+  `fight_move_decision_categories` is treated as ordinary decision-context
+  drift and should be investigated like candidate or mask mismatch.
 
 These failures are intentional and are used to detect replay drift.
 

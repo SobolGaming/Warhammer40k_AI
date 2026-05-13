@@ -25,6 +25,27 @@ def _queue_fight_move_request(manager, *, fighting_unit, target_declarations, mo
             if target_unit is not None
         ],
     }
+    scheduler = getattr(manager, "scheduler", None)
+    if scheduler is not None:
+        decision_category = ""
+        if move_tag == "pile_in":
+            decision_category = str(getattr(getattr(manager, "current_stage", None), "name", "") or "pile_in").lower()
+        elif move_tag == "consolidate":
+            decision_category = "consolidate_batch"
+        context["fight_scheduler"] = scheduler.decision_context()
+        context["fight_stage_boundary"] = scheduler.stage_decision_boundary(
+            player=getattr(manager, "active_player", None),
+            unit=fighting_unit,
+            decision_category=decision_category,
+        ).to_dict()
+        if move_tag == "consolidate":
+            context["fight_move_decision_categories"] = list(scheduler.consolidate_decision_categories(fighting_unit))
+        elif move_tag == "pile_in":
+            context["fight_move_decision_categories"] = [decision_category or "pile_in"]
+    sequence = dict(getattr(manager, "_pending_fight_sequence", {}) or {})
+    boundary = sequence.get("fight_stage_boundary")
+    if isinstance(boundary, dict):
+        context["fight_stage_boundary"] = dict(boundary)
     request = queue_move_unit_request(
         manager.game,
         fighting_unit,

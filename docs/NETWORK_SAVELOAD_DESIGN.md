@@ -364,7 +364,7 @@ Movement:
 - sublime_prescience_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="sublime_prescience"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `optional=true`)
 - spirit_mark_friendly_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="spirit_mark_friendly"`, `source_unit_id`, `model_id`, `range`, `keyword`, `sustained_hits_value`)
 - spirit_mark_enemy_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_mark_enemy"`, `source_unit_id`, `model_id`, `friendly_unit_id`, `sustained_hits_value`, `keyword`)
-- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"`)
+- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"`; preview fight stages may also include serialized `fight_scheduler`, `fight_stage_boundary`, and `fight_move_decision_categories` such as `consolidate_to_engage` / `consolidate_to_objective`)
 - coherency_violation_dialog: RESOLVE_COHERENCY {model_ids[1]} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`; coherency removals stamp removal-cause telemetry on `model_destroyed_before_removal`/`unit_destroyed`)
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
@@ -511,7 +511,7 @@ Charge:
 - charge_phase_bodyguard_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="bodyguard_loss"`, `leader_unit_id`, `bodyguard_unit_id`, `ability_name`)
 
 Fight:
-- fight_unit_selection_dialog: SELECT_UNIT {unit_id} (context `phase_name="FIGHT_PHASE"`, `phase_step`, `selection_purpose="ACTIVATE_FIGHTING_UNIT"`)
+- fight_unit_selection_dialog: SELECT_UNIT {unit_id} (context `phase_name="FIGHT_PHASE"`, `phase_step`, `selection_purpose="ACTIVATE_FIGHTING_UNIT"`; preview scheduler requests may include `fight_scheduler`, `fight_stage_boundary`, and `selection_reason="must_fight_next"` when status tokens constrain the next selectable fighter)
 - fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids[]} (engine issues the authoritative pending request first; headless/non-human controllers may accept the default option, while human UI submits an override)
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
 - eye_of_spite_dialog: CHOOSE_QUARRY {action="spend_pain_token" | skip} (context `ability="eye_of_spite"`, `ability_name="Eye of Spite"`, `phase="Fight phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `optional=true`)

@@ -872,7 +872,7 @@ class GamePhaseHandlersMixin:
             return stage_name
         return ""
 
-    def _queue_fight_phase_selection(self, *, player=None, eligible_units=None, stage=None):
+    def _queue_fight_phase_selection(self, *, player=None, eligible_units=None, stage=None, extra_context=None):
         phase_step = self._fight_phase_step_name(stage)
         if not phase_step:
             return None
@@ -885,6 +885,9 @@ class GamePhaseHandlersMixin:
             return None
         from ..decision_requests import queue_select_unit_request
 
+        context = {"battle_round": int(getattr(self, "turn", 0) or 0)}
+        if isinstance(extra_context, dict):
+            context.update(dict(extra_context))
         return queue_select_unit_request(
             self,
             eligible,
@@ -893,7 +896,7 @@ class GamePhaseHandlersMixin:
             phase_step=phase_step,
             selection_purpose="ACTIVATE_FIGHTING_UNIT",
             allow_pass=False,
-            context={"battle_round": int(getattr(self, "turn", 0) or 0)},
+            context=context,
         )
 
     def _pending_fight_target_selection_request(self, *, unit_id: str):

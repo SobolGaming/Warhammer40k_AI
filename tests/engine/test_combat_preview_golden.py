@@ -397,7 +397,14 @@ def _build_fight_first_snapshot() -> dict[str, object]:
 
     manager = FightPhaseManager(game)
     manager.on_unit_selection_required = Mock()
+    manager._queue_fight_move_request = Mock(return_value=object())
     manager.start_fight_phase(current_player, opponent_player)
+    while manager.scheduler is not None and manager.scheduler.state.stage.name in {"PILE_IN_ACTIVE", "PILE_IN_REACTIVE"}:
+        pending = dict(manager._pending_fight_sequence or {})
+        manager.on_fight_move_resolved(
+            unit_id=str(pending.get("fighting_unit_id", "") or ""),
+            movement_type="pile_in",
+        )
 
     args = manager.on_unit_selection_required.call_args.args
     return {
@@ -418,6 +425,13 @@ def _build_overrun_snapshot() -> dict[str, object]:
     manager.on_unit_selection_required = Mock()
     manager._queue_fight_move_request = Mock(return_value=object())
     manager.start_fight_phase(current_player, opponent_player)
+    while manager.scheduler is not None and manager.scheduler.state.stage.name in {"PILE_IN_ACTIVE", "PILE_IN_REACTIVE"}:
+        pending = dict(manager._pending_fight_sequence or {})
+        manager.on_fight_move_resolved(
+            unit_id=str(pending.get("fighting_unit_id", "") or ""),
+            movement_type="pile_in",
+        )
+    manager._queue_fight_move_request.reset_mock()
 
     snapshot_entry = manager.scheduler.entry_for(friendly)
     transport.models[0].is_alive = False

@@ -292,7 +292,7 @@ shows what is done versus what remains.
 | PR-014G | Completed | Pushed to `dev` on May 13, 2026 as commit `01c0249f` (`Implement PR-014G upgrade assignment semantics`). |
 | PR-014H | Completed | Pushed to `dev` on May 13, 2026 as commit `a328e227` (`Implement PR-014H unit turn provenance`). |
 | PR-014I | Completed | Adds reactive move specs, modal stratagem requests, ledger exceptions, docs, and preview-gated goldens. |
-| PR-014J | Pending | Make fight scheduler stages actionable decision boundaries. |
+| PR-014J | Completed | Adds actionable pile-in/consolidate scheduler boundaries, must-fight-next constraints, fight trace context, and replay-visible move categories. |
 | PR-014K | Pending | Capability extension registry for faction-focus preview features. |
 | PR-014L | Pending | Preview source catalog and generic preview-gated golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
@@ -1384,7 +1384,7 @@ Make reactive moves and modal stratagems replayable, scheduler-visible, and remo
 
 ## PR-014J — Make fight scheduler stages actionable, not just labels
 
-**Status:** Pending.
+**Status:** Completed on May 13, 2026.
 
 ### Goal
 Turn fight scheduler stages into first-class runtime decision boundaries before release-day fight interrupts and "must fight next" behavior arrive.
@@ -1400,6 +1400,13 @@ Turn fight scheduler stages into first-class runtime decision boundaries before 
 - Consolidate batch can pause for a decision instead of only draining a queue.
 - Fight entitlement snapshots, decisions, and outcomes are replay-visible.
 - Existing preview combat goldens still pass.
+
+### Implemented notes
+- `fight_scheduler.py` now exposes serialized scheduler state, stage decision boundaries, trace events, pending pile-in/consolidate queues, and deterministic decision context for fight-stage requests.
+- `fight_phase_manager.py` routes preview `PILE_IN_ACTIVE`, `PILE_IN_REACTIVE`, and `CONSOLIDATE_BATCH` stages through authoritative `MOVE_UNIT` decisions instead of auto-advancing them.
+- Status tokens can inject `fights_first` eligibility and constrain the next selected fighter with `must_fight_next`; consumed tokens are removed once that unit fights.
+- Fight movement requests carry explicit decision categories for consolidate-to-engage and consolidate-to-objective, plus entitlement snapshots for replay and AI ranking.
+- Regression coverage exercises pile-in pausing, must-fight-next ordering, consolidate decision categories, and existing combat-preview goldens.
 
 ---
 
