@@ -9,6 +9,18 @@ from shapely.errors import GEOSException
 from shapely.geometry import LineString
 
 from .terrain_runtime import iter_terrain_areas
+from .detection_markers import (
+    VisibilityModifierQuery,
+    coerce_visibility_modifier_query,
+    collect_visibility_modifiers,
+    detection_marker_signature,
+    visibility_query_signature,
+)
+from .hidden_state import (
+    hidden_preserving_exemption_ids_for_unit,
+    hidden_shooting_exemption_signature,
+    hidden_shot_breaks_hidden,
+)
 from ..utility.entity_ids import get_entity_id
 from ..utility.profiling_sections import profiled_section
 
@@ -265,16 +277,24 @@ def _terrain_visibility_signature(game_map: object) -> tuple[Any, ...]:
     return result
 
 
-def _visibility_context_cache_key(game_map: object, shooter_model: object, target_model: object) -> tuple[Any, ...]:
+def _visibility_context_cache_key(
+    game_map: object,
+    shooter_model: object,
+    target_model: object,
+    visibility_query: VisibilityModifierQuery | dict[str, Any] | None = None,
+) -> tuple[Any, ...]:
     target_unit = getattr(target_model, "parent_unit", None)
     shooter_unit = getattr(shooter_model, "parent_unit", None)
     return (
-        "visibility_context_v2",
+        "visibility_context_v3",
         int(getattr(game_map, "state_generation", 0) or 0),
         bool(preview_visibility_semantics_enabled(game_map)),
         str(getattr(game_map, "preview_visibility_ruleset", "") or ""),
         str(getattr(game_map, "terrain_hidden_current_player_turn", "") or ""),
         str(getattr(game_map, "terrain_hidden_previous_player_turn", "") or ""),
+        detection_marker_signature(game_map),
+        hidden_shooting_exemption_signature(game_map),
+        visibility_query_signature(visibility_query),
         _model_visibility_key(shooter_model),
         _model_visibility_key(target_model),
         _unit_visibility_key(shooter_unit),
@@ -587,7 +607,13 @@ def _hidden_active(game_map: object, target_model: object, target_areas: list[ob
         previous_turn = str(getattr(game_map, "terrain_hidden_previous_player_turn", "") or "").strip()
     if not current_turn and not previous_turn:
         return False, detection_range
-    if last_shot_turn and last_shot_turn in {current_turn, previous_turn}:
+    if hidden_shot_breaks_hidden(
+        game_map,
+        target_unit,
+        last_shot_turn=last_shot_turn,
+        current_turn=current_turn,
+        previous_turn=previous_turn,
+    ):
         return False, detection_range
     return True, detection_range
 
@@ -619,8 +645,10 @@ def get_visibility_context_for_models(
     game_map: object,
     shooter_model: object,
     target_model: object,
+    *,
+    visibility_query: VisibilityModifierQuery | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    cache_key = _visibility_context_cache_key(game_map, shooter_model, target_model)
+    cache_key = _visibility_context_cache_key(game_map, shooter_model, target_model, visibility_query)
     cached = _visibility_context_cache_get(game_map, cache_key)
     if cached is not None:
         return cached
@@ -633,6 +661,13 @@ def get_visibility_context_for_models(
         "hidden_state_active": False,
         "hidden_blocked": False,
         "hidden_detection_range": None,
+        "hidden_detection_range_base": None,
+        "detection_marker_delta": 0.0,
+        "attack_scoped_detection_range_delta": 0.0,
+        "fixed_detection_range_override": None,
+        "applied_detection_marker_ids": [],
+        "applied_visibility_modifier_ids": [],
+        "hidden_shooting_exemption_ids": [],
         "detection_range_override_applies": False,
         "obscuring_state": False,
         "reason_trace": reason_trace,
@@ -660,13 +695,30 @@ def get_visibility_context_for_models(
         hidden_active, detection_range = _hidden_active(game_map, target_model, target_areas)
         result["hidden_state_active"] = bool(hidden_active)
         result["hidden_detection_range"] = detection_range
+        result["hidden_detection_range_base"] = detection_range
+        result["hidden_shooting_exemption_ids"] = list(hidden_preserving_exemption_ids_for_unit(game_map, target_unit))
         if hidden_active:
+            modifier_query = coerce_visibility_modifier_query(
+                visibility_query,
+                source_unit=shooter_unit,
+                target_unit=target_unit,
+                base_detection_range=detection_range,
+            )
+            modifier_result = collect_visibility_modifiers(game_map, modifier_query)
+            result.update(modifier_result.to_context_fields())
+            for entry in modifier_result.reason_trace:
+                reason_trace.append(entry)
+            detection_range = modifier_result.effective_detection_range
             distance = _distance_between_models_2d(shooter_model, target_model)
             _append_reason(
                 reason_trace,
                 "TARGET_HIDDEN_ACTIVE",
                 "Target is in a provisional Hidden state.",
-                metadata={"distance": distance, "detection_range": detection_range},
+                metadata={
+                    "distance": distance,
+                    "detection_range": detection_range,
+                    "base_detection_range": result["hidden_detection_range_base"],
+                },
             )
             if detection_range is None or distance > float(detection_range):
                 result["hidden_blocked"] = True
@@ -674,7 +726,11 @@ def get_visibility_context_for_models(
                     reason_trace,
                     "HIDDEN_BLOCKED_BY_DETECTION_RANGE",
                     "Target remains hidden because the shooter is outside detection range.",
-                    metadata={"distance": distance, "detection_range": detection_range},
+                    metadata={
+                        "distance": distance,
+                        "detection_range": detection_range,
+                        "base_detection_range": result["hidden_detection_range_base"],
+                    },
                 )
                 return _cache_and_return()
             result["detection_range_override_applies"] = True
@@ -682,7 +738,11 @@ def get_visibility_context_for_models(
                 reason_trace,
                 "DETECTION_RANGE_OVERRIDE_APPLIES",
                 "Target is visible because the shooter is within detection range.",
-                metadata={"distance": distance, "detection_range": detection_range},
+                metadata={
+                    "distance": distance,
+                    "detection_range": detection_range,
+                    "base_detection_range": result["hidden_detection_range_base"],
+                },
             )
 
     shooter_center = shooter_shape.centroid
@@ -782,8 +842,21 @@ def get_visibility_context_for_models(
     return _cache_and_return()
 
 
-def can_model_see_model(game_map: object, shooter_model: object, target_model: object) -> bool:
-    return bool(get_visibility_context_for_models(game_map, shooter_model, target_model).get("visible", False))
+def can_model_see_model(
+    game_map: object,
+    shooter_model: object,
+    target_model: object,
+    *,
+    visibility_query: VisibilityModifierQuery | dict[str, Any] | None = None,
+) -> bool:
+    return bool(
+        get_visibility_context_for_models(
+            game_map,
+            shooter_model,
+            target_model,
+            visibility_query=visibility_query,
+        ).get("visible", False)
+    )
 
 
 __all__ = [

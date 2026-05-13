@@ -719,6 +719,8 @@
         "scoring_surfaces",
         "control_regions",
         "terrain",
+        "detection_markers",
+        "hidden_shooting_exemptions",
         "units"
       ],
       "properties": {
@@ -774,6 +776,18 @@
           }
         },
         "terrain": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "detection_markers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "hidden_shooting_exemptions": {
           "type": "array",
           "items": {
             "type": "object"

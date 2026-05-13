@@ -102,6 +102,17 @@ Those preview-only Hidden / detection / obscuring area semantics are now explici
 the gate off, while preview-pack battlefield creation can enable it through selected-mission
 metadata.
 
+Preview visibility modifiers are centralized instead of faction-specific:
+- `DetectionMarker` records label/provenance plus a mechanical detection-range delta for a target unit.
+  Labels such as `detected`, `condemned`, `designated`, and `prey_marked` share the same marker path.
+- `VisibilityModifierQuery` combines base Hidden detection range, marker deltas, and attack-scoped
+  modifiers such as "while this unit is shooting".
+- `HiddenShootingExemption` preserves Hidden after shooting for preview rules that explicitly allow it.
+
+Detection markers and Hidden shooting exemptions are stored on `Map`, included in visibility cache keys,
+emitted as deterministic event-log entries when added through the map helpers, and serialized in snapshots
+and state blobs. The preview gate still controls whether any of these Hidden/detection semantics affect LOS.
+
 ## Benefit of Cover and Plunging Fire
 - Benefit of Cover for RUINS and fortification-derived cover now route through
   `src/warhammer40k_ai/battlefield/terrain_cover.py`.
@@ -116,6 +127,8 @@ metadata.
 - `src/warhammer40k_ai/battlefield/map.py`
 - `src/warhammer40k_ai/battlefield/terrain_presets.py`
 - `src/warhammer40k_ai/battlefield/terrain_ruins_placement.py`
+- `src/warhammer40k_ai/battlefield/detection_markers.py`
+- `src/warhammer40k_ai/battlefield/hidden_state.py`
 - `src/warhammer40k_ai/battlefield/terrain_visibility.py`
 - `src/warhammer40k_ai/battlefield/terrain_cover.py`
 - `src/warhammer40k_ai/battlefield/terrain_elevation.py`

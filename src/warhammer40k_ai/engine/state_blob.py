@@ -4,7 +4,7 @@ from .state_blob_mission import deployment_state, mission_state
 from .state_blob_objectives import control_regions, objective_entries, scoring_surfaces
 from .state_blob_players import army_build_state, player_entries
 from .state_blob_rules import STATE_BLOB_VERSION, battle_round, current_player_id, phase_name, rules_bundle_entry, sorted_players
-from .state_blob_terrain import terrain_entries
+from .state_blob_terrain import detection_marker_entries, hidden_shooting_exemption_entries, terrain_entries
 from .state_blob_units import unit_entries
 
 
@@ -24,6 +24,8 @@ def canonical_omniscient_state(game: object) -> dict[str, object]:
         "scoring_surfaces": scoring_surfaces(objectives),
         "control_regions": control_regions(objectives),
         "terrain": terrain_entries(game),
+        "detection_markers": detection_marker_entries(game),
+        "hidden_shooting_exemptions": hidden_shooting_exemption_entries(game),
         "units": unit_entries(game, viewer_id=None, include_hidden=True),
     }
 
@@ -45,6 +47,8 @@ def player_obs_state(game: object, player_id: str) -> dict[str, object]:
         "scoring_surfaces": scoring_surfaces(objectives),
         "control_regions": control_regions(objectives),
         "terrain": terrain_entries(game),
+        "detection_markers": detection_marker_entries(game),
+        "hidden_shooting_exemptions": hidden_shooting_exemption_entries(game),
         "units": unit_entries(game, viewer_id=str(player_id or ""), include_hidden=False),
     }
 

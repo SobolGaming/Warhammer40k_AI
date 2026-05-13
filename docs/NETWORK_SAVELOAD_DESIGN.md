@@ -73,7 +73,8 @@ Top-level:
 - game: battle_round, phase, step, active_player_id
 - game.ruleset: core_rules_id, rules_commentary_id, mission_pack_id, terrain_pack_id, dataslate_id, points_id, faction_pack_id, detachment_pack_id, rules_bundle_id
 - players: CP, victory points, stratagem usage, once-per-battle flags
-- map: terrain, objectives, boundaries, mission metadata
+- map: terrain, objectives, boundaries, mission metadata, preview visibility gate, detection markers,
+  Hidden shooting exemptions
 - units: state, positions, attachment relationships, embarked status
 - units.round_state: includes declared charge targets (`charge_target_ids`) for multi-target charges
 - units.models_cost: numeric bucket keys are normalized back to integers on load so point totals remain stable after snapshot/resync
@@ -100,6 +101,7 @@ Events are serialized state transitions and random outcomes. Examples:
 - phase_start, phase_end, battle_round_started
 - objective_control_changed
 - vp_awarded, vp_capped
+- detection_marker_added, hidden_shooting_exemption_added
 
 Events include:
 - event_id (monotonic int), type, actor_id
@@ -109,6 +111,10 @@ Events include:
 
 Note: The deterministic event log is separate from the UI EventSystem; UI-only signals
 are not persisted or replayed.
+
+Preview visibility marker events are emitted when `Map.add_detection_marker(...)` or
+`Map.add_hidden_shooting_exemption(...)` is used. Their payloads carry only stable IDs,
+numeric detection deltas, duration/profile/provenance fields, and no faction-specific rule objects.
 
 ## Command Schema
 

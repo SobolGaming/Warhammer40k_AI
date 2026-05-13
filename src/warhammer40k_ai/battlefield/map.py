@@ -62,6 +62,8 @@ from .terrain_elevation import (
 )
 from .terrain_runtime import TerrainArea, TerrainFeature, TerrainType
 from .terrain_ruins_placement import validate_ruins_placement as terrain_validate_ruins_placement
+from .detection_markers import DetectionMarker, add_detection_marker_to_map
+from .hidden_state import HiddenShootingExemption, add_hidden_shooting_exemption_to_map
 from .terrain_visibility import (
     can_model_see_model as terrain_can_model_see_model,
     get_visibility_context_for_models as terrain_get_visibility_context_for_models,
@@ -96,6 +98,8 @@ class Map:
         self.boundary = self.create_boundary_polygon()
         self.terrain_features: List['TerrainFeature'] = []
         self.terrain_areas: List['TerrainArea'] = []
+        self.detection_markers: List[DetectionMarker] = []
+        self.hidden_shooting_exemptions: List[HiddenShootingExemption] = []
         self.preview_visibility_semantics_enabled = False
         self.preview_visibility_ruleset = ""
         self.state_generation = 0
@@ -141,6 +145,15 @@ class Map:
         self.terrain_areas.extend(values)
         if values:
             self.bump_state_generation("terrain_areas_added")
+
+    def add_detection_marker(self, marker: DetectionMarker | Dict[str, Any]) -> DetectionMarker:
+        return add_detection_marker_to_map(self, marker)
+
+    def add_hidden_shooting_exemption(
+        self,
+        exemption: HiddenShootingExemption | Dict[str, Any],
+    ) -> HiddenShootingExemption:
+        return add_hidden_shooting_exemption_to_map(self, exemption)
 
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)
@@ -369,11 +382,26 @@ class Map:
     def _is_fully_visible_due_to_terrain(self, shooter_model: Model, target_model: Model, terrain: 'TerrainFeature') -> bool:
         return terrain_is_fully_visible_due_to_terrain(shooter_model, target_model, terrain)
 
-    def get_visibility_context_for_models(self, shooter_model: Model, target_model: Model) -> Dict[str, Any]:
-        return terrain_get_visibility_context_for_models(self, shooter_model, target_model)
+    def get_visibility_context_for_models(
+        self,
+        shooter_model: Model,
+        target_model: Model,
+        visibility_query: object | None = None,
+    ) -> Dict[str, Any]:
+        return terrain_get_visibility_context_for_models(
+            self,
+            shooter_model,
+            target_model,
+            visibility_query=visibility_query,
+        )
 
-    def can_model_see_model(self, shooter_model: Model, target_model: Model) -> bool:
-        return terrain_can_model_see_model(self, shooter_model, target_model)
+    def can_model_see_model(
+        self,
+        shooter_model: Model,
+        target_model: Model,
+        visibility_query: object | None = None,
+    ) -> bool:
+        return terrain_can_model_see_model(self, shooter_model, target_model, visibility_query=visibility_query)
 
     def get_benefit_of_cover_for_ranged_attack(
         self,

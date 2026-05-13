@@ -35,6 +35,7 @@ Replay/relabel provenance surfaces inside `omniscient_state`:
 - `objectives`
 - `scoring_surfaces`
 - `control_regions`
+- preview visibility marker state (`detection_markers`, `hidden_shooting_exemptions`)
 
 These surfaces are preserved so replay, relabeling, and manifest slicing can condition on the same 11th-oriented runtime state that produced the original decision.
 

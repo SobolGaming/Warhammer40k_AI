@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from ..battlefield.terrain_runtime import iter_terrain_areas
+from ..battlefield.detection_markers import detection_markers_on_map
+from ..battlefield.hidden_state import hidden_shooting_exemptions_on_map
 from .state_blob_rules import json_safe, safe_float
 
 
@@ -72,4 +74,30 @@ def terrain_entries(game: object) -> list[dict[str, Any]]:
     return entries
 
 
-__all__ = ["terrain_entries"]
+def detection_marker_entries(game: object) -> list[dict[str, Any]]:
+    game_map = getattr(game, "map", game)
+    entries = [json_safe(marker.to_dict()) for marker in detection_markers_on_map(game_map)]
+    entries.sort(
+        key=lambda entry: (
+            str(entry.get("target_unit_id", "") or ""),
+            str(entry.get("marker_id", "") or ""),
+            str(entry.get("source_unit_id", "") or ""),
+        )
+    )
+    return entries
+
+
+def hidden_shooting_exemption_entries(game: object) -> list[dict[str, Any]]:
+    game_map = getattr(game, "map", game)
+    entries = [json_safe(exemption.to_dict()) for exemption in hidden_shooting_exemptions_on_map(game_map)]
+    entries.sort(
+        key=lambda entry: (
+            str(entry.get("unit_id", "") or ""),
+            str(entry.get("exemption_id", "") or ""),
+            str(entry.get("source_id", "") or ""),
+        )
+    )
+    return entries
+
+
+__all__ = ["detection_marker_entries", "hidden_shooting_exemption_entries", "terrain_entries"]

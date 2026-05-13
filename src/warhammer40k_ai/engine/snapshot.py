@@ -30,6 +30,8 @@ from ..battlefield.map import (
     TerrainType,
     WoodsTerrain,
 )
+from ..battlefield.detection_markers import DetectionMarker, detection_markers_on_map
+from ..battlefield.hidden_state import HiddenShootingExemption, hidden_shooting_exemptions_on_map
 from ..battlefield.objective_sites import ScoreSource
 from ..roster.army import Army
 from ..roster.army_attachments import AttachmentBinding
@@ -46,7 +48,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -1144,6 +1146,8 @@ def _serialize_map(game_map) -> dict:
             "height": 0,
             "terrain_features": [],
             "terrain_areas": [],
+            "detection_markers": [],
+            "hidden_shooting_exemptions": [],
             "objective_points": [],
             "objectives": [],
             "deployment_zones": {},
@@ -1158,8 +1162,14 @@ def _serialize_map(game_map) -> dict:
     return {
         "width": int(getattr(game_map, "width", 0)),
         "height": int(getattr(game_map, "height", 0)),
+        "preview_visibility_semantics_enabled": bool(getattr(game_map, "preview_visibility_semantics_enabled", False)),
+        "preview_visibility_ruleset": str(getattr(game_map, "preview_visibility_ruleset", "") or ""),
         "terrain_features": [_serialize_terrain_feature(t) for t in list(getattr(game_map, "terrain_features", []) or [])],
         "terrain_areas": [_serialize_terrain_area(t) for t in list(getattr(game_map, "terrain_areas", []) or [])],
+        "detection_markers": [marker.to_dict() for marker in detection_markers_on_map(game_map)],
+        "hidden_shooting_exemptions": [
+            exemption.to_dict() for exemption in hidden_shooting_exemptions_on_map(game_map)
+        ],
         "objective_points": [_serialize_objective_point(p) for p in objective_points],
         "objectives": [_serialize_objective(o) for o in objectives],
         "deployment_zones": _serialize_deployment_zones(getattr(game_map, "deployment_zones", {}) or {}),
@@ -1847,8 +1857,18 @@ def load_game_snapshot(snapshot: dict) -> Game:
             army.player = player
 
     game.set_map(Map(int(map_data.get("width", 0) or 0), int(map_data.get("height", 0) or 0)))
+    game.map.preview_visibility_semantics_enabled = bool(map_data.get("preview_visibility_semantics_enabled", False))
+    game.map.preview_visibility_ruleset = str(map_data.get("preview_visibility_ruleset", "") or "")
     game.map.terrain_features = [_deserialize_terrain_feature(t) for t in map_data.get("terrain_features", []) or []]
     game.map.terrain_areas = [_deserialize_terrain_area(t) for t in map_data.get("terrain_areas", []) or []]
+    game.map.detection_markers = [
+        DetectionMarker.from_dict(dict(marker or {}))
+        for marker in list(map_data.get("detection_markers", []) or [])
+    ]
+    game.map.hidden_shooting_exemptions = [
+        HiddenShootingExemption.from_dict(dict(exemption or {}))
+        for exemption in list(map_data.get("hidden_shooting_exemptions", []) or [])
+    ]
 
     point_objs = {}
     for pdata in map_data.get("objective_points", []) or []:

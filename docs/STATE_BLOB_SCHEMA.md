@@ -19,11 +19,16 @@ Top-level fields:
 - `scoring_surfaces`
 - `control_regions`
 - `terrain`
+- `detection_markers`
+- `hidden_shooting_exemptions`
 - `units`
 
 Design notes:
 - Terrain geometry and terrain semantics are public and versioned.
 - `terrain` entries can now represent both terrain features and terrain areas via `runtime_kind`.
+- `detection_markers` lists preview-gated detection-range marker state, including marker label,
+  source unit, target unit, range delta, duration, detachment/source provenance, and enabled profile.
+- `hidden_shooting_exemptions` lists preview-gated unit exemptions that preserve Hidden after shooting.
 - Objective markers and score sources are distinct concepts when the active mission pack requires that split.
 - Objective entries now carry:
   - site geometry (`MARKER`, `POLYGON_FOOTPRINT`, or `KEYED_FEATURE`)
@@ -69,3 +74,4 @@ Version notes:
 - `1.5.0` adds reserve provenance and last-arrival-failure metadata to unit entries.
 - `1.6.0` removes centroid-derived unit `position` from unit entries, adds per-model
   base positions, and changes tactical threat flags to use model/base edge distances.
+- `1.7.0` adds preview-gated `detection_markers` and `hidden_shooting_exemptions` top-level entries.

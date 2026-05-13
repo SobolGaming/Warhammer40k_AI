@@ -4,7 +4,7 @@
 
 This document is an execution plan for GPT-5.4 to prepare the `SobolGaming/Warhammer40k_AI` codebase for a clean one-way transition from 10th Edition assumptions to an 11th Edition-first architecture.
 
-**Execution contract:** PR-001 through PR-014, plus the compatibility addendum PRs `PR-014A` through `PR-014D`, prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-015 is the release-day exactness pass.
+**Execution contract:** PR-001 through PR-014, plus the compatibility addendum PRs `PR-014A` through `PR-014L`, prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-015 is the release-day exactness pass.
 
 This plan is **preview-driven**, not release-day finalization. It is based on the currently announced 11th Edition changes around:
 
@@ -19,6 +19,7 @@ This plan is **preview-driven**, not release-day finalization. It is based on th
 - terrain-footprint / key-location style objective handling
 - attachment semantics (Leader / Support selected during list building)
 - edition-level runtime invariants (e.g. stratagem stacking limits, charge target timing, melee/disembark timing changes)
+- repeated faction-focus mechanics from May 2026 previews, including detection markers, preview weapon/movement keywords, broader upgrade semantics, reactive movement, fight interrupts, and unit-turn provenance
 
 The project does **not** need backward-compatible 10th support after 11th launches. Temporary adapters are acceptable during migration, but the end state should be 11th-first and 10th-only assumptions should be removed.
 
@@ -49,6 +50,9 @@ Use these as the authoritative context while implementing:
   - `https://www.warhammer-community.com/en-gb/articles/m3son4il/new40k-combat-changes-shake-up-fighting-in-the-new-edition/` (published April 15, 2026)
 - Army building:
   - `https://www.warhammer-community.com/en-gb/articles/95fucn12/building-an-army-in-the-new-edition-of-warhammer-40000/`
+- May 2026 faction-focus articles:
+  - treated as preview-only design inputs until PR-015 or later final rules ingestion
+  - tracked explicitly by PR-014L source catalog work instead of encoded as live faction rules
 
 ## Working rules for GPT-5.4
 
@@ -61,7 +65,7 @@ Use these as the authoritative context while implementing:
 7. **Keep PRs reviewable.** If a PR would exceed roughly 1,500 changed lines excluding pure moves/renames, split it.
 8. **No broad neural-network training in this plan.** Only add the plumbing and stable interfaces required to make later training portable.
 9. **Every PR must end with passing tests** for the touched area, updated docs for changed public interfaces, and no broken replay serialization.
-10. **PR-001 through PR-014 and `PR-014A` through `PR-014D` are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
+10. **PR-001 through PR-014 and `PR-014A` through `PR-014L` are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
 11. **PR-015 is the first PR allowed to ingest and activate exact 11th Edition release behavior/data.** Before PR-015, any preview-derived runtime behavior must be clearly marked provisional and limited to scaffolding, stubs, feature-gated validation, or placeholder data needed to keep the architecture coherent.
 
 ## Global design decisions
@@ -218,6 +222,32 @@ The current repo already has promising seams (`combat_timing.py`, `fight_move.py
 
 To keep PR-015 focused on final corpus ingestion rather than structural rewrites, slot the following additive PRs in before it.
 
+## Faction-focus preview addendum
+
+As of May 13, 2026, the faction-focus series is showing repeated mechanics across factions, but those previews are still not final live rules. The preparation work before PR-015 should therefore stay infrastructure-first and preview-gated.
+
+Repeated surfaces now worth preparing:
+
+- detection-range manipulation and Hidden-preserving shooting
+- preview weapon and movement keywords (`CLEAVE X`, updated `HEAVY`, `MOBILE`, plus generic keyword hooks)
+- broader Upgrade payloads that target units, models, or weapon profiles and may or may not count toward enhancement limits
+- richer reactive movement, reserve exits, Heroic Intervention modes, and stratagem mode choices
+- fight interrupt semantics such as Fights First injection and "must fight next"
+- unit-turn provenance such as set-up-this-turn, model move distance, shot-this-turn, Hidden exemptions, battle-shock persistence, and temporary tactical status tokens
+- deterministic build-capability extensions for preview mechanics without changing the base artifact ABI every time a new article lands
+- explicit preview source cataloging and generic goldens that do not ingest faction-focus rules as live faction data
+
+Recommended implementation priority for the new block:
+
+1. PR-014F — detection markers and Hidden-preserving shooting
+2. PR-014E — mechanics and keyword registry
+3. PR-014H — unit turn provenance and tactical status tokens
+4. PR-014I — reactive movement and stratagem-mode decision framework
+5. PR-014J — actionable fight scheduler stages
+6. PR-014G — upgrade assignment and enhancement-budget modes
+7. PR-014K — capability extension registry
+8. PR-014L — preview source catalog and generic goldens
+
 ## File-size / focus guardrails after refactor
 
 These are not hard rules, but they should guide review:
@@ -257,6 +287,14 @@ shows what is done versus what remains.
 | PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
 | PR-014C | Completed | Implemented reserve-entry rules/geometry extraction, shared reserve legality helpers, and preview-gated ingress regression coverage on April 16, 2026. |
 | PR-014D | Completed | Implemented `build_capability_v2`, explicit descriptor targeting, and deterministic combat-preview golden coverage on April 16, 2026. |
+| PR-014E | Pending | Mechanics and keyword registry for preview keywords and future codex keywords. |
+| PR-014F | Implemented locally | Detection markers and Hidden-preserving shooting infrastructure are implemented in the current working tree; mark Completed once reviewed/merged. |
+| PR-014G | Pending | Upgrade assignment and enhancement-budget modes for broader 11e-style upgrade payloads. |
+| PR-014H | Pending | Unit turn provenance and tactical status tokens. |
+| PR-014I | Pending | Reactive movement and stratagem-mode decision framework. |
+| PR-014J | Pending | Make fight scheduler stages actionable decision boundaries. |
+| PR-014K | Pending | Capability extension registry for faction-focus preview features. |
+| PR-014L | Pending | Preview source catalog and generic preview-gated golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
@@ -1188,6 +1226,184 @@ The repo already has a deterministic build-capability compiler, but the current 
 
 ---
 
+## PR-014E — Mechanics and keyword registry
+
+**Status:** Pending.
+
+### Goal
+Add a rules-pack-driven keyword/effect registry for preview keywords and future codex keywords.
+
+### Main changes
+1. Add focused modules such as `rules/mechanic_registry.py`, `engine/weapon_keyword_runtime.py`, and `engine/movement_keyword_runtime.py`.
+2. Define `KeywordDefinition` / `MechanicDefinition` payloads with `keyword_id`, `display_name`, `scope`, `timing_window`, `parameter_schema`, `enabled_by_profile`, and `source_provenance`.
+3. Add preview-gated/inert definitions for `CLEAVE`, updated `HEAVY`, `MOBILE`, and generic hooks for `ASSAULT`, `LANCE`, `HAZARDOUS`, `RAPID_FIRE`, `SUSTAINED_HITS`, and `LETHAL_HITS`.
+4. Implement generic `CLEAVE X` attack-dice modification at gather-attack-dice time, with target model count snapshotted at Select Targets.
+5. Keep all current 10e behavior unchanged unless an explicit preview profile enables the keyword runtime.
+
+### Acceptance checks
+- `CLEAVE 1` and `CLEAVE 2` preview fixtures modify attack dice deterministically.
+- Multi-target attacks do not receive Cleave dice.
+- Updated Heavy criteria are evaluable from unit-turn provenance once PR-014H lands.
+- `MOBILE` is represented as a movement keyword without changing default live terrain behavior.
+
+---
+
+## PR-014F — Detection markers and Hidden-preserving shooting
+
+**Status:** Implemented locally; pending review/merge.
+
+### Goal
+Replace ad hoc Hidden/detection logic with a generic marker/query system.
+
+### Main changes
+1. Add `battlefield/detection_markers.py` and `battlefield/hidden_state.py`.
+2. Represent preview effects as generic `DetectionMarker` state with marker label, source unit, target unit, detection-range delta, duration, detachment/source provenance, and enabled profile.
+3. Add `VisibilityModifierQuery` to collect base detection range, marker deltas, attack-scoped deltas, fixed-range overrides, and active-shooting-unit scoping.
+4. Add `HiddenShootingExemption` for preview rules that let a unit shoot without losing Hidden.
+5. Feed markers and exemptions through `terrain_visibility.py`; do not bypass the visibility service or create faction-specific branches.
+6. Serialize marker/exemption state through snapshots, state blobs, DecisionRecord validation, and deterministic event logs.
+
+### Acceptance checks
+- Generic `+3` marker works for labels `detected`, `condemned`, `designated`, and `prey_marked`.
+- Generic `+6` while-shooting modifier applies only to the active shooting unit/attack context.
+- Hidden-preserving shooting exemption prevents a unit from losing Hidden after shooting.
+- Marker/exemption state is snapshot/replay/state-blob visible.
+- Preview gate disabled means markers do not affect live visibility.
+
+### Implemented notes
+- Added preview-gated golden coverage under `tests/preview_11e/test_detection_marker_golden.py`.
+- Updated terrain, snapshot, state blob, network/save-load, and DecisionRecord docs/schemas.
+- Verified focused visibility/snapshot/state-blob tests and the fast non-slow/non-integration suite in the local working tree.
+
+---
+
+## PR-014G — Upgrade assignment and enhancement-budget modes
+
+**Status:** Pending.
+
+### Goal
+Make 11e-style Upgrade payloads first-class in mustering without treating preview faction upgrades as live data.
+
+### Main changes
+1. Add a broader `UpgradeAssignment` / `RosterUpgradeAssignment` model distinct from legacy `EnhancementAssignment`, or narrow `EnhancementAssignment` under that broader type.
+2. Track `upgrade_id`, source detachment, target kind (`unit`, `model`, `weapon_profile`), selected target ids, cardinality, budget-counting behavior, points-cost mode, selected weapon profile id, and declaration step.
+3. Support preview fixture shapes such as up-to-three-unit upgrades, unit-only upgrades, model-only upgrades, weapon-profile upgrades declared during battle formations, and "does not count toward enhancement total" modes.
+4. Keep released 10e roster validation behavior unchanged.
+
+### Acceptance checks
+- "Does not count toward enhancement total" preview fixture validates cleanly.
+- "Target up to three units" fixture validates cardinality.
+- Weapon-profile upgrade fixture persists selected profile identity.
+- Descriptor IDs change when upgrade assignment semantics change.
+
+---
+
+## PR-014H — Unit turn provenance and tactical status tokens
+
+**Status:** Pending.
+
+### Goal
+Centralize "what happened to this unit/model this turn" state used by Heavy, Hidden, reserve-entry, Bridgehead-style effects, actions, battle-shock, and future AI features.
+
+### Main changes
+1. Add `UnitTurnProvenance` with fields for set-up/reserve arrival, move types, charge, shooting, max per-model movement distance, and Hidden shooting exemptions.
+2. Add a generic `StatusToken` / `UnitCondition` model for transient tactical state with source, kind, expiry, and JSON-safe payload.
+3. Route Heavy preview checks, Hidden clearing, set-up-this-turn shooting modifiers, battle-shock persistence, detection/marker state, Fights First injections, "must fight next", and temporary attack modifiers through normalized provenance/token APIs where possible.
+4. Serialize provenance/tokens through snapshot and replay.
+
+### Acceptance checks
+- Heavy preview fixture reads set-up-this-turn, unengaged, and max model move distance.
+- Hidden clearing reads shot-this-turn but respects exemptions.
+- Bridgehead-style "set up this turn" modifier is representable without faction-specific logic.
+- Battle-shock persistence is representable without assuming automatic Command phase cleanup.
+- Status tokens serialize through snapshot and replay.
+
+---
+
+## PR-014I — Reactive movement and stratagem-mode decision framework
+
+**Status:** Pending.
+
+### Goal
+Make reactive moves and modal stratagems replayable, scheduler-visible, and remote-play compatible.
+
+### Main changes
+1. Add or extend decision kinds for stratagem mode selection, reactive move, surge move, Heroic Intervention mode, and reactive reserve exit.
+2. Add `ReactiveMoveSpec` with trigger window, source unit, target reference, move kind, distance expression, destination policy, and end-state policy.
+3. Add `StratagemMode` semantics for mode id, CP delta, charge-target policy, and max-roll cap.
+4. Update stratagem ledger support for explicit preview exceptions such as repeat-use allowances without weakening general anti-stacking invariants.
+
+### Acceptance checks
+- Heroic Intervention mode fixture records selected mode, CP cost, and charge-target policy.
+- Reactive normal move can be requested during the opponent's Movement phase.
+- Surge move can require movement toward / attempting to finish engaged with the closest enemy.
+- Reactive "place unit in Strategic Reserves" is represented as a legal transition, not a teleport hack.
+- Stratagem-use exceptions are explicit and reason-traced.
+
+---
+
+## PR-014J — Make fight scheduler stages actionable, not just labels
+
+**Status:** Pending.
+
+### Goal
+Turn fight scheduler stages into first-class runtime decision boundaries before release-day fight interrupts and "must fight next" behavior arrive.
+
+### Main changes
+1. Expose pile-in and consolidate stages as pauseable scheduler decisions.
+2. Snapshot fight entitlements before Fights First and remaining-combatant resolution.
+3. Add explicit support for Fights First injection after an enemy fought, "must fight next", multiple Heroic Intervention/countercharge entitlements, overrun/prior-engagement eligibility surviving target removal, and consolidate-to-objective/consolidate-to-engage categories.
+
+### Acceptance checks
+- "Must fight next" status token constrains next fight selection.
+- Pile-in stage can pause for a decision instead of being skipped.
+- Consolidate batch can pause for a decision instead of only draining a queue.
+- Fight entitlement snapshots, decisions, and outcomes are replay-visible.
+- Existing preview combat goldens still pass.
+
+---
+
+## PR-014K — Capability extension registry instead of constant schema churn
+
+**Status:** Pending.
+
+### Goal
+Allow deterministic AI/mustering capability features from faction-focus previews without creating `build_capability_v3`, `v4`, etc. for every preview article.
+
+### Main changes
+1. Add `BuildCapabilityExtensionGroup` with group id, feature definitions, source provenance, and explicit activation.
+2. Add May 2026 faction-focus extension fields such as `detection_marker_coverage`, `anti_hidden_projection`, `hidden_persistence_value`, `keyword_mutation_density`, `cleave_horde_clearance`, `heavy_stationary_fire_quality`, `mobile_terrain_traversal_value`, `reactive_move_density`, `heroic_intervention_density`, `must_fight_next_leverage`, `action_after_advance_fallback_flex`, `reserve_reposition_flex`, `upgrade_cardinality_complexity`, and `battle_shock_persistence_leverage`.
+3. Keep extension features deterministic descriptor inputs, not learned models or widened model-compatibility claims.
+
+### Acceptance checks
+- Descriptor can target v2 alone or v2 plus the May 2026 faction-focus extension group.
+- Capability descriptor IDs include schema and extension-group IDs.
+- Old v1/v2 manifests remain valid.
+- Future points/dataslate/codex patches can recompute capabilities without changing artifact ABI.
+
+---
+
+## PR-014L — Preview source catalog and generic golden tests
+
+**Status:** Pending.
+
+### Goal
+Track preview-derived assumptions explicitly and add generic preview-gated tests without ingesting preview faction rules as live data.
+
+### Main changes
+1. Add `docs/preview_sources/11e_faction_focus_may2026.json`.
+2. Record source ids, URLs, publish dates, `preview_only=true`, and observed generic mechanics.
+3. Add generic tests for keyword Cleave, detection markers, Hidden-preserving shooting, Heroic Intervention modes, reactive movement, and upgrade assignment.
+4. Ensure descriptors/reason traces carry source provenance wherever preview behavior is enabled.
+
+### Acceptance checks
+- Every preview-only mechanic test is preview-gated.
+- No test requires a real final 11e faction pack.
+- Source provenance is present in descriptors/reason traces where preview behavior is enabled.
+- PR-015 has a clear checklist of preview assumptions to confirm, replace, or delete.
+
+---
+
 ## PR-015 — Release-day alignment PR (required when final 11th rules are in hand)
 
 **Status:** Pending.
@@ -1209,7 +1425,7 @@ The previous PRs build the right seams, but preview articles are not a substitut
 
 ### Start condition
 - Official 11th rules data is available to the team.
-- PR-014D merged.
+- PR-014L merged, or any intentionally deferred PR-014E through PR-014L item has an explicit owner and release-day mitigation.
 
 ### End condition
 - Preview assumptions are either confirmed and retained or replaced with final release behavior.
@@ -1255,7 +1471,15 @@ Use this dependency order unless a smaller split is obviously safer:
 16. PR-014B → fight scheduler / entitlements
 17. PR-014C → reserve-entry rules / geometry extraction
 18. PR-014D → build capability v2 / combat golden tests
-19. PR-015 → release-day exactness pass
+19. PR-014F → detection markers / Hidden-preserving shooting
+20. PR-014E → mechanics and keyword registry
+21. PR-014H → unit turn provenance / tactical status tokens
+22. PR-014I → reactive movement / stratagem modes
+23. PR-014J → actionable fight scheduler stages
+24. PR-014G → upgrade assignment / enhancement-budget modes
+25. PR-014K → capability extension registry
+26. PR-014L → preview source catalog / generic goldens
+27. PR-015 → release-day exactness pass
 
 If a PR is too large, split it at module boundaries, not at arbitrary halfway points.
 
@@ -1270,7 +1494,7 @@ If a PR is too large, split it at module boundaries, not at arbitrary halfway po
 - Avoid a giant “move everything everywhere” PR.
 
 ## How to handle adapters
-- Temporary adapters are acceptable in PR-002 through PR-014D.
+- Temporary adapters are acceptable in PR-002 through PR-014L.
 - They should be clearly marked with:
   - `TODO(11e-cleanup)` or equivalent
   - a reference to PR-015 as the deletion point
@@ -1292,6 +1516,14 @@ Every PR must update the docs that define the changed subsystem. At minimum:
 - PR-014: mission/deployment and battlefield layout docs
 - PR-014A / PR-014B / PR-014C: combat, charge, reserve-entry, and decision/replay docs
 - PR-014D: build-capability schema, AI artifact, and combat golden-test docs
+- PR-014E: keyword/mechanic registry docs and keyword-runtime tests
+- PR-014F: terrain visibility, state blob, snapshot/replay, and network/save-load docs
+- PR-014G: army mustering and descriptor docs for upgrade assignment semantics
+- PR-014H: unit-turn provenance, state blob, snapshot/replay, and status-token docs
+- PR-014I: decision types, network/save-load mapping, reactive movement, and stratagem ledger docs
+- PR-014J: fight scheduler, fight-stage decision, and replay docs
+- PR-014K: build-capability schema/extension and AI artifact docs
+- PR-014L: preview source catalog docs and PR-015 assumption checklist
 - PR-015: final release-day rules-ingestion docs and any preview clean-up notes
 
 ---

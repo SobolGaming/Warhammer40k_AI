@@ -31,7 +31,11 @@ _STATE_BLOB_REQUIRED_FIELDS = (
     "units",
 )
 
-_STATE_BLOB_ALLOWED_FIELDS = set(_STATE_BLOB_REQUIRED_FIELDS) | {"viewer_player_id"}
+_STATE_BLOB_ALLOWED_FIELDS = set(_STATE_BLOB_REQUIRED_FIELDS) | {
+    "viewer_player_id",
+    "detection_markers",
+    "hidden_shooting_exemptions",
+}
 
 
 def _is_non_empty_string(value: Any) -> bool:
@@ -244,6 +248,10 @@ def validate_state_blob(value: Any, *, label: str, expected_viewer_player_id: st
     errors.extend(_validate_control_regions(value.get("control_regions"), label=f"{label}.control_regions"))
     if not isinstance(value.get("terrain"), list):
         errors.append(f"{label}.terrain must be a list")
+    if "detection_markers" in value and not isinstance(value.get("detection_markers"), list):
+        errors.append(f"{label}.detection_markers must be a list")
+    if "hidden_shooting_exemptions" in value and not isinstance(value.get("hidden_shooting_exemptions"), list):
+        errors.append(f"{label}.hidden_shooting_exemptions must be a list")
     if not isinstance(value.get("units"), list):
         errors.append(f"{label}.units must be a list")
 
