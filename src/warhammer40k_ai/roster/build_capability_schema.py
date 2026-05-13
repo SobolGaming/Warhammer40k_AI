@@ -381,9 +381,10 @@ BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026 = BuildCapabilityExtensionG
     feature_definitions=_MAY_2026_FACTION_FOCUS_EXTENSION_FEATURE_DEFINITIONS,
     source_provenance=(
         {
-            "source_id": "wc_2026_05_faction_focus_previews",
-            "label": "May 2026 faction-focus preview mechanics",
+            "source_id": "preview_sources:11e_faction_focus_may2026",
+            "label": "May 2026 faction-focus preview mechanics catalog",
             "preview_only": True,
+            "url": "docs/preview_sources/11e_faction_focus_may2026.json",
             "mechanics_observed": [
                 "detection_markers",
                 "hidden_preserving_shooting",

@@ -28,6 +28,11 @@ from warhammer40k_ai.engine.stratagem_ledger import StratagemApplicationLedger, 
 pytestmark = pytest.mark.preview
 
 
+CHAOS_COMBINED_SOURCE = "wc_2026_05_08_chaos_space_marines_and_chaos_daemons_faction_focus"
+SPACE_MARINES_SOURCE = "wc_2026_05_05_space_marines_faction_focus"
+WORLD_EATERS_SOURCE = "wc_2026_05_12_world_eaters_faction_focus"
+
+
 class _DummyUnit:
     def __init__(self, unit_id: str) -> None:
         self.id = unit_id
@@ -60,14 +65,14 @@ def test_heroic_intervention_mode_fixture_records_mode_cp_and_charge_policy() ->
             cp_delta=0,
             charge_target_policy="enemy_unit_that_ended_normal_move",
             max_roll_cap=12,
-            source_provenance=("wc_2026_05_12_space_marines_faction_focus",),
+            source_provenance=(SPACE_MARINES_SOURCE,),
         ),
         StratagemMode(
             mode_id="leap_to_defend",
             cp_delta=-1,
             charge_target_policy="closest_visible_enemy",
             max_roll_cap=6,
-            source_provenance=("wc_2026_05_12_space_wolves_faction_focus",),
+            source_provenance=(SPACE_MARINES_SOURCE,),
         ),
     )
 
@@ -98,7 +103,7 @@ def test_reactive_normal_move_can_be_requested_during_opponent_movement_phase() 
         max_distance_expr="D6",
         destination_policy="any_legal_normal_move",
         end_state_policy="normal_move_end",
-        source_provenance=("wc_2026_05_12_space_marines_faction_focus",),
+        source_provenance=(SPACE_MARINES_SOURCE,),
     )
 
     request = build_reactive_move_request(
@@ -124,7 +129,7 @@ def test_surge_move_requires_toward_closest_enemy_end_state() -> None:
         max_distance_expr="D3+3",
         destination_policy=DESTINATION_TOWARD_CLOSEST_ENEMY,
         end_state_policy=END_STATE_ATTEMPT_ENGAGED_WITH_CLOSEST_ENEMY,
-        source_provenance=("wc_2026_05_12_world_eaters_faction_focus",),
+        source_provenance=(WORLD_EATERS_SOURCE,),
     )
 
     request = build_reactive_move_request(
@@ -150,7 +155,7 @@ def test_reactive_reserve_exit_is_transition_not_teleport_payload() -> None:
         max_distance_expr="none",
         destination_policy=DESTINATION_STRATEGIC_RESERVES,
         end_state_policy=END_STATE_STRATEGIC_RESERVES,
-        source_provenance=("wc_2026_05_12_chaos_daemons_faction_focus",),
+        source_provenance=(CHAOS_COMBINED_SOURCE,),
     )
 
     request = build_reactive_move_request(
@@ -181,8 +186,8 @@ def test_stratagem_ledger_repeat_exception_is_explicit_and_preserves_target_stac
         reason="Previewed exception: this use does not prevent other uses this phase.",
         allows_repeat_this_phase=True,
         still_enforce_target_stacking=True,
-        source_id="wc_2026_05_12_space_wolves_faction_focus",
-        source_provenance=("wc_2026_05_12_space_wolves_faction_focus",),
+        source_id=SPACE_MARINES_SOURCE,
+        source_provenance=(SPACE_MARINES_SOURCE,),
     )
     ledger.record_use_exception(exception)
 

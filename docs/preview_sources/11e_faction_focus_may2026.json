@@ -1,0 +1,146 @@
+{
+  "catalog_id": "preview_sources:11e_faction_focus_may2026",
+  "display_name": "11e faction-focus previews, May 2026",
+  "preview_only": true,
+  "rules_status": "preview_assumptions_only",
+  "entries": [
+    {
+      "source_id": "wc_2026_05_05_space_marines_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: Space Marines",
+      "url": "https://www.warhammer-community.com/en-gb/articles/xiczsalv/warhammer-40000-faction-focus-space-marines/",
+      "published_at": "2026-05-05",
+      "preview_only": true,
+      "mechanics_observed": [
+        "hidden_preserving_shooting",
+        "reactive_move",
+        "heroic_intervention_modes",
+        "repeat_stratagem_exception",
+        "upgrade_assignment"
+      ]
+    },
+    {
+      "source_id": "wc_2026_05_06_astra_militarum_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: Astra Militarum",
+      "url": "https://www.warhammer-community.com/en-gb/articles/p9kg7edm/warhammer-40000-faction-focus-astra-militarum/",
+      "published_at": "2026-05-06",
+      "preview_only": true,
+      "mechanics_observed": [
+        "detection_marker",
+        "designated",
+        "hidden_preserving_shooting",
+        "set_up_this_turn_modifier",
+        "upgrade_assignment"
+      ]
+    },
+    {
+      "source_id": "wc_2026_05_08_chaos_space_marines_and_chaos_daemons_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: Chaos Space Marines and Chaos Daemons",
+      "url": "https://www.warhammer-community.com/en-gb/articles/ztuwo7gs/warhammer-40000-faction-focus-chaos-space-marines-and-chaos-daemons/",
+      "published_at": "2026-05-08",
+      "preview_only": true,
+      "mechanics_observed": [
+        "updated_heavy",
+        "mobile",
+        "reactive_reserve_exit",
+        "fights_first_injection",
+        "must_fight_next"
+      ]
+    },
+    {
+      "source_id": "wc_2026_05_11_adepta_sororitas_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: Adepta Sororitas",
+      "url": "https://www.warhammer-community.com/en-gb/articles/1zvyawig/warhammer-40000-faction-focus-adepta-sororitas/",
+      "published_at": "2026-05-11",
+      "preview_only": true,
+      "mechanics_observed": [
+        "detection_marker",
+        "condemned",
+        "attack_scoped_detection_range_delta",
+        "enhancement_budget_exemption",
+        "upgrade_assignment",
+        "battle_shock_persistence"
+      ]
+    },
+    {
+      "source_id": "wc_2026_05_12_world_eaters_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: World Eaters",
+      "url": "https://www.warhammer-community.com/en-gb/articles/ujj4g76g/warhammer-40000-faction-focus-world-eaters/",
+      "published_at": "2026-05-12",
+      "preview_only": true,
+      "mechanics_observed": [
+        "cleave",
+        "surge_move",
+        "ignore_skill_hit_wound_modifiers",
+        "upgrade_assignment"
+      ]
+    },
+    {
+      "source_id": "wc_2026_05_13_tau_empire_faction_focus",
+      "title": "Warhammer 40,000 Faction Focus: Tau Empire",
+      "url": "https://www.warhammer-community.com/en-gb/articles/jmtd7k9g/warhammer-40000-faction-focus-tau-empire/",
+      "published_at": "2026-05-13",
+      "preview_only": true,
+      "mechanics_observed": [
+        "detection_marker",
+        "prey_marked",
+        "hidden_preserving_shooting",
+        "attack_scoped_detection_range_delta",
+        "upgrade_assignment"
+      ]
+    }
+  ],
+  "generic_golden_tests": [
+    "tests/preview_11e/test_keyword_cleave_golden.py",
+    "tests/preview_11e/test_detection_marker_golden.py",
+    "tests/preview_11e/test_hidden_preserving_shooting_golden.py",
+    "tests/preview_11e/test_heroic_intervention_modes_golden.py",
+    "tests/preview_11e/test_reactive_movement_golden.py",
+    "tests/preview_11e/test_upgrade_assignment_golden.py"
+  ],
+  "pr_015_assumption_checklist": [
+    {
+      "mechanic": "detection_marker",
+      "release_day_action": "Confirm final terminology, duration, stacking, target visibility requirement, and whether marker labels remain mechanically equivalent."
+    },
+    {
+      "mechanic": "hidden_preserving_shooting",
+      "release_day_action": "Confirm which shooting events break Hidden, which exemptions preserve it, and whether exemption timing is phase-scoped or turn-scoped."
+    },
+    {
+      "mechanic": "attack_scoped_detection_range_delta",
+      "release_day_action": "Confirm whether while-shooting detection changes apply only to the active attacking unit or create wider visibility for other units."
+    },
+    {
+      "mechanic": "cleave",
+      "release_day_action": "Confirm Select Targets timing, target model-count snapshot semantics, and interaction with split-fire weapon allocation."
+    },
+    {
+      "mechanic": "updated_heavy",
+      "release_day_action": "Confirm set-up-this-turn and model-move-distance provenance requirements for the final keyword text."
+    },
+    {
+      "mechanic": "mobile",
+      "release_day_action": "Confirm terrain traversal permissions and whether mounted units receive a common movement keyword or faction-specific text."
+    },
+    {
+      "mechanic": "upgrade_assignment",
+      "release_day_action": "Confirm target kinds, target cardinality, per-target points costs, weapon-profile selection timing, and enhancement-budget accounting."
+    },
+    {
+      "mechanic": "reactive_move",
+      "release_day_action": "Confirm trigger windows, movement kind, destination policy, and whether reserve-exit effects use normal Strategic Reserves state."
+    },
+    {
+      "mechanic": "heroic_intervention_modes",
+      "release_day_action": "Confirm mode ids, CP deltas, target policies, repeat-use exceptions, and per-unit/per-phase limits."
+    },
+    {
+      "mechanic": "must_fight_next",
+      "release_day_action": "Confirm fight scheduler priority when multiple Fights First or must-fight-next constraints coexist."
+    },
+    {
+      "mechanic": "battle_shock_persistence",
+      "release_day_action": "Confirm Command phase clearing procedure and whether a Leadership test or other action removes battle-shock."
+    }
+  ]
+}

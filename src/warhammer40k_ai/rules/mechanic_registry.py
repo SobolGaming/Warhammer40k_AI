@@ -117,9 +117,10 @@ class MechanicRegistry:
 
 
 _FACTION_FOCUS_SOURCE = SourceProvenance(
-    source_id="wc_2026_05_faction_focus_previews",
-    label="May 2026 Warhammer Community faction-focus previews",
+    source_id="preview_sources:11e_faction_focus_may2026",
+    label="May 2026 Warhammer Community faction-focus preview source catalog",
     preview_only=True,
+    url="docs/preview_sources/11e_faction_focus_may2026.json",
 )
 
 

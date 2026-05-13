@@ -1439,7 +1439,7 @@ Allow deterministic AI/mustering capability features from faction-focus previews
 
 ## PR-014L — Preview source catalog and generic golden tests
 
-**Status:** Pending.
+**Status:** Completed on May 13, 2026.
 
 ### Goal
 Track preview-derived assumptions explicitly and add generic preview-gated tests without ingesting preview faction rules as live data.
@@ -1455,6 +1455,12 @@ Track preview-derived assumptions explicitly and add generic preview-gated tests
 - No test requires a real final 11e faction pack.
 - Source provenance is present in descriptors/reason traces where preview behavior is enabled.
 - PR-015 has a clear checklist of preview assumptions to confirm, replace, or delete.
+
+### Implemented notes
+- `docs/preview_sources/11e_faction_focus_may2026.json` now records preview-only Warhammer Community source ids, URLs, publish dates, observed generic mechanics, and a PR-015 assumption checklist.
+- Preview source provenance now points to the catalog from the keyword registry and build-capability extension group, while detection/reactive golden fixtures use article-specific source ids where the behavior is exercised.
+- Generic preview goldens remain faction-pack-free and preview-gated, with explicit coverage files for Cleave, detection markers, Hidden-preserving shooting, Heroic Intervention modes, reactive movement, and upgrade assignment.
+- The source catalog test validates unique official Warhammer Community URLs, preview-only flags, required generic mechanics, generic golden file coverage, and PR-015 confirmation items.
 
 ---
 

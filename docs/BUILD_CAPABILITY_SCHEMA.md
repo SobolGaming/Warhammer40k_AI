@@ -348,7 +348,7 @@ Interpretation guidance:
   ],
   "source_provenance": [
     {
-      "label": "May 2026 faction-focus preview mechanics",
+      "label": "May 2026 faction-focus preview mechanics catalog",
       "mechanics_observed": [
         "detection_markers",
         "hidden_preserving_shooting",
@@ -362,7 +362,8 @@ Interpretation guidance:
         "battle_shock_persistence"
       ],
       "preview_only": true,
-      "source_id": "wc_2026_05_faction_focus_previews"
+      "source_id": "preview_sources:11e_faction_focus_may2026",
+      "url": "docs/preview_sources/11e_faction_focus_may2026.json"
     }
   ],
   "activation": "explicit"

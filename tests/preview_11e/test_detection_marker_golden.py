@@ -23,6 +23,12 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 pytestmark = pytest.mark.preview
 
 
+ADEPTA_SORORITAS_SOURCE = "wc_2026_05_11_adepta_sororitas_faction_focus"
+ASTRA_MILITARUM_SOURCE = "wc_2026_05_06_astra_militarum_faction_focus"
+SPACE_MARINES_SOURCE = "wc_2026_05_05_space_marines_faction_focus"
+TAU_EMPIRE_SOURCE = "wc_2026_05_13_tau_empire_faction_focus"
+
+
 class _StubPlayer:
     def __init__(self, game):
         self.game = game
@@ -95,8 +101,16 @@ def _hidden_visibility_fixture(*, attacker_x: float = 29.5) -> tuple[Map, _StubU
     return game_map, attacker, target
 
 
-@pytest.mark.parametrize("marker_label", ["detected", "condemned", "designated", "prey_marked"])
-def test_generic_detection_marker_labels_share_detection_range_delta(marker_label: str) -> None:
+@pytest.mark.parametrize(
+    ("marker_label", "source_id"),
+    [
+        ("detected", SPACE_MARINES_SOURCE),
+        ("condemned", ADEPTA_SORORITAS_SOURCE),
+        ("designated", ASTRA_MILITARUM_SOURCE),
+        ("prey_marked", TAU_EMPIRE_SOURCE),
+    ],
+)
+def test_generic_detection_marker_labels_share_detection_range_delta(marker_label: str, source_id: str) -> None:
     game_map, attacker, target = _hidden_visibility_fixture()
 
     blocked = game_map.get_visibility_context_for_models(attacker.models[0], target.models[0])
@@ -109,7 +123,7 @@ def test_generic_detection_marker_labels_share_detection_range_delta(marker_labe
             target_unit_id=target.id,
             detection_range_delta=3.0,
             duration="until_end_of_phase",
-            source_provenance=("preview:faction_focus_may2026",),
+            source_provenance=(source_id,),
         )
     )
 
@@ -132,7 +146,7 @@ def test_attack_scoped_detection_modifier_only_applies_to_active_shooting_unit()
         active_unit_id=attacker.id,
         scope="while_shooting",
         detection_range_delta=6.0,
-        source_provenance=("preview:faction_focus_may2026",),
+        source_provenance=(ADEPTA_SORORITAS_SOURCE,),
     )
 
     inactive_query = VisibilityModifierQuery(
@@ -202,7 +216,7 @@ def test_hidden_preserving_shooting_exemption_keeps_hidden_after_shooting() -> N
             unit_id=target.id,
             source_id="preview:unit_rule",
             duration="current_player_turn",
-            source_provenance=("preview:faction_focus_may2026",),
+            source_provenance=(TAU_EMPIRE_SOURCE,),
         )
     )
 
@@ -226,7 +240,7 @@ def test_detection_marker_and_hidden_exemption_are_snapshot_and_state_blob_visib
             detection_range_delta=3.0,
             duration="until_end_of_phase",
             source_detachment_id="detachment:preview",
-            source_provenance=("preview:faction_focus_may2026",),
+            source_provenance=(SPACE_MARINES_SOURCE,),
         )
     )
     game.map.add_hidden_shooting_exemption(
@@ -235,7 +249,7 @@ def test_detection_marker_and_hidden_exemption_are_snapshot_and_state_blob_visib
             unit_id="unit:target",
             source_id="rule:preview",
             duration="current_player_turn",
-            source_provenance=("preview:faction_focus_may2026",),
+            source_provenance=(TAU_EMPIRE_SOURCE,),
         )
     )
 
