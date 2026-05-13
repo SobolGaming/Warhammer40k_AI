@@ -141,7 +141,10 @@ class AttackResolutionManager:
         if not declarations:
             return False
         queued = False
-        for decl in list(declarations or []):
+        from .weapon_keyword_runtime import prepare_attack_declarations_for_keyword_runtime
+
+        prepared_declarations = prepare_attack_declarations_for_keyword_runtime(declarations, game=game)
+        for decl in prepared_declarations:
             seq = self._build_sequence(game, decl, out_of_phase=out_of_phase)
             if seq is None:
                 continue
@@ -368,6 +371,18 @@ class AttackResolutionManager:
                 num_attacks = int(getattr(count_info, "num_attacks", 0) or 0)
             except (AttributeError, TypeError, ValueError):
                 num_attacks = int(roll_value or 0)
+            from .weapon_keyword_runtime import (
+                append_attack_dice_modifier_context,
+                apply_attack_dice_modifiers,
+            )
+
+            modifier_result = apply_attack_dice_modifiers(
+                int(num_attacks),
+                ctx=seq.context,
+                attacker_model_id=str(model_id or ""),
+            )
+            append_attack_dice_modifier_context(seq.context, modifier_result)
+            num_attacks = int(modifier_result.modified_attack_count)
             if num_attacks <= 0:
                 continue
             for _ in range(int(num_attacks)):
@@ -375,8 +390,8 @@ class AttackResolutionManager:
                     self._build_attack_instance(
                         seq.context,
                         model,
-                        weapon_profile=weapon_profile,
-                        target_unit=target_unit,
+                        weapon_profile=profile,
+                        target_unit=target,
                     )
                 )
         seq.attack_instances = instances

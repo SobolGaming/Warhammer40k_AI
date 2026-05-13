@@ -287,7 +287,7 @@ shows what is done versus what remains.
 | PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
 | PR-014C | Completed | Implemented reserve-entry rules/geometry extraction, shared reserve legality helpers, and preview-gated ingress regression coverage on April 16, 2026. |
 | PR-014D | Completed | Implemented `build_capability_v2`, explicit descriptor targeting, and deterministic combat-preview golden coverage on April 16, 2026. |
-| PR-014E | Pending | Mechanics and keyword registry for preview keywords and future codex keywords. |
+| PR-014E | Implemented locally | Mechanics and keyword registry, weapon keyword runtime, movement keyword runtime, and preview-gated CLEAVE attack-dice handling are implemented in the current working tree; mark Completed once reviewed/merged. |
 | PR-014F | Implemented locally | Detection markers and Hidden-preserving shooting infrastructure are implemented in the current working tree; mark Completed once reviewed/merged. |
 | PR-014G | Pending | Upgrade assignment and enhancement-budget modes for broader 11e-style upgrade payloads. |
 | PR-014H | Pending | Unit turn provenance and tactical status tokens. |
@@ -1228,7 +1228,7 @@ The repo already has a deterministic build-capability compiler, but the current 
 
 ## PR-014E — Mechanics and keyword registry
 
-**Status:** Pending.
+**Status:** Implemented locally; pending review/merge.
 
 ### Goal
 Add a rules-pack-driven keyword/effect registry for preview keywords and future codex keywords.
@@ -1245,6 +1245,13 @@ Add a rules-pack-driven keyword/effect registry for preview keywords and future 
 - Multi-target attacks do not receive Cleave dice.
 - Updated Heavy criteria are evaluable from unit-turn provenance once PR-014H lands.
 - `MOBILE` is represented as a movement keyword without changing default live terrain behavior.
+
+### Implemented notes
+- Added `rules/mechanic_registry.py`, `engine/weapon_keyword_runtime.py`, and `engine/movement_keyword_runtime.py`.
+- Added preview-gated generic keyword definitions and source provenance for `CLEAVE`, updated `HEAVY`, `MOBILE`, `ASSAULT`, `LANCE`, `HAZARDOUS`, `RAPID_FIRE`, `SUSTAINED_HITS`, and `LETHAL_HITS`.
+- Wired `CLEAVE X` through attack declarations and `AttackSequence.context` so target model count is captured at Select Targets.
+- Added preview golden coverage under `tests/preview_11e/test_keyword_cleave_golden.py`.
+- Added `docs/MECHANIC_KEYWORD_REGISTRY.md` and updated keyword semantics docs.
 
 ---
 

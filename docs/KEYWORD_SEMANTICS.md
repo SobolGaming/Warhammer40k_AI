@@ -55,6 +55,19 @@ This works correctly because:
 - The target keyword is checked at the unit level (which computes the union of all model keywords)
 - If any model in the target unit is a PSYKER, the entire unit is considered to have the PSYKER keyword for targeting purposes
 
+## Preview Runtime Registry
+
+The engine now has a preview-gated mechanic registry for reusable weapon and movement keywords. See `docs/MECHANIC_KEYWORD_REGISTRY.md`.
+
+The registry does not replace current live keyword branches yet. It provides generic, rules-pack-driven definitions and runtime hooks for 11e preparation work:
+
+- `CLEAVE X` modifies gathered attack dice from Select Targets snapshot state.
+- updated `HEAVY` preview criteria can be evaluated from unit-turn provenance.
+- `MOBILE` is represented as an inert movement keyword for future terrain traversal rules.
+- `ASSAULT`, `LANCE`, `HAZARDOUS`, `RAPID_FIRE`, `SUSTAINED_HITS`, and `LETHAL_HITS` have generic preview definitions for later migration.
+
+Preview keyword runtime behavior is disabled for the `current` profile.
+
 ## Implementation Notes
 
 - All keyword comparisons are **case-insensitive** (using `.lower()`)

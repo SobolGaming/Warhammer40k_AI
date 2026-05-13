@@ -101,6 +101,14 @@ def _build_sequence(manager, game: object, decl: dict, *, out_of_phase: bool):
     if seq.context.get("indirect_fire_no_visible") and callable(is_torrent) and is_torrent():
         seq.attack_instances = []
         return seq
+    from .weapon_keyword_runtime import build_weapon_keyword_runtime_context
+
+    seq.context["weapon_keyword_runtime"] = build_weapon_keyword_runtime_context(
+        game=game,
+        weapon_profile=weapon_profile,
+        target_unit=target_unit,
+        declaration_context=decl.get("keyword_runtime"),
+    )
     attack_count_spec = None
     alive_models = [model for model in list(models or []) if getattr(model, "is_alive", False)]
     try:
@@ -319,6 +327,18 @@ def _build_attack_instances(
             num_attacks = int(getattr(count_info, "num_attacks", 0) or 0)
         except (AttributeError, TypeError, ValueError):
             num_attacks = int(getattr(weapon_profile, "attacks", 0) or 0)
+        from .weapon_keyword_runtime import (
+            append_attack_dice_modifier_context,
+            apply_attack_dice_modifiers,
+        )
+
+        modifier_result = apply_attack_dice_modifiers(
+            int(num_attacks),
+            ctx=ctx,
+            attacker_model_id=get_entity_id(model),
+        )
+        append_attack_dice_modifier_context(ctx, modifier_result)
+        num_attacks = int(modifier_result.modified_attack_count)
         if num_attacks <= 0:
             continue
         for _ in range(int(num_attacks)):
