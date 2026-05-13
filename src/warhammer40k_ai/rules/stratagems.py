@@ -2401,6 +2401,8 @@ class StratagemManager(
         # Core rules: a player cannot use the same Stratagem more than once in the same phase.
         # (Unless an ability explicitly names the Stratagem; we do not implement such bypasses generically.)
         self._used_stratagems_this_phase: set[str] = set()
+        self._stratagem_use_exceptions_this_phase: list[dict[str, Any]] = []
+        self._last_stratagem_use_evaluation_trace: list[dict[str, Any]] = []
         # Track Heroic Intervention targets per phase for named exceptions.
         self._heroic_intervention_units_this_phase: set[str] = set()
         # Track Rapid Ingress targets per phase for named exceptions.
@@ -2442,6 +2444,14 @@ class StratagemManager(
         if not isinstance(getattr(self, "_tool_action_probe_diagnostic_keys", None), set):
             self._tool_action_probe_diagnostic_keys = set(
                 getattr(self, "_tool_action_probe_diagnostic_keys", []) or []
+            )
+        if not isinstance(getattr(self, "_stratagem_use_exceptions_this_phase", None), list):
+            self._stratagem_use_exceptions_this_phase = list(
+                getattr(self, "_stratagem_use_exceptions_this_phase", []) or []
+            )
+        if not isinstance(getattr(self, "_last_stratagem_use_evaluation_trace", None), list):
+            self._last_stratagem_use_evaluation_trace = list(
+                getattr(self, "_last_stratagem_use_evaluation_trace", []) or []
             )
         if not isinstance(getattr(self, "_used_once_per_battle", None), dict):
             self._used_once_per_battle = {}
@@ -7381,10 +7391,29 @@ class StratagemManager(
     def _stratagem_application_ledger(self) -> StratagemApplicationLedger:
         return StratagemApplicationLedger(self)
 
+    def _stratagem_repeat_target_id_from_kwargs(self, name_u: str, kwargs: Dict[str, Any]) -> str:
+        target_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("shooter_unit")
+        if target_unit is None:
+            return ""
+        if self._normalize_stratagem_name(name_u or "") == "HEROIC INTERVENTION":
+            return str(self._heroic_intervention_target_id(target_unit) or "")
+        return str(get_entity_id(target_unit) or getattr(target_unit, "id", "") or "")
+
     def _stratagem_repeat_available_this_phase(self, name_u: str, kwargs: Dict[str, Any]) -> bool:
         key = self._normalize_stratagem_name(name_u or "")
         if not key or key not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
             return True
+        ledger = self._stratagem_application_ledger()
+        target_id = self._stratagem_repeat_target_id_from_kwargs(key, kwargs)
+        evaluation = ledger.evaluate_use_request(key, target_unit_id=target_id or None)
+        self._last_stratagem_use_evaluation_trace = [dict(item) for item in evaluation.reason_trace]
+        if evaluation.allowed_by_exception:
+            return True
+        if any(
+            str(item.get("reason", "") or "") == "target_already_used_this_phase"
+            for item in evaluation.reason_trace
+        ):
+            return False
         if key == "COMMAND RE-ROLL":
             return self._command_reroll_repeat_allowed(
                 target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
@@ -14032,6 +14061,12 @@ class StratagemManager(
             self._used_stratagems_this_phase.clear()
         except Exception:
             raise
+        if not isinstance(getattr(self, "_stratagem_use_exceptions_this_phase", None), list):
+            self._stratagem_use_exceptions_this_phase = list(
+                getattr(self, "_stratagem_use_exceptions_this_phase", []) or []
+            )
+        self._stratagem_use_exceptions_this_phase.clear()
+        self._last_stratagem_use_evaluation_trace = []
         try:
             if not isinstance(getattr(self, "_skipped_tool_action_signatures", None), set):
                 self._skipped_tool_action_signatures = set(
@@ -24675,31 +24710,7 @@ class StratagemManager(
             if phase_name:
                 key = self._normalize_stratagem_name(s.name or "")
                 if key and key in self._used_stratagems_this_phase:
-                    if key == "COMMAND RE-ROLL" and self._command_reroll_repeat_allowed(
-                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
-                        candidates=kwargs.get("candidates"),
-                    ):
-                        pass
-                    elif key == "HEROIC INTERVENTION" and self._heroic_intervention_repeat_allowed(
-                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
-                        candidates=kwargs.get("candidates"),
-                        enemy_unit=kwargs.get("enemy_unit"),
-                    ):
-                        pass
-                    elif key == "RAPID INGRESS" and self._rapid_ingress_repeat_allowed(
-                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
-                        candidates=kwargs.get("candidates"),
-                    ):
-                        pass
-                    elif key == "COUNTER-OFFENSIVE" and self._counter_offensive_daemonforge_available(
-                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
-                        candidates=kwargs.get("candidates"),
-                    ):
-                        pass
-                    elif key == "GRENADE" and self._grenade_repeat_allowed(
-                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
-                        candidates=kwargs.get("candidates"),
-                    ):
+                    if self._stratagem_repeat_available_this_phase(key, kwargs):
                         pass
                     else:
                         logger.error(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import *  # noqa: F401,F403
 from ..decision_handlers._helpers import is_skip_choice
 from ..limited_use_context import normalize_optional_ability_limited_use_context
+from ..reactive_movement import ReactiveMoveSpec, build_reactive_move_request
 
 
 class GameReactiveDecisionsMixin:
@@ -4864,6 +4865,33 @@ class GameReactiveDecisionsMixin:
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_reactive_move_spec_decision(
+        self,
+        *,
+        player,
+        spec: ReactiveMoveSpec | dict,
+        active_player=None,
+        active_player_id: str | None = None,
+        prompt: str | None = None,
+        allow_skip: bool = True,
+    ) -> DecisionRequest | None:
+        if player is None:
+            return None
+        move_spec = spec if isinstance(spec, ReactiveMoveSpec) else ReactiveMoveSpec.from_dict(dict(spec or {}))
+        controlling_player_id = str(getattr(player, "id", "") or "")
+        if not controlling_player_id:
+            return None
+        active_id = str(active_player_id or getattr(active_player, "id", "") or "")
+        request = build_reactive_move_request(
+            player_id=controlling_player_id,
+            spec=move_spec,
+            active_player_id=active_id or None,
+            prompt=prompt,
+            allow_skip=allow_skip,
         )
         self.request_decision(request)
         return request

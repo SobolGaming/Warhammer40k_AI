@@ -10,8 +10,8 @@ Each gameplay-facing decision should be emitted as a `DecisionRequest` with dete
 network UI, a headless policy, or a future AI policy.
 
 Reachability audit:
-- Reviewed against `src/warhammer40k_ai/engine/decision_kinds.py` on April 18, 2026.
-- All 119 decision kinds in that module have live `src/warhammer40k_ai/` references.
+- Reviewed against `src/warhammer40k_ai/engine/decision_kinds.py` on May 13, 2026.
+- All 124 decision kinds in that module have live `src/warhammer40k_ai/` references.
 - The catalog below therefore covers the full current decision-kind surface, including
   faction-, datasheet-, detachment-, and weapon-specific windows that only appear under
   the right rules conditions.
@@ -74,6 +74,12 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `SELECT_UNIT` - Choose the next eligible unit to act in a phase step.
 - `SELECT_MOVEMENT_ACTION` - Choose move, advance, fall back, or remain.
 - `MOVE_UNIT` - Choose movement destination, path, or placement payload.
+- `REACTIVE_MOVE` - Choose whether and how to resolve a preview-gated reactive normal
+  or fallback-like move specification.
+- `SURGE_MOVE` - Choose whether and how to resolve a preview-gated surge move
+  specification.
+- `SELECT_REACTIVE_RESERVE_EXIT` - Choose whether a preview-gated reactive transition
+  places a unit into Strategic Reserves.
 - `RESOLVE_COHERENCY` - Remove one additional model to restore coherency.
 - `EMBARK` - Embark a unit into a transport.
 - `DISEMBARK` - Disembark a unit from a transport.
@@ -94,6 +100,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 ## Charges
 
 - `DECLARE_CHARGE` - Declare charge targets.
+- `SELECT_HEROIC_INTERVENTION_MODE` - Choose a Heroic Intervention stratagem mode
+  before the charge target policy and CP adjustment are applied.
 
 ## Fight And Damage Allocation
 
@@ -205,6 +213,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_POWER_FROM_PAIN_OPTION` - Choose a Power from Pain option.
 - `CHOOSE_MALEFIC_SURGE_UNIT` - Choose the unit for a Malefic Surge window.
 - `CHOOSE_MALEFIC_SURGE_ABILITY` - Choose the Malefic Surge ability to apply.
+- `SELECT_STRATAGEM_MODE` - Choose a generic modal stratagem payload before applying
+  its bound target, resource, or movement semantics.
 
 ## Generic Confirmations
 
@@ -234,6 +244,9 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `SELECT_UNIT` | A phase step needs the next eligible unit to act. | UI | `Policy` | `T2/T3` |
 | `SELECT_MOVEMENT_ACTION` | Movement activation needs move, advance, fall back, or remain. | UI | `Policy` | `T3` |
 | `MOVE_UNIT` | Deployment, movement, reserves arrival, or reactive placement is required. | UI | `DeployDM` for deployment; otherwise `Policy` | `T2/T3` |
+| `REACTIVE_MOVE` | Preview-gated reactive normal or fallback-like move spec is available. | UI | `Policy` | `T3` |
+| `SURGE_MOVE` | Preview-gated surge move spec is available, usually with directional end-state constraints. | UI | `Policy` | `T3` |
+| `SELECT_REACTIVE_RESERVE_EXIT` | Preview-gated reactive effect can place a unit into Strategic Reserves. | UI | `Policy` | `T3` |
 | `RESOLVE_COHERENCY` | Casualties leave a unit out of coherency and one more model must be removed. | UI | `Policy` | `T3` |
 | `EMBARK` | A unit may embark into a transport. | UI | `Policy` | `T3` |
 | `DISEMBARK` | A unit must or may disembark, including reactive disembark windows. | UI | `Policy` | `T3` |
@@ -253,6 +266,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `REQUEST_DICE_ROLL` | Any explicit engine-owned dice roll request. | UI | `AutoDice` | `T3` |
 | `SELECT_DICE_REROLL` | Any explicit dice-reroll selection request. | UI | `AutoDice` | `T3` |
 | `DECLARE_CHARGE` | A charging unit must declare charge targets. | UI | `Policy` | `T3` |
+| `SELECT_HEROIC_INTERVENTION_MODE` | Heroic Intervention exposes multiple preview-gated mode payloads before charge resolution. | UI | `Policy` | `T3` |
 | `SELECT_FIGHT_TARGETS` | A fighting unit must choose its fight targets. | UI | `Policy` | `T3` |
 | `DECLARE_MELEE_WEAPONS` | A fighting unit must choose melee weapons or profiles. | UI | `Policy` | `T3` |
 | `ALLOCATE_MELEE_TARGETS` | A unit can split melee attacks across multiple targets. | UI | `Policy` | `T3` |
@@ -338,5 +352,6 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `CHOOSE_POWER_FROM_PAIN_OPTION` | Power from Pain must choose an available option. | UI | `Policy` | `T1` |
 | `CHOOSE_MALEFIC_SURGE_UNIT` | Malefic Surge must choose the source or recipient unit. | UI | `Policy` | `T2` |
 | `CHOOSE_MALEFIC_SURGE_ABILITY` | Malefic Surge must choose the ability to apply. | UI | `Policy` | `T1/T2` |
+| `SELECT_STRATAGEM_MODE` | A modal stratagem exposes one or more bound mode payloads. | UI | `Policy` | `T2/T3` |
 
 Round-start decision ordering: when a World Eaters army has Angron's `Wrathful Presence`, `CHOOSE_WRATHFUL_PRESENCE` resolves before that army's same-round `CHOOSE_BLESSINGS` request. The Blessings request context records the post-aura Khorne Yahtzee state, including `ctx.rerolls_allowed`, so `The Blood God's Favour` is visible as six available Blessings rerolls in the same battle round.

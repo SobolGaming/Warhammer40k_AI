@@ -291,7 +291,7 @@ shows what is done versus what remains.
 | PR-014F | Completed | Pushed to `dev` on May 13, 2026 as commit `f48f9d0e` (`Implement PR-014F detection marker infrastructure`). |
 | PR-014G | Completed | Pushed to `dev` on May 13, 2026 as commit `01c0249f` (`Implement PR-014G upgrade assignment semantics`). |
 | PR-014H | Completed | Pushed to `dev` on May 13, 2026 as commit `a328e227` (`Implement PR-014H unit turn provenance`). |
-| PR-014I | Pending | Reactive movement and stratagem-mode decision framework. |
+| PR-014I | Completed | Adds reactive move specs, modal stratagem requests, ledger exceptions, docs, and preview-gated goldens. |
 | PR-014J | Pending | Make fight scheduler stages actionable decision boundaries. |
 | PR-014K | Pending | Capability extension registry for faction-focus preview features. |
 | PR-014L | Pending | Preview source catalog and generic preview-gated golden tests. |
@@ -1347,7 +1347,7 @@ Centralize "what happened to this unit/model this turn" state used by Heavy, Hid
 
 ## PR-014I — Reactive movement and stratagem-mode decision framework
 
-**Status:** Pending.
+**Status:** Completed.
 
 ### Goal
 Make reactive moves and modal stratagems replayable, scheduler-visible, and remote-play compatible.
@@ -1364,6 +1364,21 @@ Make reactive moves and modal stratagems replayable, scheduler-visible, and remo
 - Surge move can require movement toward / attempting to finish engaged with the closest enemy.
 - Reactive "place unit in Strategic Reserves" is represented as a legal transition, not a teleport hack.
 - Stratagem-use exceptions are explicit and reason-traced.
+
+### Implemented notes
+- Added `ReactiveMoveSpec`, `StratagemMode`, and
+  `ReactiveReserveExitTransition` in
+  `src/warhammer40k_ai/engine/reactive_movement.py`.
+- Added decision kinds for `SELECT_STRATAGEM_MODE`, `REACTIVE_MOVE`,
+  `SURGE_MOVE`, `SELECT_HEROIC_INTERVENTION_MODE`, and
+  `SELECT_REACTIVE_RESERVE_EXIT`, with AI-router, manifest, decision catalog,
+  and network/save-load mapping updates.
+- Added a queue helper for spec-backed reactive movement decisions while
+  preserving existing `MOVE_UNIT` reactive movement behavior.
+- Extended `StratagemApplicationLedger` with explicit repeat-use exceptions,
+  replayable reason traces, and target-stacking enforcement.
+- Added preview-gated golden coverage under
+  `tests/preview_11e/test_reactive_movement_stratagem_modes_golden.py`.
 
 ---
 
