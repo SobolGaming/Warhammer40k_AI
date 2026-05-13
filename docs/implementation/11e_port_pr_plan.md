@@ -294,7 +294,7 @@ shows what is done versus what remains.
 | PR-014I | Completed | Adds reactive move specs, modal stratagem requests, ledger exceptions, docs, and preview-gated goldens. |
 | PR-014J | Completed | Adds actionable pile-in/consolidate scheduler boundaries, must-fight-next constraints, fight trace context, and replay-visible move categories. |
 | PR-014K | Completed | Adds explicit build-capability extension groups, May 2026 faction-focus features, descriptor provenance, and v2+extension test coverage. |
-| PR-014L | Pending | Preview source catalog and generic preview-gated golden tests. |
+| PR-014L | Completed | Pushed to `dev` on May 13, 2026 as commit `7270fb84` (`Implement PR-014L preview source catalog`). |
 | PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
