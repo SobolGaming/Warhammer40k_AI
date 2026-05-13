@@ -192,7 +192,7 @@ flowchart TD
   M --> B
 ```
 
-Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes, and a selected transport can first branch through Firing Deck before its own `DECLARE_SHOTS` request. Attack resolution can interleave dice, reroll, allocation, and reaction decisions before the shooter loop resumes.
+Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes. The default path is `DECLARE_SHOTS` for the selected unit; if that unit is a Transport with Firing Deck and has not declared its embarked shots yet, `DECLARE_FIRING_DECK` runs first and then returns to the selected Transport's normal `DECLARE_SHOTS` request. Firing Deck adds selected embarked-model shots; it does not replace the Transport's own guns.
 
 ```mermaid
 flowchart TD
@@ -200,10 +200,9 @@ flowchart TD
   B -->|"No"| C["Shooting step can advance"]
   B -->|"Yes"| D["SELECT_UNIT chooses shooter or pass"]
   D -->|"Pass"| C
-  D -->|"Shooter selected"| E{"Transport has unresolved Firing Deck request?"}
-  E -->|"Yes"| F["DECLARE_FIRING_DECK selects embarked firing models/weapons"]
-  F --> G["DECLARE_SHOTS for selected unit"]
-  E -->|"No"| G
+  D -->|"Shooter selected"| G["DECLARE_SHOTS for selected unit"]
+  D -->|"Selected unit is Transport with Firing Deck not yet declared"| F["DECLARE_FIRING_DECK selects embarked firing models/weapons"]
+  F --> G
   G --> H["Resolve ranged declarations and attacks"]
   H --> I["REQUEST_DICE_ROLL, reroll, target-model, Precision, damage-allocation decisions as needed"]
   I --> J["Apply damage, destruction, post-shoot ability effects, and reaction windows"]
