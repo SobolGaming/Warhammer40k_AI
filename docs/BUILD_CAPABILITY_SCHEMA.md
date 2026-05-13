@@ -19,6 +19,8 @@ Compilation inputs:
 - `ArmyBlueprint`
 - `rules_bundle_id`
 - optional explicit `BuildCapabilitySchema`
+- optional explicit `BuildCapabilityExtensionGroup` ids for additive preview
+  feature groups
 - either a snapshot-scoped `WahaHelper` or a rules-bundle payload carrying one of:
   `wahapedia_data_dir`, `waha_data_dir`, or `rules_data_dir`
 
@@ -37,6 +39,11 @@ Rules-snapshot selection notes:
 - Preview combat bundles may opt into `BUILD_CAPABILITY_SCHEMA_V2` explicitly
   when matchup or mustering evaluators need the additional combat-facing fields.
   That is a scoped compatibility choice, not an in-place widening of v1.
+- Preview extension groups are also explicit. They add deterministic feature
+  names to an existing schema such as `build_capability_v2` without creating a
+  new schema id for each preview article. When active, profile and descriptor
+  payloads include `extension_group_ids` plus the extension group's provenance;
+  when inactive, v1/v2 payloads stay in their existing shape.
 
 ## Example Build Capability Schema
 
@@ -136,6 +143,9 @@ Interpretation guidance:
   `build_capability_profile_id` deterministically.
 - `build_capability_v2` adds preview-combat descriptors without changing the v1
   field contract or default descriptor compilation path.
+- `capability_extension:11e_faction_focus_may2026` is an explicit v2 extension
+  group for deterministic faction-focus preview features. It is not a learned
+  model compatibility claim and is omitted unless requested by the caller.
 
 ## Example Preview Combat Capability Schema
 
@@ -256,6 +266,106 @@ Interpretation guidance:
       "description": "How well the roster can capitalize on transport-destruction fight states and newly exposed passengers."
     }
   ]
+}
+```
+
+## Example Capability Extension Group
+
+```json
+{
+  "extension_group_id": "capability_extension:11e_faction_focus_may2026",
+  "feature_definitions": [
+    {
+      "name": "detection_marker_coverage",
+      "kind": "score",
+      "description": "How broadly the roster can project value from generic detection-marker style visibility range changes."
+    },
+    {
+      "name": "anti_hidden_projection",
+      "kind": "score",
+      "description": "How well the roster can combine reach, marker support, and ranged pressure to contest Hidden-style targets."
+    },
+    {
+      "name": "hidden_persistence_value",
+      "kind": "score",
+      "description": "How much value the roster can preserve from Hidden-style protection while still contributing to board state."
+    },
+    {
+      "name": "keyword_mutation_density",
+      "kind": "score",
+      "description": "How much the roster's deterministic evaluation depends on runtime keyword mutation, upgrade payloads, or detachment-authored keyword changes."
+    },
+    {
+      "name": "cleave_horde_clearance",
+      "kind": "score",
+      "description": "How naturally melee pressure and model volume convert into horde-clearance value under a generic Cleave-like attack-dice modifier."
+    },
+    {
+      "name": "heavy_stationary_fire_quality",
+      "kind": "score",
+      "description": "How much the roster benefits from remaining unengaged, not being set up this turn, and limiting model movement before shooting."
+    },
+    {
+      "name": "mobile_terrain_traversal_value",
+      "kind": "score",
+      "description": "How much mission and movement value the roster can extract from generic Mobile-style terrain traversal."
+    },
+    {
+      "name": "reactive_move_density",
+      "kind": "score",
+      "description": "How much roster value is exposed to reusable reactive-move decision points."
+    },
+    {
+      "name": "heroic_intervention_density",
+      "kind": "score",
+      "description": "How strongly the roster can exploit modal Heroic Intervention or countercharge decision surfaces."
+    },
+    {
+      "name": "must_fight_next_leverage",
+      "kind": "score",
+      "description": "How much the roster can gain from scheduler-visible must-fight-next constraints."
+    },
+    {
+      "name": "action_after_advance_fallback_flex",
+      "kind": "score",
+      "description": "How much mission-action value remains available when units advance, fall back, or otherwise need movement-flex exceptions."
+    },
+    {
+      "name": "reserve_reposition_flex",
+      "kind": "score",
+      "description": "How much the roster can exploit reserve-entry, reserve-exit, and reposition decision surfaces."
+    },
+    {
+      "name": "upgrade_cardinality_complexity",
+      "kind": "score",
+      "description": "How much the roster's build-side semantics depend on multi-target, unit/model, or weapon-profile upgrade assignment shape."
+    },
+    {
+      "name": "battle_shock_persistence_leverage",
+      "kind": "score",
+      "description": "How much the roster can exploit persistent tactical-status state instead of assuming automatic Command phase cleanup."
+    }
+  ],
+  "source_provenance": [
+    {
+      "label": "May 2026 faction-focus preview mechanics",
+      "mechanics_observed": [
+        "detection_markers",
+        "hidden_preserving_shooting",
+        "cleave",
+        "updated_heavy",
+        "mobile",
+        "reactive_movement",
+        "heroic_intervention_modes",
+        "must_fight_next",
+        "upgrade_cardinality",
+        "battle_shock_persistence"
+      ],
+      "preview_only": true,
+      "source_id": "wc_2026_05_faction_focus_previews"
+    }
+  ],
+  "activation": "explicit"
 }
 ```
 

@@ -11,11 +11,14 @@ from typing import Any, Mapping
 from .army import _assert_supported_faction, get_faction_id_from_name
 from .army_build import ArmyBlueprint, RosterEntry
 from .build_capability_schema import (
+    BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,
     BUILD_CAPABILITY_SCHEMA_V2,
+    BuildCapabilityExtensionGroup,
     BuildCapabilitySchema,
     DEFAULT_BUILD_CAPABILITY_SCHEMA,
     canonical_json,
     json_safe,
+    resolve_build_capability_extension_groups,
 )
 from .unit_materialization import resolve_roster_entry_datasheet
 from ..engine.combat_timing import build_combat_timing_profile
@@ -320,6 +323,50 @@ def _preview_capability_feature_names(schema: BuildCapabilitySchema) -> set[str]
     }
 
 
+def _extension_feature_names(extension_groups: tuple[BuildCapabilityExtensionGroup, ...]) -> tuple[str, ...]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for group in extension_groups:
+        for feature_name in group.feature_names:
+            if feature_name in seen:
+                raise ValueError(f"Duplicate build capability extension feature: {feature_name!r}.")
+            seen.add(feature_name)
+            names.append(feature_name)
+    return tuple(names)
+
+
+def _validate_extension_groups(
+    *,
+    schema: BuildCapabilitySchema,
+    extension_groups: tuple[BuildCapabilityExtensionGroup, ...],
+) -> None:
+    schema_feature_names = set(schema.feature_names)
+    group_ids: set[str] = set()
+    for group in extension_groups:
+        group_id = str(group.extension_group_id or "")
+        if group_id in group_ids:
+            raise ValueError(f"Duplicate build capability extension group: {group_id!r}.")
+        group_ids.add(group_id)
+        activation = str(group.activation or "").strip().lower()
+        if activation != "explicit":
+            raise ValueError(
+                f"Build capability extension group {group_id!r} must use explicit activation."
+            )
+        if (
+            group_id == BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026.extension_group_id
+            and str(schema.capability_schema_id or "") != str(BUILD_CAPABILITY_SCHEMA_V2.capability_schema_id)
+        ):
+            raise ValueError(
+                "The May 2026 faction-focus capability extension must target "
+                "capability_schema:build_capability_v2."
+            )
+        collisions = sorted(name for name in group.feature_names if name in schema_feature_names)
+        if collisions:
+            raise ValueError(
+                f"Build capability extension group {group_id!r} collides with schema features: {collisions}."
+            )
+
+
 def _deployment_tags(datasheet: object) -> tuple[str, ...]:
     tags: set[str] = set()
     for ability in list(getattr(datasheet, "datasheets_abilities", []) or []):
@@ -398,22 +445,28 @@ class BuildCapabilityProfile:
     pressure_profile: dict[str, float]
     capability_scores: dict[str, float]
     unit_breakdown: tuple[UnitCapabilityRecord, ...]
+    extension_group_ids: tuple[str, ...] = ()
+    capability_extension_groups: tuple[BuildCapabilityExtensionGroup, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
-        return json_safe(
-            {
-                "capability_schema_id": self.capability_schema_id,
-                "build_capability_profile_id": self.build_capability_profile_id,
-                "army_blueprint_hash": self.army_blueprint_hash,
-                "rules_bundle_id": self.rules_bundle_id,
-                "faction": self.faction,
-                "detachment_types": list(self.detachment_types),
-                "aggregate_counts": dict(self.aggregate_counts),
-                "pressure_profile": dict(self.pressure_profile),
-                "capability_scores": dict(self.capability_scores),
-                "unit_breakdown": [record.to_dict() for record in self.unit_breakdown],
-            }
-        )
+        payload = {
+            "capability_schema_id": self.capability_schema_id,
+            "build_capability_profile_id": self.build_capability_profile_id,
+            "army_blueprint_hash": self.army_blueprint_hash,
+            "rules_bundle_id": self.rules_bundle_id,
+            "faction": self.faction,
+            "detachment_types": list(self.detachment_types),
+            "aggregate_counts": dict(self.aggregate_counts),
+            "pressure_profile": dict(self.pressure_profile),
+            "capability_scores": dict(self.capability_scores),
+            "unit_breakdown": [record.to_dict() for record in self.unit_breakdown],
+        }
+        if self.extension_group_ids:
+            payload["extension_group_ids"] = list(self.extension_group_ids)
+            payload["capability_extension_groups"] = [
+                group.to_dict() for group in self.capability_extension_groups
+            ]
+        return json_safe(payload)
 
 
 def summarize_roster_entry_capability(
@@ -495,9 +548,14 @@ def compile_build_capability_profile(
     *,
     rules_bundle_id: object,
     schema: BuildCapabilitySchema = DEFAULT_BUILD_CAPABILITY_SCHEMA,
+    extension_groups: tuple[BuildCapabilityExtensionGroup | str, ...]
+    | list[BuildCapabilityExtensionGroup | str]
+    | None = None,
     waha_helper: WahaHelper | None = None,
 ) -> BuildCapabilityProfile:
     blueprint = ArmyBlueprint.from_dict(blueprint)
+    active_extension_groups = resolve_build_capability_extension_groups(extension_groups)
+    _validate_extension_groups(schema=schema, extension_groups=active_extension_groups)
     rules_bundle_text, rules_bundle_data_dir = _normalize_rules_bundle_scope(rules_bundle_id)
     faction_id = get_faction_id_from_name(blueprint.faction)
     _assert_supported_faction(blueprint.faction, faction_id)
@@ -530,6 +588,24 @@ def compile_build_capability_profile(
         )
     )
     enhancement_count = len(list(blueprint.enhancement_assignments or []))
+    upgrade_assignments = list(blueprint.upgrade_assignments or [])
+    upgrade_count = len(upgrade_assignments)
+    upgrade_target_count = sum(len(tuple(assignment.target_ids or ())) for assignment in upgrade_assignments)
+    multi_target_upgrade_count = sum(
+        1 for assignment in upgrade_assignments if len(tuple(assignment.target_ids or ())) > 1
+    )
+    weapon_profile_upgrade_count = sum(
+        1 for assignment in upgrade_assignments if str(assignment.target_kind or "") == "weapon_profile"
+    )
+    model_upgrade_count = sum(
+        1 for assignment in upgrade_assignments if str(assignment.target_kind or "") == "model"
+    )
+    noncounting_upgrade_count = sum(
+        1 for assignment in upgrade_assignments if not bool(assignment.counts_toward_enhancement_limit)
+    )
+    variable_cost_upgrade_count = sum(
+        1 for assignment in upgrade_assignments if str(assignment.points_cost_mode or "") in {"per_target", "per_model"}
+    )
     leader_binding_count = sum(
         1 for binding in list(blueprint.attachment_bindings or []) if binding.leader_entry_id
     )
@@ -675,20 +751,36 @@ def compile_build_capability_profile(
             )
         ),
     }
+    deep_strike_share = _safe_ratio(deep_strike_unit_count, max(unit_count, 1))
+    scouting_share = _safe_ratio(infiltrator_unit_count + scout_unit_count, max(unit_count, 1))
+    melee_unit_share = _safe_ratio(melee_focused_unit_count, max(unit_count, 1))
+    short_range_share = _safe_ratio(short_range_pressure, max(total_pressure, 1.0))
+    short_range_unit_share = _safe_ratio(short_range_unit_count, max(unit_count, 1))
+    vehicle_monster_share = _safe_ratio(vehicle_or_monster_unit_count, max(unit_count, 1))
+    battleline_share = _safe_ratio(battleline_unit_count, max(unit_count, 1))
+    long_range_share = _safe_ratio(long_range_firepower, max(total_pressure, 1.0))
+    indirect_share = _safe_ratio(indirect_firepower, max(total_pressure, 1.0))
+    ranged_share = _safe_ratio(ranged_pressure, max(total_pressure, 1.0))
+    upgrade_share = _safe_ratio(upgrade_count, max(unit_count, 1))
+    upgrade_target_share = _safe_ratio(upgrade_target_count, max(unit_count, 1))
+    attachment_resilience = 1.0 - float(capability_scores["attachment_dependency_risk"])
+    controller_headroom = 1.0 - float(capability_scores["controller_complexity_index"])
+    combat_profile = None
+    geometry = None
+    ingress_bonus = 0.0
+    engagement_bonus = 0.0
+    pass_through_bonus = 0.0
+    charge_binding_bonus = 0.0
+    fight_first_bonus = 0.0
+    overrun_bonus = 0.0
+    consolidate_batch_bonus = 0.0
     preview_feature_names = _preview_capability_feature_names(schema)
-    if preview_feature_names:
+    needs_combat_profile = bool(preview_feature_names or active_extension_groups)
+    if needs_combat_profile:
         combat_profile = build_combat_timing_profile(
             context=_combat_profile_context(rules_bundle_id, rules_bundle_id=rules_bundle_text)
         )
         geometry = combat_profile.geometry
-        deep_strike_share = _safe_ratio(deep_strike_unit_count, max(unit_count, 1))
-        scouting_share = _safe_ratio(infiltrator_unit_count + scout_unit_count, max(unit_count, 1))
-        melee_unit_share = _safe_ratio(melee_focused_unit_count, max(unit_count, 1))
-        short_range_share = _safe_ratio(short_range_pressure, max(total_pressure, 1.0))
-        short_range_unit_share = _safe_ratio(short_range_unit_count, max(unit_count, 1))
-        vehicle_monster_share = _safe_ratio(vehicle_or_monster_unit_count, max(unit_count, 1))
-        attachment_resilience = 1.0 - float(capability_scores["attachment_dependency_risk"])
-        controller_headroom = 1.0 - float(capability_scores["controller_complexity_index"])
         ingress_bonus = min(1.0, max(0.0, 9.0 - float(geometry.ingress_exclusion_distance or 9.0)))
         engagement_bonus = min(1.0, max(0.0, float(geometry.engagement_range_horizontal or 1.0) - 1.0))
         pass_through_bonus = 1.0 if bool(geometry.can_pass_through_enemy_engagement_range) else 0.0
@@ -700,6 +792,7 @@ def compile_build_capability_profile(
         consolidate_batch_bonus = (
             1.0 if str(combat_profile.consolidate_batch_mode or "").strip().lower() == "end_batch" else 0.0
         )
+    if preview_feature_names:
         capability_scores.update(
             {
                 "charge_option_flexibility": _round_metric(
@@ -793,6 +886,177 @@ def compile_build_capability_profile(
                 ),
             }
         )
+    if active_extension_groups:
+        detection_marker_coverage = _round_metric(
+            min(
+                1.0,
+                (0.30 * short_range_share)
+                + (0.18 * ranged_share)
+                + (0.16 * float(capability_scores["detachment_diversity_index"]))
+                + (0.14 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.12 * scouting_share)
+                + (0.10 * min(1.0, float(unit_count) / 10.0)),
+            )
+        )
+        anti_hidden_projection = _round_metric(
+            min(
+                1.0,
+                (0.34 * detection_marker_coverage)
+                + (0.22 * long_range_share)
+                + (0.16 * indirect_share)
+                + (0.16 * float(capability_scores["deployment_reveal_pressure"]))
+                + (0.12 * short_range_share),
+            )
+        )
+        hidden_persistence_value = _round_metric(
+            min(
+                1.0,
+                (0.30 * float(capability_scores["terrain_occlusion_reliance"]))
+                + (0.22 * short_range_share)
+                + (0.18 * scouting_share)
+                + (0.16 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.14 * controller_headroom),
+            )
+        )
+        keyword_mutation_density = _round_metric(
+            min(
+                1.0,
+                (0.22 * float(capability_scores["detachment_diversity_index"]))
+                + (0.18 * upgrade_share)
+                + (0.16 * _safe_ratio(weapon_profile_upgrade_count, max(upgrade_count, 1)))
+                + (0.14 * _safe_ratio(noncounting_upgrade_count, max(upgrade_count, 1)))
+                + (0.14 * _safe_ratio(variable_cost_upgrade_count, max(upgrade_count, 1)))
+                + (0.10 * _safe_ratio(model_upgrade_count, max(upgrade_count, 1)))
+                + 0.06,
+            )
+        )
+        cleave_horde_clearance = _round_metric(
+            min(
+                1.0,
+                (0.36 * melee_share)
+                + (0.22 * melee_unit_share)
+                + (0.14 * min(1.0, float(unit_count) / 10.0))
+                + (0.10 * battleline_share)
+                + (0.10 * short_range_share)
+                + (0.08 * overrun_bonus),
+            )
+        )
+        heavy_stationary_fire_quality = _round_metric(
+            min(
+                1.0,
+                (0.34 * long_range_share)
+                + (0.20 * ranged_share)
+                + (0.18 * vehicle_monster_share)
+                + (0.14 * (1.0 - deep_strike_share))
+                + (0.14 * controller_headroom),
+            )
+        )
+        mobile_terrain_traversal_value = _round_metric(
+            min(
+                1.0,
+                (0.30 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.22 * scouting_share)
+                + (0.18 * float(capability_scores["objective_spread_tolerance"]))
+                + (0.16 * min(1.0, float(unit_count) / 10.0))
+                + (0.14 * (1.0 - float(capability_scores["towering_exposure_index"]))),
+            )
+        )
+        reactive_move_density = _round_metric(
+            min(
+                1.0,
+                (0.22 * scouting_share)
+                + (0.20 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.18 * float(capability_scores.get("charge_option_flexibility", 0.0)))
+                + (0.14 * min(1.0, float(unit_count) / 10.0))
+                + (0.14 * deep_strike_share)
+                + (0.12 * controller_headroom),
+            )
+        )
+        heroic_intervention_density = _round_metric(
+            min(
+                1.0,
+                (0.30 * melee_unit_share)
+                + (0.22 * float(capability_scores["charge_delivery_reliance"]))
+                + (0.16 * float(capability_scores.get("fight_order_resilience", 0.0)))
+                + (0.14 * vehicle_monster_share)
+                + (0.10 * float(capability_scores["detachment_diversity_index"]))
+                + (0.08 * engagement_bonus),
+            )
+        )
+        must_fight_next_leverage = _round_metric(
+            min(
+                1.0,
+                (0.28 * float(capability_scores.get("fight_order_resilience", 0.0)))
+                + (0.22 * melee_unit_share)
+                + (0.18 * float(capability_scores["charge_delivery_reliance"]))
+                + (0.14 * controller_headroom)
+                + (0.10 * min(1.0, float(unit_count) / 10.0))
+                + (0.08 * fight_first_bonus),
+            )
+        )
+        action_after_advance_fallback_flex = _round_metric(
+            min(
+                1.0,
+                (0.32 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.20 * float(capability_scores["objective_spread_tolerance"]))
+                + (0.16 * scouting_share)
+                + (0.12 * keyword_mutation_density)
+                + (0.10 * controller_headroom)
+                + (0.10 * mobile_terrain_traversal_value),
+            )
+        )
+        reserve_reposition_flex = _round_metric(
+            min(
+                1.0,
+                (0.34 * deep_strike_share)
+                + (0.22 * float(capability_scores["deployment_reveal_pressure"]))
+                + (0.18 * float(capability_scores.get("ingress_charge_conversion", 0.0)))
+                + (0.14 * scouting_share)
+                + (0.12 * min(1.0, float(unit_count) / 10.0)),
+            )
+        )
+        upgrade_cardinality_complexity = _round_metric(
+            min(
+                1.0,
+                (0.24 * upgrade_share)
+                + (0.18 * upgrade_target_share)
+                + (0.16 * _safe_ratio(multi_target_upgrade_count, max(upgrade_count, 1)))
+                + (0.16 * _safe_ratio(weapon_profile_upgrade_count, max(upgrade_count, 1)))
+                + (0.10 * _safe_ratio(model_upgrade_count, max(upgrade_count, 1)))
+                + (0.08 * _safe_ratio(noncounting_upgrade_count, max(upgrade_count, 1)))
+                + (0.08 * _safe_ratio(variable_cost_upgrade_count, max(upgrade_count, 1))),
+            )
+        )
+        battle_shock_persistence_leverage = _round_metric(
+            min(
+                1.0,
+                (0.24 * float(capability_scores["objective_spread_tolerance"]))
+                + (0.18 * min(1.0, float(unit_count) / 10.0))
+                + (0.16 * controller_headroom)
+                + (0.14 * float(capability_scores["mission_action_flex_capacity"]))
+                + (0.12 * float(capability_scores.get("fight_order_resilience", 0.0)))
+                + (0.10 * attachment_resilience)
+                + (0.06 * upgrade_cardinality_complexity),
+            )
+        )
+        capability_scores.update(
+            {
+                "detection_marker_coverage": detection_marker_coverage,
+                "anti_hidden_projection": anti_hidden_projection,
+                "hidden_persistence_value": hidden_persistence_value,
+                "keyword_mutation_density": keyword_mutation_density,
+                "cleave_horde_clearance": cleave_horde_clearance,
+                "heavy_stationary_fire_quality": heavy_stationary_fire_quality,
+                "mobile_terrain_traversal_value": mobile_terrain_traversal_value,
+                "reactive_move_density": reactive_move_density,
+                "heroic_intervention_density": heroic_intervention_density,
+                "must_fight_next_leverage": must_fight_next_leverage,
+                "action_after_advance_fallback_flex": action_after_advance_fallback_flex,
+                "reserve_reposition_flex": reserve_reposition_flex,
+                "upgrade_cardinality_complexity": upgrade_cardinality_complexity,
+                "battle_shock_persistence_leverage": battle_shock_persistence_leverage,
+            }
+        )
 
     aggregate_counts = _schema_mapping(
         schema.aggregate_count_names,
@@ -831,12 +1095,14 @@ def compile_build_capability_profile(
         schema_id=str(schema.capability_schema_id or ""),
         field_name="pressure_profile",
     )
+    capability_feature_names = tuple(schema.feature_names) + _extension_feature_names(active_extension_groups)
     capability_scores = _schema_mapping(
-        schema.feature_names,
+        capability_feature_names,
         capability_scores,
         schema_id=str(schema.capability_schema_id or ""),
         field_name="capability_scores",
     )
+    extension_group_ids = tuple(group.extension_group_id for group in active_extension_groups)
 
     payload = {
         "capability_schema_id": str(schema.capability_schema_id or ""),
@@ -849,6 +1115,9 @@ def compile_build_capability_profile(
         "capability_scores": capability_scores,
         "unit_breakdown": [record.to_dict() for record in unit_breakdown],
     }
+    if extension_group_ids:
+        payload["extension_group_ids"] = list(extension_group_ids)
+        payload["capability_extension_groups"] = [group.to_dict() for group in active_extension_groups]
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     profile_id = f"build_capability_profile:{digest[:16]}"
 
@@ -863,6 +1132,8 @@ def compile_build_capability_profile(
         pressure_profile=pressure_profile,
         capability_scores=capability_scores,
         unit_breakdown=unit_breakdown,
+        extension_group_ids=extension_group_ids,
+        capability_extension_groups=active_extension_groups,
     )
 
 

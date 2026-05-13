@@ -61,6 +61,26 @@ class BuildCapabilitySchema:
         }
 
 
+@dataclass(frozen=True)
+class BuildCapabilityExtensionGroup:
+    extension_group_id: str
+    feature_definitions: tuple[CapabilityFeatureDefinition, ...]
+    source_provenance: tuple[dict[str, object], ...]
+    activation: str = "explicit"
+
+    @property
+    def feature_names(self) -> tuple[str, ...]:
+        return tuple(feature.name for feature in self.feature_definitions)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "extension_group_id": str(self.extension_group_id or ""),
+            "feature_definitions": [feature.to_dict() for feature in self.feature_definitions],
+            "source_provenance": [json_safe(source) for source in self.source_provenance],
+            "activation": str(self.activation or ""),
+        }
+
+
 _BUILD_CAPABILITY_V1_FEATURE_DEFINITIONS = (
     CapabilityFeatureDefinition(
         name="terrain_occlusion_reliance",
@@ -203,6 +223,119 @@ _BUILD_CAPABILITY_V2_FEATURE_DEFINITIONS = _BUILD_CAPABILITY_V1_FEATURE_DEFINITI
     ),
 )
 
+_MAY_2026_FACTION_FOCUS_EXTENSION_FEATURE_DEFINITIONS = (
+    CapabilityFeatureDefinition(
+        name="detection_marker_coverage",
+        kind="score",
+        description=(
+            "How broadly the roster can project value from generic detection-marker "
+            "style visibility range changes."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="anti_hidden_projection",
+        kind="score",
+        description=(
+            "How well the roster can combine reach, marker support, and ranged pressure "
+            "to contest Hidden-style targets."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="hidden_persistence_value",
+        kind="score",
+        description=(
+            "How much value the roster can preserve from Hidden-style protection while "
+            "still contributing to board state."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="keyword_mutation_density",
+        kind="score",
+        description=(
+            "How much the roster's deterministic evaluation depends on runtime keyword "
+            "mutation, upgrade payloads, or detachment-authored keyword changes."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="cleave_horde_clearance",
+        kind="score",
+        description=(
+            "How naturally melee pressure and model volume convert into horde-clearance "
+            "value under a generic Cleave-like attack-dice modifier."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="heavy_stationary_fire_quality",
+        kind="score",
+        description=(
+            "How much the roster benefits from remaining unengaged, not being set up this "
+            "turn, and limiting model movement before shooting."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="mobile_terrain_traversal_value",
+        kind="score",
+        description=(
+            "How much mission and movement value the roster can extract from generic "
+            "Mobile-style terrain traversal."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="reactive_move_density",
+        kind="score",
+        description=(
+            "How much roster value is exposed to reusable reactive-move decision points."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="heroic_intervention_density",
+        kind="score",
+        description=(
+            "How strongly the roster can exploit modal Heroic Intervention or countercharge "
+            "decision surfaces."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="must_fight_next_leverage",
+        kind="score",
+        description=(
+            "How much the roster can gain from scheduler-visible must-fight-next constraints."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="action_after_advance_fallback_flex",
+        kind="score",
+        description=(
+            "How much mission-action value remains available when units advance, fall back, "
+            "or otherwise need movement-flex exceptions."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="reserve_reposition_flex",
+        kind="score",
+        description=(
+            "How much the roster can exploit reserve-entry, reserve-exit, and reposition "
+            "decision surfaces."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="upgrade_cardinality_complexity",
+        kind="score",
+        description=(
+            "How much the roster's build-side semantics depend on multi-target, unit/model, "
+            "or weapon-profile upgrade assignment shape."
+        ),
+    ),
+    CapabilityFeatureDefinition(
+        name="battle_shock_persistence_leverage",
+        kind="score",
+        description=(
+            "How much the roster can exploit persistent tactical-status state instead of "
+            "assuming automatic Command phase cleanup."
+        ),
+    ),
+)
+
 
 BUILD_CAPABILITY_SCHEMA_V1 = BuildCapabilitySchema(
     capability_schema_id="capability_schema:build_capability_v1",
@@ -243,15 +376,83 @@ BUILD_CAPABILITY_SCHEMA_V2 = BuildCapabilitySchema(
     feature_definitions=_BUILD_CAPABILITY_V2_FEATURE_DEFINITIONS,
 )
 
+BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026 = BuildCapabilityExtensionGroup(
+    extension_group_id="capability_extension:11e_faction_focus_may2026",
+    feature_definitions=_MAY_2026_FACTION_FOCUS_EXTENSION_FEATURE_DEFINITIONS,
+    source_provenance=(
+        {
+            "source_id": "wc_2026_05_faction_focus_previews",
+            "label": "May 2026 faction-focus preview mechanics",
+            "preview_only": True,
+            "mechanics_observed": [
+                "detection_markers",
+                "hidden_preserving_shooting",
+                "cleave",
+                "updated_heavy",
+                "mobile",
+                "reactive_movement",
+                "heroic_intervention_modes",
+                "must_fight_next",
+                "upgrade_cardinality",
+                "battle_shock_persistence",
+            ],
+        },
+    ),
+    activation="explicit",
+)
+
+BUILD_CAPABILITY_EXTENSION_GROUPS = (
+    BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,
+)
+_BUILD_CAPABILITY_EXTENSION_GROUPS_BY_ID = {
+    str(group.extension_group_id or ""): group
+    for group in BUILD_CAPABILITY_EXTENSION_GROUPS
+}
+
+
+def resolve_build_capability_extension_group(
+    extension_group: BuildCapabilityExtensionGroup | str,
+) -> BuildCapabilityExtensionGroup:
+    if isinstance(extension_group, BuildCapabilityExtensionGroup):
+        return extension_group
+    extension_group_id = str(extension_group or "").strip()
+    if extension_group_id in _BUILD_CAPABILITY_EXTENSION_GROUPS_BY_ID:
+        return _BUILD_CAPABILITY_EXTENSION_GROUPS_BY_ID[extension_group_id]
+    raise ValueError(f"Unknown build capability extension group: {extension_group_id!r}.")
+
+
+def resolve_build_capability_extension_groups(
+    extension_groups: tuple[BuildCapabilityExtensionGroup | str, ...]
+    | list[BuildCapabilityExtensionGroup | str]
+    | None,
+) -> tuple[BuildCapabilityExtensionGroup, ...]:
+    if not extension_groups:
+        return ()
+    resolved: list[BuildCapabilityExtensionGroup] = []
+    seen: set[str] = set()
+    for group in extension_groups:
+        resolved_group = resolve_build_capability_extension_group(group)
+        group_id = str(resolved_group.extension_group_id or "")
+        if not group_id or group_id in seen:
+            continue
+        seen.add(group_id)
+        resolved.append(resolved_group)
+    return tuple(sorted(resolved, key=lambda item: item.extension_group_id))
+
 DEFAULT_BUILD_CAPABILITY_SCHEMA = BUILD_CAPABILITY_SCHEMA_V1
 
 
 __all__ = [
+    "BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026",
+    "BUILD_CAPABILITY_EXTENSION_GROUPS",
     "BUILD_CAPABILITY_SCHEMA_V1",
     "BUILD_CAPABILITY_SCHEMA_V2",
+    "BuildCapabilityExtensionGroup",
     "BuildCapabilitySchema",
     "CapabilityFeatureDefinition",
     "DEFAULT_BUILD_CAPABILITY_SCHEMA",
     "canonical_json",
     "json_safe",
+    "resolve_build_capability_extension_group",
+    "resolve_build_capability_extension_groups",
 ]

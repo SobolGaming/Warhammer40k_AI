@@ -8,7 +8,10 @@ from warhammer40k_ai.engine.descriptor_build_capability import (
     compile_build_capability_descriptor_for_army,
 )
 from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, RosterEntry
-from warhammer40k_ai.roster.build_capability_schema import BUILD_CAPABILITY_SCHEMA_V2
+from warhammer40k_ai.roster.build_capability_schema import (
+    BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,
+    BUILD_CAPABILITY_SCHEMA_V2,
+)
 from warhammer40k_ai.waha_helper import WahaHelper
 
 
@@ -126,6 +129,34 @@ def test_build_capability_descriptor_wrapper_can_target_preview_v2_schema(
     assert first.payload["rules_bundle_id"] == "rules_bundle:2026-04-15-preview-combat"
     assert "charge_option_flexibility" in first.payload["capability_scores"]
     assert first.payload["capability_scores"]["overrun_chain_potential"] > 0.0
+
+
+def test_build_capability_descriptor_wrapper_includes_extension_group_ids(
+    waha_helper: WahaHelper,
+) -> None:
+    army = SimpleNamespace(army_blueprint=_descriptor_blueprint())
+
+    baseline = compile_build_capability_descriptor_for_army(
+        army,
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        waha_helper=waha_helper,
+    )
+    extended = compile_build_capability_descriptor_for_army(
+        army,
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        extension_groups=(BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,),
+        waha_helper=waha_helper,
+    )
+
+    assert baseline is not None
+    assert extended is not None
+    assert extended.descriptor_id != baseline.descriptor_id
+    assert extended.payload["capability_schema_id"] == "capability_schema:build_capability_v2"
+    assert extended.payload["extension_group_ids"] == ["capability_extension:11e_faction_focus_may2026"]
+    assert "detection_marker_coverage" in extended.payload["capability_scores"]
+    assert extended.payload["capability_extension_groups"][0]["activation"] == "explicit"
 
 
 def test_build_capability_descriptor_wrapper_returns_none_without_roster_context() -> None:

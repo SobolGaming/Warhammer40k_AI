@@ -293,7 +293,7 @@ shows what is done versus what remains.
 | PR-014H | Completed | Pushed to `dev` on May 13, 2026 as commit `a328e227` (`Implement PR-014H unit turn provenance`). |
 | PR-014I | Completed | Adds reactive move specs, modal stratagem requests, ledger exceptions, docs, and preview-gated goldens. |
 | PR-014J | Completed | Adds actionable pile-in/consolidate scheduler boundaries, must-fight-next constraints, fight trace context, and replay-visible move categories. |
-| PR-014K | Pending | Capability extension registry for faction-focus preview features. |
+| PR-014K | Completed | Adds explicit build-capability extension groups, May 2026 faction-focus features, descriptor provenance, and v2+extension test coverage. |
 | PR-014L | Pending | Preview source catalog and generic preview-gated golden tests. |
 | PR-015 | Pending | Release-day exactness pass. |
 
@@ -1412,7 +1412,7 @@ Turn fight scheduler stages into first-class runtime decision boundaries before 
 
 ## PR-014K — Capability extension registry instead of constant schema churn
 
-**Status:** Pending.
+**Status:** Completed on May 13, 2026.
 
 ### Goal
 Allow deterministic AI/mustering capability features from faction-focus previews without creating `build_capability_v3`, `v4`, etc. for every preview article.
@@ -1427,6 +1427,13 @@ Allow deterministic AI/mustering capability features from faction-focus previews
 - Capability descriptor IDs include schema and extension-group IDs.
 - Old v1/v2 manifests remain valid.
 - Future points/dataslate/codex patches can recompute capabilities without changing artifact ABI.
+
+### Implemented notes
+- `build_capability_schema.py` now defines `BuildCapabilityExtensionGroup`, a registry, resolver helpers, and `capability_extension:11e_faction_focus_may2026` with explicit source provenance.
+- `compile_build_capability_profile(...)` accepts explicit extension groups, validates the May 2026 group against `build_capability_v2`, and keeps v1/v2 payloads unchanged when no group is active.
+- Active extension payloads include `extension_group_ids` and `capability_extension_groups`, so descriptor/profile ids change deterministically when extension semantics are enabled.
+- The May 2026 extension fields are deterministic capability scores derived from existing roster shape, combat-preview profile surfaces, and PR-014G upgrade-assignment semantics.
+- Documentation and regression coverage lock v2-alone behavior, v2+extension behavior, descriptor id changes, and no implicit artifact compatibility widening.
 
 ---
 

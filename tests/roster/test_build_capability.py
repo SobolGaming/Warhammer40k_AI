@@ -11,9 +11,11 @@ from warhammer40k_ai.roster.army_build import (
     DetachmentSelection,
     EnhancementAssignment,
     RosterEntry,
+    UpgradeAssignment,
 )
 from warhammer40k_ai.roster.build_capability import compile_build_capability_profile
 from warhammer40k_ai.roster.build_capability_schema import (
+    BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,
     BUILD_CAPABILITY_SCHEMA_V2,
     DEFAULT_BUILD_CAPABILITY_SCHEMA,
 )
@@ -106,6 +108,33 @@ def _melee_heavy_blueprint() -> ArmyBlueprint:
             ),
         ],
     )
+
+
+def _upgrade_complex_blueprint() -> ArmyBlueprint:
+    blueprint = _melee_heavy_blueprint()
+    blueprint.upgrade_assignments = [
+        UpgradeAssignment(
+            upgrade_id="preview_multi_unit_upgrade",
+            source_detachment_id="det_liberator",
+            target_kind="unit",
+            target_ids=("unit_assault_alpha", "unit_assault_beta"),
+            max_targets=3,
+            counts_toward_enhancement_limit=False,
+            points_cost_mode="per_target",
+            declaration_step="declare_battle_formations",
+        ),
+        UpgradeAssignment(
+            upgrade_id="preview_weapon_profile_upgrade",
+            source_detachment_id="det_liberator",
+            target_kind="weapon_profile",
+            target_ids=("unit_bladeguard",),
+            max_targets=1,
+            points_cost_mode="once",
+            selected_weapon_profile_id="bladeguard_master_crafted_power_weapon",
+            declaration_step="declare_battle_formations",
+        ),
+    ]
+    return blueprint
 
 
 def _towering_heavy_blueprint() -> ArmyBlueprint:
@@ -358,6 +387,63 @@ def test_build_capability_v2_surfaces_preview_combat_semantics(
         > current.capability_scores["engagement_footprint_pressure"]
     )
     assert preview.capability_scores["transport_pop_punish_index"] > current.capability_scores["transport_pop_punish_index"]
+
+
+def test_build_capability_v2_extension_group_adds_explicit_faction_focus_features(
+    waha_helper: WahaHelper,
+) -> None:
+    blueprint = _upgrade_complex_blueprint()
+
+    baseline = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        waha_helper=waha_helper,
+    )
+    extended = compile_build_capability_profile(
+        blueprint,
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        extension_groups=(BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,),
+        waha_helper=waha_helper,
+    )
+    extended_by_id = compile_build_capability_profile(
+        blueprint.to_dict(),
+        rules_bundle_id=_preview_combat_scope(),
+        schema=BUILD_CAPABILITY_SCHEMA_V2,
+        extension_groups=("capability_extension:11e_faction_focus_may2026",),
+        waha_helper=waha_helper,
+    )
+
+    extension_feature_names = set(BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026.feature_names)
+    assert baseline.capability_schema_id == extended.capability_schema_id == "capability_schema:build_capability_v2"
+    assert baseline.build_capability_profile_id != extended.build_capability_profile_id
+    assert baseline.extension_group_ids == ()
+    assert "extension_group_ids" not in baseline.to_dict()
+    assert extension_feature_names.isdisjoint(baseline.capability_scores)
+    assert extended.build_capability_profile_id == extended_by_id.build_capability_profile_id
+    assert extended.extension_group_ids == ("capability_extension:11e_faction_focus_may2026",)
+    assert extension_feature_names.issubset(extended.capability_scores)
+    assert extended.capability_scores["cleave_horde_clearance"] > 0.0
+    assert extended.capability_scores["detection_marker_coverage"] > 0.0
+    assert extended.capability_scores["reactive_move_density"] > 0.0
+    assert extended.capability_scores["upgrade_cardinality_complexity"] > 0.0
+    payload = extended.to_dict()
+    assert payload["extension_group_ids"] == ["capability_extension:11e_faction_focus_may2026"]
+    assert payload["capability_extension_groups"][0]["activation"] == "explicit"
+    assert payload["capability_extension_groups"][0]["source_provenance"][0]["preview_only"] is True
+
+
+def test_build_capability_extension_group_requires_v2_schema(
+    waha_helper: WahaHelper,
+) -> None:
+    with pytest.raises(ValueError, match="must target capability_schema:build_capability_v2"):
+        compile_build_capability_profile(
+            _upgrade_complex_blueprint(),
+            rules_bundle_id=_preview_combat_scope(),
+            extension_groups=(BUILD_CAPABILITY_EXTENSION_11E_FACTION_FOCUS_MAY2026,),
+            waha_helper=waha_helper,
+        )
 
 
 def test_build_capability_profile_requires_explicit_snapshot_scope_without_helper() -> None:

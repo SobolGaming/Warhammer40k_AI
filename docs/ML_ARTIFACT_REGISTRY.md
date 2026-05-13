@@ -241,6 +241,11 @@ Capability-schema note:
   `capability_schema:build_capability_v2`, but that remains an explicit
   compatibility split. Existing v1 artifacts and bundles must not broaden their
   required capability-schema ids in place.
+- Capability extension groups, such as
+  `capability_extension:11e_faction_focus_may2026`, are separate explicit
+  descriptor inputs on top of a capability schema. Artifacts that consume those
+  extension features must declare a new artifact/policy id; they must not imply
+  that plain `build_capability_v2` payloads contain the extension feature set.
 
 ## Patch Scope and Retraining Scope
 

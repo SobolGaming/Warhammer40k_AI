@@ -56,6 +56,7 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
 
     schema = _extract_json_block(text, "Example Build Capability Schema")
     preview_schema = _extract_json_block(text, "Example Preview Combat Capability Schema")
+    extension_group = _extract_json_block(text, "Example Capability Extension Group")
 
     assert schema["capability_schema_id"] == "capability_schema:build_capability_v1"
     assert schema["aggregate_count_names"] == [
@@ -99,7 +100,24 @@ def test_build_capability_schema_doc_exists_and_locks_portable_schema() -> None:
     assert "transport_pop_punish_index" in preview_feature_names
     assert "preview combat bundles" in text.lower()
     assert "build_capability_v2" in text
-    assert "11e" not in text
+    assert extension_group["extension_group_id"] == "capability_extension:11e_faction_focus_may2026"
+    assert extension_group["activation"] == "explicit"
+    extension_feature_names = [feature["name"] for feature in extension_group["feature_definitions"]]
+    assert "detection_marker_coverage" in extension_feature_names
+    assert "anti_hidden_projection" in extension_feature_names
+    assert "hidden_persistence_value" in extension_feature_names
+    assert "keyword_mutation_density" in extension_feature_names
+    assert "cleave_horde_clearance" in extension_feature_names
+    assert "heavy_stationary_fire_quality" in extension_feature_names
+    assert "mobile_terrain_traversal_value" in extension_feature_names
+    assert "reactive_move_density" in extension_feature_names
+    assert "heroic_intervention_density" in extension_feature_names
+    assert "must_fight_next_leverage" in extension_feature_names
+    assert "action_after_advance_fallback_flex" in extension_feature_names
+    assert "reserve_reposition_flex" in extension_feature_names
+    assert "upgrade_cardinality_complexity" in extension_feature_names
+    assert "battle_shock_persistence_leverage" in extension_feature_names
+    assert extension_group["source_provenance"][0]["preview_only"] is True
 
 
 def test_tournament_field_schema_doc_exists_and_locks_event_policy_examples() -> None:
