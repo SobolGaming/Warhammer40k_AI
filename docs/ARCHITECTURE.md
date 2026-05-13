@@ -117,6 +117,7 @@ Current headless flow:
 - Time-budgeted solvers feed candidate metadata into `DecisionRecord`s, so headless runs capture candidates, masks, chosen actions, wall-clock timing, and fallback mode for replay/training use.
 - Headless deployment reuses generated placement payloads during validation so candidate generation does not run the same formation search twice for one anchor.
 - Hierarchical AI routing is available through `AIControllerRouter`: it maps each emitted `DecisionRequest` to a policy-bundle component such as `movement_ranker`, `shooting_ranker`, `fight_ranker`, or `dice_policy`. The router only orders already-legal candidates and hands them back to the existing command-resolution path.
+- Detailed headless decision ordering and movement activation audit flow are documented in `docs/AI_AGENT_HIERARCHY.md`.
 - Line-of-sight visibility contexts and legacy shooting-mixin LOS checks are cached by model positions, unit visibility flags, blocker positions, hidden/preview state, and terrain signatures. These caches are diagnostic/performance-only and do not change DecisionRecord or replay semantics.
 - Fight-phase pile-in and consolidate now continue through the same authoritative `MOVE_UNIT` pipeline as other movement decisions, with shared planning/validation instead of legacy UI-only movement hooks.
 

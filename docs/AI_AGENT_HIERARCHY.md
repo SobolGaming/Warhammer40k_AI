@@ -74,6 +74,74 @@ Routing is deterministic:
 
 `HeadlessPolicyDecisionController` accepts an optional `AIControllerRouter`. When provided, the router preselects the first candidate tried by the existing headless resolver. The resolver still uses the normal command path, payload normalization, reserves-arrival safeguards, and authoritative validation.
 
+### Headless Decision Flow
+
+Headless mode resolves the same `DecisionRequest` objects as UI and network play. The controller can rank candidates, but legality, mutation, follow-up decisions, and telemetry stay inside the authoritative engine path.
+
+```mermaid
+flowchart TD
+  A["Phase, setup, rule, or ability hook needs player input"] --> B["Build DecisionRequest with type, options, and context"]
+  B --> C["Game.request_decision"]
+  C --> D["Normalize limited-use context and attach rules, descriptor, plan, task, and time-budget metadata"]
+  D --> E{"Decision type"}
+  E -->|"Deployment/setup"| F["Generate deployment candidates and masks"]
+  E -->|"MOVE_UNIT"| G["Generate movement candidates, masks, and PathWitness references"]
+  E -->|"SELECT_MOVEMENT_ACTION in Movement phase"| H["Generate endpoint-aware movement-action candidates"]
+  E -->|"Other"| I["Finalize option-derived candidates"]
+  F --> J["Ensure semantic candidate metadata"]
+  G --> J
+  H --> J
+  I --> J
+  J --> K["Queue request and publish decision_requested"]
+  K --> L{"Controller handling request"}
+  L -->|"Dice or reroll request"| M["AutoDiceDecisionController resolves roll/reroll"]
+  L -->|"Non-dice headless request"| N["HeadlessPolicyDecisionController ranks legal mask=true candidates"]
+  N --> O{"AI router eligible?"}
+  O -->|"Yes"| P["AIControllerRouter reranks legal tactical candidates"]
+  O -->|"No"| Q["Use headless ranking directly"]
+  P --> R["Submit first candidate that passes preflight"]
+  Q --> R
+  M --> S["Submit RESOLVE_DECISION command"]
+  R --> S
+  S --> T["Command dispatcher validates player, option id, mask, and handler legality"]
+  T --> U{"Accepted?"}
+  U -->|"No"| V["Record invalid DecisionRecord with invalid_attempt and rejection_reason"]
+  U -->|"Yes"| W["Dispatch handler and mutate state"]
+  W --> X["Record valid DecisionRecord with chosen_action_id and outcome"]
+  X --> Y["Publish decision_resolved, queue rule/phase follow-ups, then publish decision_settled"]
+  Y --> Z{"Pending follow-up?"}
+  Z -->|"Yes"| K
+  Z -->|"No"| AA["Phase/setup loop continues"]
+```
+
+Movement-phase activation has an additional audit constraint: every eligible alive battlefield unit must receive a movement activation, and `SELECT_MOVEMENT_ACTION` is derived from the movement endpoint rather than chosen independently from the final `MOVE_UNIT` payload.
+
+```mermaid
+flowchart TD
+  A["Movement phase MOVE_UNITS step starts or resumes"] --> B{"Alive, battlefield, non-embarked, non-reserve units still eligible?"}
+  B -->|"No"| C["Movement step can advance"]
+  B -->|"Yes"| D["SELECT_UNIT chooses next eligible unit"]
+  D --> E["SELECT_MOVEMENT_ACTION plans the desired endpoint first"]
+  E --> F{"Least restrictive legal action for planned displacement"}
+  F -->|"REMAIN_STATIONARY"| G["Apply remained-stationary movement flag"]
+  F -->|"NORMAL or FALL_BACK"| H["Queue MOVE_UNIT using normal movement allowance"]
+  F -->|"ADVANCE"| I["Resolve advance modifiers and REQUEST_DICE_ROLL"]
+  I --> J["Queue MOVE_UNIT using movement plus advance result"]
+  H --> K["MOVE_UNIT validates per-model displacement, identity, coherency, and PathWitness"]
+  J --> K
+  K --> L["Apply model positions and movement flags"]
+  L --> M["Queue disembark/embark or other movement follow-ups when legal"]
+  G --> B
+  M --> B
+```
+
+Audit checklist:
+- Review `decision_requested` event order, then the matching `DecisionRecord` order.
+- For each record, verify `request_context.phase_name`, `phase_step`, `selection_purpose`, `ability`, and limited-use metadata before interpreting the choice.
+- For ranking audits, compare only legal `mask=true` candidates and confirm `chosen_action_id` appears in `candidates`.
+- For movement audits, inspect `SELECT_MOVEMENT_ACTION` candidate metadata and the following `MOVE_UNIT` payload together; an `ADVANCE` label is invalid when the chosen model positions were reachable by a Normal Move unless a rule explicitly forces that state.
+- If the engine changes decision ordering, update these diagrams and the affected decision/replay docs in the same change.
+
 LLM-backed domain agents are documented in `docs/LLM_AGENT_RUNTIME.md`. They implement the same component contract and fall back to the deterministic rankers described here when the provider is unavailable or returns an illegal action id.
 
 ## Human Training Mode
