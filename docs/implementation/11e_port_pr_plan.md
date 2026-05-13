@@ -287,10 +287,10 @@ shows what is done versus what remains.
 | PR-014B | Completed | Implemented fight scheduler / entitlement scaffolding, preview overrun handoff, and objective-site consolidate routing on April 16, 2026. |
 | PR-014C | Completed | Implemented reserve-entry rules/geometry extraction, shared reserve legality helpers, and preview-gated ingress regression coverage on April 16, 2026. |
 | PR-014D | Completed | Implemented `build_capability_v2`, explicit descriptor targeting, and deterministic combat-preview golden coverage on April 16, 2026. |
-| PR-014E | Implemented locally | Mechanics and keyword registry, weapon keyword runtime, movement keyword runtime, and preview-gated CLEAVE attack-dice handling are implemented in the current working tree; mark Completed once reviewed/merged. |
-| PR-014F | Implemented locally | Detection markers and Hidden-preserving shooting infrastructure are implemented in the current working tree; mark Completed once reviewed/merged. |
-| PR-014G | Implemented locally | Upgrade assignment model, validation, descriptor payloads, and preview-gated upgrade goldens are implemented in the current working tree; mark Completed once reviewed/merged. |
-| PR-014H | Pending | Unit turn provenance and tactical status tokens. |
+| PR-014E | Completed | Pushed to `dev` on May 13, 2026 as commit `fb4c258b` (`Implement PR-014E keyword registry runtime`). |
+| PR-014F | Completed | Pushed to `dev` on May 13, 2026 as commit `f48f9d0e` (`Implement PR-014F detection marker infrastructure`). |
+| PR-014G | Completed | Pushed to `dev` on May 13, 2026 as commit `01c0249f` (`Implement PR-014G upgrade assignment semantics`). |
+| PR-014H | Completed | Pushed to `dev` on May 13, 2026 as commit `a328e227` (`Implement PR-014H unit turn provenance`). |
 | PR-014I | Pending | Reactive movement and stratagem-mode decision framework. |
 | PR-014J | Pending | Make fight scheduler stages actionable decision boundaries. |
 | PR-014K | Pending | Capability extension registry for faction-focus preview features. |
@@ -1228,7 +1228,7 @@ The repo already has a deterministic build-capability compiler, but the current 
 
 ## PR-014E — Mechanics and keyword registry
 
-**Status:** Implemented locally; pending review/merge.
+**Status:** Completed and pushed to `dev` on May 13, 2026 as commit `fb4c258b` (`Implement PR-014E keyword registry runtime`).
 
 ### Goal
 Add a rules-pack-driven keyword/effect registry for preview keywords and future codex keywords.
@@ -1257,7 +1257,7 @@ Add a rules-pack-driven keyword/effect registry for preview keywords and future 
 
 ## PR-014F — Detection markers and Hidden-preserving shooting
 
-**Status:** Implemented locally; pending review/merge.
+**Status:** Completed and pushed to `dev` on May 13, 2026 as commit `f48f9d0e` (`Implement PR-014F detection marker infrastructure`).
 
 ### Goal
 Replace ad hoc Hidden/detection logic with a generic marker/query system.
@@ -1286,7 +1286,7 @@ Replace ad hoc Hidden/detection logic with a generic marker/query system.
 
 ## PR-014G — Upgrade assignment and enhancement-budget modes
 
-**Status:** Implemented locally; pending review/merge.
+**Status:** Completed and pushed to `dev` on May 13, 2026 as commit `01c0249f` (`Implement PR-014G upgrade assignment semantics`).
 
 ### Goal
 Make 11e-style Upgrade payloads first-class in mustering without treating preview faction upgrades as live data.
@@ -1313,7 +1313,7 @@ Make 11e-style Upgrade payloads first-class in mustering without treating previe
 
 ## PR-014H — Unit turn provenance and tactical status tokens
 
-**Status:** Implemented locally for PR-014H.
+**Status:** Completed and pushed to `dev` on May 13, 2026 as commit `a328e227` (`Implement PR-014H unit turn provenance`).
 
 ### Goal
 Centralize "what happened to this unit/model this turn" state used by Heavy, Hidden, reserve-entry, Bridgehead-style effects, actions, battle-shock, and future AI features.
