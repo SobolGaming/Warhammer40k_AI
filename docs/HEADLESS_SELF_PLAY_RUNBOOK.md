@@ -105,7 +105,7 @@ Throughput controls:
 - `--workers <N>` runs games in parallel processes.
 - `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
 - `--reserve-policy forced_only` avoids ordinary optional reserve declarations (default; faster and more stable), but can still reserve validated oversized/Titanic overflow units when too many large footprints would otherwise fail deployment.
-- `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
+- `--max-reserves-arrival-seconds <T>` sizes the deterministic per-unit reserve-arrival work budget (default: `10`; retained as a CLI compatibility name). Wall-clock profiling overhead no longer changes how many reserve-arrival anchors are searched.
 
 Random matchup batch controls:
 - `run_headless_matchup_batch.py` synthesizes two exact-point armies per matchup, reuses a matching `batch_manifest.json` when available, and reruns match outputs from scratch so fixes can be validated against the same rosters and seeds.

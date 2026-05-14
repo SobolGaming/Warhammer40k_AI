@@ -36,40 +36,42 @@ def _build_request(*, budget_ms: int):
 
 def test_deployment_solver_uses_fallback_candidates_when_budget_is_exceeded(monkeypatch) -> None:
     game, request = _build_request(budget_ms=10)
+    request.context["work_budget_units"] = 0
     intent = DeploymentIntent.from_context(request.context)
     expected_action_ids = [str(candidate.action_id) for candidate in list(request.candidates or [])]
     expected_mask = [bool(value) for value in list(request.mask or [])]
 
     def _solver(*_args, **_kwargs):
-        return [CandidateAction(action_id="solver-action", params={"source": "solver"}, metadata={"fallback_mode": False})], [True]
+        raise AssertionError("solver should not run after deterministic work budget exhaustion")
 
-    ticks = iter([500.0, 500.2])
     monkeypatch.setattr("warhammer40k_ai.engine.deployment_solver._solver_candidates", _solver)
-    monkeypatch.setattr("warhammer40k_ai.engine.time_manager.time.perf_counter", lambda: next(ticks))
 
     candidates, mask, wall_clock_ms, fallback_mode = generate_deployment_candidates(game, request, intent)
 
     assert fallback_mode is True
-    assert wall_clock_ms == 200
+    assert wall_clock_ms >= 0
     assert [str(candidate.action_id) for candidate in list(candidates or [])] == expected_action_ids
     assert mask == expected_mask
     assert all(bool(dict(candidate.metadata or {}).get("fallback_mode", False)) for candidate in list(candidates or []))
+    assert request.context["budget_mode"] == "work_units"
+    assert request.context["work_budget_exhausted"] is True
 
 
 def test_deployment_solver_keeps_solver_output_within_budget(monkeypatch) -> None:
     game, request = _build_request(budget_ms=25)
+    request.context["work_budget_units"] = 10
     intent = DeploymentIntent.from_context(request.context)
 
     def _solver(*_args, **_kwargs):
         return [CandidateAction(action_id="solver-action", params={"source": "solver"}, metadata={"fallback_mode": False})], [True]
 
-    ticks = iter([700.0, 700.007])
     monkeypatch.setattr("warhammer40k_ai.engine.deployment_solver._solver_candidates", _solver)
-    monkeypatch.setattr("warhammer40k_ai.engine.time_manager.time.perf_counter", lambda: next(ticks))
 
     candidates, mask, wall_clock_ms, fallback_mode = generate_deployment_candidates(game, request, intent)
 
     assert fallback_mode is False
-    assert wall_clock_ms == 7
+    assert wall_clock_ms >= 0
     assert [str(candidate.action_id) for candidate in list(candidates or [])] == ["solver-action"]
     assert mask == [True]
+    assert request.context["budget_mode"] == "work_units"
+    assert request.context["work_budget_exhausted"] is False

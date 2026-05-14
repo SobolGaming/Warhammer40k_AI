@@ -108,10 +108,10 @@ This document describes deterministic headless placement behavior for deployment
 - Exact reserve model-position synthesis now delegates to the shared `reserve_entry_geometry.py`
   helper so headless reserve landing generation stays aligned with the authoritative reserve-entry
   validation seam.
-- Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`.
+- Anchor generation remains deterministic and bounded by `max_reserves_anchor_points`; reserve-arrival brute-force search consumes deterministic work units instead of stopping on wall-clock timeout.
 - Reserves diagnostics are available from `HeadlessPolicyDecisionController.get_reserves_arrival_search_metrics()`.
-  - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, failure reason, timeout status, and elapsed wall-clock time.
-  - Failed reserve-arrival searches write `reserve_last_arrival_failure` back to the unit as structured metadata (`reason`, anchor/build/reject counters, timeout flag, elapsed milliseconds). State blobs expose this metadata for hidden state and for the owning player's observation.
+  - Per-decision metrics include anchor attempts, quick rejects, build calls, calls to first valid result, first-valid anchor source, exhaustive fallback usage, failure reason, deterministic work-budget fields, timeout status, and elapsed wall-clock time.
+  - Failed reserve-arrival searches write `reserve_last_arrival_failure` back to the unit as structured metadata (`reason`, anchor/build/reject counters, timeout/work-budget flags, elapsed milliseconds). State blobs expose this metadata for hidden state and for the owning player's observation.
 - Reserve-arrival requests include reserve provenance in context:
   - `reserve_source` (`must_start_in_reserves` or `deployment_choice`)
   - `reserve_mandatory_start`

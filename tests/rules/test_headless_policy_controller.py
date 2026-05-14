@@ -2486,7 +2486,7 @@ def test_headless_policy_controller_discards_failed_speculative_reserves_command
     assert int(metric.get("resolve_attempts", 0) or 0) == 2
 
 
-def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget() -> None:
+def test_headless_policy_controller_reserves_bruteforce_respects_work_budget() -> None:
     class _Model:
         def __init__(self, model_id: str) -> None:
             self._id = model_id
@@ -2526,11 +2526,10 @@ def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget(
 
     controller._reserves_arrival_anchor_points = lambda _game, _unit: [(float(i), 0.0) for i in range(10_000)]  # type: ignore[method-assign]
 
-    def _slow_fail(_game, _unit, *, x, y):
-        time.sleep(0.01)
+    def _fail(_game, _unit, *, x, y):
         return []
 
-    controller._build_model_positions_from_anchor = _slow_fail  # type: ignore[method-assign]
+    controller._build_model_positions_from_anchor = _fail  # type: ignore[method-assign]
 
     started = time.perf_counter()
     resolved = controller._try_resolve_reserves_arrival_bruteforce(game, request)
@@ -2538,6 +2537,10 @@ def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget(
 
     assert resolved is False
     assert elapsed < 0.5
+    metric = controller.get_reserves_arrival_search_metrics()[-1]
+    assert metric["budget_mode"] == "work_units"
+    assert metric["work_budget_exhausted"] is True
+    assert int(metric["anchor_attempts"]) == int(metric["work_budget_units"])
 
 
 def test_reserves_anchor_generation_is_bounded_and_deterministic_for_strategic_reserves() -> None:

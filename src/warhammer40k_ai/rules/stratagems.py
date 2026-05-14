@@ -4991,6 +4991,38 @@ class StratagemManager(
             }
         return str(value)
 
+    @classmethod
+    def _stable_tool_action_payload_value(cls, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, bool)):
+            return value
+        if isinstance(value, float):
+            return round(float(value), 6)
+        if isinstance(value, dict):
+            stable: Dict[str, Any] = {}
+            for key, item in sorted(dict(value or {}).items(), key=lambda entry: str(entry[0])):
+                key_text = str(key)
+                if key_text in {"action_id", "created_at", "expires_at", "requested_at", "resolved_at", "wall_clock_ms"}:
+                    continue
+                stable[key_text] = cls._stable_tool_action_payload_value(item)
+            return stable
+        if isinstance(value, (list, tuple)):
+            return [cls._stable_tool_action_payload_value(item) for item in list(value)]
+        if isinstance(value, set):
+            stable_items = [cls._stable_tool_action_payload_value(item) for item in value]
+            stable_items.sort(key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=True))
+            return stable_items
+        return str(value)
+
+    @classmethod
+    def _tool_action_action_id(cls, label: str, payload: Dict[str, Any]) -> str:
+        canonical = {
+            "label": str(label or ""),
+            "payload": cls._stable_tool_action_payload_value(dict(payload or {})),
+        }
+        blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        return f"SELECT_TOOL_ACTION:{digest}"
+
     @staticmethod
     def _tool_action_max_unit_count(stratagem: Stratagem, context: Dict[str, Any]) -> int:
         raw_max = context.get("max_units")
@@ -5155,7 +5187,12 @@ class StratagemManager(
         if str(getattr(stratagem, "name", "") or "").strip().upper() == "HEROIC INTERVENTION":
             probe["charge_path_direct_only"] = True
         serialized_kwargs = self._serialize_tool_action_value(probe)
-        stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        stable_payload = json.dumps(
+            self._stable_tool_action_payload_value(serialized_kwargs),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
         if stable_payload in seen:
             return
         seen.add(stable_payload)
@@ -5177,18 +5214,20 @@ class StratagemManager(
             semantic_tags.append("combat")
         if any(token in text_blob for token in ("move", "advance", "charge", "fallback", "reposition")):
             semantic_tags.append("move")
+        payload = {
+            "tool_family": "stratagem",
+            "tool_type": "stratagem",
+            **identity,
+            "cp_cost": cp_cost,
+            "semantic_tags": semantic_tags,
+            "is_reaction": bool(item.get("is_reaction", False)),
+            "resolved_kwargs": serialized_kwargs,
+        }
+        payload["action_id"] = self._tool_action_action_id(label, payload)
         specs.append(
             {
                 "label": label,
-                "payload": {
-                    "tool_family": "stratagem",
-                    "tool_type": "stratagem",
-                    **identity,
-                    "cp_cost": cp_cost,
-                    "semantic_tags": semantic_tags,
-                    "is_reaction": bool(item.get("is_reaction", False)),
-                    "resolved_kwargs": serialized_kwargs,
-                },
+                "payload": payload,
             }
         )
 
@@ -5964,7 +6003,12 @@ class StratagemManager(
             key=lambda spec: (
                 str(spec.get("payload", {}).get("tool_name", "") or ""),
                 str(spec.get("label", "") or ""),
-                json.dumps(spec.get("payload", {}).get("resolved_kwargs", {}), sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+                json.dumps(
+                    self._stable_tool_action_payload_value(spec.get("payload", {}).get("resolved_kwargs", {})),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ),
             )
         )
         return specs
@@ -6023,7 +6067,7 @@ class StratagemManager(
         payload_signature = [
             {
                 "label": str(spec.get("label", "") or ""),
-                "payload": dict(spec.get("payload", {}) or {}),
+                "payload": self._stable_tool_action_payload_value(dict(spec.get("payload", {}) or {})),
             }
             for spec in specs
         ]
@@ -6063,17 +6107,19 @@ class StratagemManager(
             )
             for spec in specs
         ]
+        skip_payload = {
+            "action": "skip",
+            "skip": True,
+            "tool_family": "stratagem",
+            "tool_type": "stratagem",
+            "tool_name": "",
+            "resolved_kwargs": {},
+        }
+        skip_payload["action_id"] = self._tool_action_action_id("Do not use", skip_payload)
         options.append(
             DecisionOption.create(
                 "Do not use",
-                payload={
-                    "action": "skip",
-                    "skip": True,
-                    "tool_family": "stratagem",
-                    "tool_type": "stratagem",
-                    "tool_name": "",
-                    "resolved_kwargs": {},
-                },
+                payload=skip_payload,
             )
         )
         return DecisionRequest.create(

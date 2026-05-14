@@ -29,7 +29,7 @@ Framework-free deterministic component rankers live in `src/warhammer40k_ai/engi
 
 | Role | Runtime Interpretation | Engine Surface |
 | --- | --- | --- |
-| Tier 0 | Rules compiler, candidate generator, legality/mask authority | candidate generation, masks, descriptor provenance, semantic metadata, `time_budget_ms` |
+| Tier 0 | Rules compiler, candidate generator, legality/mask authority | candidate generation, masks, descriptor provenance, semantic metadata, `time_budget_ms`, `work_budget_units` |
 | Tier 1 | Optional strategic context provider / plan blackboard | `Tier1Plan`, scoring/denial opportunities, resource posture, risk posture, unit priority tiers |
 | Tier 2 | Optional tactical task provider / intent generator | `Tier2TaskBundle`, per-unit tasks, `MovementIntent`, `compute_tier`, CP reserve policy |
 | Orchestrator | Component selector, context binder, legal-action arbiter, fallback coordinator | `AIPolicyOrchestrator` role selection and deterministic fallback orchestration |
@@ -100,7 +100,7 @@ Request context is assembled in this order:
 4. ensure the version-adapter boundary
 5. determine the policy component
 6. attach optional orchestration context
-7. decorate `time_budget_ms`
+7. decorate `time_budget_ms` and deterministic `work_budget_units`
 8. generate candidates and masks
 9. ensure semantic candidate metadata
 10. queue the decision

@@ -572,7 +572,12 @@ class WorldEatersStratagemMixin:
             if not self._we_can_use_goretrack_tool_action(name_u, binding):
                 continue
             serialized_kwargs = self._serialize_tool_action_value(binding)
-            stable_payload = json.dumps(serialized_kwargs, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            stable_payload = json.dumps(
+                self._stable_tool_action_payload_value(serialized_kwargs),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
             if stable_payload in seen:
                 continue
             seen.add(stable_payload)
@@ -581,18 +586,21 @@ class WorldEatersStratagemMixin:
             passenger = binding.get("embarked_unit") or binding.get("passenger_unit")
             if passenger is not None:
                 label_suffix = f"{label_suffix} <- {self._tool_action_label_value(passenger)}"
+            label = f"{identity.get('tool_name', 'Tool')}: {label_suffix}"
+            payload = {
+                "tool_family": "stratagem",
+                "tool_type": "stratagem",
+                **identity,
+                "cp_cost": int(self._effective_cp_cost(stratagem, binding) or 0),
+                "semantic_tags": ["move"],
+                "is_reaction": bool(item.get("is_reaction", False)),
+                "resolved_kwargs": serialized_kwargs,
+            }
+            payload["action_id"] = self._tool_action_action_id(label, payload)
             specs.append(
                 {
-                    "label": f"{identity.get('tool_name', 'Tool')}: {label_suffix}",
-                    "payload": {
-                        "tool_family": "stratagem",
-                        "tool_type": "stratagem",
-                        **identity,
-                        "cp_cost": int(self._effective_cp_cost(stratagem, binding) or 0),
-                        "semantic_tags": ["move"],
-                        "is_reaction": bool(item.get("is_reaction", False)),
-                        "resolved_kwargs": serialized_kwargs,
-                    },
+                    "label": label,
+                    "payload": payload,
                 }
             )
         return specs

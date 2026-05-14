@@ -204,6 +204,10 @@ def test_headless_reserves_failure_records_structured_unit_metadata() -> None:
         "validation_rejects": 3,
         "quick_rejects": 5,
         "timed_out": True,
+        "budget_mode": "",
+        "work_budget_units": 0,
+        "work_units_used": 0,
+        "work_budget_exhausted": False,
         "elapsed_ms": 250,
     }
 
@@ -221,6 +225,10 @@ def test_headless_reserves_failure_records_structured_unit_metadata() -> None:
         "validation_rejects": 3,
         "quick_rejects": 5,
         "timed_out": True,
+        "budget_mode": "",
+        "work_budget_units": 0,
+        "work_units_used": 0,
+        "work_budget_exhausted": False,
         "elapsed_ms": 250,
     }
     assert unit.reserve_last_arrival_failure == failure

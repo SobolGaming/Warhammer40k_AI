@@ -53,6 +53,7 @@ from .reserve_entry_geometry import (
     strategic_edge_touch_offset_for_model as _strategic_edge_touch_offset_for_model,
     strategic_reserves_edges as _strategic_reserves_edges,
 )
+from .time_manager import WorkBudget
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
@@ -159,6 +160,9 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
         self._reserves_exhaustive_anchor_limit = int(max(32, min(self._max_reserves_anchor_points, 512)))
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
+        self._max_reserves_arrival_work_units = int(
+            max(1, min(self._max_reserves_anchor_points, round(self._max_reserves_arrival_seconds * 85.0)))
+        )
         self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
         self._ai_orchestrator = ai_orchestrator
@@ -2069,8 +2073,10 @@ class HeadlessPolicyDecisionController(DecisionController):
             boundary_repulsors=boundary_repulsors,
         )
         started = time.perf_counter()
-        deadline = started + float(self._max_reserves_arrival_seconds)
+        budget = WorkBudget(unit_limit=int(self._max_reserves_arrival_work_units))
         metric = self._new_reserves_metric(game, unit, context=context)
+        metric["budget_mode"] = "work_units"
+        metric["work_budget_units"] = int(budget.unit_limit)
         attempted = 0
         try:
             anchor_groups = self._reserves_arrival_anchor_candidate_groups(game, unit, context=context)
@@ -2082,8 +2088,9 @@ class HeadlessPolicyDecisionController(DecisionController):
             if str(source or "").endswith("exhaustive"):
                 metric["exhaustive_fallback_used"] = True
             for x, y in list(anchors or []):
-                now = time.perf_counter()
-                if now >= deadline:
+                if budget.exhausted:
+                    break
+                if not budget.consume(category="reserves_arrival.anchor"):
                     break
                 metric["anchor_attempts"] = int(metric.get("anchor_attempts", 0) or 0) + 1
                 self._bump_metric_counter(metric, "source_attempt_counts", str(source))
@@ -2138,24 +2145,31 @@ class HeadlessPolicyDecisionController(DecisionController):
                     metric["consumed_anchor_count"] = int(consumed)
                     metric["returned_candidate_count"] = 1
                     metric["first_valid_source"] = str(source or "")
+                    metric["work_units_used"] = int(budget.units_used)
+                    metric["work_budget_exhausted"] = bool(budget.exhausted)
                     if metric.get("calls_to_first_valid") is None:
                         metric["calls_to_first_valid"] = int(metric.get("build_calls", 0) or 0)
                     metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
                     self._record_reserves_metric(metric)
                     return True
                 self._discard_failed_speculative_command(game, command_count_before)
-            if time.perf_counter() >= deadline:
+            if budget.exhausted:
                 break
 
-        timed_out = bool(time.perf_counter() >= deadline)
-        failure_reason = "timed_out" if timed_out else "no_valid_arrival_position"
-        metric["timed_out"] = bool(timed_out)
-        if timed_out:
+        work_budget_exhausted = bool(budget.exhausted)
+        failure_reason = "work_budget_exhausted" if work_budget_exhausted else "no_valid_arrival_position"
+        metric["timed_out"] = False
+        metric["work_units_used"] = int(budget.units_used)
+        metric["work_budget_exhausted"] = bool(work_budget_exhausted)
+        metric["work_budget_exhausted_reason"] = str(budget.exhausted_category or "")
+        if work_budget_exhausted:
             logger.warning(
-                "Headless reserves-arrival search timed out for unit %s after %.2fs (%d anchors attempted).",
+                "Headless reserves-arrival search exhausted work budget for unit %s after %d/%d work units (%d anchors attempted, %.2fs wall).",
                 unit_id,
-                float(time.perf_counter() - started),
+                int(budget.units_used),
+                int(budget.unit_limit),
                 int(attempted),
+                float(time.perf_counter() - started),
             )
 
         allow_skip = bool(context.get("allow_skip", True))
@@ -2179,7 +2193,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             self._record_reserves_arrival_failure(unit, reason=str(metric["failure_reason"]), metric=metric)
             self._record_reserves_metric(metric)
             return bool(apply_result is not None and getattr(apply_result, "ok", False))
-        if timed_out and skip_option_id:
+        if work_budget_exhausted and skip_option_id:
             apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
@@ -2196,7 +2210,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             self._record_reserves_metric(metric)
             if apply_result is not None and bool(getattr(apply_result, "ok", False)):
                 return True
-        metric["timed_out"] = bool(timed_out)
+        metric["timed_out"] = False
         metric["consumed_anchor_count"] = int(consumed)
         metric["returned_candidate_count"] = 0
         metric["elapsed_ms"] = int(round((time.perf_counter() - started) * 1000.0))
@@ -2305,6 +2319,10 @@ class HeadlessPolicyDecisionController(DecisionController):
             "validation_rejects": int(metric.get("validation_rejects", 0) or 0),
             "quick_rejects": int(metric.get("quick_rejects", 0) or 0),
             "timed_out": bool(metric.get("timed_out", False)),
+            "budget_mode": str(metric.get("budget_mode", "") or ""),
+            "work_budget_units": int(metric.get("work_budget_units", 0) or 0),
+            "work_units_used": int(metric.get("work_units_used", 0) or 0),
+            "work_budget_exhausted": bool(metric.get("work_budget_exhausted", False)),
             "elapsed_ms": int(metric.get("elapsed_ms", 0) or 0),
         }
         special_rules = getattr(unit, "special_rules", None)

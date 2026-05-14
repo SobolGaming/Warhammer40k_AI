@@ -14,6 +14,43 @@ from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDeci
 from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 
 
+def test_tool_action_action_id_ignores_volatile_expiry_fields() -> None:
+    base_payload = {
+        "tool_family": "stratagem",
+        "tool_type": "stratagem",
+        "tool_name": "GO TO GROUND",
+        "resolved_kwargs": {
+            "event": "shooting_targets_selected",
+            "expires_at": 123.456,
+            "unit": {"__entity_ref__": {"id": "unit:target", "kind": "unit"}},
+        },
+    }
+    later_payload = {
+        **base_payload,
+        "resolved_kwargs": {
+            **base_payload["resolved_kwargs"],
+            "expires_at": 999.999,
+        },
+    }
+    different_event = {
+        **base_payload,
+        "resolved_kwargs": {
+            **base_payload["resolved_kwargs"],
+            "event": "battle_shock_failed",
+            "expires_at": 999.999,
+        },
+    }
+
+    assert StratagemManager._tool_action_action_id("GO TO GROUND", base_payload) == StratagemManager._tool_action_action_id(
+        "GO TO GROUND",
+        later_payload,
+    )
+    assert StratagemManager._tool_action_action_id("GO TO GROUND", base_payload) != StratagemManager._tool_action_action_id(
+        "GO TO GROUND",
+        different_event,
+    )
+
+
 def _build_remote_tool_manager():
     decision_queue = DecisionQueue()
     target_unit = SimpleNamespace(id="unit:target", name="Target Unit")

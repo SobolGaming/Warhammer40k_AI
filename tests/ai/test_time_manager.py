@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import time
-
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
-from warhammer40k_ai.engine.time_manager import TimeManager
+from warhammer40k_ai.engine.time_manager import TimeManager, WorkBudget
 from warhammer40k_ai.roster.player import Player
 
 
@@ -22,19 +20,24 @@ def test_time_manager_applies_tier_multipliers() -> None:
 
 def test_time_manager_run_with_budget_uses_fallback_when_over_budget() -> None:
     manager = TimeManager()
+    budget = WorkBudget(unit_limit=2)
 
-    def _slow_action(_deadline: float):
-        time.sleep(0.02)
+    def _expensive_action(work_budget: WorkBudget):
+        assert work_budget.consume(category="test.step")
+        work_budget.consume(category="test.exhaust")
         return "slow-result"
 
     result, fallback_used, wall_clock_ms = manager.run_with_time_budget(
         budget_ms=1,
-        action=_slow_action,
+        action=_expensive_action,
         fallback=lambda: "fallback-result",
+        work_budget=budget,
     )
     assert fallback_used is True
     assert result == "fallback-result"
-    assert wall_clock_ms >= 1
+    assert wall_clock_ms >= 0
+    assert budget.exhausted is True
+    assert budget.exhausted_category == "test.exhaust"
 
 
 def test_game_request_decision_sets_time_budget_in_context() -> None:

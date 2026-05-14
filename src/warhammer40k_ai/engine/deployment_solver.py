@@ -12,6 +12,7 @@ from .decision_kinds import (
 )
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
 from .deployment_intent import DeploymentIntent
+from .time_manager import WorkBudget
 from ..utility.profiling_sections import profiled_section
 
 
@@ -1481,7 +1482,13 @@ def generate_deployment_candidates(
         wall_clock_ms = int(round((time.perf_counter() - start) * 1000.0))
         return candidates, mask, wall_clock_ms, False
 
-    def _action(_deadline: float):
+    work_budget = time_manager.create_work_budget(
+        str(getattr(request, "decision_type", "") or ""),
+        context=ctx,
+        fallback_units=budget_ms,
+    )
+
+    def _action(_budget: WorkBudget):
         candidates, mask = _solver_candidates(game, request, intent)
         candidates = _apply_deployment_lookahead(
             candidates,
@@ -1497,5 +1504,8 @@ def generate_deployment_candidates(
         budget_ms=budget_ms,
         action=_action,
         fallback=_fallback,
+        work_budget=work_budget,
     )
+    if hasattr(request, "context"):
+        request.context.update(work_budget.to_context())
     return candidates, mask, int(wall_clock_ms), bool(fallback_mode)

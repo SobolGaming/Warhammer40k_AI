@@ -15,6 +15,7 @@ from warhammer40k_ai.engine.combat_timing import (
 )
 from warhammer40k_ai.engine.ruleset import RulesetBundle
 from warhammer40k_ai.engine import fight_move
+from warhammer40k_ai.engine.time_manager import WorkBudget
 
 
 class _BaseStub:
@@ -225,7 +226,7 @@ def test_budgeted_fight_move_planning_uses_snapshot_without_routed_pathing() -> 
             movement_type="pile_in",
             max_distance=3.0,
             target_unit_ids=[],
-            deadline=0.0,
+            budget=WorkBudget(unit_limit=10),
         )
 
     assert planned == [{"model_id": "model-1", "position": [4.0, 5.0, 0.0], "facing": 0.0}]

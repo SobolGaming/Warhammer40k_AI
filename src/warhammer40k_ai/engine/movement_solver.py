@@ -15,11 +15,23 @@ from .movement_distance import (
 )
 from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
+from .time_manager import WorkBudget
 from ..utility.profiling_sections import profiled_section
 
 
-def _deadline_exceeded(deadline: float | None) -> bool:
-    return deadline is not None and time.perf_counter() >= float(deadline)
+def _work_budget_exhausted(budget: WorkBudget | None) -> bool:
+    return bool(budget is not None and budget.exhausted)
+
+
+def _consume_work_budget(
+    budget: WorkBudget | None,
+    *,
+    category: str,
+    units: int = 1,
+) -> bool:
+    if budget is None:
+        return True
+    return budget.consume(units, category=category)
 
 
 def _entity_text_id(entity: object) -> str:
@@ -400,17 +412,19 @@ def _heuristic_charge_candidate(
     target_units: list[object],
     rules_bundle_id: str,
     intent: MovementIntent,
-    deadline: float | None,
+    budget: WorkBudget | None,
 ) -> CandidateAction | None:
     pairs = _charge_closest_pairs(unit, target_units)
     if not pairs:
         return None
 
-    max_pairs = 1 if deadline is not None else 2
-    max_candidates_per_pair = 6 if deadline is not None else 12
+    max_pairs = 1 if budget is not None else 2
+    max_candidates_per_pair = 6 if budget is not None else 12
     seen_destinations: set[tuple[float, float, float]] = set()
     for pair_index, (_distance, charging_model, target_model, target_unit) in enumerate(pairs):
-        if pair_index >= int(max_pairs) or _deadline_exceeded(deadline):
+        if pair_index >= int(max_pairs) or _work_budget_exhausted(budget):
+            break
+        if not _consume_work_budget(budget, category="movement.charge_pair"):
             break
         for candidate_index, destination in enumerate(
             _iter_charge_destination_candidates(
@@ -419,7 +433,9 @@ def _heuristic_charge_candidate(
                 target_model=target_model,
             )
         ):
-            if candidate_index >= int(max_candidates_per_pair) or _deadline_exceeded(deadline):
+            if candidate_index >= int(max_candidates_per_pair) or _work_budget_exhausted(budget):
+                break
+            if not _consume_work_budget(budget, category="movement.charge_destination"):
                 break
             destination_key = (
                 round(float(destination[0]), 3),
@@ -593,7 +609,7 @@ def _charge_candidate(
     target_units: list[object],
     rules_bundle_id: str,
     intent: MovementIntent,
-    deadline: float | None = None,
+    budget: WorkBudget | None = None,
 ) -> CandidateAction | None:
     if not target_units:
         return None
@@ -611,13 +627,13 @@ def _charge_candidate(
         target_units=target_units,
         rules_bundle_id=rules_bundle_id,
         intent=intent,
-        deadline=deadline,
+        budget=budget,
     )
     if heuristic_candidate is not None:
         return heuristic_candidate
-    if _deadline_exceeded(deadline):
+    if _work_budget_exhausted(budget):
         return None
-    if deadline is not None:
+    if budget is not None:
         # Exact routed charge pathing can enter non-interruptible geometry calls; keep
         # budgeted candidate generation bounded once the cheap endpoint search misses.
         return None
@@ -627,7 +643,7 @@ def _charge_candidate(
         return None
 
     for target_unit in list(target_units or []):
-        if _deadline_exceeded(deadline):
+        if _work_budget_exhausted(budget):
             break
         try:
             destination = destination_finder(
@@ -1176,7 +1192,7 @@ def _solver_candidates(
     request: DecisionRequest,
     intent: MovementIntent,
     *,
-    deadline: float | None = None,
+    budget: WorkBudget | None = None,
 ) -> tuple[list[CandidateAction], list[bool]]:
     ctx = dict(getattr(request, "context", {}) or {})
     movement_type = str(ctx.get("movement_type", "move") or "move")
@@ -1217,7 +1233,7 @@ def _solver_candidates(
                 target_units=target_units,
                 rules_bundle_id=rules_bundle_id,
                 intent=intent,
-                deadline=deadline,
+                budget=budget,
             )
             if charge_candidate is not None:
                 candidates.append(charge_candidate)
@@ -1245,7 +1261,7 @@ def _solver_candidates(
                 movement_type=movement_type,
                 max_distance=float(max_distance),
                 target_unit_ids=[str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")],
-                deadline=deadline,
+                budget=budget,
             )
             confirm_payload["model_positions"] = planned_positions
             witness = build_model_path_witness_for_unit(
@@ -1404,8 +1420,14 @@ def generate_move_unit_candidates(game: object, request: DecisionRequest, intent
         wall_clock_ms = int(round((time.perf_counter() - start) * 1000.0))
         return candidates, mask, wall_clock_ms, False
 
-    def _action(deadline: float):
-        return _solver_candidates(game, request, intent, deadline=deadline)
+    work_budget = time_manager.create_work_budget(
+        str(getattr(request, "decision_type", "") or ""),
+        context=ctx,
+        fallback_units=budget_ms,
+    )
+
+    def _action(budget: WorkBudget):
+        return _solver_candidates(game, request, intent, budget=budget)
 
     def _fallback():
         return _fallback_candidates(request)
@@ -1414,5 +1436,8 @@ def generate_move_unit_candidates(game: object, request: DecisionRequest, intent
         budget_ms=budget_ms,
         action=_action,
         fallback=_fallback,
+        work_budget=work_budget,
     )
+    if hasattr(request, "context"):
+        request.context.update(work_budget.to_context())
     return candidates, mask, int(wall_clock_ms), bool(fallback_mode)
