@@ -81,7 +81,7 @@ and telemetry contracts.
 - Allocation ranker: damage, Precision, target-model, hazardous, and model-selection allocation choices.
 - Strategic planner: battle-round or army-wide posture choices such as doctrines, vows, blessings, rituals, secondaries, and broad resource posture.
 
-Shared decision surfaces are context-sensitive. For example, `MOVE_UNIT` routes to deployment, charge, fight, or movement depending on `placement_kind`, `phase_step`, and `movement_type`.
+Shared decision surfaces are context-sensitive. For example, `MOVE_UNIT` routes to deployment, charge, fight, or movement depending on `placement_kind`, `phase_step`, and `movement_type`. `SELECT_UNIT` routes shooting activations to `shooting_ranker`, fight activations to `fight_ranker`, and non-combat phase selection to `tactical_orchestrator`.
 
 ## Orchestration Context Attachment
 
@@ -245,7 +245,7 @@ flowchart TD
   M --> B
 ```
 
-Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes. The default path is `DECLARE_SHOTS` for the selected unit; if that unit is a Transport with Firing Deck and has not declared its embarked shots yet, `DECLARE_FIRING_DECK` runs first and then returns to the selected Transport's normal `DECLARE_SHOTS` request. Firing Deck adds selected embarked-model shots; it does not replace the Transport's own guns. `DECLARE_SHOTS` carries legal target metadata per model/weapon/profile, and split fire is represented as multiple declaration entries. Once targets are selected, the engine publishes the selected-as-target reaction window and headless reaction tool decisions resolve before ranged attacks continue.
+Shooting-phase activation repeatedly selects eligible shooters until no eligible units remain or the controller passes. The default path is `DECLARE_SHOTS` for the selected unit; if that unit is a Transport with Firing Deck and has not declared its embarked shots yet, `DECLARE_FIRING_DECK` runs first and then returns to the selected Transport's normal `DECLARE_SHOTS` request. Firing Deck adds selected embarked-model shots; it does not replace the Transport's own guns. `DECLARE_SHOTS` carries legal target metadata per model/weapon/profile, and split fire is represented as multiple declaration entries. Headless shooting activation only accepts a unit candidate when it can synthesize at least one legal shooting declaration, searching the unit's weapon/profile/target candidates until the first legal declaration is found. Once targets are selected, the engine publishes the selected-as-target reaction window and headless reaction tool decisions resolve before ranged attacks continue.
 
 ```mermaid
 flowchart TD

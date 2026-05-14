@@ -1339,6 +1339,121 @@ def test_headless_policy_controller_passes_shooting_selection_when_no_unit_can_d
     assert str(payload.get("option_id", "")) == "opt:pass"
 
 
+def test_headless_policy_controller_shooting_selection_checks_past_first_invalid_target() -> None:
+    class _Profile:
+        name = "Standard"
+        parent_wargear = None
+
+        def is_hazardous(self) -> bool:
+            return False
+
+    class _Wargear:
+        id = "wargear:rifle"
+        name = "Rifle"
+
+        def __init__(self) -> None:
+            self.profile = _Profile()
+            self.profile.parent_wargear = self
+            self.profiles = {"standard": self.profile}
+
+        def is_ranged(self) -> bool:
+            return True
+
+    class _Model:
+        id = "model:shooter"
+        is_alive = True
+
+        def __init__(self) -> None:
+            self.wargear = [_Wargear()]
+
+    class _Unit:
+        def __init__(self, unit_id: str) -> None:
+            self.id = unit_id
+            self.name = unit_id
+            self.deployed = True
+            self.is_embarked = False
+            self.embarked_in = None
+            self.models = [_Model()] if unit_id == "unit:shooter" else []
+            self.validation_calls = 0
+
+        def get_attached_unit_root(self):
+            return self
+
+        def get_attached_unit_models(self):
+            return list(self.models)
+
+        def is_alive(self) -> bool:
+            return True
+
+        def is_in_reserves(self) -> bool:
+            return False
+
+        def _validate_shooting_declaration(self, _profile, target_unit, models, _game_map):
+            self.validation_calls += 1
+            return {"valid": bool(getattr(target_unit, "id", "") == "unit:z-valid" and models)}
+
+    class _Map:
+        def __init__(self, targets) -> None:
+            self._targets = list(targets)
+
+        def get_enemy_units(self, _unit):
+            return list(self._targets)
+
+    class _ShootingGame(_FakeGame):
+        def __init__(self) -> None:
+            super().__init__()
+            self.shooter = _Unit("unit:shooter")
+            self.blocked_target = _Unit("unit:a-blocked")
+            self.valid_target = _Unit("unit:z-valid")
+            self.map = _Map([self.blocked_target, self.valid_target])
+            self.units = {
+                self.shooter.id: self.shooter,
+                self.blocked_target.id: self.blocked_target,
+                self.valid_target.id: self.valid_target,
+            }
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self.units.get(str(unit_id or ""))
+
+    game = _ShootingGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select shooting unit",
+        player_id="p1",
+        options=[
+            DecisionOption("opt:shooter", "Shooter", {"unit_id": "unit:shooter", "action_id": "select:shooter"}),
+            DecisionOption("opt:pass", "Pass", {"action": "pass", "action_id": "select:pass"}),
+        ],
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "phase_step": "SHOOT_UNITS",
+            "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+            "allow_pass": True,
+        },
+        candidates=[
+            CandidateAction(
+                action_id="select:shooter",
+                params={"unit_id": "unit:shooter"},
+                metadata={"projected_score_delta_next_window": 1.0},
+            ),
+            CandidateAction(
+                action_id="select:pass",
+                params={"action": "pass"},
+                metadata={"projected_score_delta_next_window": 0.0},
+            ),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == "opt:shooter"
+    assert game.shooter.validation_calls == 2
+
+
 def test_headless_policy_controller_caps_shooting_selection_precheck_to_first_valid_declaration() -> None:
     class _Profile:
         name = "Standard"

@@ -79,6 +79,8 @@ def test_orchestrator_uses_context_for_shared_decision_surfaces() -> None:
     assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
     assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"movement_type": "normal"}) == COMPONENT_MOVEMENT_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
+    assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "SHOOT_UNITS"}) == COMPONENT_SHOOTING_RANKER
+    assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_name": "SHOOTING_PHASE"}) == COMPONENT_SHOOTING_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "MOVE_UNITS"}) == COMPONENT_TACTICAL_ORCHESTRATOR
     assert (
         policy_component_for_decision(kinds.DECISION_CONFIRM_YES_NO, {"ability": "fire_overwatch_reaction"})

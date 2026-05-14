@@ -15,6 +15,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_UNIT,
     DECISION_USE_GILDED_CHAMPION,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -344,6 +345,16 @@ def _candidate_by_action_id(request: DecisionRequest, action_id: str) -> Candida
             },
             {},
             "charge",
+        ),
+        (
+            DECISION_SELECT_UNIT,
+            {"unit_id": "unit_1"},
+            {
+                "phase_name": "SHOOTING_PHASE",
+                "phase_step": "SHOOT_UNITS",
+                "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+            },
+            "targeting",
         ),
         (
             DECISION_ALLOCATE_MELEE_TARGETS,

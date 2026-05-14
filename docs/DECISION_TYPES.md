@@ -43,7 +43,9 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - Concrete headless policy orchestration is implemented by `AIPolicyOrchestrator` in
   `src/warhammer40k_ai/engine/ai_policy_orchestrator.py`; shared decision surfaces
   such as `MOVE_UNIT`, `SELECT_UNIT`, and `CONFIRM_YES_NO` select components by request
-  context.
+  context. In particular, `SELECT_UNIT` shooting activations route to `shooting_ranker`,
+  fight activations route to `fight_ranker`, and non-combat phase selection routes to
+  `tactical_orchestrator`.
 
 ## Mission And Secondaries
 

@@ -1868,7 +1868,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             declarations = cls._default_shooting_declarations(
                 game,
                 request,
-                {"unit_id": unit_id, "max_declarations": 1, "max_validation_attempts": 1},
+                {"unit_id": unit_id, "max_declarations": 1, "max_validation_attempts": 0},
             )
             return bool(declarations)
 

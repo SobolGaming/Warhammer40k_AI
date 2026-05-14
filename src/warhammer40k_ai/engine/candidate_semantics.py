@@ -853,6 +853,18 @@ def _projection_kind(
         return "targeting"
     if decision_type in _CHARGE_DECISION_TYPES:
         return "charge"
+    if decision_type == DECISION_SELECT_UNIT:
+        phase_key = " ".join(
+            str(context.get(key, "") or "").strip().upper()
+            for key in ("phase_step", "phase", "phase_name", "selection_purpose")
+        )
+        if "SHOOT" in phase_key:
+            return "targeting"
+        if "CHARGE" in phase_key:
+            return "charge"
+        if "FIGHT" in phase_key:
+            return "fight"
+        return "generic"
     if decision_type in _FIGHT_DECISION_TYPES:
         return "fight"
     if _is_tool_decision(
