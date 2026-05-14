@@ -1190,11 +1190,13 @@ class DeploymentManager:
                 queue = getattr(self.game, "decision_queue", None)
                 pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
                 if pending is not None:
+                    result_payload = dict(selected_payload)
+                    result_payload["model_positions"] = selected_positions
                     apply_result = resolve_decision_command(
                         self.game,
                         request,
                         selected_option.option_id,
-                        result_payload={"model_positions": selected_positions},
+                        result_payload=result_payload,
                         player_id=getattr(request, "player_id", None),
                     )
                     if not bool(getattr(apply_result, "ok", False)):

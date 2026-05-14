@@ -405,7 +405,10 @@ def _candidate_params_match_result_payload(candidate: CandidateAction, result: D
         params = dict(payload)
     else:
         return True
-    return _canonical_json(dict(getattr(candidate, "params", {}) or {})) == _canonical_json(params)
+    candidate_params = dict(getattr(candidate, "params", {}) or {})
+    candidate_params.pop("action_id", None)
+    params.pop("action_id", None)
+    return _canonical_json(candidate_params) == _canonical_json(params)
 
 
 def _chosen_candidate_matches_result_payload(

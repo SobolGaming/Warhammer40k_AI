@@ -302,6 +302,57 @@ def test_decision_record_does_not_inject_duplicate_when_candidate_contains_move_
     assert injected == []
 
 
+def test_decision_record_matches_move_payload_when_result_includes_action_id() -> None:
+    game, player = _build_game()
+    payload = {
+        "unit_id": "unit-1",
+        "movement_type": "deploy",
+        "action": "confirm",
+        "placement_candidate_id": "candidate:1",
+        "placement_candidate_index": 1,
+        "deployment_anchor": [10.0, 8.0],
+        "model_positions": [
+            {
+                "model_id": "model-1",
+                "position": [10.0, 8.0, 0.0],
+                "facing": 0.0,
+            }
+        ],
+        "action_id": "MOVE_UNIT:test:deployment:candidate:1",
+    }
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy unit",
+        player_id=player.id,
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload=dict(payload),
+            ),
+        ],
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload=dict(payload),
+    )
+
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+
+    injected = [c for c in record["candidates"] if c.get("metadata", {}).get("source") == "HumanActionCandidate"]
+    assert record["human_action_injected"] is False
+    assert record["chosen_action_id"] == payload["action_id"]
+    assert injected == []
+
+
 def test_decision_record_player_color_candidates_are_deterministic_and_valid() -> None:
     player_one = Player("P1")
     player_two = Player("P2")

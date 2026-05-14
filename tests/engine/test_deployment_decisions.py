@@ -12,6 +12,7 @@ from warhammer40k_ai.engine.decision_requests import (
     canonical_deployment_zone_key,
 )
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+import warhammer40k_ai.engine.deployment as deployment_module
 from warhammer40k_ai.engine.deployment import DeploymentDecisionMaker, DeploymentManager
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -269,6 +270,97 @@ def test_deployment_move_request_supports_multi_candidate_payloads_and_option_ho
     )
     selected_payload = dict(getattr(selected, "payload", {}) or {})
     assert int(selected_payload.get("placement_candidate_index", -1) or -1) == 1
+
+
+def test_execute_alternating_deployment_resolves_full_selected_move_payload(monkeypatch) -> None:
+    game, defender, attacker = _build_game()
+    manager = DeploymentManager(game)
+    manager.defender = defender
+    manager.attacker = attacker
+
+    unit = _DeployingUnit("unit:alpha", "Alpha")
+    defender.army = _DeploymentArmy([unit])
+    attacker.army = _DeploymentArmy([])
+
+    class _DecisionMaker(_OptionSelectingDecisionMaker):
+        def build_deployment_intent(self, **kwargs):
+            del kwargs
+            return {}
+
+        def build_deployment_decision_context(self, **kwargs):
+            del kwargs
+            return {}
+
+    decision_maker = _DecisionMaker(zone_name="Zone A", next_unit_id=unit.id)
+
+    def _fake_candidates(candidate_unit, *, decision_maker, deployment_zone, already_deployed, max_candidates=8):
+        del decision_maker, deployment_zone, already_deployed, max_candidates
+        return [
+            {
+                "anchor": [4.0, 8.0],
+                "model_positions": [
+                    {
+                        "model_id": f"{candidate_unit.id}:model:0",
+                        "position": [4.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "semantic_anchor",
+            },
+            {
+                "anchor": [6.0, 10.0],
+                "model_positions": [
+                    {
+                        "model_id": f"{candidate_unit.id}:model:0",
+                        "position": [6.0, 10.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "lattice",
+            },
+        ]
+
+    captured_payload: dict[str, object] = {}
+
+    def _fake_resolve_decision_command(game_arg, request, option_id, *, result_payload=None, player_id=None, metadata=None):
+        del option_id, player_id, metadata
+        if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:
+            captured_payload.update(dict(result_payload or {}))
+            unit.deployed = True
+        game_arg.decision_queue.pop(request.decision_id)
+        return type("Result", (), {"ok": True})()
+
+    monkeypatch.setattr(manager, "_build_deployment_move_candidates", _fake_candidates)
+    monkeypatch.setattr(deployment_module, "resolve_decision_command", _fake_resolve_decision_command)
+
+    deployment_results = {
+        "deployment_zones": {
+            defender.id: {"name": "Zone A", "zone_type": "defender"},
+            attacker.id: {"name": "Zone B", "zone_type": "attacker"},
+        },
+        "reserves": {
+            defender.id: {unit.id: "deploy"},
+            attacker.id: {},
+        },
+    }
+
+    manager.execute_alternating_deployment(deployment_results, {defender.id: decision_maker, attacker.id: decision_maker})
+
+    assert captured_payload["unit_id"] == unit.id
+    assert captured_payload["movement_type"] == "deploy"
+    assert captured_payload["action"] == "confirm"
+    assert int(captured_payload["placement_candidate_index"]) == 1
+    assert str(captured_payload["placement_candidate_id"])
+    assert captured_payload["deployment_anchor"] == [6.0, 10.0]
+    assert captured_payload["candidate_source"] == "lattice"
+    assert captured_payload["model_positions"] == [
+        {
+            "model_id": "unit:alpha:model:0",
+            "position": [6.0, 10.0, 0.0],
+            "facing": 0.0,
+        }
+    ]
+    assert str(captured_payload["action_id"]).startswith(f"{DECISION_MOVE_UNIT}:")
 
 
 def test_deployment_move_candidate_builder_empty_result_returns_no_candidates() -> None:
