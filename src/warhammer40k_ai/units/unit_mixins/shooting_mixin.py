@@ -190,6 +190,23 @@ def _shooting_los_blocker_key(game_map: object, shooter_unit: object, target_uni
 
 
 def _shooting_los_cache_key(shooter_unit: object, shooting_model: object, target_unit: object, game_map: object) -> tuple:
+    map_generation = getattr(game_map, "state_generation", None)
+    if map_generation is not None:
+        try:
+            generation_key = int(map_generation)
+        except (TypeError, ValueError):
+            generation_key = str(map_generation)
+        return (
+            "shooting_los_v2",
+            id(game_map),
+            generation_key,
+            _shooting_los_entity_key(shooter_unit),
+            _shooting_los_model_key(shooting_model),
+            _shooting_los_unit_key(target_unit),
+            bool(getattr(shooter_unit, "is_aircraft", False)),
+            bool(getattr(shooter_unit, "is_towering", False)),
+            bool(getattr(target_unit, "is_aircraft", False)),
+        )
     return (
         "shooting_los_v1",
         id(game_map),
@@ -2179,6 +2196,7 @@ class ShootingMixin:
 
         # Late imports to avoid circulars
         from shapely.geometry import LineString
+        from shapely.prepared import prep
 
         def _model_alive(model: object) -> bool:
             alive = getattr(model, "is_alive", False)
@@ -2288,6 +2306,7 @@ class ShootingMixin:
                 wall_contexts = tuple(
                     {
                         "polygon": wall.get("polygon"),
+                        "prepared": prep(wall.get("polygon")),
                         "bounds": wall.get("polygon").bounds,
                         "z_bottom": float(wall.get("z_bottom", 0.0)),
                         "z_top": float(wall.get("z_top", wall.get("z_bottom", 0.0))),
@@ -2298,6 +2317,7 @@ class ShootingMixin:
                 opening_contexts = tuple(
                     {
                         "polygon": opening.get("polygon"),
+                        "prepared": prep(opening.get("polygon")),
                         "bounds": opening.get("polygon").bounds,
                         "z_bottom": float(opening.get("z_bottom", -1e9)),
                         "z_top": float(opening.get("z_top", 1e9)),
@@ -2311,6 +2331,7 @@ class ShootingMixin:
                     {
                         "terrain": terrain,
                         "footprint": footprint,
+                        "prepared_footprint": prep(footprint) if footprint is not None else None,
                         "footprint_bounds": footprint.bounds if footprint is not None else None,
                         "is_ruins": is_ruins,
                         "walls": wall_contexts,
@@ -2346,7 +2367,7 @@ class ShootingMixin:
                     if geometry is None:
                         continue
                     shape, bounds, z_bounds = geometry
-                    blockers.append({"shape": shape, "bounds": bounds, "z_bounds": z_bounds})
+                    blockers.append({"shape": shape, "prepared": prep(shape), "bounds": bounds, "z_bounds": z_bounds})
             return tuple(blockers)
 
         def is_segment_blocked(
@@ -2363,10 +2384,33 @@ class ShootingMixin:
             # Quick reject: degenerate line in XY projects to a point
             if abs(float(p0[0]) - float(p1[0])) <= 1e-9 and abs(float(p0[1]) - float(p1[1])) <= 1e-9:
                 return False
-            line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
-            if line2d.length == 0:
-                return False
-            line_bounds = line2d.bounds
+            line_bounds = (
+                min(float(p0[0]), float(p1[0])),
+                min(float(p0[1]), float(p1[1])),
+                max(float(p0[0]), float(p1[0])),
+                max(float(p0[1]), float(p1[1])),
+            )
+            line2d = None
+            line_length = 0.0
+
+            def _line2d():
+                nonlocal line2d, line_length
+                if line2d is None:
+                    line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
+                    line_length = float(line2d.length)
+                if line_length <= 0.0:
+                    return None
+                return line2d
+
+            def _intersects_prepared(context: dict[str, object], geometry_key: str, prepared_key: str) -> bool:
+                line = _line2d()
+                if line is None:
+                    return False
+                prepared = context.get(prepared_key)
+                if prepared is not None:
+                    return bool(prepared.intersects(line))
+                geometry = context.get(geometry_key)
+                return bool(geometry is not None and line.intersects(geometry))
 
             # Helper to compute z at param t along the 2D line
             def z_at_t(t: float) -> float:
@@ -2376,28 +2420,22 @@ class ShootingMixin:
             for terrain_index, context in enumerate(terrain_contexts):
                 footprint = context.get("footprint")
                 footprint_bounds = context.get("footprint_bounds")
-                # Special Ruins visibility handling
                 if bool(context.get("is_ruins")) and footprint is not None:
                     shooter_inside_any = bool(context.get("shooter_inside", False))
                     target_inside_any = bool(target_ruins_states[terrain_index])
                     shooter_wholly_within = bool(context.get("shooter_wholly", False))
-                    # Aircraft always default to normal LOS: skip special ruins blocking
-                    if shooter_is_aircraft or target_is_aircraft:
-                        pass
-                    else:
-                        # If both models are outside this ruins and the footprint lies between them, LOS is blocked.
+                    if not shooter_is_aircraft and not target_is_aircraft:
                         if not shooter_inside_any and not target_inside_any:
-                            if footprint_bounds is not None and _bounds_overlap(line_bounds, footprint_bounds) and line2d.intersects(footprint):
+                            if (
+                                footprint_bounds is not None
+                                and _bounds_overlap(line_bounds, footprint_bounds)
+                                and _intersects_prepared(context, "footprint", "prepared_footprint")
+                            ):
                                 return True
-
-                        # If shooter is inside this ruins but not wholly within and not towering, cannot see out.
                         if shooter_inside_any and not shooter_wholly_within and not shooter_is_towering:
                             if not target_inside_any:
                                 return True
 
-                    # Otherwise, visibility to/from/within ruins is determined normally below
-
-                # If terrain has explicit walls/openings (e.g., ruins), treat walls as vertical blockers
                 walls = tuple(context.get("walls", ()) or ())
                 openings = tuple(context.get("openings", ()) or ())
                 if walls:
@@ -2405,15 +2443,16 @@ class ShootingMixin:
                         wall_poly = wall["polygon"]
                         if not _bounds_overlap(line_bounds, wall["bounds"]):
                             continue
-                        if not line2d.intersects(wall_poly):
+                        if not _intersects_prepared(wall, "polygon", "prepared"):
                             continue
-                        inter_pt = _line_intersection_point(line2d, wall_poly)
+                        line = _line2d()
+                        if line is None:
+                            continue
+                        inter_pt = _line_intersection_point(line, wall_poly)
                         if inter_pt is None:
                             continue
 
-                        # Compute param t along line for z
-                        t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
-                        # Ignore intersections at endpoints
+                        t = line.project(inter_pt) / line_length if line_length > 0 else 0.0
                         if t <= 1e-6 or t >= 1.0 - 1e-6:
                             continue
                         z_here = z_at_t(t)
@@ -2421,31 +2460,35 @@ class ShootingMixin:
                         z_top = float(wall["z_top"])
 
                         if z_bottom <= z_here <= z_top:
-                            # Check if an opening at this XY,Z allows LOS
                             allowed = False
-                            if openings:
-                                for op in openings:
-                                    if not op["bounds"][0] <= inter_pt.x <= op["bounds"][2] or not op["bounds"][1] <= inter_pt.y <= op["bounds"][3]:
+                            for op in openings:
+                                if not op["bounds"][0] <= inter_pt.x <= op["bounds"][2] or not op["bounds"][1] <= inter_pt.y <= op["bounds"][3]:
+                                    continue
+                                prepared_opening = op.get("prepared")
+                                if prepared_opening is not None:
+                                    if not prepared_opening.contains(inter_pt):
                                         continue
-                                    if not op["polygon"].contains(inter_pt):
-                                        continue
-                                    if float(op["z_bottom"]) <= z_here <= float(op["z_top"]):
-                                        allowed = True
-                                        break
+                                elif not op["polygon"].contains(inter_pt):
+                                    continue
+                                if float(op["z_bottom"]) <= z_here <= float(op["z_top"]):
+                                    allowed = True
+                                    break
                             if not allowed:
-                                return True  # Blocked by wall without LOS opening
+                                return True
                 else:
-                    # Generic blocking by terrain footprint with height
                     if footprint is None:
                         continue
                     if footprint_bounds is not None and not _bounds_overlap(line_bounds, footprint_bounds):
                         continue
-                    if not line2d.intersects(footprint):
+                    if not _intersects_prepared(context, "footprint", "prepared_footprint"):
                         continue
-                    inter_pt = _line_intersection_point(line2d, footprint)
+                    line = _line2d()
+                    if line is None:
+                        continue
+                    inter_pt = _line_intersection_point(line, footprint)
                     if inter_pt is None:
                         continue
-                    t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                    t = line.project(inter_pt) / line_length if line_length > 0 else 0.0
                     if t <= 1e-6 or t >= 1.0 - 1e-6:
                         continue
                     z_here = z_at_t(t)
@@ -2458,12 +2501,15 @@ class ShootingMixin:
                 if not _bounds_overlap(line_bounds, blocker["bounds"]):
                     continue
                 enemy_poly = blocker["shape"]
-                if not line2d.intersects(enemy_poly):
+                if not _intersects_prepared(blocker, "shape", "prepared"):
                     continue
-                inter_pt = _line_intersection_point(line2d, enemy_poly)
+                line = _line2d()
+                if line is None:
+                    continue
+                inter_pt = _line_intersection_point(line, enemy_poly)
                 if inter_pt is None:
                     continue
-                t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                t = line.project(inter_pt) / line_length if line_length > 0 else 0.0
                 if t <= 1e-6 or t >= 1.0 - 1e-6:
                     continue
                 z_here = z_at_t(t)

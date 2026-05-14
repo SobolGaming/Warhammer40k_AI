@@ -74,10 +74,12 @@ Initial section timers cover:
 
 When reading deployment/LoS profile output, note that headless deployment validation reuses the
 candidate's generated model-position payload across fast deployment validation and Decision API
-validation. Headless deployment also avoids terrain surface-height and strategic-facing calculation
-during search; detailed payload refinement is retained for small units where floor selection can
-change legality. Both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
-checks of the same model pair at the same positions and terrain/blocker state. Section timer call
+validation. Headless shooting declaration requests also export generated target candidates with the
+current `Map.state_generation`; headless policy and Decision API validation reuse that candidate
+context while the generation is unchanged. Headless deployment also avoids terrain surface-height and
+strategic-facing calculation during search; detailed payload refinement is retained for small units
+where floor selection can change legality. Both terrain-service and legacy shooting-mixin LoS checks
+are cached for repeated checks of the same model pair in the same map generation. Section timer call
 counts should therefore be interpreted as cache miss/work counts rather than every high-level
 shooting or deployment policy probe.
 
@@ -93,8 +95,9 @@ changes that affect geometry/rules cache validity:
 - command-point changes
 - active stratagem/rule effects that modify runtime legality
 
-Visibility cache keys include this generation, and map mutations clear per-map enemy-model
-collision caches, so generated geometry caches do not survive stale game-state transitions.
+Visibility cache keys include this generation, and map mutations clear per-map enemy-model,
+shooting LoS, and collision caches, so generated geometry caches do not survive stale game-state
+transitions.
 
 Static datasheet parsing now uses immutable cached `ParsedDatasheetRecord` snapshots (composition,
 abilities, keywords, wargear, and options). `Unit` instances consume cloned copies from that cache

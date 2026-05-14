@@ -1426,6 +1426,12 @@ def queue_declare_shots_request(
     )
     if target_candidates:
         request.context.setdefault("shooting_target_candidates", target_candidates)
+        game_map = getattr(game, "map", None)
+        try:
+            state_generation = int(getattr(game_map, "state_generation", 0) or 0)
+        except (TypeError, ValueError):
+            state_generation = 0
+        request.context.setdefault("shooting_target_candidates_state_generation", state_generation)
         allowed_target_ids = sorted(
             {
                 str(target_id or "").strip()

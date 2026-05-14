@@ -91,6 +91,20 @@ def _shooting_target_candidate_map(context: dict) -> dict[tuple[str, str, str], 
     return candidate_map
 
 
+def _shooting_target_candidate_context_current(context: dict, game_map: object | None) -> bool:
+    if not list(context.get("shooting_target_candidates", []) or []):
+        return False
+    recorded_generation = context.get("shooting_target_candidates_state_generation")
+    if recorded_generation is None:
+        return False
+    try:
+        expected = int(recorded_generation)
+        current = int(getattr(game_map, "state_generation", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    return current == expected
+
+
 def _validate_target_candidate_context(
     *,
     target_id: str,
@@ -268,6 +282,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     target_candidate_map = _shooting_target_candidate_map(dict(request.context or {}))
     strict_target_context = bool(allowed_target_ids or target_candidate_map)
     game_map = getattr(game, "map", None)
+    candidate_context_current = _shooting_target_candidate_context_current(dict(request.context or {}), game_map)
     try:
         max_declarations = int(request.context.get("max_declarations", 0) or 0)
     except Exception:
@@ -526,7 +541,12 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
                     return ("Linked Fire origin must be visible to the bearer unit.",)
 
-        if strict_target_context and not is_plasma_warhead:
+        can_trust_target_context = (
+            strict_target_context
+            and candidate_context_current
+            and linked_fire_origin_id is None
+        )
+        if strict_target_context and not is_plasma_warhead and not can_trust_target_context:
             validate_declaration = getattr(unit, "_validate_shooting_declaration", None)
             if callable(validate_declaration):
                 validation = validate_declaration(
