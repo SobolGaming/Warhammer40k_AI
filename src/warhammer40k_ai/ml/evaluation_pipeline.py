@@ -342,8 +342,8 @@ def run_headless_self_play_stage(
     max_reserves_arrival_seconds: float = 10.0,
     replay_keyframe_interval: int = 10,
     skip_record_export: bool = False,
-    ai_router_ignored_decision_types: Iterable[str] | None = None,
-    ai_router_ignore_setup_decisions: bool = False,
+    ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
+    ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     paths = _report_paths(report_dir)
@@ -385,12 +385,12 @@ def run_headless_self_play_stage(
         command.extend(["--policy-bundle", str(policy_bundle_source)])
     if models_root is not None:
         command.extend(["--models-root", str(models_root)])
-    for decision_type in list(ai_router_ignored_decision_types or []):
+    for decision_type in list(ai_orchestrator_ignored_decision_types or []):
         decision_type_text = str(decision_type or "").strip()
         if decision_type_text:
-            command.extend(["--ai-router-ignore-decision-type", decision_type_text])
-    if bool(ai_router_ignore_setup_decisions):
-        command.append("--ai-router-ignore-setup-decisions")
+            command.extend(["--ai-orchestrator-ignore-decision-type", decision_type_text])
+    if bool(ai_orchestrator_ignore_setup_decisions):
+        command.append("--ai-orchestrator-ignore-setup-decisions")
     for decision_type in list(force_skip_decision_types or []):
         decision_type_text = str(decision_type or "").strip()
         if decision_type_text:
@@ -799,8 +799,8 @@ def run_policy_bundle_evaluation(
     source_tag: str = "self_play",
     replay_keyframe_interval: int = 10,
     target_rules_bundle: RulesetBundle | Mapping[str, Any] | None = None,
-    ai_router_ignored_decision_types: Iterable[str] | None = None,
-    ai_router_ignore_setup_decisions: bool = False,
+    ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
+    ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     normalized_mode = _normalize_evaluation_mode(evaluation_mode)
@@ -833,8 +833,8 @@ def run_policy_bundle_evaluation(
         reward_profile=reward_profile,
         replay_keyframe_interval=replay_keyframe_interval,
         skip_record_export=(normalized_mode == REPLAY_ONLY_EVALUATION_MODE),
-        ai_router_ignored_decision_types=ai_router_ignored_decision_types,
-        ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+        ai_orchestrator_ignored_decision_types=ai_orchestrator_ignored_decision_types,
+        ai_orchestrator_ignore_setup_decisions=bool(ai_orchestrator_ignore_setup_decisions),
         force_skip_decision_types=force_skip_decision_types,
     )
 

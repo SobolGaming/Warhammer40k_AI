@@ -446,8 +446,8 @@ def test_headless_policy_controller_picks_best_legal_candidate_and_applies_candi
     assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
 
 
-def test_headless_policy_controller_can_ignore_ai_router_for_decision_type() -> None:
-    class _PreferFirstRouter:
+def test_headless_policy_controller_can_ignore_ai_orchestrator_for_decision_type() -> None:
+    class _PreferFirstOrchestrator:
         def rank_legal_candidates(self, request, *, fallback_order=None):
             del request
             candidates = list(fallback_order or [])
@@ -457,8 +457,8 @@ def test_headless_policy_controller_can_ignore_ai_router_for_decision_type() -> 
     controller = HeadlessPolicyDecisionController(
         game=None,
         auto_attach=False,
-        ai_router=_PreferFirstRouter(),
-        ai_router_ignored_decision_types=[DECISION_CONFIRM_YES_NO],
+        ai_orchestrator=_PreferFirstOrchestrator(),
+        ai_orchestrator_ignored_decision_types=[DECISION_CONFIRM_YES_NO],
     )
     options = [
         DecisionOption.create("Option A", payload={"action_id": "a"}),
@@ -485,7 +485,7 @@ def test_headless_policy_controller_can_ignore_ai_router_for_decision_type() -> 
 
 
 def test_headless_policy_controller_can_force_skip_for_decision_type() -> None:
-    class _PreferDiscardRouter:
+    class _PreferDiscardOrchestrator:
         def rank_legal_candidates(self, request, *, fallback_order=None):
             del request
             candidates = list(fallback_order or [])
@@ -495,7 +495,7 @@ def test_headless_policy_controller_can_force_skip_for_decision_type() -> None:
     controller = HeadlessPolicyDecisionController(
         game=None,
         auto_attach=False,
-        ai_router=_PreferDiscardRouter(),
+        ai_orchestrator=_PreferDiscardOrchestrator(),
         force_skip_decision_types=[DECISION_DISCARD_SECONDARY],
     )
     options = [
@@ -534,8 +534,8 @@ def test_headless_policy_controller_can_force_skip_for_decision_type() -> None:
     assert result_payload["skipped"] is True
 
 
-def test_headless_policy_controller_can_ignore_ai_router_for_setup_context() -> None:
-    class _PreferFirstRouter:
+def test_headless_policy_controller_can_ignore_ai_orchestrator_for_setup_context() -> None:
+    class _PreferFirstOrchestrator:
         def rank_legal_candidates(self, request, *, fallback_order=None):
             del request
             candidates = list(fallback_order or [])
@@ -545,8 +545,8 @@ def test_headless_policy_controller_can_ignore_ai_router_for_setup_context() -> 
     controller = HeadlessPolicyDecisionController(
         game=None,
         auto_attach=False,
-        ai_router=_PreferFirstRouter(),
-        ai_router_ignore_setup_decisions=True,
+        ai_orchestrator=_PreferFirstOrchestrator(),
+        ai_orchestrator_ignore_setup_decisions=True,
     )
     options = [
         DecisionOption.create("Option A", payload={"action_id": "a"}),
@@ -574,7 +574,7 @@ def test_headless_policy_controller_can_ignore_ai_router_for_setup_context() -> 
 
 
 def test_headless_policy_controller_treats_start_of_battle_keyword_as_setup() -> None:
-    class _PreferFirstRouter:
+    class _PreferFirstOrchestrator:
         def rank_legal_candidates(self, request, *, fallback_order=None):
             del request
             candidates = list(fallback_order or [])
@@ -584,8 +584,8 @@ def test_headless_policy_controller_treats_start_of_battle_keyword_as_setup() ->
     controller = HeadlessPolicyDecisionController(
         game=None,
         auto_attach=False,
-        ai_router=_PreferFirstRouter(),
-        ai_router_ignore_setup_decisions=True,
+        ai_orchestrator=_PreferFirstOrchestrator(),
+        ai_orchestrator_ignore_setup_decisions=True,
     )
     options = [
         DecisionOption.create("Option A", payload={"action_id": "a"}),
@@ -613,7 +613,7 @@ def test_headless_policy_controller_treats_start_of_battle_keyword_as_setup() ->
 
 
 def test_headless_policy_controller_treats_setup_decision_types_as_setup_without_phase_context() -> None:
-    class _PreferFirstRouter:
+    class _PreferFirstOrchestrator:
         def rank_legal_candidates(self, request, *, fallback_order=None):
             del request
             candidates = list(fallback_order or [])
@@ -638,8 +638,8 @@ def test_headless_policy_controller_treats_setup_decision_types_as_setup_without
     controller = HeadlessPolicyDecisionController(
         game=None,
         auto_attach=False,
-        ai_router=_PreferFirstRouter(),
-        ai_router_ignore_setup_decisions=True,
+        ai_orchestrator=_PreferFirstOrchestrator(),
+        ai_orchestrator_ignore_setup_decisions=True,
     )
     for decision_type in setup_decision_types:
         options = [
@@ -667,7 +667,7 @@ def test_headless_policy_controller_treats_setup_decision_types_as_setup_without
             mask=[True, True],
         )
 
-        assert not controller._should_use_ai_router(request, _FakeGame()), decision_type
+        assert not controller._should_use_ai_orchestrator(request, _FakeGame()), decision_type
 
 
 def test_headless_policy_tie_break_is_independent_of_request_uuid() -> None:

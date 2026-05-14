@@ -126,4 +126,4 @@ uv run python scripts/evaluate_policy_bundle.py \
 `tests/ai/test_imitation_training.py` validates:
 - game-id train/validation splitting
 - artifact and bundle export for a learned candidate ranker
-- loading the exported bundle through `AIControllerRouter`
+- loading the exported bundle through `AIPolicyOrchestrator`

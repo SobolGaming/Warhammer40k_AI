@@ -30,7 +30,7 @@ pytestmark = pytest.mark.integration
 WAHA = WahaHelper("wahapedia_data")
 
 
-class _RecordingTransportRouter:
+class _RecordingTransportOrchestrator:
     def __init__(self, *, preferred_actions: tuple[str, ...]) -> None:
         self.preferred_actions = tuple(
             str(action or "").strip().lower() for action in preferred_actions
@@ -428,10 +428,10 @@ def test_core_destroyed_transport_emergency_disembark_fallback_uses_real_wahaped
 def test_headless_policy_receives_movement_phase_disembark_choice_with_real_wahapedia_transport() -> None:
     game, marine_player, rhino, tactical_squad, _boyz = _core_fixture()
     _start_embarked(rhino, tactical_squad, game)
-    router = _RecordingTransportRouter(preferred_actions=("disembark",))
+    orchestrator = _RecordingTransportOrchestrator(preferred_actions=("disembark",))
     HeadlessPolicyDecisionController(
         game=game,
-        ai_router=router,
+        ai_orchestrator=orchestrator,
         skip_decision_types={DECISION_SELECT_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
         auto_attach=True,
     )
@@ -439,7 +439,7 @@ def test_headless_policy_receives_movement_phase_disembark_choice_with_real_waha
     pending_transport_choice = game._queue_movement_phase_start_transport_choices(player=marine_player)
 
     assert pending_transport_choice is False
-    disembark_requests = router.requests_of_type(DECISION_DISEMBARK)
+    disembark_requests = orchestrator.requests_of_type(DECISION_DISEMBARK)
     assert len(disembark_requests) == 1
     request = disembark_requests[0]
     candidate_actions = {str(candidate.params.get("action", "") or "") for candidate in request.candidates}
@@ -460,17 +460,17 @@ def test_headless_policy_receives_movement_phase_embark_choice_after_real_move_w
     _place_unit_grid(game, tactical_squad, 5.0, 5.0)
     final_positions = _find_disembark_positions(game, tactical_squad, rhino)
     _place_unit_from_positions(game, tactical_squad, final_positions, offset_x=1.0)
-    router = _RecordingTransportRouter(preferred_actions=("embark",))
+    orchestrator = _RecordingTransportOrchestrator(preferred_actions=("embark",))
     HeadlessPolicyDecisionController(
         game=game,
-        ai_router=router,
+        ai_orchestrator=orchestrator,
         skip_decision_types={DECISION_SELECT_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
         auto_attach=True,
     )
 
     _move_unit_by_decision(game, marine_player, tactical_squad, final_positions)
 
-    embark_requests = router.requests_of_type(DECISION_EMBARK)
+    embark_requests = orchestrator.requests_of_type(DECISION_EMBARK)
     assert len(embark_requests) == 1
     request = embark_requests[0]
     candidate_actions = {str(candidate.params.get("action", "") or "") for candidate in request.candidates}

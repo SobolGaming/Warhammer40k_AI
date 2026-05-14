@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from warhammer40k_ai.engine.ai_controller_router import COMPONENT_MOVEMENT_RANKER, AIControllerRouter
+from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_MOVEMENT_RANKER, AIPolicyOrchestrator
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.ml import (
@@ -448,7 +448,7 @@ def test_policy_bundle_loader_resolves_linear_candidate_ranker_artifacts(tmp_pat
 
     assert isinstance(ranker, LinearCandidateRanker)
     assert isinstance(ranker, CandidateRanker)
-    assert AIControllerRouter.from_policy_bundle(bundle).choose_action(request).action_id == "b"
+    assert AIPolicyOrchestrator.from_policy_bundle(bundle).choose_action(request).action_id == "b"
 
 
 def test_policy_bundle_loader_reports_unknown_artifact_ids_clearly(tmp_path: Path) -> None:

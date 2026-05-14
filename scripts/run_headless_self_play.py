@@ -16,7 +16,7 @@ import time
 from typing import Any, Iterable
 import uuid
 
-from warhammer40k_ai.engine.ai_controller_router import AIControllerRouter
+from warhammer40k_ai.engine.ai_policy_orchestrator import AIPolicyOrchestrator
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.decision_record import merge_decision_records_by_id
@@ -34,7 +34,7 @@ from warhammer40k_ai.engine.session_store import (
 )
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
-from warhammer40k_ai.ml.llm_agents import build_llm_router_from_config_file
+from warhammer40k_ai.ml.llm_policy_adapters import build_llm_policy_orchestrator_from_config_file
 from warhammer40k_ai.ml.policy_bundle import JSONPolicyBundleLoader
 from warhammer40k_ai.ml.registry import ArtifactManifestStore
 from warhammer40k_ai.utility.game_context import game_context
@@ -103,11 +103,11 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _load_policy_bundle_router(
+def _load_policy_bundle_orchestrator(
     policy_bundle_source: str | None,
     *,
     models_root: str | None = None,
-) -> AIControllerRouter | None:
+) -> AIPolicyOrchestrator | None:
     source_text = str(policy_bundle_source or "").strip()
     if not source_text:
         return None
@@ -116,7 +116,7 @@ def _load_policy_bundle_router(
     if models_root_text:
         manifest_store = ArtifactManifestStore(Path(models_root_text).expanduser().resolve())
     bundle = JSONPolicyBundleLoader(manifest_store=manifest_store).load_bundle(source_text)
-    return AIControllerRouter.from_policy_bundle(bundle)
+    return AIPolicyOrchestrator.from_policy_bundle(bundle)
 
 
 class _JsonArrayWriter:
@@ -461,10 +461,11 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--llm-agent-config",
+        "--llm-policy-adapter-config",
+        dest="llm_adapter_config",
         default="",
         help=(
-            "Optional JSON config for LLM-backed policy orchestration agents. "
+            "Optional JSON config for LLM-backed policy adapters. "
             "LLM choices are validated against legal candidates and fall back to deterministic rankers."
         ),
     )
@@ -477,20 +478,20 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--ai-router-ignore-decision-type",
+        "--ai-orchestrator-ignore-decision-type",
         action="append",
         default=[],
         help=(
             "Decision type to keep on the built-in headless heuristic even when --policy-bundle "
-            "or --llm-agent-config provides an AI router. Repeat or pass comma-separated values."
+            "or --llm-policy-adapter-config provides an AI orchestrator. Repeat or pass comma-separated values."
         ),
     )
     parser.add_argument(
-        "--ai-router-ignore-setup-decisions",
+        "--ai-orchestrator-ignore-setup-decisions",
         action="store_true",
         help=(
             "Keep all setup/deployment-phase decisions on the built-in headless heuristic while still "
-            "routing in-game decisions through the AI router."
+            "routing in-game decisions through the AI orchestrator."
         ),
     )
     parser.add_argument(
@@ -648,11 +649,11 @@ def _run_single_game(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
-    llm_agent_config: str | None = None,
+    llm_adapter_config: str | None = None,
     policy_bundle_source: str | None = None,
     models_root: str | None = None,
-    ai_router_ignored_decision_types: Iterable[str] | None = None,
-    ai_router_ignore_setup_decisions: bool = False,
+    ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
+    ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | None = None,
     enable_tool_decisions: bool = True,
     log_phase_transitions: bool = False,
@@ -691,21 +692,21 @@ def _run_single_game(
         seed_fn = getattr(random_source, "seed", None)
         if callable(seed_fn):
             seed_fn(int(game_seed))
-    ai_router = None
+    ai_orchestrator = None
     policy_bundle_text = str(policy_bundle_source or "").strip()
     if policy_bundle_text:
-        ai_router = _load_policy_bundle_router(policy_bundle_text, models_root=models_root)
-    llm_config_text = str(llm_agent_config or "").strip()
+        ai_orchestrator = _load_policy_bundle_orchestrator(policy_bundle_text, models_root=models_root)
+    llm_config_text = str(llm_adapter_config or "").strip()
     if llm_config_text:
-        ai_router = build_llm_router_from_config_file(llm_config_text)
+        ai_orchestrator = build_llm_policy_orchestrator_from_config_file(llm_config_text)
     controller = HeadlessPolicyDecisionController(
         game=game,
         auto_attach=True,
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         reserve_policy=str(reserve_policy or "forced_only"),
-        ai_router=ai_router,
-        ai_router_ignored_decision_types=ai_router_ignored_decision_types,
-        ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+        ai_orchestrator=ai_orchestrator,
+        ai_orchestrator_ignored_decision_types=ai_orchestrator_ignored_decision_types,
+        ai_orchestrator_ignore_setup_decisions=bool(ai_orchestrator_ignore_setup_decisions),
         force_skip_decision_types=force_skip_decision_types,
         enable_tool_decisions=bool(enable_tool_decisions),
     )
@@ -845,8 +846,8 @@ def _run_single_game(
         str(player_id): list(getattr(maker, "get_deployment_search_metrics", lambda: [])() or [])
         for player_id, maker in dict(deployment_decision_makers or {}).items()
     }
-    collect_llm_traces = getattr(ai_router, "collect_component_traces", None)
-    llm_agent_traces = list(collect_llm_traces() or []) if callable(collect_llm_traces) else []
+    collect_llm_traces = getattr(ai_orchestrator, "collect_component_traces", None)
+    llm_adapter_traces = list(collect_llm_traces() or []) if callable(collect_llm_traces) else []
     return {
         "game_id": stable_game_id,
         "records": records,
@@ -859,7 +860,7 @@ def _run_single_game(
         "reserve_arrival_diagnostics": reserve_arrival_diagnostics,
         "reserves_arrival_search_metrics": reserves_arrival_search_metrics,
         "deployment_search_metrics": deployment_search_metrics,
-        "llm_agent_traces": llm_agent_traces,
+        "llm_adapter_traces": llm_adapter_traces,
         "replay_session_id": replay_session_id if replay_path is not None else "",
         "replay_path": str(replay_path) if replay_path is not None else "",
         "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
@@ -876,11 +877,11 @@ def _run_single_game_job(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
-    llm_agent_config: str | None = None,
+    llm_adapter_config: str | None = None,
     policy_bundle_source: str | None = None,
     models_root: str | None = None,
-    ai_router_ignored_decision_types: Iterable[str] | None = None,
-    ai_router_ignore_setup_decisions: bool = False,
+    ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
+    ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | None = None,
     enable_tool_decisions: bool = True,
     log_level: str = "WARNING",
@@ -922,11 +923,11 @@ def _run_single_game_job(
                 reserve_policy=str(reserve_policy or "forced_only"),
                 max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                 deployment_ranker_model=str(deployment_ranker_model or ""),
-                llm_agent_config=str(llm_agent_config or ""),
+                llm_adapter_config=str(llm_adapter_config or ""),
                 policy_bundle_source=str(policy_bundle_source or ""),
                 models_root=str(models_root or ""),
-                ai_router_ignored_decision_types=ai_router_ignored_decision_types,
-                ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+                ai_orchestrator_ignored_decision_types=ai_orchestrator_ignored_decision_types,
+                ai_orchestrator_ignore_setup_decisions=bool(ai_orchestrator_ignore_setup_decisions),
                 force_skip_decision_types=force_skip_decision_types,
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_phase_transitions=bool(log_phase_transitions),
@@ -961,7 +962,7 @@ def _run_single_game_job(
         "reserve_arrival_diagnostics": _json_safe(list(result.get("reserve_arrival_diagnostics", []) or [])),
         "reserves_arrival_search_metrics": _json_safe(list(result.get("reserves_arrival_search_metrics", []) or [])),
         "deployment_search_metrics": _json_safe(dict(result.get("deployment_search_metrics", {}) or {})),
-        "llm_agent_traces": _json_safe(list(result.get("llm_agent_traces", []) or [])),
+        "llm_adapter_traces": _json_safe(list(result.get("llm_adapter_traces", []) or [])),
         "replay_session_id": str(result.get("replay_session_id", "") or ""),
         "replay_path": str(result.get("replay_path", "") or ""),
         "snapshot_path": str(result.get("snapshot_path", "") or ""),
@@ -988,11 +989,11 @@ def run_headless_self_play(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str = "",
-    llm_agent_config: str = "",
+    llm_adapter_config: str = "",
     policy_bundle_source: str = "",
     models_root: str = "models",
-    ai_router_ignored_decision_types: Iterable[str] | str | None = None,
-    ai_router_ignore_setup_decisions: bool = False,
+    ai_orchestrator_ignored_decision_types: Iterable[str] | str | None = None,
+    ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | str | None = None,
     enable_tool_decisions: bool = True,
     output: str = "data/headless_self_play_decision_records.json",
@@ -1022,10 +1023,10 @@ def run_headless_self_play(
     decision_type_counts: Counter[str] = Counter()
     tool_probe_diagnostic_counts: Counter[str] = Counter()
     reserve_arrival_diagnostic_counts: Counter[str] = Counter()
-    llm_agent_trace_counts: Counter[str] = Counter()
+    llm_adapter_trace_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
     game_outcomes: dict[str, dict[str, Any]] = {}
-    ignored_decision_types = _normalized_decision_type_list(ai_router_ignored_decision_types)
+    ignored_decision_types = _normalized_decision_type_list(ai_orchestrator_ignored_decision_types)
     forced_skip_decision_types = _normalized_decision_type_list(force_skip_decision_types)
 
     def _spool_completed_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1058,11 +1059,11 @@ def run_headless_self_play(
                 reserve_policy=str(reserve_policy),
                 max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
                 deployment_ranker_model=str(deployment_ranker_model),
-                llm_agent_config=str(llm_agent_config),
+                llm_adapter_config=str(llm_adapter_config),
                 policy_bundle_source=str(policy_bundle_source),
                 models_root=str(models_root),
-                ai_router_ignored_decision_types=ignored_decision_types,
-                ai_router_ignore_setup_decisions=bool(ai_router_ignore_setup_decisions),
+                ai_orchestrator_ignored_decision_types=ignored_decision_types,
+                ai_orchestrator_ignore_setup_decisions=bool(ai_orchestrator_ignore_setup_decisions),
                 force_skip_decision_types=forced_skip_decision_types,
                 enable_tool_decisions=bool(enable_tool_decisions),
                 log_level=str(log_level),
@@ -1128,13 +1129,13 @@ def run_headless_self_play(
                 code = str(item.get("code", "") or "<unknown>")
                 severity = str(item.get("severity", "") or "WARNING")
                 reserve_arrival_diagnostic_counts[f"{severity}:{code}"] += 1
-            for trace in list(result.get("llm_agent_traces", []) or []):
+            for trace in list(result.get("llm_adapter_traces", []) or []):
                 item = dict(trace or {})
                 component = str(item.get("component_name", "") or "<unknown>")
                 legal = bool(item.get("legal", False))
                 error = str(item.get("error", "") or "")
                 status = "legal" if legal else ("error" if error else "illegal")
-                llm_agent_trace_counts[f"{component}:{status}"] += 1
+                llm_adapter_trace_counts[f"{component}:{status}"] += 1
 
             exported_game_records = merge_decision_records_by_id(records)
             if not bool(no_reward_annotation):
@@ -1173,8 +1174,8 @@ def run_headless_self_play(
         print(f"Tool probe diagnostics: {dict(tool_probe_diagnostic_counts.most_common(20))}")
     if reserve_arrival_diagnostic_counts:
         print(f"Reserve arrival diagnostics: {dict(reserve_arrival_diagnostic_counts.most_common(20))}")
-    if llm_agent_trace_counts:
-        print(f"LLM adapter traces: {dict(llm_agent_trace_counts.most_common(20))}")
+    if llm_adapter_trace_counts:
+        print(f"LLM adapter traces: {dict(llm_adapter_trace_counts.most_common(20))}")
     print(f"Wrote: {output_path}")
     replay_root = _resolved_replay_base_dir(str(replay_dir))
     if replay_root is not None:
@@ -1216,13 +1217,13 @@ def run_headless_self_play(
         "phase_steps": int(total_phase_steps),
         "decision_record_count": int(exported_record_count),
         "record_export_skipped": bool(skip_record_export),
-        "ai_router_ignored_decision_types": list(ignored_decision_types),
-        "ai_router_ignore_setup_decisions": bool(ai_router_ignore_setup_decisions),
+        "ai_orchestrator_ignored_decision_types": list(ignored_decision_types),
+        "ai_orchestrator_ignore_setup_decisions": bool(ai_orchestrator_ignore_setup_decisions),
         "forced_skip_decision_types": list(forced_skip_decision_types),
         "decision_type_counts": dict(decision_type_counts),
         "tool_probe_diagnostic_counts": dict(tool_probe_diagnostic_counts),
         "reserve_arrival_diagnostic_counts": dict(reserve_arrival_diagnostic_counts),
-        "llm_agent_trace_counts": dict(llm_agent_trace_counts),
+        "llm_adapter_trace_counts": dict(llm_adapter_trace_counts),
         "game_outcomes": game_outcomes,
         "records_output_path": str(output_path.resolve()),
         "replay_dir": "" if replay_root is None else str(replay_root),
@@ -1254,11 +1255,11 @@ def main() -> int:
         reserve_policy=str(args.reserve_policy),
         max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
         deployment_ranker_model=str(args.deployment_ranker_model),
-        llm_agent_config=str(args.llm_agent_config),
+        llm_adapter_config=str(args.llm_adapter_config),
         policy_bundle_source=str(args.policy_bundle),
         models_root=str(args.models_root),
-        ai_router_ignored_decision_types=_normalized_decision_type_list(args.ai_router_ignore_decision_type),
-        ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
+        ai_orchestrator_ignored_decision_types=_normalized_decision_type_list(args.ai_orchestrator_ignore_decision_type),
+        ai_orchestrator_ignore_setup_decisions=bool(args.ai_orchestrator_ignore_setup_decisions),
         force_skip_decision_types=_normalized_decision_type_list(args.force_skip_decision_type),
         enable_tool_decisions=not bool(args.disable_tool_decisions),
         output=str(args.output),

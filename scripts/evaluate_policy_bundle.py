@@ -41,7 +41,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--faction-pack-id", default="")
     parser.add_argument("--detachment-pack-id", default="")
     parser.add_argument(
-        "--ai-router-ignore-decision-type",
+        "--ai-orchestrator-ignore-decision-type",
         action="append",
         default=[],
         help=(
@@ -50,7 +50,7 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--ai-router-ignore-setup-decisions",
+        "--ai-orchestrator-ignore-setup-decisions",
         action="store_true",
         help="Keep setup/deployment-phase decisions on the built-in headless heuristic during bundle evaluation.",
     )
@@ -99,12 +99,12 @@ def main(argv: list[str] | None = None) -> int:
         evaluation_mode=str(args.evaluation_mode),
         source_tag=str(args.source_tag),
         target_rules_bundle=_target_rules_bundle(args),
-        ai_router_ignored_decision_types=[
+        ai_orchestrator_ignored_decision_types=[
             str(value or "").strip()
-            for value in list(args.ai_router_ignore_decision_type or [])
+            for value in list(args.ai_orchestrator_ignore_decision_type or [])
             if str(value or "").strip()
         ],
-        ai_router_ignore_setup_decisions=bool(args.ai_router_ignore_setup_decisions),
+        ai_orchestrator_ignore_setup_decisions=bool(args.ai_orchestrator_ignore_setup_decisions),
         force_skip_decision_types=[
             str(value or "").strip()
             for value in list(args.force_skip_decision_type or [])

@@ -208,7 +208,7 @@ metrics.json
 `config.json` uses `candidate_ranker_linear_model:v1` and stores sparse
 per-decision-type feature weights. The runtime scorer only ranks legal candidates
 already supplied by the engine; if the artifact has no weights for a decision
-type, the router falls through to the component fallback declared by the policy
+type, the orchestrator falls through to the component fallback declared by the policy
 bundle.
 
 ## Promotion States

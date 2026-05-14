@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from warhammer40k_ai.ml.llm_agents import llm_training_examples_from_records
+from warhammer40k_ai.ml.llm_policy_adapters import llm_training_examples_from_records
 
 
 def _load_records(path: Path) -> list[dict[str, Any]]:

@@ -24,7 +24,7 @@ uv run python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; pr
 
 Optional LLM-backed policy adapters do not require an SDK dependency. Provide a JSON config with a
 local or remote Chat Completions compatible endpoint, then pass
-`--llm-agent-config <path>` to self-play. See `docs/LLM_POLICY_ADAPTER_RUNTIME.md`.
+`--llm-policy-adapter-config <path>` to self-play. See `docs/LLM_POLICY_ADAPTER_RUNTIME.md`.
 
 ## 1) Generate headless AI-vs-AI games from army lists
 
@@ -50,7 +50,7 @@ uv run python scripts/run_headless_self_play.py \
   --games 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
-  --llm-agent-config data/llm_agent_config.json \
+  --llm-policy-adapter-config data/llm_adapter_config.json \
   --output data/llm_self_play_decision_records.json
 ```
 

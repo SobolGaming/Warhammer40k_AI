@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from warhammer40k_ai.engine.ai_controller_router import COMPONENT_DEPLOYMENT_RANKER, COMPONENT_SHOOTING_RANKER
+from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_DEPLOYMENT_RANKER, COMPONENT_SHOOTING_RANKER
 from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_RESERVES, DECISION_DECLARE_SHOTS
 from warhammer40k_ai.engine.training_mode import (
     TRAINING_STAGE_DEPLOYMENT_RESERVES,

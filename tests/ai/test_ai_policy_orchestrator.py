@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
 
 from warhammer40k_ai.engine import decision_kinds as kinds
-from warhammer40k_ai.engine.ai_controller_router import (
+from warhammer40k_ai.engine.ai_policy_orchestrator import (
     AI_POLICY_COMPONENTS,
     COMPONENT_CHARGE_RANKER,
     COMPONENT_DEPLOYMENT_RANKER,
@@ -15,11 +16,12 @@ from warhammer40k_ai.engine.ai_controller_router import (
     COMPONENT_SHOOTING_RANKER,
     COMPONENT_TACTICAL_ORCHESTRATOR,
     COMPONENT_TOOL_RANKER,
-    AIControllerRouter,
-    decision_component_for,
+    AIPolicyOrchestrator,
+    policy_component_for_decision,
+    policy_component_for_request,
     unmapped_decision_types,
 )
-from warhammer40k_ai.engine.ai_domain_agents import default_ai_domain_rankers
+from warhammer40k_ai.engine.ai_component_rankers import default_ai_component_rankers
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.ml import ArtifactManifestStore, JSONPolicyBundleLoader
 
@@ -61,33 +63,51 @@ def _decision_kind_values() -> set[str]:
     }
 
 
-def test_router_maps_every_decision_kind_to_a_component_or_no_ai() -> None:
+def test_orchestrator_maps_every_decision_kind_to_a_component_or_no_ai() -> None:
     assert unmapped_decision_types() == ()
     allowed = set(AI_POLICY_COMPONENTS) | {COMPONENT_NO_AI}
     for decision_type in sorted(_decision_kind_values()):
-        assert decision_component_for(decision_type) in allowed
+        assert policy_component_for_decision(decision_type) in allowed
 
 
-def test_router_uses_context_for_shared_decision_surfaces() -> None:
+def test_orchestrator_uses_context_for_shared_decision_surfaces() -> None:
     assert (
-        decision_component_for(kinds.DECISION_MOVE_UNIT, {"placement_kind": "deployment"})
+        policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"placement_kind": "deployment"})
         == COMPONENT_DEPLOYMENT_RANKER
     )
-    assert decision_component_for(kinds.DECISION_MOVE_UNIT, {"phase_step": "CHARGE_MOVE"}) == COMPONENT_CHARGE_RANKER
-    assert decision_component_for(kinds.DECISION_MOVE_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
-    assert decision_component_for(kinds.DECISION_MOVE_UNIT, {"movement_type": "normal"}) == COMPONENT_MOVEMENT_RANKER
-    assert decision_component_for(kinds.DECISION_SELECT_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
-    assert decision_component_for(kinds.DECISION_SELECT_UNIT, {"phase_step": "MOVE_UNITS"}) == COMPONENT_TACTICAL_ORCHESTRATOR
+    assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"phase_step": "CHARGE_MOVE"}) == COMPONENT_CHARGE_RANKER
+    assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
+    assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"movement_type": "normal"}) == COMPONENT_MOVEMENT_RANKER
+    assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
+    assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "MOVE_UNITS"}) == COMPONENT_TACTICAL_ORCHESTRATOR
     assert (
-        decision_component_for(kinds.DECISION_CONFIRM_YES_NO, {"ability": "fire_overwatch_reaction"})
+        policy_component_for_decision(kinds.DECISION_CONFIRM_YES_NO, {"ability": "fire_overwatch_reaction"})
         == COMPONENT_REACTION_RANKER
     )
-    assert decision_component_for(kinds.DECISION_CONFIRM_YES_NO, {"optional": True}) == COMPONENT_TOOL_RANKER
-    assert decision_component_for(kinds.DECISION_DECLARE_SHOTS) == COMPONENT_SHOOTING_RANKER
+    assert policy_component_for_decision(kinds.DECISION_CONFIRM_YES_NO, {"optional": True}) == COMPONENT_TOOL_RANKER
+    assert policy_component_for_decision(kinds.DECISION_DECLARE_SHOTS) == COMPONENT_SHOOTING_RANKER
 
 
-def test_domain_ranker_ignores_masked_candidates_and_ties_by_action_id() -> None:
-    ranker = default_ai_domain_rankers()[COMPONENT_SHOOTING_RANKER]
+def test_orchestrator_route_uses_shared_component_resolver() -> None:
+    request = _request(kinds.DECISION_MOVE_UNIT, context={"placement_kind": "deployment"})
+    orchestrator = AIPolicyOrchestrator()
+
+    assert policy_component_for_request(request) == COMPONENT_DEPLOYMENT_RANKER
+    assert orchestrator.route(request) == policy_component_for_request(request)
+
+
+def test_removed_orchestration_modules_are_not_available() -> None:
+    removed_modules = (
+        "warhammer40k_ai.engine." + "ai_controller" + "_router",
+        "warhammer40k_ai.engine." + "ai_domain" + "_agents",
+        "warhammer40k_ai.ml." + "llm_" + "agents",
+    )
+    for module_name in removed_modules:
+        assert importlib.util.find_spec(module_name) is None
+
+
+def test_component_ranker_ignores_masked_candidates_and_ties_by_action_id() -> None:
+    ranker = default_ai_component_rankers()[COMPONENT_SHOOTING_RANKER]
     request = _request(
         kinds.DECISION_DECLARE_SHOTS,
         candidates=[
@@ -110,32 +130,32 @@ class _StaticRanker:
         return self._action_id
 
 
-def test_router_uses_fallback_component_when_primary_returns_illegal_action() -> None:
+def test_orchestrator_uses_fallback_component_when_primary_returns_illegal_action() -> None:
     request = _request(kinds.DECISION_DECLARE_SHOTS, mask=[False, True, True])
-    router = AIControllerRouter(
+    orchestrator = AIPolicyOrchestrator(
         components={COMPONENT_SHOOTING_RANKER: _StaticRanker("a")},
         fallbacks={COMPONENT_SHOOTING_RANKER: [_StaticRanker("b")]},
     )
 
-    route = router.choose_action(request)
+    route = orchestrator.choose_action(request)
 
     assert route.component_name == COMPONENT_SHOOTING_RANKER
     assert route.action_id == "b"
     assert route.source == f"{COMPONENT_SHOOTING_RANKER}.fallback[0]"
 
 
-def test_router_first_legal_reaction_fallback_prefers_decline() -> None:
+def test_orchestrator_first_legal_reaction_fallback_prefers_decline() -> None:
     request = _request(kinds.DECISION_SELECT_OVERWATCH_SHOOTER)
-    router = AIControllerRouter()
+    orchestrator = AIPolicyOrchestrator()
 
-    route = router.choose_action(request)
+    route = orchestrator.choose_action(request)
 
     assert route.component_name == COMPONENT_REACTION_RANKER
     assert route.action_id == "c"
     assert route.source == "first_legal"
 
 
-def test_router_preserves_movement_path_witness_candidate_metadata() -> None:
+def test_orchestrator_preserves_movement_path_witness_candidate_metadata() -> None:
     request = _request(
         kinds.DECISION_MOVE_UNIT,
         candidates=[
@@ -152,9 +172,9 @@ def test_router_preserves_movement_path_witness_candidate_metadata() -> None:
         mask=[True, True],
         context={"movement_type": "normal"},
     )
-    router = AIControllerRouter(components={COMPONENT_MOVEMENT_RANKER: default_ai_domain_rankers()[COMPONENT_MOVEMENT_RANKER]})
+    orchestrator = AIPolicyOrchestrator(components={COMPONENT_MOVEMENT_RANKER: default_ai_component_rankers()[COMPONENT_MOVEMENT_RANKER]})
 
-    ranked = router.rank_legal_candidates(request)
+    ranked = orchestrator.rank_legal_candidates(request)
 
     assert ranked[0].action_id == "b"
     assert ranked[0].metadata["path_witness_ref"] == "pathwitness://unit/u1/move/b"
@@ -189,7 +209,7 @@ def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: P
     bundle_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
     bundle = JSONPolicyBundleLoader(manifest_store=manifest_store).load_bundle(bundle_id)
-    router = AIControllerRouter.from_policy_bundle(bundle)
+    orchestrator = AIPolicyOrchestrator.from_policy_bundle(bundle)
     request = _request(
         kinds.DECISION_DECLARE_CHARGE,
         candidates=[
@@ -200,4 +220,4 @@ def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: P
     )
 
     assert hasattr(bundle.resolve_component(COMPONENT_CHARGE_RANKER), "choose_action_id")
-    assert router.choose_action(request).action_id == "b"
+    assert orchestrator.choose_action(request).action_id == "b"

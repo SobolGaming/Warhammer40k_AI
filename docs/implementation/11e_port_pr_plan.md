@@ -1371,7 +1371,7 @@ Make reactive moves and modal stratagems replayable, scheduler-visible, and remo
   `src/warhammer40k_ai/engine/reactive_movement.py`.
 - Added decision kinds for `SELECT_STRATAGEM_MODE`, `REACTIVE_MOVE`,
   `SURGE_MOVE`, `SELECT_HEROIC_INTERVENTION_MODE`, and
-  `SELECT_REACTIVE_RESERVE_EXIT`, with AI-router, manifest, decision catalog,
+  `SELECT_REACTIVE_RESERVE_EXIT`, with AI orchestrator, manifest, decision catalog,
   and network/save-load mapping updates.
 - Added a queue helper for spec-backed reactive movement decisions while
   preserving existing `MOVE_UNIT` reactive movement behavior.

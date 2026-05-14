@@ -54,3 +54,26 @@ def test_game_request_decision_sets_time_budget_in_context() -> None:
 
     assert int(request.context["time_budget_ms"]) > 0
     assert request.context["compute_tier"] == "P2"
+
+
+def test_game_request_decision_normalizes_invalid_compute_tier_before_time_budget() -> None:
+    p1 = Player("P1")
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1])
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm?",
+        player_id=p1.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+        context={"compute_tier": "unknown"},
+    )
+
+    game.request_decision(request)
+
+    assert request.context["compute_tier"] == "P1"
+    assert int(request.context["time_budget_ms"]) == game.time_manager.get_time_budget_ms(
+        DECISION_CONFIRM_YES_NO,
+        compute_tier="P1",
+    )

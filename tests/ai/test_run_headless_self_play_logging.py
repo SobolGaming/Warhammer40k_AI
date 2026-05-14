@@ -8,6 +8,8 @@ import sys
 from types import SimpleNamespace
 import uuid
 
+import pytest
+
 
 def _load_script_module():
     script_path = Path(__file__).resolve().parents[2] / "scripts" / "run_headless_self_play.py"
@@ -132,6 +134,57 @@ def test_parse_args_supports_profile_options(monkeypatch, tmp_path) -> None:
     assert args.profile_sort == "cumtime"
     assert args.profile_lines == 25
     assert args.profile_label == "baseline"
+
+
+def test_parse_args_supports_policy_orchestration_flags(monkeypatch) -> None:
+    mod = _load_script_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_headless_self_play.py",
+            "--llm-policy-adapter-config",
+            "data/llm_adapter_config.json",
+            "--ai-orchestrator-ignore-decision-type",
+            "MOVE_UNIT",
+            "--ai-orchestrator-ignore-setup-decisions",
+        ],
+    )
+
+    args = mod._parse_args()
+
+    assert args.llm_adapter_config == "data/llm_adapter_config.json"
+    assert args.ai_orchestrator_ignore_decision_type == ["MOVE_UNIT"]
+    assert args.ai_orchestrator_ignore_setup_decisions is True
+
+
+def test_parse_args_rejects_removed_policy_orchestration_flags(monkeypatch) -> None:
+    mod = _load_script_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_headless_self_play.py",
+            "--llm-" + "agent-config",
+            "data/llm_adapter_config.json",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        mod._parse_args()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_headless_self_play.py",
+            "--ai-" + "router-ignore-decision-type",
+            "MOVE_UNIT",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        mod._parse_args()
 
 
 def test_army_label_from_path_uses_file_stem() -> None:
@@ -389,7 +442,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
             "winner_army_label": "chaos_test",
             "winner_score_line": "<SCORE: 45 vs 32>",
             "scoreboard": {"chaos_test": 45, "aeldari_test": 32},
-            "llm_agent_traces": [
+            "llm_adapter_traces": [
                 {
                     "component_name": "shooting_ranker",
                     "decision_id": "d1",
@@ -411,7 +464,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
         reserve_policy="forced_only",
         max_reserves_arrival_seconds=10.0,
         deployment_ranker_model="",
-        llm_agent_config="data/llm_agent_config.json",
+        llm_adapter_config="data/llm_adapter_config.json",
         log_level="WARNING",
         log_phase_transitions=False,
         replay_dir="data/headless_self_play_replays",
@@ -420,12 +473,12 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
 
     assert captured_kwargs["replay_dir"] == "data/headless_self_play_replays"
     assert captured_kwargs["replay_keyframe_interval"] == 7
-    assert captured_kwargs["llm_agent_config"] == "data/llm_agent_config.json"
+    assert captured_kwargs["llm_adapter_config"] == "data/llm_adapter_config.json"
     result = dict(payload.get("result", {}) or {})
     assert result["replay_session_id"] == "selfplay:000000"
     assert result["replay_path"] == "/tmp/replays/selfplay:000000/replay.sqlite3"
     assert result["snapshot_path"] == "/tmp/replays/selfplay:000000/snapshot.json"
-    assert result["llm_agent_traces"][0]["component_name"] == "shooting_ranker"
+    assert result["llm_adapter_traces"][0]["component_name"] == "shooting_ranker"
 
 
 def test_run_single_game_job_writes_profile_artifacts(monkeypatch, tmp_path) -> None:

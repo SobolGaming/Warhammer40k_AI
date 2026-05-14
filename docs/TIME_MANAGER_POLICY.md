@@ -13,6 +13,9 @@ Defaults:
   - `P0`: 1.8
   - `P1`: 1.0
   - `P2`: 0.5
+- Valid compute tiers are `P0`, `P1`, and `P2`. Optional orchestration context
+  normalizes invalid, empty, or unknown values to `P1` before time-budget
+  decoration.
 
 Budget derivation:
 - `time_budget_ms = round(cap(decision_type) * multiplier(compute_tier))`

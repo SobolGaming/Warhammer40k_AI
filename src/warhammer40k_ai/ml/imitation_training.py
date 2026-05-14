@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Iterable, Mapping
 
-from ..engine.ai_controller_router import AI_POLICY_COMPONENTS, COMPONENT_NO_AI, decision_component_for
+from ..engine.ai_policy_orchestrator import AI_POLICY_COMPONENTS, COMPONENT_NO_AI, policy_component_for_decision
 from ..engine.decision_kinds import (
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_REQUEST_DICE_ROLL,
@@ -244,7 +244,7 @@ def _record_is_trainable(
         return False, "missing_decision_type"
     if decision_type in excluded_decision_types:
         return False, "excluded_decision_type"
-    component = decision_component_for(decision_type, dict(record.get("request_context", {}) or {}))
+    component = policy_component_for_decision(decision_type, dict(record.get("request_context", {}) or {}))
     if component == COMPONENT_NO_AI:
         return False, "no_ai_component"
     legal_indices = _legal_indices(record)
@@ -274,7 +274,7 @@ def _train_epoch(
             skipped[skip_reason] += 1
             continue
         decision_type = _safe_decision_type(record)
-        component = decision_component_for(decision_type, dict(record.get("request_context", {}) or {}))
+        component = policy_component_for_decision(decision_type, dict(record.get("request_context", {}) or {}))
         if component in AI_POLICY_COMPONENTS:
             components_by_decision_type.setdefault(decision_type, set()).add(component)
         game_id = _record_game_id(record)
@@ -346,7 +346,7 @@ def _evaluate_split(
         if _split_name(game_id, validation_ratio=config.validation_ratio, salt=config.split_salt) != split_name:
             continue
         decision_type = _safe_decision_type(record)
-        component = decision_component_for(decision_type, dict(record.get("request_context", {}) or {}))
+        component = policy_component_for_decision(decision_type, dict(record.get("request_context", {}) or {}))
         legal_indices = _legal_indices(record)
         chosen_index = _chosen_legal_index(record, legal_indices)
         if chosen_index is None:
@@ -412,7 +412,7 @@ def _evaluate_splits(
         if split not in overall:
             continue
         decision_type = _safe_decision_type(record)
-        component = decision_component_for(decision_type, dict(record.get("request_context", {}) or {}))
+        component = policy_component_for_decision(decision_type, dict(record.get("request_context", {}) or {}))
         legal_indices = _legal_indices(record)
         chosen_index = _chosen_legal_index(record, legal_indices)
         if chosen_index is None:
@@ -490,7 +490,7 @@ def _write_artifacts_and_bundle(
     git_commit = _current_git_commit()
     decision_types_by_component: dict[str, list[str]] = defaultdict(list)
     for decision_type in sorted(weights_by_decision_type):
-        components = sorted(components_by_decision_type.get(decision_type, set()) or {decision_component_for(decision_type)})
+        components = sorted(components_by_decision_type.get(decision_type, set()) or {policy_component_for_decision(decision_type)})
         for component in components:
             if component not in AI_POLICY_COMPONENTS:
                 continue

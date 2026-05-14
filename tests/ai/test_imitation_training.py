@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from warhammer40k_ai.engine.ai_controller_router import COMPONENT_MOVEMENT_RANKER, AIControllerRouter
+from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_MOVEMENT_RANKER, AIPolicyOrchestrator
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.ml import (
@@ -134,4 +134,4 @@ def test_linear_imitation_training_exports_artifact_bundle_and_split_metrics(tmp
     )
 
     assert isinstance(ranker, LinearCandidateRanker)
-    assert AIControllerRouter.from_policy_bundle(bundle).choose_action(request).action_id == "runtime:b"
+    assert AIPolicyOrchestrator.from_policy_bundle(bundle).choose_action(request).action_id == "runtime:b"

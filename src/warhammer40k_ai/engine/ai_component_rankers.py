@@ -104,8 +104,8 @@ class CandidateScoreWeights:
 
 
 @dataclass(frozen=True)
-class DeterministicDomainRanker:
-    """Framework-free domain candidate ranker used by policy bundles and tests.
+class DeterministicComponentRanker:
+    """Framework-free component candidate ranker used by policy bundles and tests.
 
     It never generates actions or bypasses masks; it only selects from legal
     `DecisionRequest.candidates`.
@@ -139,7 +139,7 @@ def _weights(values: Mapping[str, float], *, skip_penalty: float = -1.0) -> Cand
     return CandidateScoreWeights(weights=dict(values), skip_penalty=skip_penalty)
 
 
-def default_ai_domain_rankers() -> dict[str, DeterministicDomainRanker]:
+def default_ai_component_rankers() -> dict[str, DeterministicComponentRanker]:
     """Return baseline deterministic heuristic rankers keyed by policy component."""
     components: dict[str, CandidateScoreWeights] = {
         "strategic_planner": _weights(
@@ -259,15 +259,15 @@ def default_ai_domain_rankers() -> dict[str, DeterministicDomainRanker]:
         ),
     }
     return {
-        component: DeterministicDomainRanker(component_name=component, score_weights=weights)
+        component: DeterministicComponentRanker(component_name=component, score_weights=weights)
         for component, weights in sorted(components.items())
     }
 
 
-def ranker_registry_entries() -> dict[str, DeterministicDomainRanker]:
+def ranker_registry_entries() -> dict[str, DeterministicComponentRanker]:
     return {
         f"heuristic:{component}:v1": ranker
-        for component, ranker in sorted(default_ai_domain_rankers().items())
+        for component, ranker in sorted(default_ai_component_rankers().items())
     }
 
 
@@ -285,4 +285,3 @@ def action_order_with_preselected(
         return list(fallback_order or legal)
     fallback = list(fallback_order or legal)
     return selected + [candidate for candidate in fallback if str(candidate.action_id) != str(selected_action_id)]
-

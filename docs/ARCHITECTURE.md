@@ -116,7 +116,7 @@ Current headless flow:
 - Other non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates, synthesizes deterministic `DECLARE_SHOTS` payloads when the request exposes only a coarse Confirm/Skip choice, allows Hazardous profiles, chooses one profile per multi-profile ranged weapon by best hit-probability x wound-probability against legal targets, prevalidates `MOVE_UNIT` payloads before auto-submission, and tries bounded reserves-arrival brute force before any deterministic skip when no legal placement candidate survives masking.
 - Time-budgeted solvers feed candidate metadata into `DecisionRecord`s, so headless runs capture candidates, masks, chosen actions, wall-clock timing, and fallback mode for replay/training use.
 - Headless deployment reuses generated placement payloads during validation so candidate generation does not run the same formation search twice for one anchor.
-- Policy orchestration is available through `AIControllerRouter`: it maps each emitted `DecisionRequest` to a policy-bundle component such as `movement_ranker`, `shooting_ranker`, `fight_ranker`, or `dice_policy`. Optional Tier-1/Tier-2 context can enrich rankers, but the router only orders already-legal candidates and hands them back to the existing command-resolution path.
+- Policy orchestration is available through `AIPolicyOrchestrator`: it maps each emitted `DecisionRequest` to a policy-bundle component such as `movement_ranker`, `shooting_ranker`, `fight_ranker`, or `dice_policy`. Optional Tier-1/Tier-2 context can enrich rankers, but the orchestrator only orders already-legal candidates and hands them back to the existing command-resolution path.
 - Detailed headless decision ordering and movement activation audit flow are documented in `docs/AI_POLICY_ORCHESTRATION.md`.
 - Line-of-sight visibility contexts and legacy shooting-mixin LOS checks are cached by model positions, unit visibility flags, blocker positions, hidden/preview state, and terrain signatures. These caches are diagnostic/performance-only and do not change DecisionRecord or replay semantics.
 - Fight-phase pile-in and consolidate now continue through the same authoritative `MOVE_UNIT` pipeline as other movement decisions, with shared planning/validation instead of legacy UI-only movement hooks.
@@ -229,7 +229,7 @@ Key responsibilities:
   of silently falling back to battlefield state.
 - Headless setup/deployment and policy control (`deployment_headless.py`, `headless_policy_controller.py`)
 - Time-budgeted candidate generation and telemetry (`time_manager.py`, `tier2_orchestrator.py`, `movement_solver.py`, `decision_record.py`)
-- Hierarchical AI routing and framework-free domain rankers (`ai_controller_router.py`, `ai_domain_agents.py`)
+- Policy orchestration and framework-free component rankers (`ai_policy_orchestrator.py`, `ai_component_rankers.py`)
 - Shared movement/fight planning and authoritative movement validation (`movement_intent.py`, `fight_move.py`, `decision_handlers/movement.py`)
 - Edition-aware combat invariants, rules/geometry profiles, and decomposed combat orchestration (`combat_timing.py`, `stratagem_ledger.py`, `attack_sequence.py`, `attack_reporting.py`, `fight_order.py`, `fight_engagement.py`, `fight_resolution.py`)
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)

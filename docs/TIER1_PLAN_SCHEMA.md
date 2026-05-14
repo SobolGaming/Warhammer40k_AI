@@ -75,6 +75,7 @@ Heuristic baseline behavior:
 
 Runtime use:
 - The orchestrator may build or refresh this plan at Command phase start or lazily when a decision benefits from strategic context.
+- Lazy attachment is handled by `attach_ai_orchestration_context(...)` after rules, descriptor, and version-adapter context is attached and before time-budget decoration.
 - Decision-specific rankers consume the plan through `request.context` when useful.
 - A local reaction, dice, allocation, or simple tool decision may route without consulting a fresh Tier-1 plan.
 - The engine remains authoritative for legality, masks, candidate generation, and state mutation.

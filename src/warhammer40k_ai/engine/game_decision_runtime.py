@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .ai_orchestration_context import attach_ai_orchestration_context
+from .ai_policy_orchestrator import policy_component_for_request
 from .candidate_semantics import ensure_candidate_semantic_metadata
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
@@ -112,53 +114,9 @@ def request_decision(game, request) -> None:
         ctx["descriptor_bundle_id"] = str(descriptor_bundle.bundle_id)
     ctx = ensure_version_adapter_boundary(ctx)
 
-    plan_player_id = str(getattr(request, "player_id", "") or "")
-    if not plan_player_id:
-        current_player = game.get_current_player() if game.players else None
-        plan_player_id = str(getattr(current_player, "id", "") or "")
-    if plan_player_id:
-        plan = game.get_or_create_tier1_plan(plan_player_id)
-        tier2_bundle = game.get_or_create_tier2_task_bundle(plan_player_id)
-        if "plan_id" not in ctx:
-            ctx["plan_id"] = plan.plan_id
-        if "turn_plan" not in ctx:
-            ctx["turn_plan"] = plan.to_dict()
-        if "score_window_state" not in ctx:
-            ctx["score_window_state"] = {
-                "windows": [window.to_dict() for window in list(plan.scoring_windows or [])],
-                "battle_round": int(getattr(plan, "battle_round", 0) or 0),
-            }
-        if "opportunity_catalog" not in ctx:
-            ctx["opportunity_catalog"] = {
-                "priority": [opp.to_dict() for opp in list(plan.priority_opportunities or [])],
-                "denial": [opp.to_dict() for opp in list(plan.denial_opportunities or [])],
-            }
-        if "mission_state" not in ctx:
-            ctx["mission_state"] = {
-                "selected_mission_info": dict(getattr(game, "selected_mission_info", {}) or {}),
-                "secondary_mission_mode": str(getattr(game, "secondary_mission_mode", "") or ""),
-            }
-        if "terrain_state_summary" not in ctx:
-            map_obj = getattr(game, "map", None)
-            terrain_features = list(getattr(map_obj, "terrain_features", []) or [])
-            terrain_ids = sorted(str(getattr(feature, "id", "") or "") for feature in terrain_features)
-            ctx["terrain_state_summary"] = {
-                "terrain_count": int(len(terrain_features)),
-                "terrain_ids": terrain_ids,
-            }
-        if "cp_reserve_policy" not in ctx:
-            ctx["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
-        unit_id = str(ctx.get("unit_id", "") or "")
-        task = tier2_bundle.tasks_by_unit_id.get(unit_id) if unit_id else None
-        if task is not None:
-            if "tier2_task" not in ctx:
-                ctx["tier2_task"] = task.to_dict()
-            if "movement_intent" not in ctx:
-                ctx["movement_intent"] = task.movement_intent.to_dict()
-            if "compute_tier" not in ctx:
-                ctx["compute_tier"] = str(task.compute_tier)
-        if "compute_tier" not in ctx:
-            ctx["compute_tier"] = "P1"
+    request.context = ctx
+    component_name = policy_component_for_request(request)
+    ctx = attach_ai_orchestration_context(game, request, ctx, component_name)
 
     time_manager = getattr(game, "time_manager", None)
     if time_manager is None:

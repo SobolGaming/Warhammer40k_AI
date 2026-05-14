@@ -8,7 +8,7 @@ import random
 import time
 from typing import Any, Iterable, Mapping, Sequence
 
-from .ai_controller_router import COMPONENT_DEPLOYMENT_RANKER, COMPONENT_SHOOTING_RANKER
+from .ai_policy_orchestrator import COMPONENT_DEPLOYMENT_RANKER, COMPONENT_SHOOTING_RANKER
 from .decision_kinds import DECISION_DECLARE_RESERVES, DECISION_DECLARE_SHOTS
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
 

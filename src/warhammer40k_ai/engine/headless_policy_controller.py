@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from .combat_timing import geometry_profile_for_game
-from .ai_controller_router import AIControllerRouter
+from .ai_policy_orchestrator import AIPolicyOrchestrator
 from .decision_controller import DecisionController
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
@@ -71,7 +71,7 @@ _DRIVER_MANAGED_DECISION_TYPES = {
     DECISION_CHOOSE_MISSION,
 }
 
-_AI_ROUTER_SETUP_DECISION_TYPES = {
+_AI_ORCHESTRATOR_SETUP_DECISION_TYPES = {
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
@@ -138,9 +138,9 @@ class HeadlessPolicyDecisionController(DecisionController):
         max_reserves_arrival_seconds: float = 10.0,
         reserve_policy: str = "forced_only",
         require_authoritative: bool = True,
-        ai_router: AIControllerRouter | None = None,
-        ai_router_ignored_decision_types: Iterable[str] | None = None,
-        ai_router_ignore_setup_decisions: bool = False,
+        ai_orchestrator: AIPolicyOrchestrator | None = None,
+        ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
+        ai_orchestrator_ignore_setup_decisions: bool = False,
         force_skip_decision_types: Iterable[str] | None = None,
         auto_attach: bool = True,
         enable_tool_decisions: bool = True,
@@ -161,13 +161,13 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
         self._reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._require_authoritative = bool(require_authoritative)
-        self._ai_router = ai_router
-        self._ai_router_ignored_decision_types = {
+        self._ai_orchestrator = ai_orchestrator
+        self._ai_orchestrator_ignored_decision_types = {
             str(value or "").strip()
-            for value in list(ai_router_ignored_decision_types or [])
+            for value in list(ai_orchestrator_ignored_decision_types or [])
             if str(value or "").strip()
         }
-        self._ai_router_ignore_setup_decisions = bool(ai_router_ignore_setup_decisions)
+        self._ai_orchestrator_ignore_setup_decisions = bool(ai_orchestrator_ignore_setup_decisions)
         self._force_skip_decision_types = {
             str(value or "").strip()
             for value in list(force_skip_decision_types or [])
@@ -209,8 +209,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         ranked = self._rank_legal_candidates(request)
         if self._should_force_skip_request(request):
             ranked = self._rank_forced_skip_candidates(ranked)
-        elif self._ai_router is not None and self._should_use_ai_router(request, observed_game):
-            ranked = self._ai_router.rank_legal_candidates(request, fallback_order=ranked)
+        elif self._ai_orchestrator is not None and self._should_use_ai_orchestrator(request, observed_game):
+            ranked = self._ai_orchestrator.rank_legal_candidates(request, fallback_order=ranked)
         if self._is_reserves_arrival_request(request):
             ranked_move = [candidate for candidate in ranked if not self._candidate_requests_skip(candidate)]
             ranked_skip = [candidate for candidate in ranked if self._candidate_requests_skip(candidate)]
@@ -236,13 +236,13 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
         self._resolve_first_legal_option(resolution_game, request)
 
-    def _should_use_ai_router(self, request: DecisionRequest, game: object | None = None) -> bool:
+    def _should_use_ai_orchestrator(self, request: DecisionRequest, game: object | None = None) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
         if decision_type == DECISION_SELECT_MOVEMENT_ACTION:
             return False
-        if decision_type in self._ai_router_ignored_decision_types:
+        if decision_type in self._ai_orchestrator_ignored_decision_types:
             return False
-        return not (self._ai_router_ignore_setup_decisions and self._request_is_setup_request(request, game))
+        return not (self._ai_orchestrator_ignore_setup_decisions and self._request_is_setup_request(request, game))
 
     def _should_force_skip_request(self, request: DecisionRequest) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
@@ -259,7 +259,7 @@ class HeadlessPolicyDecisionController(DecisionController):
     @staticmethod
     def _request_is_setup_request(request: DecisionRequest, game: object | None = None) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip().upper()
-        if decision_type in _AI_ROUTER_SETUP_DECISION_TYPES:
+        if decision_type in _AI_ORCHESTRATOR_SETUP_DECISION_TYPES:
             return True
         is_setup = getattr(game, "is_in_setup_phase", None)
         if callable(is_setup) and bool(is_setup()):

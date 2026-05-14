@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from . import decision_kinds as kinds
-from .ai_domain_agents import (
+from .ai_component_rankers import (
     action_id_is_legal,
     action_order_with_preselected,
     first_legal_action_id,
@@ -199,7 +199,7 @@ _NO_AI_DECISIONS = {
 
 
 @dataclass(frozen=True)
-class AIRouteResult:
+class AIOrchestrationResult:
     component_name: str
     action_id: str
     source: str
@@ -222,7 +222,7 @@ def _phase_key(context: Mapping[str, Any]) -> str:
     return " ".join(str(value or "").upper() for value in phase_values)
 
 
-def decision_component_for(decision_type: str, context: Mapping[str, Any] | None = None) -> str:
+def policy_component_for_decision(decision_type: str, context: Mapping[str, Any] | None = None) -> str:
     dtype = str(decision_type or "").strip()
     ctx = dict(context or {})
     phase_key = _phase_key(ctx)
@@ -275,8 +275,8 @@ def decision_component_for(decision_type: str, context: Mapping[str, Any] | None
     return COMPONENT_TACTICAL_ORCHESTRATOR
 
 
-def component_for_request(request: DecisionRequest) -> str:
-    return decision_component_for(
+def policy_component_for_request(request: DecisionRequest) -> str:
+    return policy_component_for_decision(
         str(getattr(request, "decision_type", "") or ""),
         _context(request),
     )
@@ -295,12 +295,12 @@ def unmapped_decision_types() -> tuple[str, ...]:
     return tuple(
         value
         for value in all_known_decision_types()
-        if decision_component_for(value) not in (*AI_POLICY_COMPONENTS, COMPONENT_NO_AI)
+        if policy_component_for_decision(value) not in (*AI_POLICY_COMPONENTS, COMPONENT_NO_AI)
     )
 
 
-class AIControllerRouter:
-    """Route authoritative decision requests to deterministic AI domain components."""
+class AIPolicyOrchestrator:
+    """Orchestrate authoritative decision requests across policy components."""
 
     def __init__(
         self,
@@ -320,7 +320,7 @@ class AIControllerRouter:
         }
 
     @classmethod
-    def from_policy_bundle(cls, bundle: object) -> "AIControllerRouter":
+    def from_policy_bundle(cls, bundle: object) -> "AIPolicyOrchestrator":
         components: dict[str, object] = {}
         for name, resolved in sorted(dict(getattr(bundle, "components", {}) or {}).items()):
             if str(name) not in AI_POLICY_COMPONENTS:
@@ -335,25 +335,25 @@ class AIControllerRouter:
         return cls(components=components, fallbacks=fallbacks)
 
     def route(self, request: DecisionRequest) -> str:
-        return component_for_request(request)
+        return policy_component_for_request(request)
 
-    def choose_action(self, request: DecisionRequest) -> AIRouteResult:
+    def choose_action(self, request: DecisionRequest) -> AIOrchestrationResult:
         component_name = self.route(request)
         if component_name == COMPONENT_NO_AI:
-            return AIRouteResult(component_name=component_name, action_id="", source="no_ai")
+            return AIOrchestrationResult(component_name=component_name, action_id="", source="no_ai")
         for source, ranker in self._component_chain(component_name):
             choose = getattr(ranker, "choose_action_id", None)
             if not callable(choose):
                 continue
             action_id = str(choose(request) or "")
             if action_id_is_legal(request, action_id):
-                return AIRouteResult(component_name=component_name, action_id=action_id, source=source)
+                return AIOrchestrationResult(component_name=component_name, action_id=action_id, source=source)
 
         fallback = first_legal_action_id(
             request,
             prefer_decline=self._prefer_decline_fallback(component_name, request),
         )
-        return AIRouteResult(component_name=component_name, action_id=fallback, source="first_legal")
+        return AIOrchestrationResult(component_name=component_name, action_id=fallback, source="first_legal")
 
     def rank_legal_candidates(
         self,

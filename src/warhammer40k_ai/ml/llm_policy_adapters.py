@@ -9,10 +9,10 @@ from typing import Any, Mapping, Protocol, Sequence
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
-from ..engine.ai_controller_router import AI_POLICY_COMPONENTS, AIControllerRouter
-from ..engine.ai_domain_agents import (
+from ..engine.ai_policy_orchestrator import AI_POLICY_COMPONENTS, AIPolicyOrchestrator
+from ..engine.ai_component_rankers import (
     action_id_is_legal,
-    default_ai_domain_rankers,
+    default_ai_component_rankers,
     first_legal_action_id,
     legal_candidates,
 )
@@ -20,7 +20,7 @@ from ..engine.decisions import CandidateAction, DecisionRequest
 
 
 class LLMConfigurationError(ValueError):
-    """Raised when an LLM agent configuration cannot be used."""
+    """Raised when an LLM policy-adapter configuration cannot be used."""
 
 
 class LLMTransportError(RuntimeError):
@@ -104,7 +104,7 @@ class LLMActionChoice:
 
 
 @dataclass(frozen=True)
-class LLMDecisionTrace:
+class LLMPolicyAdapterTrace:
     component_name: str
     decision_id: str
     decision_type: str
@@ -222,7 +222,7 @@ class ChatCompletionsTransport:
                 {
                     "role": "system",
                     "content": (
-                        "You are a Warhammer 40,000 AI domain agent. "
+                        "You are a Warhammer 40,000 AI policy adapter. "
                         "Choose exactly one legal action_id from the provided legal_candidates. "
                         "Return only JSON with keys action_id and rationale."
                     ),
@@ -296,7 +296,7 @@ class StaticLLMTransport:
         return LLMActionChoice(action_id=action_id, rationale="static first legal")
 
 
-class LLMDecisionAgent:
+class LLMPolicyAdapter:
     """Candidate ranker backed by an LLM transport with deterministic fallback."""
 
     def __init__(
@@ -313,7 +313,7 @@ class LLMDecisionAgent:
         self._fallback_ranker = fallback_ranker
         self._max_candidates = max(1, int(max_candidates or 1))
         self._max_prompt_chars = max(1000, int(max_prompt_chars or 1000))
-        self._traces: list[LLMDecisionTrace] = []
+        self._traces: list[LLMPolicyAdapterTrace] = []
 
     def choose_action_id(self, request: DecisionRequest) -> str:
         payload = request_payload_for_llm(
@@ -338,7 +338,7 @@ class LLMDecisionAgent:
         elapsed_ms = int(round((time.perf_counter() - started_at) * 1000.0))
         legal = action_id_is_legal(request, selected_action_id)
         self._traces.append(
-            LLMDecisionTrace(
+            LLMPolicyAdapterTrace(
                 component_name=self.component_name,
                 decision_id=str(getattr(request, "decision_id", "") or ""),
                 decision_type=str(getattr(request, "decision_type", "") or ""),
@@ -362,28 +362,28 @@ class LLMDecisionAgent:
                 return action_id
         return first_legal_action_id(request)
 
-    def traces(self) -> tuple[LLMDecisionTrace, ...]:
+    def traces(self) -> tuple[LLMPolicyAdapterTrace, ...]:
         return tuple(self._traces)
 
-    def pop_traces(self) -> tuple[LLMDecisionTrace, ...]:
+    def pop_traces(self) -> tuple[LLMPolicyAdapterTrace, ...]:
         traces = tuple(self._traces)
         self._traces.clear()
         return traces
 
 
-def build_llm_router(
+def build_llm_policy_orchestrator(
     config: LLMProviderConfig,
     *,
     transport: LLMTransport | None = None,
-) -> AIControllerRouter:
-    fallback_rankers = default_ai_domain_rankers()
+) -> AIPolicyOrchestrator:
+    fallback_rankers = default_ai_component_rankers()
     resolved_transport = transport if transport is not None else ChatCompletionsTransport(config)
     components: dict[str, object] = {}
     fallbacks: dict[str, tuple[object, ...]] = {}
     for component_name in AI_POLICY_COMPONENTS:
         fallback = fallback_rankers.get(component_name)
         if component_name in set(config.component_names):
-            components[component_name] = LLMDecisionAgent(
+            components[component_name] = LLMPolicyAdapter(
                 component_name=component_name,
                 transport=resolved_transport,
                 fallback_ranker=fallback,
@@ -394,11 +394,11 @@ def build_llm_router(
                 fallbacks[component_name] = (fallback,)
         elif fallback is not None:
             components[component_name] = fallback
-    return AIControllerRouter(components=components, fallbacks=fallbacks)
+    return AIPolicyOrchestrator(components=components, fallbacks=fallbacks)
 
 
-def build_llm_router_from_config_file(path: str | Path) -> AIControllerRouter:
-    return build_llm_router(LLMProviderConfig.from_json_file(path))
+def build_llm_policy_orchestrator_from_config_file(path: str | Path) -> AIPolicyOrchestrator:
+    return build_llm_policy_orchestrator(LLMProviderConfig.from_json_file(path))
 
 
 def llm_training_example_from_decision_record(record: Mapping[str, Any]) -> dict[str, Any]:

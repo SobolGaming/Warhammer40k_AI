@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from ..engine.ai_domain_agents import ranker_registry_entries
+from ..engine.ai_component_rankers import ranker_registry_entries
 from ..engine.decisions import DecisionRequest
 from .interfaces import CandidateRanker, MatchupEvaluator, PlaybookSelector
 from .registry import HeuristicRegistry

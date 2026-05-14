@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 
 from ..engine.headless_policy_controller import HeadlessPolicyDecisionController
-from ..ml.llm_agents import build_llm_router_from_config_file
+from ..ml.llm_policy_adapters import build_llm_policy_orchestrator_from_config_file
 from .client import NetworkClient
 from .game_session import GameUpdate, NetworkGameSession
 from .server import NetworkServer
@@ -123,10 +123,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Hard wall-clock cap per reserves-arrival placement decision (default: 10.0).",
     )
     headless_client.add_argument(
-        "--llm-agent-config",
+        "--llm-policy-adapter-config",
+        dest="llm_adapter_config",
         default="",
         help=(
-            "Optional JSON config for LLM-backed policy orchestration agents. "
+            "Optional JSON config for LLM-backed policy adapters. "
             "Returned action ids are validated and fall back to deterministic rankers."
         ),
     )
@@ -224,15 +225,15 @@ async def _run_headless_client(args: argparse.Namespace) -> None:
         player_id = client.player_id
         if not player_id:
             return
-        ai_router = None
-        if str(getattr(args, "llm_agent_config", "") or "").strip():
-            ai_router = build_llm_router_from_config_file(str(args.llm_agent_config))
+        ai_orchestrator = None
+        if str(getattr(args, "llm_adapter_config", "") or "").strip():
+            ai_orchestrator = build_llm_policy_orchestrator_from_config_file(str(args.llm_adapter_config))
         current_controller = HeadlessPolicyDecisionController(
             game=update.game_proxy,
             player_id=player_id,
             max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
             require_authoritative=False,
-            ai_router=ai_router,
+            ai_orchestrator=ai_orchestrator,
             auto_attach=True,
         )
 

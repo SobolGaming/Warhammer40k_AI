@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-import warhammer40k_ai.ml.llm_agents as llm_agents_module
-from warhammer40k_ai.engine.ai_controller_router import COMPONENT_MOVEMENT_RANKER, COMPONENT_SHOOTING_RANKER
+import warhammer40k_ai.ml.llm_policy_adapters as llm_policy_adapters_module
+from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_MOVEMENT_RANKER, COMPONENT_SHOOTING_RANKER
 from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_SHOTS, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
-from warhammer40k_ai.ml.llm_agents import (
+from warhammer40k_ai.ml.llm_policy_adapters import (
     ChatCompletionsTransport,
     LLMConfigurationError,
-    LLMDecisionAgent,
+    LLMPolicyAdapter,
     LLMProviderConfig,
     StaticLLMTransport,
-    build_llm_router,
+    build_llm_policy_orchestrator,
     llm_training_examples_from_records,
     parse_llm_action_choice,
     request_payload_for_llm,
@@ -62,9 +62,9 @@ def test_llm_request_payload_contains_only_legal_candidates() -> None:
     assert payload["response_contract"]["required"]["action_id"] == "one of legal_candidates[].action_id"
 
 
-def test_llm_agent_accepts_legal_action_id_from_transport() -> None:
+def test_llm_adapter_accepts_legal_action_id_from_transport() -> None:
     transport = StaticLLMTransport([ "b" ])
-    agent = LLMDecisionAgent(
+    agent = LLMPolicyAdapter(
         component_name=COMPONENT_SHOOTING_RANKER,
         transport=transport,
     )
@@ -76,9 +76,9 @@ def test_llm_agent_accepts_legal_action_id_from_transport() -> None:
     assert traces[0].selected_action_id == "b"
 
 
-def test_llm_agent_falls_back_when_transport_returns_masked_action() -> None:
+def test_llm_adapter_falls_back_when_transport_returns_masked_action() -> None:
     transport = StaticLLMTransport([ "a" ])
-    agent = LLMDecisionAgent(
+    agent = LLMPolicyAdapter(
         component_name=COMPONENT_SHOOTING_RANKER,
         transport=transport,
     )
@@ -89,7 +89,7 @@ def test_llm_agent_falls_back_when_transport_returns_masked_action() -> None:
     assert traces[0].selected_action_id == "a"
 
 
-def test_llm_router_uses_static_transport_for_configured_components() -> None:
+def test_llm_policy_orchestrator_uses_static_transport_for_configured_components() -> None:
     config = LLMProviderConfig.from_dict(
         {
             "endpoint_url": "https://example.invalid/v1/chat/completions",
@@ -98,13 +98,13 @@ def test_llm_router_uses_static_transport_for_configured_components() -> None:
         }
     )
     transport = StaticLLMTransport({COMPONENT_MOVEMENT_RANKER: "b"})
-    router = build_llm_router(config, transport=transport)
+    orchestrator = build_llm_policy_orchestrator(config, transport=transport)
     request = _request(DECISION_MOVE_UNIT)
     request.context["movement_type"] = "normal"
 
-    assert router.choose_action(request).action_id == "b"
+    assert orchestrator.choose_action(request).action_id == "b"
     assert transport.calls[0]["component_name"] == COMPONENT_MOVEMENT_RANKER
-    traces = router.collect_component_traces()
+    traces = orchestrator.collect_component_traces()
     assert len(traces) == 1
     assert traces[0]["component_name"] == COMPONENT_MOVEMENT_RANKER
     assert traces[0]["selected_action_id"] == "b"
@@ -160,7 +160,7 @@ def test_chat_completions_transport_allows_no_api_key_for_local_endpoint(monkeyp
             }
         )
 
-    monkeypatch.setattr(llm_agents_module.urllib_request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_policy_adapters_module.urllib_request, "urlopen", fake_urlopen)
     config = LLMProviderConfig.from_dict(
         {
             "endpoint_url": "http://127.0.0.1:8080/v1/chat/completions",
@@ -199,7 +199,7 @@ def test_chat_completions_transport_sends_authorization_when_configured(monkeypa
             }
         )
 
-    monkeypatch.setattr(llm_agents_module.urllib_request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_policy_adapters_module.urllib_request, "urlopen", fake_urlopen)
     config = LLMProviderConfig.from_dict(
         {
             "endpoint_url": "http://127.0.0.1:8080/v1/chat/completions",

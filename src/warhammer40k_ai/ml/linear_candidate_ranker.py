@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..engine.ai_domain_agents import legal_candidates
+from ..engine.ai_component_rankers import legal_candidates
 from ..engine.candidate_semantics import SEMANTIC_NUMERIC_KEYS
 from ..engine.decisions import CandidateAction, DecisionRequest
 

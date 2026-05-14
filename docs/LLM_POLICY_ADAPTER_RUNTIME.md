@@ -10,17 +10,17 @@ not replace the engine, legality checks, decision masks, deterministic fallback,
 deterministic replay.
 
 Implemented surfaces:
-- `src/warhammer40k_ai/ml/llm_agents.py`
-- `scripts/run_headless_self_play.py --llm-agent-config <path>`
-- `python -m warhammer40k_ai.network.cli client-headless --llm-agent-config <path> ...`
-- `scripts/build_llm_agent_dataset.py`
+- `src/warhammer40k_ai/ml/llm_policy_adapters.py`
+- `scripts/run_headless_self_play.py --llm-policy-adapter-config <path>`
+- `python -m warhammer40k_ai.network.cli client-headless --llm-policy-adapter-config <path> ...`
+- `scripts/build_llm_policy_adapter_dataset.py`
 
 ## Runtime Flow
 
 1. The engine emits and decorates a `DecisionRequest`.
 2. The orchestration layer attaches optional strategic/tactical context when relevant.
-3. `AIControllerRouter` maps the request to a component such as `movement_ranker`, `shooting_ranker`, or `reaction_ranker`.
-4. `LLMDecisionAgent` serializes the request into JSON containing:
+3. `AIPolicyOrchestrator` maps the request to a component such as `movement_ranker`, `shooting_ranker`, or `reaction_ranker`.
+4. `LLMPolicyAdapter` serializes the request into JSON containing:
    - decision id/type
    - player id
    - serializable context
@@ -36,10 +36,10 @@ Implemented surfaces:
 ```
 
 6. The returned `action_id` is accepted only if it still matches a legal candidate.
-7. Invalid/missing/failed LLM output falls back to the deterministic domain ranker for that component.
+7. Invalid/missing/failed LLM output falls back to the deterministic component ranker for that component.
 8. The existing controller submits the normal `RESOLVE_DECISION` command; the engine validates and records `DecisionRecord` telemetry.
 
-When `--report-output` is enabled for headless self-play, per-game report entries include `llm_agent_traces` and the top-level report includes `llm_agent_trace_counts`. These traces are audit/debug data for prompts and provider responses; supervised learning should still use authoritative `DecisionRecord` examples because those records reflect the engine-validated outcome.
+When `--report-output` is enabled for headless self-play, per-game report entries include `llm_adapter_traces` and the top-level report includes `llm_adapter_trace_counts`. These traces are audit/debug data for prompts and provider responses; supervised learning should still use authoritative `DecisionRecord` examples because those records reflect the engine-validated outcome.
 
 ## Config
 
@@ -84,7 +84,7 @@ uv run python scripts/run_headless_self_play.py \
   --games 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
-  --llm-agent-config data/llm_agent_config.json \
+  --llm-policy-adapter-config data/llm_adapter_config.json \
   --output data/llm_self_play_decision_records.json
 ```
 
@@ -94,7 +94,7 @@ uv run python scripts/run_headless_self_play.py \
 python -m warhammer40k_ai.network.cli client-headless \
   --server wss://localhost:8765 \
   --role player2 \
-  --llm-agent-config data/llm_agent_config.json \
+  --llm-policy-adapter-config data/llm_adapter_config.json \
   --army-file army_lists/aeldari_test.txt \
   --ready
 ```
@@ -104,9 +104,9 @@ python -m warhammer40k_ai.network.cli client-headless \
 Any DecisionRecord source can become supervised JSONL examples:
 
 ```bash
-uv run python scripts/build_llm_agent_dataset.py \
+uv run python scripts/build_llm_policy_adapter_dataset.py \
   --input data/headless_self_play_decision_records.json \
-  --output data/llm_agent_examples.jsonl
+  --output data/llm_adapter_examples.jsonl
 ```
 
 This works for headless self-play, replay captures, and human-vs-AI games because all of them resolve the same Decision API and write the same candidate/mask/chosen-action telemetry.

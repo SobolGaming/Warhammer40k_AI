@@ -16,14 +16,14 @@ The authoritative engine remains the only source of legality and mutation:
 1. The engine emits a `DecisionRequest`.
 2. Tier 0 decorates context with rules bundle ids, descriptor ids, semantic candidate metadata, masks, and time budgets.
 3. The orchestration layer builds or refreshes optional Tier 1 plan context and Tier 2 task context when they are relevant to the decision.
-4. `AIControllerRouter` maps the decision to exactly one policy-bundle component.
-5. The selected domain component ranks only legal `mask=True` candidates and returns an `action_id`.
+4. `AIPolicyOrchestrator` maps the decision to exactly one policy-bundle component.
+5. The selected component ranks only legal `mask=True` candidates and returns an `action_id`.
 6. The arbiter accepts only a still-legal action id, otherwise it falls back through configured deterministic components.
 7. The controller submits the normal `RESOLVE_DECISION` command.
 8. The engine validates, mutates state, emits events, and records `DecisionRecord` telemetry.
 
-The router is implemented in `src/warhammer40k_ai/engine/ai_controller_router.py`.
-Framework-free deterministic domain rankers live in `src/warhammer40k_ai/engine/ai_domain_agents.py`.
+The orchestrator is implemented in `src/warhammer40k_ai/engine/ai_policy_orchestrator.py`.
+Framework-free deterministic component rankers live in `src/warhammer40k_ai/engine/ai_component_rankers.py`.
 
 ## Orchestration Roles
 
@@ -32,7 +32,7 @@ Framework-free deterministic domain rankers live in `src/warhammer40k_ai/engine/
 | Tier 0 | Rules compiler, candidate generator, legality/mask authority | candidate generation, masks, descriptor provenance, semantic metadata, `time_budget_ms` |
 | Tier 1 | Optional strategic context provider / plan blackboard | `Tier1Plan`, scoring/denial opportunities, resource posture, risk posture, unit priority tiers |
 | Tier 2 | Optional tactical task provider / intent generator | `Tier2TaskBundle`, per-unit tasks, `MovementIntent`, `compute_tier`, CP reserve policy |
-| Orchestrator | Router, context binder, legal-action arbiter, fallback coordinator | `AIControllerRouter` role selection and deterministic fallback routing |
+| Orchestrator | Component selector, context binder, legal-action arbiter, fallback coordinator | `AIPolicyOrchestrator` role selection and deterministic fallback orchestration |
 | Rankers | Decision-specific component registry | `choose_action_id(request)` over legal candidates |
 | Telemetry | Replay/training service | `DecisionRecord`, replay, relabeling, reward annotation, manifest gates |
 
@@ -55,6 +55,8 @@ The policy orchestration runtime uses these component names:
 Each component may be backed by a heuristic resolver, learned artifact, search adapter,
 or LLM adapter through the existing policy-bundle manifest ABI. The default heuristic
 registry exposes framework-free resolver ids of the form `heuristic:<component>:v1`.
+These component ids are stable policy-bundle ABI and are intentionally unchanged by
+implementation naming changes.
 
 The orchestration layer may invoke `strategic_planner` and `tactical_orchestrator` to
 produce reusable context, but those components are not mandatory runtime parents for every
@@ -78,18 +80,46 @@ and telemetry contracts.
 
 Shared decision surfaces are context-sensitive. For example, `MOVE_UNIT` routes to deployment, charge, fight, or movement depending on `placement_kind`, `phase_step`, and `movement_type`.
 
+## Orchestration Context Attachment
+
+`Game.request_decision(...)` uses the shared policy component resolver in
+`ai_policy_orchestrator.py` and then calls
+`attach_ai_orchestration_context(...)` from `ai_orchestration_context.py`.
+The helper returns a new context dict; it does not mutate the input context,
+generate candidates, decorate time budgets, compile descriptors, validate
+payloads, or mutate game state.
+
+Request context is assembled in this order:
+
+1. normalize limited-use context
+2. attach and validate rules bundle context
+3. compile descriptor bundle context
+4. ensure the version-adapter boundary
+5. determine the policy component
+6. attach optional orchestration context
+7. decorate `time_budget_ms`
+8. generate candidates and masks
+9. ensure semantic candidate metadata
+10. queue the decision
+
+Strategic context is skipped for `n/a`, `dice_policy`, and
+`allocation_ranker`. Tier-2 task context attaches only when the request context
+contains a `unit_id` that matches a task in the current bundle. `compute_tier`
+uses the matching Tier-2 task first, then an existing valid engine-provided value,
+then `P1`; valid values are `P0`, `P1`, and `P2`.
+
 ## Fallback Policy
 
 Routing is deterministic:
 
-- If the primary component returns a masked, missing, stale, or empty action id, the router tries configured fallbacks for the same component.
+- If the primary component returns a masked, missing, stale, or empty action id, the orchestrator tries configured fallbacks for the same component.
 - If no component produces a legal action, the arbiter chooses the first legal action id.
 - Optional and reaction fallback paths prefer deterministic decline/skip candidates when such a candidate exists.
 - Components never generate legality, mutate state, inspect UI-only objects, or submit commands directly.
 
 ## Headless Integration
 
-`HeadlessPolicyDecisionController` accepts an optional `AIControllerRouter`. When provided, the router preselects the first candidate tried by the existing headless resolver. The resolver still uses the normal command path, payload normalization, reserves-arrival safeguards, and authoritative validation.
+`HeadlessPolicyDecisionController` accepts an optional `AIPolicyOrchestrator`. When provided, the orchestrator preselects the first candidate tried by the existing headless resolver. The resolver still uses the normal command path, payload normalization, reserves-arrival safeguards, and authoritative validation.
 
 ### Headless Decision Flow
 
@@ -114,7 +144,7 @@ flowchart TD
   I -->|"No"| K["Use global strategic context only"]
   J --> L["Candidate generators and semantic metadata consume the strategic context"]
   K --> L
-  L --> M["AIControllerRouter maps the request to a decision-specific ranker"]
+  L --> M["AIPolicyOrchestrator maps the request to a decision-specific ranker"]
   M --> N["Ranker orders legal candidates only"]
   N --> O["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
   O --> P["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
@@ -138,8 +168,8 @@ flowchart TD
   K --> L{"Controller handling request"}
   L -->|"Dice or reroll request"| M["AutoDiceDecisionController resolves roll/reroll"]
   L -->|"Non-dice headless request"| N["HeadlessPolicyDecisionController ranks legal mask=true candidates"]
-  N --> O{"AI router eligible?"}
-  O -->|"Yes"| P["AIControllerRouter reranks legal candidates with optional plan/task context"]
+  N --> O{"AI orchestrator eligible?"}
+  O -->|"Yes"| P["AIPolicyOrchestrator reranks legal candidates with optional plan/task context"]
   O -->|"No"| Q["Use headless ranking directly"]
   P --> R["Submit first candidate that passes preflight"]
   Q --> R

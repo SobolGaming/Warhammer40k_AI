@@ -26,9 +26,15 @@ Decision context integration:
 - `compute_tier` from Tier-2 task
 - `cp_reserve_policy` stub for downstream CP posture enforcement
 
+Attachment rules:
+- `attach_ai_orchestration_context(...)` returns a new context dict and never generates candidates or mutates game state.
+- Tier-2 task context attaches only when `request.context["unit_id"]` matches a task in the bundle.
+- `compute_tier` precedence is matching Tier-2 task, then existing valid engine-provided value, then `P1`.
+- Valid `compute_tier` values are `P0`, `P1`, and `P2`; invalid, empty, or unknown values normalize to `P1`.
+
 Current baseline:
 - Deterministic heuristic assignment by Tier-1 unit priority tiers.
-- Time budgets continue to derive from decision type + compute tier.
+- Time budgets continue to derive from decision type + compute tier after orchestration context has been attached.
 
 Runtime use:
 - The orchestrator builds or refreshes the bundle at Command phase start when possible, and lazily for decisions that need tactical context.

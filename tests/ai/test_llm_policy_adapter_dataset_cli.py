@@ -6,16 +6,16 @@ from pathlib import Path
 
 
 def _load_script_module():
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "build_llm_agent_dataset.py"
-    spec = importlib.util.spec_from_file_location("build_llm_agent_dataset_module", script_path)
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "build_llm_policy_adapter_dataset.py"
+    spec = importlib.util.spec_from_file_location("build_llm_policy_adapter_dataset_module", script_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("Unable to load build_llm_agent_dataset.py for testing.")
+        raise RuntimeError("Unable to load build_llm_policy_adapter_dataset.py for testing.")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_build_llm_agent_dataset_cli_writes_jsonl(monkeypatch, tmp_path: Path) -> None:
+def test_build_llm_policy_adapter_dataset_cli_writes_jsonl(monkeypatch, tmp_path: Path) -> None:
     mod = _load_script_module()
     input_path = tmp_path / "records.json"
     output_path = tmp_path / "examples.jsonl"
@@ -44,7 +44,7 @@ def test_build_llm_agent_dataset_cli_writes_jsonl(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(
         "sys.argv",
         [
-            "build_llm_agent_dataset.py",
+            "build_llm_policy_adapter_dataset.py",
             "--input",
             str(input_path),
             "--output",

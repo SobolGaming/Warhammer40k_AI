@@ -40,9 +40,9 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
     setup structure
   - `T3`: micro-execution over already-legal candidates
   - `N/A`: presentation-only or test/example surface, not a gameplay AI policy surface
-- Concrete headless policy routing is implemented by `AIControllerRouter` in
-  `src/warhammer40k_ai/engine/ai_controller_router.py`; shared decision surfaces
-  such as `MOVE_UNIT`, `SELECT_UNIT`, and `CONFIRM_YES_NO` route by request
+- Concrete headless policy orchestration is implemented by `AIPolicyOrchestrator` in
+  `src/warhammer40k_ai/engine/ai_policy_orchestrator.py`; shared decision surfaces
+  such as `MOVE_UNIT`, `SELECT_UNIT`, and `CONFIRM_YES_NO` select components by request
   context.
 
 ## Mission And Secondaries

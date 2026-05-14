@@ -148,7 +148,7 @@ Canonical runtime flow:
 2. Context builder attaches rules, descriptors, semantic metadata, masks, and time budget.
 3. Strategic plan provider optionally gets or refreshes a `Tier1Plan`.
 4. Tactical task provider optionally gets or refreshes a `Tier2TaskBundle`.
-5. `AIControllerRouter` selects the decision-specific component.
+5. `AIPolicyOrchestrator` selects the decision-specific component.
 6. The component ranks legal `mask=True` candidates only.
 7. The arbiter validates the returned `action_id` against the current legal set and applies deterministic fallbacks if needed.
 8. The engine resolves the normal command path and records `DecisionRecord` telemetry.

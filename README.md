@@ -220,7 +220,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
   - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.
   - [StateBlob schema](docs/STATE_BLOB_SCHEMA.md): canonical omniscient/player observation payload contract.
-  - [AI policy orchestration](docs/AI_POLICY_ORCHESTRATION.md): controller routing, component ownership, fallback behavior, and audit flow.
+  - [AI policy orchestration](docs/AI_POLICY_ORCHESTRATION.md): component selection, context wiring, fallback behavior, and audit flow.
   - [Tier 1 plan schema](docs/TIER1_PLAN_SCHEMA.md): strategic context payload and baseline behavior.
   - [Tier 2 orchestration](docs/TIER2_ORCHESTRATION.md): per-unit task bundle scaffolding and optional context wiring.
   - [Time manager policy](docs/TIME_MANAGER_POLICY.md): decision budgets, compute-tier multipliers, and fallback behavior.
