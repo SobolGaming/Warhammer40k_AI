@@ -391,6 +391,16 @@ def _phase_state_summary(game: object) -> str:
     )
 
 
+def _battle_phase_progress_key(game: object) -> tuple[int, int, str]:
+    phase = getattr(game, "phase", None)
+    phase_name = str(getattr(phase, "name", "") or phase or "")
+    return (
+        int(getattr(game, "turn", 0) or 0),
+        int(getattr(game, "current_player_index", 0) or 0),
+        phase_name,
+    )
+
+
 def _log_phase_state_if_changed(
     game: Game,
     *,
@@ -513,7 +523,7 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable optional generic tool-action decisions such as opportunistic stratagem reactions.",
     )
-    parser.add_argument("--max-phase-steps", type=int, default=80)
+    parser.add_argument("--max-phase-steps", type=int, default=50)
     parser.add_argument(
         "--output",
         default="data/headless_self_play_decision_records.json",
@@ -786,6 +796,8 @@ def _run_single_game(
         )
 
     phase_steps = 0
+    no_progress_phase_attempts = 0
+    max_no_progress_phase_attempts = 100
     last_state = _log_phase_state_if_changed(
         game,
         game_id=str(game_id or ""),
@@ -795,6 +807,12 @@ def _run_single_game(
     while not session_game.is_game_over():
         if phase_steps >= int(max_phase_steps):
             raise RuntimeError(f"Headless game hit max phase steps ({max_phase_steps}) before game over.")
+        if no_progress_phase_attempts >= max_no_progress_phase_attempts:
+            raise RuntimeError(
+                "Headless game could not advance battle phase after "
+                f"{max_no_progress_phase_attempts} attempts from {_phase_state_summary(game)}."
+            )
+        phase_before = _battle_phase_progress_key(game)
         with game_context(game):
             last_state = _drain_pending_decisions(
                 game,
@@ -809,13 +827,19 @@ def _run_single_game(
                 log_phase_transitions=bool(log_phase_transitions),
                 last_state=last_state,
             )
-        phase_steps += 1
-        last_state = _log_phase_state_if_changed(
-            game,
-            game_id=str(game_id or ""),
-            enabled=bool(log_phase_transitions),
-            last_state=last_state,
-        )
+        phase_after = _battle_phase_progress_key(game)
+        if phase_after != phase_before:
+            phase_steps += 1
+            no_progress_phase_attempts = 0
+        else:
+            no_progress_phase_attempts += 1
+        if not session_game.is_game_over():
+            last_state = _log_phase_state_if_changed(
+                game,
+                game_id=str(game_id or ""),
+                enabled=bool(log_phase_transitions),
+                last_state=last_state,
+            )
 
     winner = game.get_winner()
     winner_army_label, winner_score_line, scoreboard = _winner_summary(

@@ -136,6 +136,15 @@ def test_parse_args_supports_profile_options(monkeypatch, tmp_path) -> None:
     assert args.profile_label == "baseline"
 
 
+def test_parse_args_defaults_to_rules_bounded_phase_cap(monkeypatch) -> None:
+    mod = _load_script_module()
+    monkeypatch.setattr(sys, "argv", ["run_headless_self_play.py"])
+
+    args = mod._parse_args()
+
+    assert args.max_phase_steps == 50
+
+
 def test_parse_args_supports_policy_orchestration_flags(monkeypatch) -> None:
     mod = _load_script_module()
     monkeypatch.setattr(
@@ -260,6 +269,9 @@ def test_run_single_game_uses_active_game_context_for_phase_execution(monkeypatc
             self.decision_queue = _FakeQueue()
             self.decision_record_store = SimpleNamespace(records=[])
             self.session_id = ""
+            self.turn = 1
+            self.current_player_index = 0
+            self.phase = SimpleNamespace(name="COMMAND_PHASE")
 
         def get_winner(self):
             return None
@@ -279,8 +291,10 @@ def test_run_single_game_uses_active_game_context_for_phase_execution(monkeypatc
             return []
 
     class _FakeSession:
-        def __init__(self):
+        def __init__(self, game):
+            self.game = game
             self.done = False
+            self.calls = 0
 
         def is_in_setup_phase(self):
             return False
@@ -291,13 +305,17 @@ def test_run_single_game_uses_active_game_context_for_phase_execution(monkeypatc
         def next_phase(self):
             observed["phase_active_game"] = get_active_game() is observed["game"]
             observed["phase_roll"] = get_roll("D6")
+            self.calls += 1
+            if self.calls == 1:
+                return
+            self.game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
             self.done = True
 
     class _FakeRuntime:
         def __init__(self, game, **_kwargs):
             observed["game"] = game
             observed["runtime_active_game"] = get_active_game() is game
-            self.game_proxy = _FakeSession()
+            self.game_proxy = _FakeSession(game)
 
         def is_driver_managed_setup_phase(self):
             return False
@@ -460,7 +478,7 @@ def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> N
         0,
         player1_army_file="army_lists/chaos_test.txt",
         player2_army_file="army_lists/aeldari_test.txt",
-        max_phase_steps=80,
+        max_phase_steps=50,
         reserve_policy="forced_only",
         max_reserves_arrival_seconds=10.0,
         deployment_ranker_model="",
@@ -649,7 +667,7 @@ def test_run_headless_self_play_writes_machine_readable_report(monkeypatch, tmp_
         player2_army="army_lists/aeldari_test.txt",
         games=1,
         workers=1,
-        max_phase_steps=80,
+        max_phase_steps=50,
         output=str(output_path),
         no_reward_annotation=True,
         report_output=str(report_path),
@@ -697,7 +715,7 @@ def test_run_headless_self_play_can_skip_record_export(monkeypatch, tmp_path) ->
         player2_army="army_lists/aeldari_test.txt",
         games=1,
         workers=1,
-        max_phase_steps=80,
+        max_phase_steps=50,
         output=str(output_path),
         no_reward_annotation=True,
         skip_record_export=True,
@@ -761,7 +779,7 @@ def test_run_headless_self_play_isolates_multi_game_batches(monkeypatch, tmp_pat
         player2_army="army_lists/aeldari_test.txt",
         games=2,
         workers=1,
-        max_phase_steps=80,
+        max_phase_steps=50,
         output=str(output_path),
         no_reward_annotation=True,
     )

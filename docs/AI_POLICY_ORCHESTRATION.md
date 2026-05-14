@@ -57,6 +57,9 @@ or LLM adapter through the existing policy-bundle manifest ABI. The default heur
 registry exposes framework-free resolver ids of the form `heuristic:<component>:v1`.
 These component ids are stable policy-bundle ABI and are intentionally unchanged by
 implementation naming changes.
+The checked-in baseline bundle at `data/policy_bundles/heuristic_headless_baseline.json`
+declares each gameplay component and keeps the older matchup/playbook components for
+tournament evaluation and mustering workflows.
 
 The orchestration layer may invoke `strategic_planner` and `tactical_orchestrator` to
 produce reusable context, but those components are not mandatory runtime parents for every

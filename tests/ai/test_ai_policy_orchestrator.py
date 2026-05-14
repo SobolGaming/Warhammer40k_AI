@@ -221,3 +221,14 @@ def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: P
 
     assert hasattr(bundle.resolve_component(COMPONENT_CHARGE_RANKER), "choose_action_id")
     assert orchestrator.choose_action(request).action_id == "b"
+
+
+def test_checked_in_baseline_policy_bundle_declares_all_orchestration_components() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    bundle_path = repo_root / "data" / "policy_bundles" / "heuristic_headless_baseline.json"
+    bundle = JSONPolicyBundleLoader().load_bundle(bundle_path)
+    orchestrator = AIPolicyOrchestrator.from_policy_bundle(bundle)
+
+    assert set(orchestrator.component_implementations()) == set(AI_POLICY_COMPONENTS)
+    for component_name in AI_POLICY_COMPONENTS:
+        assert hasattr(bundle.resolve_component(component_name), "choose_action_id")

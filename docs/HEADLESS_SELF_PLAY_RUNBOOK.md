@@ -39,7 +39,7 @@ uv run python scripts/run_headless_self_play.py \
   --max-reserves-arrival-seconds 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
-  --max-phase-steps 80 \
+  --max-phase-steps 50 \
   --output data/headless_self_play_decision_records.json
 ```
 
@@ -81,8 +81,12 @@ id (`selfplay:000000:run001`, `selfplay:000000:run002`, ...) instead of failing.
 stable per-game `game_id`, while the machine-readable report records the actual replay session id in
 `replay_session_id`.
 
-What `--max-phase-steps 80` means:
-- It is a safety cap on battle-phase transitions per game after setup.
+What `--max-phase-steps 50` means:
+- It is a safety cap on actual battle-phase transitions per game after setup.
+- The default is 50 because a 10th Edition game has five battle rounds,
+  two players per round, and five battle phases per player turn.
+- In-phase decision queues and reinforcement substeps can require more than one
+  `next_phase()` call, but they do not consume the phase-transition budget.
 - If a game appears stuck and reaches this cap, the script fails fast instead of running forever.
 - The game ends after battle round 5; wrapping out of the final Fight phase does not start battle-round-6 hooks or decisions.
 

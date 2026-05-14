@@ -192,6 +192,8 @@ Policy orchestration gameplay controllers use these component names:
 
 The default framework-free heuristic registry provides baseline resolver ids of
 the form `heuristic:<component>:v1` for each policy orchestration gameplay component.
+`data/policy_bundles/heuristic_headless_baseline.json` declares those gameplay
+components for direct `AIPolicyOrchestrator` use.
 The existing `candidate_ranker`, `matchup_evaluator`, `playbook_selector`, and
 `roster_edit_ranker` component families remain valid for broader evaluation and
 mustering workflows.

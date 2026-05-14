@@ -627,15 +627,20 @@ def test_tournament_roster_evaluation_adds_roster_context(tmp_path: Path, monkey
 
 def test_evaluate_policy_bundle_cli_returns_nonzero_on_failed_evaluation(monkeypatch, tmp_path: Path) -> None:
     mod = _load_script_module("evaluate_policy_bundle.py")
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run_policy_bundle_evaluation(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "success": False,
+            "report_dir": str(tmp_path / "report"),
+            "summary_path": str(tmp_path / "report" / "summary.json"),
+        }
 
     monkeypatch.setattr(
         mod,
         "run_policy_bundle_evaluation",
-        lambda **_kwargs: {
-            "success": False,
-            "report_dir": str(tmp_path / "report"),
-            "summary_path": str(tmp_path / "report" / "summary.json"),
-        },
+        _fake_run_policy_bundle_evaluation,
     )
     monkeypatch.setattr(
         sys,
@@ -648,19 +653,25 @@ def test_evaluate_policy_bundle_cli_returns_nonzero_on_failed_evaluation(monkeyp
     )
 
     assert mod.main() == 1
+    assert captured_kwargs["max_phase_steps"] == 50
 
 
 def test_evaluate_tournament_roster_cli_returns_nonzero_on_failed_evaluation(monkeypatch, tmp_path: Path) -> None:
     mod = _load_script_module("evaluate_tournament_roster.py")
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run_tournament_roster_evaluation(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "success": False,
+            "report_dir": str(tmp_path / "report"),
+            "summary_path": str(tmp_path / "report" / "summary.json"),
+        }
 
     monkeypatch.setattr(
         mod,
         "run_tournament_roster_evaluation",
-        lambda **_kwargs: {
-            "success": False,
-            "report_dir": str(tmp_path / "report"),
-            "summary_path": str(tmp_path / "report" / "summary.json"),
-        },
+        _fake_run_tournament_roster_evaluation,
     )
     monkeypatch.setattr(
         sys,
@@ -685,3 +696,4 @@ def test_evaluate_tournament_roster_cli_returns_nonzero_on_failed_evaluation(mon
     )
 
     assert mod.main() == 1
+    assert captured_kwargs["max_phase_steps"] == 50

@@ -1,16 +1,60 @@
 {
   "components": {
+    "allocation_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:allocation_ranker:v1"
+    },
     "candidate_ranker": {
       "resolver_kind": "heuristic",
       "resolver_ref": "heuristic:headless_candidate_ranker:v1"
+    },
+    "charge_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:charge_ranker:v1"
+    },
+    "deployment_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:deployment_ranker:v1"
+    },
+    "dice_policy": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:dice_policy:v1"
+    },
+    "fight_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:fight_ranker:v1"
     },
     "matchup_evaluator": {
       "resolver_kind": "heuristic",
       "resolver_ref": "heuristic:capability_matchup:v1"
     },
+    "movement_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:movement_ranker:v1"
+    },
     "playbook_selector": {
       "resolver_kind": "heuristic",
       "resolver_ref": "heuristic:identity_playbook:v1"
+    },
+    "reaction_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:reaction_ranker:v1"
+    },
+    "shooting_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:shooting_ranker:v1"
+    },
+    "strategic_planner": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:strategic_planner:v1"
+    },
+    "tactical_orchestrator": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:tactical_orchestrator:v1"
+    },
+    "tool_ranker": {
+      "resolver_kind": "heuristic",
+      "resolver_ref": "heuristic:tool_ranker:v1"
     }
   },
   "controller_type": "headless_self_play",

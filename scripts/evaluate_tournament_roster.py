@@ -26,7 +26,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--games", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--seed-base", type=int, default=None)
-    parser.add_argument("--max-phase-steps", type=int, default=80)
+    parser.add_argument("--max-phase-steps", type=int, default=50)
     parser.add_argument("--reward-profile", default="dense_vp_delta_v1")
     parser.add_argument(
         "--evaluation-mode",

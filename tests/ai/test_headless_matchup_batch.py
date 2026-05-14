@@ -18,6 +18,15 @@ def _load_script_module():
     return module
 
 
+def test_parse_args_defaults_to_rules_bounded_phase_cap(monkeypatch) -> None:
+    mod = _load_script_module()
+    monkeypatch.setattr(sys, "argv", ["run_headless_matchup_batch.py"])
+
+    args = mod._parse_args()
+
+    assert args.max_phase_steps == 50
+
+
 def test_army_specs_are_deterministic_and_cover_requested_count() -> None:
     mod = _load_script_module()
 

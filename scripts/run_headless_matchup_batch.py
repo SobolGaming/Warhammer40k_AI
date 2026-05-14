@@ -847,7 +847,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--match-workers", type=int, default=4)
     parser.add_argument("--synthesis-attempts", type=int, default=8)
     parser.add_argument("--match-timeout-seconds", type=int, default=3600)
-    parser.add_argument("--max-phase-steps", type=int, default=100)
+    parser.add_argument("--max-phase-steps", type=int, default=50)
     parser.add_argument("--max-reserves-arrival-seconds", type=float, default=10.0)
     parser.add_argument("--rules-data-dir", default="wahapedia_data")
     parser.add_argument(
