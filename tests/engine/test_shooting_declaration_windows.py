@@ -110,13 +110,23 @@ def _game(players, units, *, enemies=None):
     )
 
 
-def test_declare_shots_request_exposes_eligible_targets_by_model_weapon_profile() -> None:
+def test_declare_shots_request_does_not_precompute_expensive_target_candidates() -> None:
     profile = _profile()
     wargear = _wargear("weapon-1", profile)
     model = _model("model-1", wargear)
     legal_target = _unit("target-legal", None)
     illegal_target = _unit("target-illegal", None)
     shooter = _unit("shooter", None, model=model, legal_target=legal_target)
+    calls = {"count": 0}
+
+    def _validate(_profile, target, _models, _game_map, **_kwargs):
+        calls["count"] += 1
+        return {
+            "valid": target is legal_target,
+            "reason": "No models in range or line of sight",
+        }
+
+    shooter._validate_shooting_declaration = _validate
     p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target, illegal_target)
     game = _game([p1, p2], [shooter, model, wargear, legal_target, illegal_target], enemies=[legal_target, illegal_target])
     queued: list[DecisionRequest] = []
@@ -125,16 +135,9 @@ def test_declare_shots_request_exposes_eligible_targets_by_model_weapon_profile(
     request = queue_declare_shots_request(game, shooter, player_id=p1.id)
 
     assert request is queued[0]
-    assert request.context["allowed_target_unit_ids"] == ["target-legal"]
-    assert request.context["shooting_target_candidates"] == [
-        {
-            "model_id": "model-1",
-            "wargear_id": "weapon-1",
-            "profile_name": "default",
-            "target_unit_ids": ["target-legal"],
-        }
-    ]
-    assert request.context["shooting_target_candidates_state_generation"] == 0
+    assert "allowed_target_unit_ids" not in request.context
+    assert "shooting_target_candidates" not in request.context
+    assert calls["count"] == 0
 
 
 def test_headless_default_shooting_declarations_reuse_current_candidate_context() -> None:
@@ -146,6 +149,20 @@ def test_headless_default_shooting_declarations_reuse_current_candidate_context(
     p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target)
     game = _game([p1, p2], [shooter, model, wargear, legal_target], enemies=[legal_target])
     request = queue_declare_shots_request(game, shooter, player_id=p1.id)
+    request.context.update(
+        {
+            "allowed_target_unit_ids": ["target-legal"],
+            "shooting_target_candidates": [
+                {
+                    "model_id": "model-1",
+                    "wargear_id": "weapon-1",
+                    "profile_name": "default",
+                    "target_unit_ids": ["target-legal"],
+                }
+            ],
+            "shooting_target_candidates_state_generation": 0,
+        }
+    )
 
     def _unexpected_validation(*_args, **_kwargs):
         raise RuntimeError("candidate context should avoid validation replay")
@@ -177,6 +194,20 @@ def test_declare_shots_validation_trusts_current_candidate_context() -> None:
     p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target)
     game = _game([p1, p2], [shooter, model, wargear, legal_target], enemies=[legal_target])
     request = queue_declare_shots_request(game, shooter, player_id=p1.id)
+    request.context.update(
+        {
+            "allowed_target_unit_ids": ["target-legal"],
+            "shooting_target_candidates": [
+                {
+                    "model_id": "model-1",
+                    "wargear_id": "weapon-1",
+                    "profile_name": "default",
+                    "target_unit_ids": ["target-legal"],
+                }
+            ],
+            "shooting_target_candidates_state_generation": 0,
+        }
+    )
     calls = {"count": 0}
 
     def _reject_on_revalidation(*_args, **_kwargs):
@@ -213,6 +244,20 @@ def test_declare_shots_validation_rechecks_stale_candidate_context() -> None:
     p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target)
     game = _game([p1, p2], [shooter, model, wargear, legal_target], enemies=[legal_target])
     request = queue_declare_shots_request(game, shooter, player_id=p1.id)
+    request.context.update(
+        {
+            "allowed_target_unit_ids": ["target-legal"],
+            "shooting_target_candidates": [
+                {
+                    "model_id": "model-1",
+                    "wargear_id": "weapon-1",
+                    "profile_name": "default",
+                    "target_unit_ids": ["target-legal"],
+                }
+            ],
+            "shooting_target_candidates_state_generation": 0,
+        }
+    )
     game.map.state_generation += 1
     calls = {"count": 0}
 
@@ -239,6 +284,44 @@ def test_declare_shots_validation_rechecks_stale_candidate_context() -> None:
 
     assert list(_validate_declare_shots(game, request, result) or []) == ["candidate context is stale"]
     assert calls["count"] == 1
+
+
+def test_declare_shots_validation_trusts_current_headless_validated_declaration() -> None:
+    profile = _profile()
+    wargear = _wargear("weapon-1", profile)
+    model = _model("model-1", wargear)
+    legal_target = _unit("target-legal", None)
+    shooter = _unit("shooter", None, model=model, legal_target=legal_target)
+    p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target)
+    game = _game([p1, p2], [shooter, model, wargear, legal_target], enemies=[legal_target])
+    request = queue_declare_shots_request(game, shooter, player_id=p1.id)
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "shooter"},
+    )
+    HeadlessPolicyDecisionController._mark_validated_shooting_declarations(
+        request,
+        declarations,
+        game_map=game.map,
+    )
+    calls = {"count": 0}
+
+    def _reject_on_revalidation(*_args, **_kwargs):
+        calls["count"] += 1
+        return {"valid": False, "reason": "stale validation should not run"}
+
+    shooter._validate_shooting_declaration = _reject_on_revalidation
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=request.options[0].option_id,
+        payload={"declarations": declarations},
+    )
+
+    assert list(_validate_declare_shots(game, request, result) or []) == []
+    assert calls["count"] == 0
 
 
 def test_declare_shots_rejects_target_outside_candidate_context() -> None:

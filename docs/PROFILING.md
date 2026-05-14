@@ -74,14 +74,15 @@ Initial section timers cover:
 
 When reading deployment/LoS profile output, note that headless deployment validation reuses the
 candidate's generated model-position payload across fast deployment validation and Decision API
-validation. Headless shooting declaration requests also export generated target candidates with the
-current `Map.state_generation`; headless policy and Decision API validation reuse that candidate
-context while the generation is unchanged. Headless deployment also avoids terrain surface-height and
-strategic-facing calculation during search; detailed payload refinement is retained for small units
-where floor selection can change legality. Both terrain-service and legacy shooting-mixin LoS checks
-are cached for repeated checks of the same model pair in the same map generation. Section timer call
-counts should therefore be interpreted as cache miss/work counts rather than every high-level
-shooting or deployment policy probe.
+validation. Headless shooting declaration requests do not perform exhaustive target-candidate
+generation at queue time. Instead, the headless policy marks the exact declarations it validated
+while synthesizing a default payload, and Decision API validation reuses those exact declaration
+keys while the `Map.state_generation` is unchanged. Headless deployment also avoids terrain
+surface-height and strategic-facing calculation during search; detailed payload refinement is
+retained for small units where floor selection can change legality. Both terrain-service and legacy
+shooting-mixin LoS checks are cached for repeated checks of the same model pair in the same map
+generation. Section timer call counts should therefore be interpreted as cache miss/work counts
+rather than every high-level shooting or deployment policy probe.
 
 ## Cache Invalidation
 

@@ -105,6 +105,48 @@ def _shooting_target_candidate_context_current(context: dict, game_map: object |
     return current == expected
 
 
+def _shooting_declaration_validation_key(declaration: dict) -> str:
+    model_ids = tuple(
+        str(model_id or "").strip()
+        for model_id in list(declaration.get("model_ids", []) or [])
+        if str(model_id or "").strip()
+    )
+    source_model_ids = tuple(
+        str(model_id or "").strip()
+        for model_id in list(declaration.get("firing_deck_source_model_ids", []) or [])
+        if str(model_id or "").strip()
+    )
+    parts = (
+        str(declaration.get("wargear_id", "") or "").strip(),
+        str(declaration.get("profile_name", "") or "").strip(),
+        ",".join(model_ids),
+        str(declaration.get("target_unit_id", "") or "").strip(),
+        ",".join(source_model_ids),
+        str(declaration.get("linked_fire_origin_unit_id", "") or "").strip(),
+        str(declaration.get("linked_fire_mode", "") or "").strip().lower(),
+    )
+    return "|".join(parts)
+
+
+def _headless_validated_declaration_current(context: dict, declaration: dict, game_map: object | None) -> bool:
+    recorded_generation = context.get("_headless_validated_shooting_declaration_generation")
+    if recorded_generation is None:
+        return False
+    try:
+        expected = int(recorded_generation)
+        current = int(getattr(game_map, "state_generation", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if current != expected:
+        return False
+    keys = {
+        str(value or "").strip()
+        for value in list(context.get("_headless_validated_shooting_declaration_keys", []) or [])
+        if str(value or "").strip()
+    }
+    return _shooting_declaration_validation_key(declaration) in keys
+
+
 def _validate_target_candidate_context(
     *,
     target_id: str,
@@ -546,7 +588,12 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             and candidate_context_current
             and linked_fire_origin_id is None
         )
-        if strict_target_context and not is_plasma_warhead and not can_trust_target_context:
+        can_trust_headless_validation = (
+            strict_target_context
+            and linked_fire_origin_id is None
+            and _headless_validated_declaration_current(dict(request.context or {}), dict(decl or {}), game_map)
+        )
+        if strict_target_context and not is_plasma_warhead and not (can_trust_target_context or can_trust_headless_validation):
             validate_declaration = getattr(unit, "_validate_shooting_declaration", None)
             if callable(validate_declaration):
                 validation = validate_declaration(

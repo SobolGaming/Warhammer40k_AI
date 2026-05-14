@@ -38,6 +38,7 @@ from .decision_kinds import (
     DECISION_SHADOW_ASSIGNMENT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
+from .decision_handlers.shooting import _shooting_declaration_validation_key
 from .decisions import CandidateAction, DecisionRequest
 from .placement_zone_heuristics import (
     exhaustive_lattice_candidate_positions as _exhaustive_lattice_candidate_positions_shared,
@@ -416,6 +417,11 @@ class HeadlessPolicyDecisionController(DecisionController):
                     default_declarations = self._default_shooting_declarations(game, request, normalized)
                     if default_declarations:
                         normalized["declarations"] = default_declarations
+                        self._mark_validated_shooting_declarations(
+                            request,
+                            default_declarations,
+                            game_map=getattr(game, "map", None) if game is not None else None,
+                        )
         if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_FIRING_DECK:
             action = str(normalized.get("action", "") or "").strip().lower()
             if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
@@ -1549,6 +1555,28 @@ class HeadlessPolicyDecisionController(DecisionController):
         except (TypeError, ValueError):
             return False
         return current == expected
+
+    @classmethod
+    def _mark_validated_shooting_declarations(
+        cls,
+        request: DecisionRequest,
+        declarations: Iterable[dict[str, Any]],
+        *,
+        game_map: object | None,
+    ) -> None:
+        keys = [
+            _shooting_declaration_validation_key(dict(declaration or {}))
+            for declaration in list(declarations or [])
+            if isinstance(declaration, dict)
+        ]
+        if not keys:
+            return
+        try:
+            generation = int(getattr(game_map, "state_generation", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        request.context["_headless_validated_shooting_declaration_generation"] = int(generation)
+        request.context["_headless_validated_shooting_declaration_keys"] = sorted(set(keys))
 
     @staticmethod
     def _firing_deck_source_model_ids(unit: object, profile: object) -> list[str]:
