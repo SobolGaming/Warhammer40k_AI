@@ -1419,6 +1419,22 @@ def queue_declare_shots_request(
     )
     if request is None:
         return None
+    target_candidates = _shooting_target_candidates(
+        game,
+        unit,
+        force_target_unit_id=str((context or {}).get("force_target_unit_id", "") or ""),
+    )
+    if target_candidates:
+        request.context.setdefault("shooting_target_candidates", target_candidates)
+        allowed_target_ids = sorted(
+            {
+                str(target_id or "").strip()
+                for candidate in target_candidates
+                for target_id in list(candidate.get("target_unit_ids", []) or [])
+                if str(target_id or "").strip()
+            }
+        )
+        request.context.setdefault("allowed_target_unit_ids", allowed_target_ids)
     request_decision = getattr(game, "request_decision", None)
     if not callable(request_decision):
         raise RuntimeError("Game does not support request_decision().")

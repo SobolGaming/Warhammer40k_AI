@@ -113,9 +113,6 @@ class Map:
         visibility_cache = getattr(self, "_visibility_context_cache", None)
         if hasattr(visibility_cache, "clear"):
             visibility_cache.clear()
-        shooting_los_cache = getattr(self, "_shooting_los_cache", None)
-        if hasattr(shooting_los_cache, "clear"):
-            shooting_los_cache.clear()
         clear_enemy_model_cache(self)
         return int(self.state_generation)
 

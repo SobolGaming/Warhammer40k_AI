@@ -74,15 +74,12 @@ Initial section timers cover:
 
 When reading deployment/LoS profile output, note that headless deployment validation reuses the
 candidate's generated model-position payload across fast deployment validation and Decision API
-validation. Headless shooting declaration requests do not perform exhaustive target-candidate
-generation at queue time. Instead, the headless policy marks the exact declarations it validated
-while synthesizing a default payload, and Decision API validation reuses those exact declaration
-keys while the `Map.state_generation` is unchanged. Headless deployment also avoids terrain
-surface-height and strategic-facing calculation during search; detailed payload refinement is
-retained for small units where floor selection can change legality. Both terrain-service and legacy
-shooting-mixin LoS checks are cached for repeated checks of the same model pair in the same map
-generation. Section timer call counts should therefore be interpreted as cache miss/work counts
-rather than every high-level shooting or deployment policy probe.
+validation. Headless deployment also avoids terrain surface-height and strategic-facing calculation
+during search; detailed payload refinement is retained for small units where floor selection can
+change legality. Both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
+checks of the same model pair at the same positions and terrain/blocker state. Section timer call
+counts should therefore be interpreted as cache miss/work counts rather than every high-level
+shooting or deployment policy probe.
 
 ## Cache Invalidation
 
@@ -96,9 +93,8 @@ changes that affect geometry/rules cache validity:
 - command-point changes
 - active stratagem/rule effects that modify runtime legality
 
-Visibility cache keys include this generation, and map mutations clear per-map enemy-model,
-shooting LoS, and collision caches, so generated geometry caches do not survive stale game-state
-transitions.
+Visibility cache keys include this generation, and map mutations clear per-map enemy-model
+collision caches, so generated geometry caches do not survive stale game-state transitions.
 
 Static datasheet parsing now uses immutable cached `ParsedDatasheetRecord` snapshots (composition,
 abilities, keywords, wargear, and options). `Unit` instances consume cloned copies from that cache

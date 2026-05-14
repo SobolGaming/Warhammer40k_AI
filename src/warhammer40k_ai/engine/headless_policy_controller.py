@@ -38,7 +38,6 @@ from .decision_kinds import (
     DECISION_SHADOW_ASSIGNMENT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
-from .decision_handlers.shooting import _shooting_declaration_validation_key
 from .decisions import CandidateAction, DecisionRequest
 from .placement_zone_heuristics import (
     exhaustive_lattice_candidate_positions as _exhaustive_lattice_candidate_positions_shared,
@@ -417,11 +416,6 @@ class HeadlessPolicyDecisionController(DecisionController):
                     default_declarations = self._default_shooting_declarations(game, request, normalized)
                     if default_declarations:
                         normalized["declarations"] = default_declarations
-                        self._mark_validated_shooting_declarations(
-                            request,
-                            default_declarations,
-                            game_map=getattr(game, "map", None) if game is not None else None,
-                        )
         if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_FIRING_DECK:
             action = str(normalized.get("action", "") or "").strip().lower()
             if action not in {"skip", "pass"} and not bool(normalized.get("skipped", False)):
@@ -1523,62 +1517,6 @@ class HeadlessPolicyDecisionController(DecisionController):
         return False
 
     @staticmethod
-    def _shooting_target_candidate_map(context: dict[str, Any]) -> dict[tuple[str, str, str], set[str]]:
-        candidate_map: dict[tuple[str, str, str], set[str]] = {}
-        for entry in list(context.get("shooting_target_candidates", []) or []):
-            if not isinstance(entry, dict):
-                continue
-            model_id = str(entry.get("model_id", "") or "").strip()
-            wargear_id = str(entry.get("wargear_id", "") or "").strip()
-            profile_name = str(entry.get("profile_name", "") or "").strip()
-            if not model_id or not wargear_id or not profile_name:
-                continue
-            target_ids = {
-                str(target_id or "").strip()
-                for target_id in list(entry.get("target_unit_ids", []) or [])
-                if str(target_id or "").strip()
-            }
-            if target_ids:
-                candidate_map[(model_id, wargear_id, profile_name)] = target_ids
-        return candidate_map
-
-    @staticmethod
-    def _shooting_target_candidate_context_current(context: dict[str, Any], game_map: object | None) -> bool:
-        if not list(context.get("shooting_target_candidates", []) or []):
-            return False
-        recorded_generation = context.get("shooting_target_candidates_state_generation")
-        if recorded_generation is None:
-            return False
-        try:
-            expected = int(recorded_generation)
-            current = int(getattr(game_map, "state_generation", 0) or 0)
-        except (TypeError, ValueError):
-            return False
-        return current == expected
-
-    @classmethod
-    def _mark_validated_shooting_declarations(
-        cls,
-        request: DecisionRequest,
-        declarations: Iterable[dict[str, Any]],
-        *,
-        game_map: object | None,
-    ) -> None:
-        keys = [
-            _shooting_declaration_validation_key(dict(declaration or {}))
-            for declaration in list(declarations or [])
-            if isinstance(declaration, dict)
-        ]
-        if not keys:
-            return
-        try:
-            generation = int(getattr(game_map, "state_generation", 0) or 0)
-        except (TypeError, ValueError):
-            return
-        request.context["_headless_validated_shooting_declaration_generation"] = int(generation)
-        request.context["_headless_validated_shooting_declaration_keys"] = sorted(set(keys))
-
-    @staticmethod
     def _firing_deck_source_model_ids(unit: object, profile: object) -> list[str]:
         sources = getattr(unit, "_firing_deck_virtual_sources", {}) or {}
         profile_id = str(maybe_entity_id(profile) or "")
@@ -1624,11 +1562,6 @@ class HeadlessPolicyDecisionController(DecisionController):
         targets = cls._enemy_units_for_shooting(game, unit)
         if force_target_id:
             targets = [target for target in targets if str(maybe_entity_id(target) or "") == force_target_id]
-        target_by_id = {str(maybe_entity_id(target) or ""): target for target in targets}
-        candidate_context_current = cls._shooting_target_candidate_context_current(ctx, game_map)
-        candidate_targets_by_key = (
-            cls._shooting_target_candidate_map(ctx) if candidate_context_current else {}
-        )
         declarations: list[dict[str, object]] = []
         validation_attempts = 0
         out_of_phase = bool(ctx.get("out_of_phase", False))
@@ -1692,27 +1625,15 @@ class HeadlessPolicyDecisionController(DecisionController):
                                 best_key = key
                                 best_declaration = declaration
                         continue
-                    if candidate_context_current:
-                        candidate_target_ids = candidate_targets_by_key.get((model_id, wargear_id, str(profile_name or "")))
-                        if not candidate_target_ids:
-                            continue
-                        profile_targets = [
-                            target_by_id[target_id]
-                            for target_id in sorted(candidate_target_ids)
-                            if target_id in target_by_id
-                        ]
-                    else:
-                        profile_targets = targets
-                    for target in profile_targets:
+                    for target in targets:
                         target_id = str(maybe_entity_id(target) or "")
                         if not target_id:
                             continue
-                        if not candidate_context_current:
-                            if max_validation_attempts > 0 and validation_attempts >= max_validation_attempts:
-                                return declarations
-                            validation_attempts += 1
-                            if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
-                                continue
+                        if max_validation_attempts > 0 and validation_attempts >= max_validation_attempts:
+                            return declarations
+                        validation_attempts += 1
+                        if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
+                            continue
                         accuracy_key = cls._profile_accuracy_key(profile, target)
                         key = (
                             accuracy_key[0],
