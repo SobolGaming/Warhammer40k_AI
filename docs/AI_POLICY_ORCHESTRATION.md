@@ -1,35 +1,44 @@
-# Hierarchical AI Agent Architecture
+# AI Policy Orchestration Architecture
 
-This document defines the implemented controller-facing separation between Warhammer 40,000 AI planning layers and concrete action-selection agents.
+This document defines the implemented controller-facing AI runtime for Warhammer 40,000.
+The runtime is a deterministic policy orchestration workflow with tiered planning/ranking
+components, not a rigid top-down hierarchy that every decision must traverse.
+
+The tier vocabulary remains useful for context contracts, training targets, and ownership
+boundaries. At runtime, the engine emits a decision, the orchestrator routes it to the
+relevant component, optional strategic/tactical context enriches that component, and the
+engine remains the legality and mutation authority.
 
 ## Runtime Contract
 
 The authoritative engine remains the only source of legality and mutation:
 
 1. The engine emits a `DecisionRequest`.
-2. Tier 0 decorates context with rules bundle ids, descriptor ids, Tier 1 plan context, Tier 2 task context, semantic candidate metadata, masks, and time budgets.
-3. `AIControllerRouter` maps the decision to exactly one policy-bundle component.
-4. The selected domain component ranks only legal `mask=True` candidates and returns an `action_id`.
-5. The controller submits the normal `RESOLVE_DECISION` command.
-6. The engine validates, mutates state, emits events, and records `DecisionRecord` telemetry.
+2. Tier 0 decorates context with rules bundle ids, descriptor ids, semantic candidate metadata, masks, and time budgets.
+3. The orchestration layer builds or refreshes optional Tier 1 plan context and Tier 2 task context when they are relevant to the decision.
+4. `AIControllerRouter` maps the decision to exactly one policy-bundle component.
+5. The selected domain component ranks only legal `mask=True` candidates and returns an `action_id`.
+6. The arbiter accepts only a still-legal action id, otherwise it falls back through configured deterministic components.
+7. The controller submits the normal `RESOLVE_DECISION` command.
+8. The engine validates, mutates state, emits events, and records `DecisionRecord` telemetry.
 
 The router is implemented in `src/warhammer40k_ai/engine/ai_controller_router.py`.
 Framework-free deterministic domain rankers live in `src/warhammer40k_ai/engine/ai_domain_agents.py`.
 
-## Layers
+## Orchestration Roles
 
-| Layer | Owner | Engine Surface |
+| Role | Runtime Interpretation | Engine Surface |
 | --- | --- | --- |
-| Tier 0 | Rules/legality service | candidate generation, masks, descriptor provenance, semantic metadata, `time_budget_ms` |
-| Tier 1 | Strategic planner | `Tier1Plan`, scoring/denial opportunities, resource posture, risk posture, unit priority tiers |
-| Tier 2 | Tactical orchestrator | `Tier2TaskBundle`, per-unit tasks, `MovementIntent`, `compute_tier`, CP reserve policy |
-| Tier 2.5 | Phase coordinator | `AIControllerRouter` role selection and fallback routing |
-| Tier 3 | Domain rankers | `choose_action_id(request)` over legal candidates |
-| Tier 4 | Replay/training service | `DecisionRecord`, replay, relabeling, reward annotation, manifest gates |
+| Tier 0 | Rules compiler, candidate generator, legality/mask authority | candidate generation, masks, descriptor provenance, semantic metadata, `time_budget_ms` |
+| Tier 1 | Optional strategic context provider / plan blackboard | `Tier1Plan`, scoring/denial opportunities, resource posture, risk posture, unit priority tiers |
+| Tier 2 | Optional tactical task provider / intent generator | `Tier2TaskBundle`, per-unit tasks, `MovementIntent`, `compute_tier`, CP reserve policy |
+| Orchestrator | Router, context binder, legal-action arbiter, fallback coordinator | `AIControllerRouter` role selection and deterministic fallback routing |
+| Rankers | Decision-specific component registry | `choose_action_id(request)` over legal candidates |
+| Telemetry | Replay/training service | `DecisionRecord`, replay, relabeling, reward annotation, manifest gates |
 
 ## Policy Bundle Components
 
-The hierarchical runtime component names are:
+The policy orchestration runtime uses these component names:
 
 - `strategic_planner`
 - `tactical_orchestrator`
@@ -43,7 +52,15 @@ The hierarchical runtime component names are:
 - `dice_policy`
 - `allocation_ranker`
 
-Each component may be backed by a heuristic resolver or learned artifact through the existing policy-bundle manifest ABI. The default heuristic registry exposes framework-free resolver ids of the form `heuristic:<component>:v1`.
+Each component may be backed by a heuristic resolver, learned artifact, search adapter,
+or LLM adapter through the existing policy-bundle manifest ABI. The default heuristic
+registry exposes framework-free resolver ids of the form `heuristic:<component>:v1`.
+
+The orchestration layer may invoke `strategic_planner` and `tactical_orchestrator` to
+produce reusable context, but those components are not mandatory runtime parents for every
+decision. A reaction decision, dice decision, or local allocation decision can route
+directly to the relevant ranker while still preserving the same legality, mask, fallback,
+and telemetry contracts.
 
 ## Domain Ownership
 
@@ -65,8 +82,8 @@ Shared decision surfaces are context-sensitive. For example, `MOVE_UNIT` routes 
 
 Routing is deterministic:
 
-- If the primary component returns a masked, missing, or empty action id, the router tries configured fallbacks for the same component.
-- If no component produces a legal action, the router chooses the first legal action id.
+- If the primary component returns a masked, missing, stale, or empty action id, the router tries configured fallbacks for the same component.
+- If no component produces a legal action, the arbiter chooses the first legal action id.
 - Optional and reaction fallback paths prefer deterministic decline/skip candidates when such a candidate exists.
 - Components never generate legality, mutate state, inspect UI-only objects, or submit commands directly.
 
@@ -78,7 +95,10 @@ Routing is deterministic:
 
 Headless mode resolves the same `DecisionRequest` objects as UI and network play. The controller can rank candidates, but legality, mutation, follow-up decisions, and telemetry stay inside the authoritative engine path.
 
-Tier 1 and Tier 2 are currently deterministic, cached context builders rather than independent player-facing decisions. They are created at Command phase start when possible, and lazily inside `Game.request_decision(...)` for any player decision that needs strategic context.
+Tier 1 and Tier 2 are deterministic, cached context providers rather than independent
+player-facing decisions. They are created at Command phase start when possible, and lazily
+inside `Game.request_decision(...)` for any player decision that benefits from strategic
+or tactical context.
 
 ```mermaid
 flowchart TD
@@ -94,8 +114,8 @@ flowchart TD
   I -->|"No"| K["Use global strategic context only"]
   J --> L["Candidate generators and semantic metadata consume the strategic context"]
   K --> L
-  L --> M["AIControllerRouter maps the request to the Tier 3 domain ranker"]
-  M --> N["Domain ranker orders legal candidates only"]
+  L --> M["AIControllerRouter maps the request to a decision-specific ranker"]
+  M --> N["Ranker orders legal candidates only"]
   N --> O["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
   O --> P["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
 ```
@@ -119,7 +139,7 @@ flowchart TD
   L -->|"Dice or reroll request"| M["AutoDiceDecisionController resolves roll/reroll"]
   L -->|"Non-dice headless request"| N["HeadlessPolicyDecisionController ranks legal mask=true candidates"]
   N --> O{"AI router eligible?"}
-  O -->|"Yes"| P["AIControllerRouter reranks legal tactical candidates"]
+  O -->|"Yes"| P["AIControllerRouter reranks legal candidates with optional plan/task context"]
   O -->|"No"| Q["Use headless ranking directly"]
   P --> R["Submit first candidate that passes preflight"]
   Q --> R
@@ -304,15 +324,17 @@ Audit checklist:
 - For charge audits, inspect `DECLARE_CHARGE`, charge dice/reroll records, and the following charge `MOVE_UNIT` as one sequence.
 - For fight audits, inspect the stage-bearing `SELECT_UNIT`, `SELECT_FIGHT_TARGETS`, pile-in `MOVE_UNIT`, melee declaration/allocation records, melee attack resolution records, and consolidate `MOVE_UNIT` together.
 - For stratagem audits, inspect `SELECT_TOOL_ACTION` context fields such as `reactions_only`, `tool_action_signature`, `phase_name`, `limited_use_*`, and the triggering event context before judging Use versus Skip.
-- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, and `compute_tier` inside `request_context`; these explain why lower-layer candidates were generated or scored the way they were.
+- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, and `compute_tier` inside `request_context`; these explain which orchestration context was available when candidates were generated or scored.
 - If the engine changes decision ordering, update these diagrams and the affected decision/replay docs in the same change.
 
-LLM-backed domain agents are documented in `docs/LLM_AGENT_RUNTIME.md`. They implement the same component contract and fall back to the deterministic rankers described here when the provider is unavailable or returns an illegal action id.
+LLM-backed policy adapters are documented in `docs/LLM_POLICY_ADAPTER_RUNTIME.md`. They implement
+the same component contract and fall back to the deterministic rankers described here when
+the provider is unavailable or returns an illegal action id.
 
 ## Human Training Mode
 
 `scripts/run_training_mode.py` provides one-step human imitation drills for this same component/action-id
-hierarchy. The first implemented stages are `shooting_phase` (`DECLARE_SHOTS` -> `shooting_ranker`) and
+orchestration contract. The first implemented stages are `shooting_phase` (`DECLARE_SHOTS` -> `shooting_ranker`) and
 `deployment_reserves` (`DECLARE_RESERVES` -> `deployment_ranker`). The Pygame training UI shows a generated
 situation, asks the user to choose one legal candidate, evaluates that single decision, writes a JSONL
 observation, and updates a framework-free preference model.

@@ -126,7 +126,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--llm-agent-config",
         default="",
         help=(
-            "Optional JSON config for LLM-backed hierarchical AI agents. "
+            "Optional JSON config for LLM-backed policy orchestration agents. "
             "Returned action ids are validated and fall back to deterministic rankers."
         ),
     )

@@ -177,7 +177,7 @@ Bundle rules:
   `candidate` or `blessed` artifacts only. Referencing an `experimental` artifact
   requires explicit opt-in.
 
-Hierarchical gameplay controllers use these component names:
+Policy orchestration gameplay controllers use these component names:
 - `strategic_planner`
 - `tactical_orchestrator`
 - `deployment_ranker`
@@ -191,7 +191,7 @@ Hierarchical gameplay controllers use these component names:
 - `allocation_ranker`
 
 The default framework-free heuristic registry provides baseline resolver ids of
-the form `heuristic:<component>:v1` for each hierarchical gameplay component.
+the form `heuristic:<component>:v1` for each policy orchestration gameplay component.
 The existing `candidate_ranker`, `matchup_evaluator`, `playbook_selector`, and
 `roster_edit_ranker` component families remain valid for broader evaluation and
 mustering workflows.

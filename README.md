@@ -194,8 +194,8 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - `src/warhammer40k_ai/engine/state_blob.py`: deterministic omniscient and per-player observation state blobs.
 - `src/warhammer40k_ai/engine/replay.py`: DecisionRecord replay path with strict candidate/mask drift checks.
 - `src/warhammer40k_ai/engine/time_manager.py`: per-decision budget policy with compute-tier multipliers.
-- `src/warhammer40k_ai/engine/tier1_plan.py`: deterministic Tier-1 strategic plan schema and baseline heuristic planner.
-- `src/warhammer40k_ai/engine/tier2_orchestrator.py`: deterministic Tier-2 per-unit task scaffolding with movement-intent emission.
+- `src/warhammer40k_ai/engine/tier1_plan.py`: deterministic Tier-1 strategic context schema and baseline heuristic plan provider.
+- `src/warhammer40k_ai/engine/tier2_orchestrator.py`: deterministic Tier-2 per-unit task scaffolding and movement-intent context provider.
 - `src/warhammer40k_ai/engine/movement_intent.py`, `src/warhammer40k_ai/engine/movement_solver.py`, and `src/warhammer40k_ai/engine/path_witness.py`: movement-intent driven candidates, PathWitness refs, and continuous path/tight-clearance validation.
 
 ### User Interface
@@ -211,7 +211,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 ### Documentation
 
 - **AI planning and telemetry**
-  - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
+  - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): policy orchestration architecture, movement solver design, and training roadmap.
     - Roadmap status: PR1-PR15 completed (see Engineering Roadmap section in the plan).
   - [ML dependency boundary](docs/ML_DEPENDENCY_BOUNDARY.md): optional ML extras, runtime guards, and core/ML dependency-lane separation.
   - [Headless self-play runbook](docs/HEADLESS_SELF_PLAY_RUNBOOK.md): end-to-end AI-vs-AI data generation, reward annotation, and quality-gate evaluation.
@@ -220,8 +220,9 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
   - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.
   - [StateBlob schema](docs/STATE_BLOB_SCHEMA.md): canonical omniscient/player observation payload contract.
-  - [Tier 1 plan schema](docs/TIER1_PLAN_SCHEMA.md): strategic plan payload and baseline behavior.
-  - [Tier 2 orchestration](docs/TIER2_ORCHESTRATION.md): per-unit task bundle scaffolding and context wiring.
+  - [AI policy orchestration](docs/AI_POLICY_ORCHESTRATION.md): controller routing, component ownership, fallback behavior, and audit flow.
+  - [Tier 1 plan schema](docs/TIER1_PLAN_SCHEMA.md): strategic context payload and baseline behavior.
+  - [Tier 2 orchestration](docs/TIER2_ORCHESTRATION.md): per-unit task bundle scaffolding and optional context wiring.
   - [Time manager policy](docs/TIME_MANAGER_POLICY.md): decision budgets, compute-tier multipliers, and fallback behavior.
   - [MovementIntent](docs/MOVEMENT_INTENT.md): movement-intent schema and candidate metrics.
   - [PathWitness contract](docs/PATH_WITNESS_CONTRACT.md): witness fields and validation invariants.

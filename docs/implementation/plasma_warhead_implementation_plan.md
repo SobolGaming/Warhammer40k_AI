@@ -125,7 +125,7 @@ tests/test_plasma_warhead.py::TestAoEResolution::test_get_units_within_range_of_
 
 ## Known Limitations / Future Enhancements
 
-1. **AI/RL Integration**: Future work needed to expose Deathstrike actions to AI decision-making (hierarchical RL agent needs access to Designate/Adjust/Fire decisions)
+1. **AI/RL Integration**: Future work needed to expose Deathstrike actions to AI decision-making (the policy orchestrator needs legal Designate/Adjust/Fire candidates and ranker context)
 
 2. **Marker Visualization**: No visual representation of markers on the battlefield UI (future enhancement - could show marker icon at position)
 

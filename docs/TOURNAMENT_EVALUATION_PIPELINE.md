@@ -164,7 +164,7 @@ This keeps evaluation usable for:
 
 ## Model-Backed Gameplay Bundles
 
-Model-backed hierarchical gameplay bundles are routed into headless self-play.
+Model-backed policy orchestration gameplay bundles are routed into headless self-play.
 `scripts/evaluate_policy_bundle.py` passes the bundle source and `models_root`
 through to `scripts/run_headless_self_play.py`; the headless controller builds
 an `AIControllerRouter` from the bundle and lets artifact or heuristic component
@@ -174,6 +174,11 @@ Learned rankers do not generate actions, bypass masks, or apply commands
 directly. They only choose among candidates already emitted and validated by the
 engine. If an artifact has no weight coverage for a decision type, the router
 uses the fallback declared by the policy bundle.
+
+Strategic and tactical components may contribute optional plan/task context for
+rankers, but evaluation treats legality, masks, fallback routing, and command
+resolution as engine-owned orchestration contracts rather than learned policy
+responsibilities.
 
 For paired policy studies that need setup held constant, `evaluate_policy_bundle.py`
 and `run_headless_self_play.py` accept repeated `--ai-router-ignore-decision-type`

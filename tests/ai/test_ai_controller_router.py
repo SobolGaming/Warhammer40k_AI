@@ -160,8 +160,8 @@ def test_router_preserves_movement_path_witness_candidate_metadata() -> None:
     assert ranked[0].metadata["path_witness_ref"] == "pathwitness://unit/u1/move/b"
 
 
-def test_policy_bundle_resolves_hierarchical_ai_component_names(tmp_path: Path) -> None:
-    bundle_id = "policy_bundle:hierarchical_ai_heuristic_v1"
+def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: Path) -> None:
+    bundle_id = "policy_bundle:policy_orchestration_heuristic_v1"
     manifest_store = ArtifactManifestStore(tmp_path / "models")
     bundle_path = manifest_store.bundle_manifest_path(bundle_id)
     payload = {
@@ -201,4 +201,3 @@ def test_policy_bundle_resolves_hierarchical_ai_component_names(tmp_path: Path) 
 
     assert hasattr(bundle.resolve_component(COMPONENT_CHARGE_RANKER), "choose_action_id")
     assert router.choose_action(request).action_id == "b"
-

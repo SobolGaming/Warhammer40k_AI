@@ -201,12 +201,12 @@ Purpose before ML libraries:
 ## Safe Pre-11th Training Policy
 
 Allowed before final 11th rules land:
-- Tier 3 micro-executors
+- decision-specific rankers
 - candidate-level movement, targeting, and fight-order scorers
 - deterministic tool-usage policies conditioned on `rules_bundle_id`, `descriptor_bundle_id`, and descriptor families
 
 Deferred until final 11th rules land:
-- Tier 1 strategic planners
+- Tier 1 strategic context providers
 - mission-wide planning policies tied to current objective geometry
 - deployment rankers that internalize the old mission system as canonical
 - list-building agents

@@ -1,12 +1,12 @@
-# Bringing Back AI (HRL + Training Plan)
+# Bringing Back AI (Policy Orchestration + Training Plan)
 
-This document defines a version-portable AI architecture and training plan for Warhammer 40,000 matched play.
+This document defines a version-portable AI policy orchestration architecture and training plan for Warhammer 40,000 matched play.
 
 The design goal is not only to survive routine rules patches without breaking legality. The stronger goal is to preserve useful learned behavior across points updates, dataslates, mission-pack changes, terrain-pack changes, and future editions with minimal retraining. Wherever possible, the engine should patch behavior by recompiling rules descriptors, regenerating semantic candidate features, and fine-tuning small adapters or heads rather than retraining the full stack.
 
 ## Purpose
 
-- Define the AI architecture and interfaces needed to support Warhammer 40,000 matched play.
+- Define the AI orchestration architecture and interfaces needed to support Warhammer 40,000 matched play.
 - Provide a training and retraining plan resilient to points updates, dataslates, errata, mission-pack changes, terrain-pack changes, and future editions.
 - Specify the engineering roadmap to make AI integration testable and incremental.
 - Keep learned behavior portable across rules bundles by pushing mission, objective, terrain, deployment, and tool semantics into versioned engine descriptors and rule-derived candidate metadata.
@@ -130,7 +130,28 @@ Must describe:
 
 Retain the existing structured tool approach, but treat tool descriptors as one member of a broader descriptor family rather than the only major semantic descriptor.
 
-## HRL Architecture
+## Policy Orchestration Architecture
+
+The runtime model is policy orchestration with tiered planning/ranking components.
+The engine emits a `DecisionRequest`; the orchestrator builds the relevant context,
+routes the request to the correct policy-bundle component, accepts only legal ranked
+candidates, and falls back deterministically when a component fails.
+
+The tier vocabulary is retained for semantic contracts, training targets, and ownership
+boundaries. It is not a mandatory runtime call stack. Tier 1 and Tier 2 artifacts enrich
+rankers when useful, but decisions such as reactions, dice choices, allocations, and many
+local combat selections can route directly to their decision-specific ranker.
+
+Canonical runtime flow:
+
+1. Engine emits and decorates a `DecisionRequest`.
+2. Context builder attaches rules, descriptors, semantic metadata, masks, and time budget.
+3. Strategic plan provider optionally gets or refreshes a `Tier1Plan`.
+4. Tactical task provider optionally gets or refreshes a `Tier2TaskBundle`.
+5. `AIControllerRouter` selects the decision-specific component.
+6. The component ranks legal `mask=True` candidates only.
+7. The arbiter validates the returned `action_id` against the current legal set and applies deterministic fallbacks if needed.
+8. The engine resolves the normal command path and records `DecisionRecord` telemetry.
 
 ### Tier 0: Rules Compiler, Action Masking, and Semantic Affordance Generation (Non-learned)
 
@@ -152,9 +173,11 @@ Tier 0 owns:
 - candidate generation
 - time-budget enforcement
 
-### Tier 1: Strategic Planner (Learned)
+### Tier 1: Strategic Context Provider (Learned or Heuristic)
 
-Tier 1 plans over stable semantic affordances rather than hard-coding objective ids.
+Tier 1 provides optional strategic context over stable semantic affordances rather than
+hard-coding objective ids. Its output is a plan blackboard consumed by downstream rankers
+when relevant, not a compulsory parent action for every player decision.
 
 Primary outputs:
 
@@ -179,9 +202,11 @@ Tier 1 should prefer abstractions such as:
 
 Tier 1 should avoid direct dependency on current objective labels whenever an abstract score-source representation is available.
 
-### Tier 2: Tactical Binder / Orchestrator (Learned)
+### Tier 2: Tactical Task Provider / Intent Generator (Learned or Heuristic)
 
-Tier 2 binds Tier 1 opportunities to current-rules concrete targets.
+Tier 2 optionally binds Tier 1 opportunities to current-rules concrete targets and unit
+tasks. Its output is an orchestration artifact used by movement, tool, target-selection,
+and other rankers when it improves local decision quality.
 
 Responsibilities:
 
@@ -193,9 +218,10 @@ Responsibilities:
 
 Tier 2 may use concrete objective ids and terrain pieces as late-bound execution details, but those should not be the primary strategic abstraction.
 
-### Tier 3: Micro-Executors (Learned + Solver)
+### Decision-Specific Rankers (Learned + Solver)
 
-Tier 3 ranks legal candidates for movement, targeting, charges, fight ordering, and tool usage.
+Decision-specific rankers score legal candidates for movement, targeting, charges, fight
+ordering, deployment, reactions, dice/reroll policy, allocation, and tool usage.
 
 Responsibilities:
 
@@ -204,7 +230,7 @@ Responsibilities:
 - operate as a candidate ranker and selector, not a legality generator
 - minimize dependence on edition-specific raw labels where semantic engine features are available
 
-### Tier 4: Telemetry, Replay, and Relabeling (Non-learned + Learner Support)
+### Telemetry, Replay, and Relabeling (Non-learned + Learner Support)
 
 Responsibilities:
 
@@ -362,11 +388,12 @@ When a human attempts an illegal action and the UI rejects it:
 - log the attempted action as invalid with the rejection reason
 - preserve enough context for later UI explainability and proposal models
 
-### Usage by Tier
+### Usage by Orchestration Role
 
-- Tier 3: primary supervised source via learning-to-rank over candidates
-- Tier 2: auxiliary supervision for tasking, posture, and binding
-- Tier 1: RL or self-play primary, with optional self-supervised targets from observed opportunity priorities
+- Decision-specific rankers: primary supervised source via learning-to-rank over candidates.
+- Tier 2 task provider: auxiliary supervision for tasking, posture, and binding.
+- Tier 1 strategic context provider: self-play, RL, or self-supervised targets from observed opportunity priorities.
+- Orchestrator/arbiter: deterministic routing, fallback, and legality-preserving telemetry rather than learned legality.
 
 ## Canonical State Contract
 
@@ -520,7 +547,7 @@ Time management is a hard subsystem, not a later optimization.
 - time budgets logged with decisions for profiling and retraining
 - fallback policies that remain fully legal and replay-safe
 
-Time-budget features should also be visible to Tier 3 so the model learns to behave appropriately under bounded search.
+Time-budget features should also be visible to decision-specific rankers so the model learns to behave appropriately under bounded search.
 
 ## State Space Design
 
@@ -598,14 +625,15 @@ This stage must be complete before serious model investment.
 
 ### Stage 1: Imitation Learning
 
-- train Tier 3 executors using human, heuristic, and search-generated demonstrations
+- train decision-specific rankers using human, heuristic, and search-generated demonstrations
 - train on candidate semantics, not just candidate identity
 - keep legality fully in Tier 0
 
-### Stage 2: HRL Self-Play
+### Stage 2: Orchestrated Self-Play
 
-- freeze Tier 3 initially
-- train Tier 1 and Tier 2 with VP-delta reward and shaping
+- freeze decision-specific rankers initially where they are already competent
+- train or tune Tier 1 and Tier 2 context providers with VP-delta reward and shaping
+- evaluate whether each decision type actually benefits from fresh plan/task context before making it a runtime dependency
 - condition on rules bundles explicitly
 
 ### Stage 3: Limited Lookahead
@@ -775,8 +803,8 @@ This is the preferred path for mission-pack churn, terrain-pack churn, and editi
 
 ### AI
 
-- Tier 3 achieves competent play via imitation learning
-- Tier 1 and Tier 2 improve VP delta via self-play
+- Decision-specific rankers achieve competent play via imitation learning
+- Tier 1 and Tier 2 context providers improve VP delta via self-play or policy-bundle tuning
 - patch updates allow localized adaptation without breaking legality
 - mission and terrain changes can often be handled by descriptor recompilation plus small transfer updates
 - edition transitions start with descriptor migration and adapter transfer rather than broad restart
@@ -793,12 +821,12 @@ This is the preferred path for mission-pack churn, terrain-pack churn, and editi
 ## Safe To Train Before Final 11th Rules
 
 Allowed before final 11th rules land:
-- Tier 3 micro-executors
+- decision-specific rankers
 - candidate-level movement, targeting, and fight-order scorers
 - deterministic tool-usage policies conditioned on `rules_bundle_id`, `descriptor_bundle_id`, and descriptor-family metadata
 
 Deferred until final 11th rules land:
-- Tier 1 strategic planners
+- Tier 1 strategic context providers
 - mission-wide planning policies tied to current objective geometry
 - deployment rankers that internalize the old mission system as canonical
 - list-building agents
@@ -808,7 +836,7 @@ Deferred until final 11th rules land:
 - Training data specification finalized:
   - demo formats
   - storage layout
-  - minimum dataset sizes for Tier 3 pretraining
+  - minimum dataset sizes for decision-ranker pretraining
 - Movement solver worst-case limits finalized:
   - maximum runtime budget
   - fallback behavior documented and enforced by tests

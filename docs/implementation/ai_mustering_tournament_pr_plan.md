@@ -9,7 +9,7 @@ This plan is designed to work with the current `dev` branch state:
 - `ArmyBlueprint` already carries detachments, detachment-point budget, unit entries, enhancement assignments, attachment bindings, a selected `force_disposition`, and allowed force dispositions.
 - runtime mustering still stops short of materializing `unit_entries` into a playable `Army`.
 - the ML boundary exists, but `src/warhammer40k_ai/ml/` is still intentionally minimal.
-- broad hierarchical training is still blocked until the separate 11e port `PR-015` lands.
+- broad strategic/tactical policy training is still blocked until the separate 11e port `PR-015` lands.
 
 This plan therefore splits work into:
 
@@ -95,7 +95,7 @@ The following current-dev facts shape the plan:
 - `ArmyMusterer.muster_army()` still raises `NotImplementedError` when validated musters contain `unit_entries`; that must be closed before AI mustering can be evaluated end to end.
 - the current ML subtree is deliberately minimal, so the first AI-facing infra PRs should remain framework-free.
 - the canonical pre-ML data gate is already `pre_ml_baseline_v1`, and “headless fixed” should mean: self-play completes, strict replay passes, and the manifest gate passes.
-- the 11e port plan still defers broad hierarchical training until port `PR-015` is complete.
+- the 11e port plan still defers broad strategic/tactical policy training until port `PR-015` is complete.
 
 ---
 
@@ -1131,7 +1131,7 @@ Let existing Tier 3 models consume roster/opponent capability context without re
 
 **Non-goals**
 
-- full Tier 1/Tier 2 HRL training
+- full Tier 1/Tier 2 strategic/tactical context-provider training
 
 **Dependencies**
 

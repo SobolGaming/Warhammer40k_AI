@@ -464,7 +464,7 @@ def _parse_args() -> argparse.Namespace:
         "--llm-agent-config",
         default="",
         help=(
-            "Optional JSON config for LLM-backed hierarchical AI agents. "
+            "Optional JSON config for LLM-backed policy orchestration agents. "
             "LLM choices are validated against legal candidates and fall back to deterministic rankers."
         ),
     )
@@ -472,7 +472,7 @@ def _parse_args() -> argparse.Namespace:
         "--policy-bundle",
         default="",
         help=(
-            "Optional policy bundle id or JSON manifest path for hierarchical AI rankers. "
+            "Optional policy bundle id or JSON manifest path for policy orchestration rankers. "
             "Artifacts are resolved through --models-root when an id is supplied."
         ),
     )
@@ -1174,7 +1174,7 @@ def run_headless_self_play(
     if reserve_arrival_diagnostic_counts:
         print(f"Reserve arrival diagnostics: {dict(reserve_arrival_diagnostic_counts.most_common(20))}")
     if llm_agent_trace_counts:
-        print(f"LLM agent traces: {dict(llm_agent_trace_counts.most_common(20))}")
+        print(f"LLM adapter traces: {dict(llm_agent_trace_counts.most_common(20))}")
     print(f"Wrote: {output_path}")
     replay_root = _resolved_replay_base_dir(str(replay_dir))
     if replay_root is not None:

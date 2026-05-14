@@ -828,11 +828,11 @@ Only after the runtime seams are stable should the data pipeline be updated to m
 4. Update controller inputs and any adapter-boundary code to consume the new descriptor family.
 5. Add an explicit “safe to train pre-11th” policy in docs:
    - Allowed:
-     - Tier 3 micro-executors
+     - decision-specific rankers
      - candidate-level movement/targeting/fight-order scorers
      - deterministic tool-usage policies conditioned on semantic metadata
    - Deferred until final 11th rules land:
-     - Tier 1 strategic planners
+     - Tier 1 strategic context providers
      - mission-wide planning policies tied to current objective geometry
      - deployment rankers that internalize the old mission system
      - list-building agents
@@ -1590,10 +1590,10 @@ Every PR must update the docs that define the changed subsystem. At minimum:
 
 # Post-port training guidance
 
-Do **not** start broad hierarchical training before PR-010 and PR-015 are complete.
+Do **not** start broad strategic/tactical policy training before PR-010 and PR-015 are complete.
 
 ## Training work that is reasonable before final 11th rules
-- Tier 3 action-scoring / candidate-ranking models that are conditioned on semantic metadata and descriptor bundles
+- decision-specific action-scoring / candidate-ranking models that are conditioned on semantic metadata and descriptor bundles
 - narrow movement/targeting/fight-order ranking tasks
 - controller policies whose legality and semantics are recomputed from descriptors at runtime
 

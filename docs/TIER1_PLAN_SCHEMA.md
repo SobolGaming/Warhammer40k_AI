@@ -1,6 +1,8 @@
 # Tier 1 Plan Schema
 
-The engine produces a deterministic Tier-1 plan per player per battle round and attaches it to decision contexts.
+The engine produces a deterministic Tier-1 strategic-context plan per player per battle
+round and attaches it to decision contexts. In the policy orchestration runtime this plan
+is a reusable context artifact, not a required parent decision for every ranker.
 
 Context keys:
 - `plan_id`
@@ -70,3 +72,9 @@ Heuristic baseline behavior:
 - Emits abstract opportunities bound to score sources and regions.
 - Sets risk posture from VP lead/deficit.
 - Sets CP/resource posture from current CP and expected exchanges.
+
+Runtime use:
+- The orchestrator may build or refresh this plan at Command phase start or lazily when a decision benefits from strategic context.
+- Decision-specific rankers consume the plan through `request.context` when useful.
+- A local reaction, dice, allocation, or simple tool decision may route without consulting a fresh Tier-1 plan.
+- The engine remains authoritative for legality, masks, candidate generation, and state mutation.

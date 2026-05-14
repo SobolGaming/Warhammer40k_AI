@@ -23,7 +23,7 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build JSONL supervised examples for LLM domain agents from DecisionRecords."
+        description="Build JSONL supervised examples for LLM policy adapters from DecisionRecords."
     )
     parser.add_argument("--input", required=True, help="DecisionRecord JSON list or report containing records.")
     parser.add_argument("--output", required=True, help="Output JSONL path.")
@@ -46,4 +46,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,10 +1,13 @@
-# LLM Agent Runtime
+# LLM Policy Adapter Runtime
 
-This document describes the implemented LLM-backed domain-agent runtime for headless, replay-derived, and human-vs-AI training workflows.
+This document describes the implemented LLM-backed policy adapter runtime for headless,
+replay-derived, and human-vs-AI training workflows.
 
 ## Status
 
-LLM agents are runtime adapters behind the existing hierarchical AI components. They do not replace the engine, legality checks, decision masks, or deterministic replay.
+LLM policy adapters sit behind the existing policy orchestration components. They do
+not replace the engine, legality checks, decision masks, deterministic fallback, or
+deterministic replay.
 
 Implemented surfaces:
 - `src/warhammer40k_ai/ml/llm_agents.py`
@@ -15,14 +18,15 @@ Implemented surfaces:
 ## Runtime Flow
 
 1. The engine emits and decorates a `DecisionRequest`.
-2. `AIControllerRouter` maps the request to a component such as `movement_ranker`, `shooting_ranker`, or `reaction_ranker`.
-3. `LLMDecisionAgent` serializes the request into JSON containing:
+2. The orchestration layer attaches optional strategic/tactical context when relevant.
+3. `AIControllerRouter` maps the request to a component such as `movement_ranker`, `shooting_ranker`, or `reaction_ranker`.
+4. `LLMDecisionAgent` serializes the request into JSON containing:
    - decision id/type
    - player id
    - serializable context
    - legal candidates only (`mask=True`)
    - response contract
-4. The configured LLM transport returns JSON:
+5. The configured LLM transport returns JSON:
 
 ```json
 {
@@ -31,15 +35,15 @@ Implemented surfaces:
 }
 ```
 
-5. The returned `action_id` is accepted only if it still matches a legal candidate.
-6. Invalid/missing/failed LLM output falls back to the deterministic domain ranker for that component.
-7. The existing controller submits the normal `RESOLVE_DECISION` command; the engine validates and records `DecisionRecord` telemetry.
+6. The returned `action_id` is accepted only if it still matches a legal candidate.
+7. Invalid/missing/failed LLM output falls back to the deterministic domain ranker for that component.
+8. The existing controller submits the normal `RESOLVE_DECISION` command; the engine validates and records `DecisionRecord` telemetry.
 
 When `--report-output` is enabled for headless self-play, per-game report entries include `llm_agent_traces` and the top-level report includes `llm_agent_trace_counts`. These traces are audit/debug data for prompts and provider responses; supervised learning should still use authoritative `DecisionRecord` examples because those records reflect the engine-validated outcome.
 
 ## Config
 
-LLM agent runtime is local-first. The built-in transport speaks the common Chat Completions HTTP
+The LLM policy adapter runtime is local-first. The built-in transport speaks the common Chat Completions HTTP
 request/response shape so it can target local servers such as llama.cpp, vLLM, LM Studio, or Ollama
 Chat Completions endpoints. It does not require the OpenAI SDK and does not contact any external
 service unless `endpoint_url` is explicitly set to one.
@@ -116,8 +120,9 @@ exports when available.
 
 ## Safety and Determinism
 
-- LLM agents never see masked candidates.
-- LLM agents never mutate state or submit commands directly.
+- LLM policy adapters never see masked candidates.
+- LLM policy adapters never mutate state or submit commands directly.
 - The engine still validates every resolved action.
-- Invalid LLM output is recorded in the agent trace and falls back to deterministic rankers.
+- Invalid LLM output is recorded in the adapter trace and falls back to deterministic rankers.
+- LLM policy adapters may consume plan/task context, but they never own legality or force a strict planner-to-ranker call chain.
 - Provider configuration lives outside the repository; API keys are read from environment variables by default.
