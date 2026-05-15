@@ -19,6 +19,7 @@ Runtime guarantees:
 - If a request is recorded without `descriptor_bundle_id` / `version_adapter_boundary`, `DecisionRecordStore` reconstructs them from the active rules bundle plus compiled descriptors before emission.
 - Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.
 - Semantic numeric metadata is computed deterministically from decision context and candidate params (movement, deployment-pregame, targeting, charge, fight, and tool classes), rather than static heuristic defaults.
+- Candidate metadata must not include wall-clock-derived performance fields such as `solver_ms`. Solver and profiling timings belong in record-level telemetry (`wall_clock_ms`) or sidecar profile/report artifacts, not in candidate features used for replay, ranking, or training.
 - Reroll decisions with roll snapshots (`roll_state` / `roll_spec`) are scored from the concrete rolled dice: whole-roll rerolls (for example charge or Battle-shock tests) and single-die rerolls (for example fast-rolled hit/wound pools) project different expected-value deltas.
 - Deployment candidates may include extra pregame deltas (`reserve_denial_delta`, `screen_integrity_delta`, `countercharge_coverage_delta`, `aura_connectivity_delta`, `projected_exposure_delta_if_enemy_goes_first`, `projected_melee_staging_delta`) in addition to portable `projected_*` keys.
 - When deployment lookahead is enabled, deployment candidates may also include deterministic bounded rollout metadata (`lookahead_immediate_value`, `lookahead_worst_branch_value`, `lookahead_followup_value`, `lookahead_enemy_pressure`, `lookahead_total_value`) and `lookahead_base_*`/`lookahead_adjusted_*` projection fields.
@@ -50,11 +51,12 @@ Validation guarantees:
 
 Determinism fields:
 - `global_seed`
-- `decision_seed`
+- `decision_seed` (derived from stable decision identity and type, not request creation time)
 - deterministically ordered `candidates`
 - `mask` aligned to `candidates`
   - `true` means the runtime prevalidated the candidate payload against the same non-mutating legality checks used by authoritative resolution.
   - `false` means the candidate must not be auto-submitted by headless/UI controllers.
+- `wall_clock_ms` and other wall-clock-derived diagnostics are explicitly excluded from deterministic equality checks. Use `warhammer40k_ai.engine.decision_record_determinism` for canonical profiled-vs-unprofiled signatures and digests.
 
 Relabel tooling:
 - Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`

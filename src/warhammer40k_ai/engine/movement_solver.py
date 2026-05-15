@@ -375,7 +375,6 @@ def _build_charge_candidate_action(
         metadata={
             "candidate_kind": "charge",
             "candidate_source": str(candidate_source or "heuristic"),
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "path_witness_ref": path_witness_ref,
@@ -1174,7 +1173,6 @@ def _skip_move_candidate(
         skip_payload.update(dict(params))
     candidate_metadata = {
         "candidate_kind": str(candidate_kind or "noop"),
-        "solver_ms": 0,
         "fallback_mode": False,
         "intent_hash": intent.stable_hash(),
     }
@@ -1281,7 +1279,6 @@ def _solver_candidates(
                     params=confirm_payload,
                     metadata={
                         "candidate_kind": movement_type,
-                        "solver_ms": 0,
                         "fallback_mode": False,
                         "intent_hash": intent.stable_hash(),
                         "path_witness_ref": path_witness_ref,
@@ -1374,7 +1371,6 @@ def _solver_candidates(
                     params=confirm_payload,
                     metadata={
                         "candidate_kind": "move",
-                        "solver_ms": 0,
                         "fallback_mode": False,
                         "intent_hash": intent.stable_hash(),
                         "path_witness_ref": path_witness_ref,

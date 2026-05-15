@@ -4,6 +4,10 @@ import sys
 
 import warhammer40k_ai.engine.decision_record as decision_record_module
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
+from warhammer40k_ai.engine.decision_record_determinism import (
+    decision_record_determinism_digest,
+    decision_record_determinism_signature,
+)
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CONFIRM_YES_NO,
@@ -123,6 +127,104 @@ def test_decision_record_store_merges_duplicate_decision_id_records() -> None:
     immediate = record["outcome"]["immediate_deltas"]
     assert immediate["errors"] == ["richer-context"]
     assert immediate["value"] == {"applied": True}
+
+
+def test_decision_seed_does_not_depend_on_request_created_at() -> None:
+    game_one, player_one = _build_game()
+    game_two, player_two = _build_game()
+    game_two.random_source.setstate(game_one.random_source.getstate())
+    request_one = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player_one.id,
+        options=[DecisionOption.create("Yes", payload={"choice": True})],
+    )
+    request_two = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player_two.id,
+        options=[DecisionOption.create("Yes", payload={"choice": True})],
+    )
+    request_two.decision_id = request_one.decision_id
+    request_one.created_at = 1.0
+    request_two.created_at = 999.0
+    result_one = DecisionResult(
+        decision_id=request_one.decision_id,
+        player_id=player_one.id,
+        option_id=request_one.options[0].option_id,
+        payload={},
+    )
+    result_two = DecisionResult(
+        decision_id=request_two.decision_id,
+        player_id=player_two.id,
+        option_id=request_two.options[0].option_id,
+        payload={},
+    )
+
+    record_one = game_one.decision_record_store.record_resolution(
+        request_one,
+        result_one,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+    record_two = game_two.decision_record_store.record_resolution(
+        request_two,
+        result_two,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=2,
+    )
+
+    assert record_one["decision_seed"] == record_two["decision_seed"]
+
+
+def test_decision_record_determinism_signature_excludes_wall_clock_telemetry() -> None:
+    base = {
+        "turn_id": 1,
+        "phase": "MOVEMENT_PHASE",
+        "decision_id": "decision:1",
+        "decision_type": DECISION_MOVE_UNIT,
+        "global_seed": 7,
+        "decision_seed": 9,
+        "chosen_action_id": "MOVE_UNIT:1",
+        "valid": True,
+        "human_action_injected": False,
+        "wall_clock_ms": 4,
+        "request_context": {
+            "unit_id": "unit-1",
+            "roll_state": {"resolved_at": 10.0, "result": [4, 5]},
+        },
+        "candidates": [
+            {
+                "action_id": "MOVE_UNIT:1",
+                "params": {"unit_id": "unit-1"},
+                "metadata": {"candidate_kind": "move", "solver_ms": 3, "fallback_mode": False},
+            }
+        ],
+        "mask": [True],
+        "outcome": {"immediate_deltas": {"apply_ok": True}},
+    }
+    profiled = {
+        **base,
+        "wall_clock_ms": 40,
+        "request_context": {
+            "unit_id": "unit-1",
+            "roll_state": {"resolved_at": 99.0, "result": [4, 5]},
+        },
+        "candidates": [
+            {
+                "action_id": "MOVE_UNIT:1",
+                "params": {"unit_id": "unit-1"},
+                "metadata": {"candidate_kind": "move", "solver_ms": 30, "fallback_mode": False},
+            }
+        ],
+    }
+
+    assert decision_record_determinism_signature(base) == decision_record_determinism_signature(profiled)
+    assert decision_record_determinism_digest([base]) == decision_record_determinism_digest([profiled])
 
 
 def test_decision_record_state_snapshot_has_recursion_headroom(monkeypatch) -> None:

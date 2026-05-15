@@ -114,7 +114,6 @@ def _normalized_candidate_view(request: DecisionRequest) -> list[tuple[str, dict
     normalized = []
     for candidate in list(request.candidates or []):
         metadata = dict(candidate.metadata or {})
-        metadata.pop("solver_ms", None)
         normalized.append((str(candidate.action_id), dict(candidate.params or {}), metadata))
     return normalized
 
@@ -130,6 +129,7 @@ def test_move_candidates_include_path_witness_ref_and_metadata() -> None:
     witness_ref = move_candidates[0].metadata.get("path_witness_ref")
     assert str(witness_ref).startswith("pathwitness://")
     assert game.path_witness_store.get(witness_ref) is not None
+    assert "solver_ms" not in move_candidates[0].metadata
     assert "projected_score_delta_next_window" in move_candidates[0].metadata
     assert "projected_control_delta" in move_candidates[0].metadata
     assert "projected_action_enablement_delta" in move_candidates[0].metadata

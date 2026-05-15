@@ -44,7 +44,7 @@ Budget behavior:
 - `TimeManager.run_with_time_budget(...)` measures wall clock around the full solver action call for telemetry.
 - The solver receives a `WorkBudget` and consumes units for deterministic search work.
 - If `WorkBudget.exhausted` becomes true, the time manager returns the provided fallback value and marks `fallback_used=True`.
-- Elapsed wall clock never triggers gameplay fallback. Profiling overhead can increase `solver_ms` / `wall_clock_ms`, but it must not change candidate generation, fallback selection, or match trajectory.
+- Elapsed wall clock never triggers gameplay fallback. Profiling overhead can increase `wall_clock_ms` and sidecar profile timings, but it must not change candidate generation, fallback selection, or match trajectory.
 - Budget-aware solvers are expected to cooperate with the work budget and avoid unbounded inner searches.
 
 ## Movement Solver Fallback Contract (PR-AI-011)
@@ -69,7 +69,8 @@ When no time manager is present or budget is non-positive:
 - movement solver runs directly without budget fallback wrapping.
 
 Telemetry behavior:
-- movement candidates are annotated with `solver_ms` and final `fallback_mode` at request-time normalization.
+- movement candidates are annotated with final deterministic `fallback_mode` at request-time normalization.
+- wall-clock solver timings are not written into candidate metadata; they are excluded from canonical deterministic signatures and should remain in record-level telemetry or profile/report artifacts.
 - Decision telemetry records both `time_budget_ms` and `wall_clock_ms` for each decision.
 - Decision context records `budget_mode=work_units`, `work_budget_units`, `work_units_used`, `work_budget_exhausted`, and `work_budget_exhausted_reason` for budgeted solvers.
 - Headless reserves-arrival brute-force search uses deterministic work units derived from the existing `max_reserves_arrival_seconds` configuration; the legacy seconds value no longer acts as a gameplay-changing wall-clock timeout.

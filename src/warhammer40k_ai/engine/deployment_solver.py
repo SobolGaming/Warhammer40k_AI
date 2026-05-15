@@ -685,7 +685,6 @@ def _deployment_zone_candidates(game: object, request: DecisionRequest, intent: 
         )
         metadata = {
             "candidate_kind": "deployment_zone",
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "zone_type": zone_type,
@@ -878,7 +877,6 @@ def _next_deploy_unit_candidates(game: object, request: DecisionRequest, intent:
         )
         metadata = {
             "candidate_kind": "deployment_commit_order",
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "unit_profile": unit_profile,
@@ -1024,7 +1022,6 @@ def _reserves_candidates(game: object, request: DecisionRequest, intent: Deploym
 
         metadata = {
             "candidate_kind": "deployment_reserves",
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "strategy_id": str(payload.get("strategy_id", "") or ""),
@@ -1118,7 +1115,6 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
         if action == "skip":
             metadata = {
                 "candidate_kind": "noop",
-                "solver_ms": 0,
                 "fallback_mode": False,
                 "intent_hash": intent.stable_hash(),
                 "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
@@ -1190,7 +1186,6 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
 
         metadata = {
             "candidate_kind": "deployment_scout",
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "unit_profile": unit_profile,
@@ -1295,7 +1290,6 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
                     params=payload,
                     metadata={
                         "candidate_kind": "noop",
-                        "solver_ms": 0,
                         "fallback_mode": False,
                         "intent_hash": intent.stable_hash(),
                     },
@@ -1403,7 +1397,6 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
         melee_staging_delta = staging_weight * (0.2 + max(0.0, forward_norm) * (0.2 + max(0.0, forward_preference) * 0.1))
         metadata = {
             "candidate_kind": "deployment_move",
-            "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
             "placement_candidate_id": str(payload.get("placement_candidate_id", "") or ""),

@@ -28,10 +28,11 @@ from .decisions import CandidateAction
 
 
 def _normalize_candidate_bundle(candidates, mask, solver_ms: int, fallback_mode: bool) -> tuple[list[CandidateAction], list[bool], list[str | None]]:
+    del solver_ms
     normalized_candidates: list[CandidateAction] = []
     for candidate in list(candidates or []):
         metadata = dict(candidate.metadata or {})
-        metadata["solver_ms"] = int(max(0, solver_ms))
+        metadata.pop("solver_ms", None)
         metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
         normalized_candidates.append(
             CandidateAction(

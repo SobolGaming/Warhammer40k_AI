@@ -21,7 +21,6 @@ Move candidate metadata includes:
   metadata. The headless controller then avoids the restrictive label when a less
   restrictive action can realize the same endpoint.
 - `candidate_kind` (`noop`, `move`, or `charge`)
-- `solver_ms`
 - `fallback_mode`
 - `intent_hash`
 - Headless move candidates now carry actual translated `model_positions` payloads rather than
@@ -47,6 +46,9 @@ Move candidate metadata includes:
 - provenance fields:
   - `rules_provenance_refs`
 - `path_witness_ref` for non-noop move candidates
+- Wall-clock solver timings are intentionally excluded from candidate metadata so
+  profiled and unprofiled runs produce the same policy/training candidate
+  surface.
 - Charge `MOVE_UNIT` candidates are generated from declared `target_unit_ids` and aim to end
   in a legal engagement state rather than using the generic objective/staging translation path.
 - In budgeted solving, charge candidates try bounded heuristic engagement endpoints before

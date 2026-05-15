@@ -167,12 +167,11 @@ def _candidate_view(request: DecisionRequest) -> list[tuple[str, dict, dict]]:
     normalized: list[tuple[str, dict, dict]] = []
     for candidate in list(request.candidates or []):
         metadata = dict(candidate.metadata or {})
-        metadata.pop("solver_ms", None)
         normalized.append((str(candidate.action_id), dict(candidate.params or {}), metadata))
     return normalized
 
 
-def test_deployment_zone_candidates_include_solver_metadata_and_are_deterministic() -> None:
+def test_deployment_zone_candidates_include_semantic_metadata_and_are_deterministic() -> None:
     game, player, _screen, _hammer = _build_game()
     zones = [
         {"name": "Left Zone", "zone_type": "defender", "x_range": [0.0, 24.0], "y_range": [0.0, 44.0]},
@@ -190,6 +189,7 @@ def test_deployment_zone_candidates_include_solver_metadata_and_are_deterministi
     for candidate in first_candidates:
         metadata = dict(candidate.metadata or {})
         assert metadata.get("candidate_kind") == "deployment_zone"
+        assert "solver_ms" not in metadata
         assert "reserve_denial_delta" in metadata
         assert "screen_integrity_delta" in metadata
         assert "projected_exposure_delta_if_enemy_goes_first" in metadata

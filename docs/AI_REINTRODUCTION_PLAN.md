@@ -284,17 +284,18 @@ Minimum context fields for portability-aware policies:
 
 ### Required Candidate Metadata Classes
 
-Candidate metadata should include both solver metrics and semantic projections.
+Candidate metadata should include deterministic geometry/provenance metrics and semantic projections.
 
 #### Solver / geometry metadata
 
 Examples:
-- `solver_ms`
 - `path_witness_ref`
 - `corridor_witness_ref`
 - `tight_clearance`
 - `coherency_score`
 - `threat_exposure_score`
+
+Wall-clock-derived fields such as `solver_ms` are excluded from candidates; they belong in record-level telemetry or sidecar profile artifacts so training and replay comparisons remain deterministic.
 
 #### Semantic candidate metadata
 

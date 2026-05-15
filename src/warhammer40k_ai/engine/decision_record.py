@@ -574,7 +574,7 @@ class DecisionRecordStore:
         return _hash_as_u31(_canonical_json(state))
 
     def _decision_seed(self, request: DecisionRequest, global_seed: int) -> int:
-        basis = f"{global_seed}:{request.decision_id}:{request.created_at}"
+        basis = f"{global_seed}:{request.decision_id}:{_decision_type(request)}"
         return _hash_as_u31(basis)
 
     def _base_record(
