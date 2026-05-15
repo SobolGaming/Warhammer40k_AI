@@ -424,6 +424,7 @@ def _lookahead_projection(
     }
 
 
+@profiled_section("deployment.lookahead")
 def _apply_deployment_lookahead(
     candidates: list[CandidateAction],
     *,

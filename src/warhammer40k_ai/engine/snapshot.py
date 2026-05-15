@@ -22,6 +22,7 @@ from .unit_turn_provenance import (
     set_unit_turn_provenance,
     status_token_dicts_on_unit,
 )
+from ..utility.profiling_sections import profiled_section
 from ..battlefield.map import (
     BarricadeTerrain,
     CraterTerrain,
@@ -1770,6 +1771,7 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
         game._shadow_of_chaos_zone_overrides = overrides
 
 
+@profiled_section("network.snapshot_game")
 def snapshot_game(game: Game) -> dict:
     if int(getattr(game, "get_battle_round", lambda: 0)() or 0) < 1:
         raise RuntimeError("Snapshots are only allowed once battle round 1 has started.")
@@ -1809,6 +1811,7 @@ def snapshot_game(game: Game) -> dict:
     }
 
 
+@profiled_section("network.load_snapshot")
 def load_game_snapshot(snapshot: dict) -> Game:
     if int(snapshot.get("schema_version", 0)) != SCHEMA_VERSION:
         raise ValueError(f"Unsupported snapshot schema version: {snapshot.get('schema_version')}")

@@ -9,6 +9,30 @@ GREY = (50, 50, 50)
 RED = (255, 0, 0)
 
 
+def _draw_alpha_polygon_bounded(
+    screen: pygame.Surface,
+    points: list[tuple[int, int]],
+    fill_rgba: tuple[int, int, int, int],
+) -> None:
+    if len(points) < 3:
+        return
+    min_x = min(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_x = max(point[0] for point in points)
+    max_y = max(point[1] for point in points)
+    width = int(max_x - min_x + 1)
+    height = int(max_y - min_y + 1)
+    if width <= 0 or height <= 0:
+        return
+    if not pygame.Rect(min_x, min_y, width, height).colliderect(screen.get_rect()):
+        return
+
+    local_points = [(int(x - min_x), int(y - min_y)) for x, y in points]
+    temp = pygame.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.polygon(temp, fill_rgba, local_points)
+    screen.blit(temp, (min_x, min_y))
+
+
 def draw_battlefield(
     screen: pygame.Surface,
     zoom_level: float,
@@ -108,9 +132,7 @@ def draw_terrain_feature(
             return
         points = [to_screen(v) for v in coords]
         if fill_rgba is not None:
-            temp = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
-            pygame.draw.polygon(temp, fill_rgba, points)
-            screen.blit(temp, (0, 0))
+            _draw_alpha_polygon_bounded(screen, points, fill_rgba)
         if outline_rgb is not None and outline_w > 0:
             pygame.draw.polygon(screen, outline_rgb, points, outline_w)
 

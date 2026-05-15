@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
+from warhammer40k_ai.utility.profiling_sections import format_report
 from warhammer40k_ai.utility.profiling_sections import is_enabled as sections_enabled
 from warhammer40k_ai.utility.profiling_sections import profile_section
+from warhammer40k_ai.utility.profiling_sections import record_value
 
 
 def _workload() -> int:
@@ -63,3 +65,17 @@ def test_dump_while_enabled_resumes_capture_state(tmp_path) -> None:
     controller.disable()
     assert controller.enabled is False
     assert sections_enabled() is False
+
+
+def test_dump_report_includes_value_observations(tmp_path) -> None:
+    controller = ProfilingController(out_dir=tmp_path, lines=20)
+    controller.reset()
+    controller.enable()
+    record_value("unit_test.bytes", 10)
+    record_value("unit_test.bytes", 15)
+
+    report = format_report()
+
+    controller.disable()
+    assert "Section value observations" in report
+    assert "unit_test.bytes,2,25.000,12.500,15.000" in report

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import math
 import time
 from typing import Any
@@ -16,7 +17,7 @@ from .movement_distance import (
 from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
 from .time_manager import WorkBudget
-from ..utility.profiling_sections import profiled_section
+from ..utility.profiling_sections import profile_section, profiled_section
 
 
 def _work_budget_exhausted(budget: WorkBudget | None) -> bool:
@@ -263,31 +264,48 @@ def _charge_end_state_valid(
     return bool(ok)
 
 
-def _charge_closest_pairs(unit: object, target_units: list[object]) -> list[tuple[float, object, object, object]]:
+def _charge_pair_sort_key(item: tuple[float, object, object, object]) -> tuple[float, str, str, str]:
+    return (
+        float(item[0]),
+        _entity_text_id(item[1]),
+        _entity_text_id(item[2]),
+        _entity_text_id(item[3]),
+    )
+
+
+def _charge_closest_pairs(
+    unit: object,
+    target_units: list[object],
+    *,
+    limit: int | None = None,
+) -> list[tuple[float, object, object, object]]:
     from ..utility.aura_utils import distance_between_models_bases_3d
 
     charging_models = [model for model in _model_entries(unit) if _is_alive(model)]
     if not charging_models:
         return []
-    pairs: list[tuple[float, object, object, object]] = []
-    for target_unit in list(target_units or []):
-        if target_unit is None:
-            continue
-        for target_model in _model_entries(target_unit):
-            if not _is_alive(target_model):
+
+    def _iter_pairs():
+        for target_unit in list(target_units or []):
+            if target_unit is None:
                 continue
-            for charging_model in charging_models:
-                distance = float(distance_between_models_bases_3d(charging_model, target_model))
-                pairs.append((distance, charging_model, target_model, target_unit))
-    pairs.sort(
-        key=lambda item: (
-            float(item[0]),
-            _entity_text_id(item[1]),
-            _entity_text_id(item[2]),
-            _entity_text_id(item[3]),
-        )
-    )
-    return pairs
+            for target_model in _model_entries(target_unit):
+                if not _is_alive(target_model):
+                    continue
+                for charging_model in charging_models:
+                    distance = float(distance_between_models_bases_3d(charging_model, target_model))
+                    yield (distance, charging_model, target_model, target_unit)
+
+    with profile_section("movement.charge_pairs"):
+        if limit is not None:
+            bounded_limit = max(0, int(limit))
+            if bounded_limit <= 0:
+                return []
+            return list(heapq.nsmallest(bounded_limit, _iter_pairs(), key=_charge_pair_sort_key))
+
+        pairs = list(_iter_pairs())
+        pairs.sort(key=_charge_pair_sort_key)
+        return pairs
 
 
 def _iter_charge_destination_candidates(
@@ -413,12 +431,12 @@ def _heuristic_charge_candidate(
     intent: MovementIntent,
     budget: WorkBudget | None,
 ) -> CandidateAction | None:
-    pairs = _charge_closest_pairs(unit, target_units)
+    max_pairs = 1 if budget is not None else 2
+    max_candidates_per_pair = 6 if budget is not None else 12
+    pairs = _charge_closest_pairs(unit, target_units, limit=max_pairs)
     if not pairs:
         return None
 
-    max_pairs = 1 if budget is not None else 2
-    max_candidates_per_pair = 6 if budget is not None else 12
     seen_destinations: set[tuple[float, float, float]] = set()
     for pair_index, (_distance, charging_model, target_model, target_unit) in enumerate(pairs):
         if pair_index >= int(max_pairs) or _work_budget_exhausted(budget):
@@ -461,12 +479,14 @@ def _heuristic_charge_candidate(
             )
             if not model_positions:
                 continue
-            if not _charge_end_state_valid(
-                unit,
-                model_positions=model_positions,
-                target_units=target_units,
-                game_map=getattr(game, "map", None),
-            ):
+            with profile_section("movement.charge_validate"):
+                charge_end_valid = _charge_end_state_valid(
+                    unit,
+                    model_positions=model_positions,
+                    target_units=target_units,
+                    game_map=getattr(game, "map", None),
+                )
+            if not charge_end_valid:
                 continue
             return _build_charge_candidate_action(
                 game=game,

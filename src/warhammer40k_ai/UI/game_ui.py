@@ -12,6 +12,7 @@ from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
+from warhammer40k_ai.utility.profiling_sections import profile_section
 from warhammer40k_ai.engine.movement_distance import model_normal_move_limit
 from warhammer40k_ai.engine.ui_decision_bridge import (
     require_pending_decision_request as _require_pending_decision_request,
@@ -187,9 +188,9 @@ class GameView:
         self._rule_panel_state = None
         self._rule_support_cache = {}
         self._waha_helper = None
-        
+
         # UI scaling factor removed - rendering uses fixed inch grid with zoom only
-        
+
         # UI interface for human player interaction
         self.ui_interface = ui_interface
 
@@ -202,10 +203,10 @@ class GameView:
         self.dialog_manager = DialogManager(self)
 
         self._wire_map_providers()
-        
+
         # Phase-based event handling system
         self.phase_manager = PhaseManager(self)
-        
+
         # Mouse panning support
         self.panning = False
         self.pan_start_pos = (0, 0)
@@ -240,28 +241,28 @@ class GameView:
         self.right_roster_pane = RosterPane(self.battlefield_right, 0, scaled_roster_width,
                                             roster_pane_height, player2_units,
                                             f"Player 2 ({player2.name})")
-        
+
         # Store scaled dimensions for mouse coordinate conversion
         self.scaled_roster_width = scaled_roster_width
         self.scaled_battlefield_width = scaled_battlefield_width
         self.scaled_battlefield_height = scaled_battlefield_height
         self.scaled_info_height = scaled_info_height
-        
+
         # Pass all units to roster panes for color correlation
         all_units = player1_units + player2_units
         self.left_roster_pane.all_units = all_units
         self.right_roster_pane.all_units = all_units
         self.left_stratagem_pane.player = self.player1
         self.right_stratagem_pane.player = self.player2
-        
+
         # Set game_view reference in roster panes for deployment dialog
         self.left_roster_pane.game_view = self
         self.right_roster_pane.game_view = self
-        
+
         # Position InfoPane between roster panes and below battlefield
         self.info_pane = InfoPane(self.battlefield_left, scaled_battlefield_height,
                                   scaled_battlefield_width, scaled_info_height, self.selected_unit)
-        
+
         # Stratagem interaction dialogs
         screen_width, screen_height = self.screen.get_size()
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
@@ -18581,7 +18582,7 @@ class GameView:
         )
         self.developer_menu_dialog._update_title_bar()
         self.developer_menu_dialog._update_buttons()
-    
+
     def refresh_roster_panes(self):
         """Refresh roster panes when armies are loaded during setup phases."""
         if self.player1 and self.player2:
@@ -18609,13 +18610,13 @@ class GameView:
 
             player1_units = _visible_roster(player1_units)
             player2_units = _visible_roster(player2_units)
-            
+
             logger.info(f"Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
-            
+
             # Update roster units
             self.left_roster_pane.roster = player1_units
             self.right_roster_pane.roster = player2_units
-            
+
             # Update player references
             self.left_roster_pane.player = self.player1
             self.right_roster_pane.player = self.player2
@@ -18623,20 +18624,20 @@ class GameView:
             self.right_stratagem_pane.player = self.player2
             self.left_stratagem_pane.player_name = f"Player 1 ({self.player1.name})"
             self.right_stratagem_pane.player_name = f"Player 2 ({self.player2.name})"
-            
+
             # Update all_units for color correlation
             all_units = player1_units + player2_units
             self.left_roster_pane.all_units = all_units
             self.right_roster_pane.all_units = all_units
-            
+
             # Reset scroll positions
             self.left_roster_pane.scroll_offset = 0
             self.right_roster_pane.scroll_offset = 0
-            
+
             # Recreate buttons with new roster data
             self.left_roster_pane.create_buttons()
             self.right_roster_pane.create_buttons()
-            
+
             logger.info("Roster panes refreshed successfully")
 
     def update_roster_pane_titles(self):
@@ -18867,7 +18868,7 @@ class GameView:
         else:
             # print(f"DEBUG: GameView - Event was not handled by phase manager")
             pass
-        
+
         # PRIORITY 3: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
             # Close rule panel on outside click, consume clicks inside
@@ -18945,7 +18946,7 @@ class GameView:
                 elif event.key == pygame.K_END:
                     self.unit_detail_panel.scroll_offset = self.unit_detail_panel.max_scroll  # Go to bottom
                     return True
-        
+
         return False
 
     # -------- Stratagem pane helpers --------
@@ -24534,14 +24535,14 @@ class GameView:
             # Calculate pan delta
             dx = x - self.pan_start_pos[0]
             dy = y - self.pan_start_pos[1]
-            
+
             # Apply panning with sensitivity adjustment
             self.offset_x = self.pan_start_offset[0] + dx * MOUSE_PAN_SPEED
             self.offset_y = self.pan_start_offset[1] + dy * MOUSE_PAN_SPEED
-            
+
             # Apply panning limits
             self.offset_x, self.offset_y = self._apply_pan_limits(self.offset_x, self.offset_y)
-        
+
         # Update hover state for info pane
         self.info_pane.update_hover(x, y)
 
@@ -24582,13 +24583,13 @@ class GameView:
                 if self.unit_detail_panel.rect.collidepoint(x, y):
                     self.unit_detail_panel.scroll(-scroll_y * 30)  # Scroll speed
                     return  # CRITICAL: Exit early to prevent other panels from handling the event
-        
+
         # PRIORITY 3: Only check roster panes if unit detail panel didn't handle the event
         if self.left_roster_pane.rect.collidepoint(x, y):
             self.left_roster_pane.scroll(-scroll_y * 30)  # Scroll speed
         elif self.right_roster_pane.rect.collidepoint(x, y):
             self.right_roster_pane.scroll(-scroll_y * 30)
-        
+
         # PRIORITY 4: Handle battlefield panning with Shift+Scroll (alternative to middle mouse)
         elif self.battlefield_left < x < self.battlefield_right:
             keys = pygame.key.get_pressed()
@@ -24613,19 +24614,19 @@ class GameView:
         hovered_unit = self.left_roster_pane.get_hovered_unit(x, y)
         if hovered_unit:
             return hovered_unit, self.left_roster_pane
-        
+
         hovered_unit = self.right_roster_pane.get_hovered_unit(x, y)
         if hovered_unit:
             return hovered_unit, self.right_roster_pane
-        
+
         # Check if hovering over a model on the battlefield
         if self.battlefield_left < x < self.battlefield_right:
             battlefield_x, battlefield_y = self.screen_to_game_coords(x, y)
-            
+
             # Create a point for the mouse position
             from shapely.geometry import Point
             mouse_point = Point(battlefield_x, battlefield_y)
-            
+
             # Check all models in all units
             for unit in self.game_map.units:
                 try:
@@ -24653,18 +24654,18 @@ class GameView:
                         except Exception:
                             pass
                         # Determine which roster the unit belongs to (only if armies are loaded)
-                        if (self.player1.get_army() and self.player1.get_army().units and 
+                        if (self.player1.get_army() and self.player1.get_army().units and
                             parent_unit in self.player1.get_army().units):
                             return parent_unit, self.left_roster_pane
-                        elif (self.player2.get_army() and self.player2.get_army().units and 
+                        elif (self.player2.get_army() and self.player2.get_army().units and
                               parent_unit in self.player2.get_army().units):
                             return parent_unit, self.right_roster_pane
-        
+
         return None, None
 
     def get_unit_at_position(self, x: float, y: float, needs_conversion: bool = True) -> Optional[Unit]:
         """Get the unit at the given coordinates.
-        
+
         Args:
             x: X coordinate
             y: Y coordinate
@@ -24702,9 +24703,9 @@ class GameView:
                     except Exception:
                         pass
                     return u
-        
+
         return None
-    
+
     def get_model_at_position(self, x: float, y: float, needs_conversion: bool = True) -> Optional['Model']:
         """Get the specific model at the given position.
 
@@ -24736,16 +24737,16 @@ class GameView:
                 if model_shape.contains(game_point):
                     logger.info(f"Found model {model.name} from unit {model.parent_unit.name}")
                     return model
-        
+
         return None
-    
+
     def screen_to_game_coords(self, screen_x: int, screen_y: int) -> Tuple[float, float]:
         """Convert screen coordinates to game coordinates with proper scaling"""
         top_offset = getattr(self, 'top_pane_height_px', 0)
         game_x = (screen_x - self.battlefield_left - self.offset_x) / (TILE_SIZE * self.zoom_level)
         game_y = (screen_y - top_offset - self.offset_y) / (TILE_SIZE * self.zoom_level)
         return game_x, game_y
-    
+
     def game_to_screen_coords(self, game_x: float, game_y: float) -> Tuple[int, int]:
         """Convert game coordinates to screen coordinates with proper scaling"""
         top_offset = getattr(self, 'top_pane_height_px', 0)
@@ -24777,11 +24778,11 @@ class GameView:
 
     def old_game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
         # DEPRECATED: Use the new game_to_screen_coords method instead
-        # Convert game coordinates to screen coordinates  
+        # Convert game coordinates to screen coordinates
         screen_x = int(self.battlefield_left + (x * TILE_SIZE * self.zoom_level) + self.offset_x)
         screen_y = int(y * TILE_SIZE * self.zoom_level + self.offset_y)
         return (screen_x, screen_y)
-    
+
     def old_screen_to_game_coords(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
         """DEPRECATED: Convert screen coordinates to game coordinates"""
         x, y = screen_pos
@@ -24856,15 +24857,16 @@ class GameView:
         )
 
         # Draw terrain features on the battlefield
-        for terrain_feature in self.game_map.terrain_features:
-            draw_terrain_feature(
-                battlefield_surface,
-                terrain_feature,
-                self.zoom_level,
-                self.offset_x,
-                self.offset_y,
-                tile_size=TILE_SIZE,
-            )
+        with profile_section("render.terrain"):
+            for terrain_feature in self.game_map.terrain_features:
+                draw_terrain_feature(
+                    battlefield_surface,
+                    terrain_feature,
+                    self.zoom_level,
+                    self.offset_x,
+                    self.offset_y,
+                    tile_size=TILE_SIZE,
+                )
 
         # Draw deployment zones (with transparency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
@@ -24894,53 +24896,54 @@ class GameView:
         self._draw_cult_ambush_markers(battlefield_surface)
 
         # Draw units on the battlefield
-        units_to_draw = list(self.game_map.units)
-        # Also draw a unit that is currently being deployed per-model (even if not registered yet)
-        try:
-            if (hasattr(self, 'individual_model_movement_dialog') and
-                self.individual_model_movement_dialog and
-                self.individual_model_movement_dialog.visible and
-                self.individual_model_movement_dialog.unit and
-                self.individual_model_movement_dialog.unit not in units_to_draw):
-                units_to_draw.append(self.individual_model_movement_dialog.unit)
-        except Exception:
-            pass
-
-        for unit in units_to_draw:
-            # Check if this unit has a highlighted model for individual movement
-            highlighted_model_index = None
-            if (hasattr(self, 'individual_model_movement_dialog') and 
-                self.individual_model_movement_dialog.visible and 
-                self.individual_model_movement_dialog.unit == unit):
-                highlighted_model_index = self.individual_model_movement_dialog.get_highlighted_model_index()
-
-            # During per-model deployment, only draw models that have actually been placed
-            model_indices_to_draw = None
+        with profile_section("render.units"):
+            units_to_draw = list(self.game_map.units)
+            # Also draw a unit that is currently being deployed per-model (even if not registered yet)
             try:
                 if (hasattr(self, 'individual_model_movement_dialog') and
+                    self.individual_model_movement_dialog and
                     self.individual_model_movement_dialog.visible and
-                    self.individual_model_movement_dialog.unit == unit and
-                    getattr(self.individual_model_movement_dialog, 'movement_type', '') == 'deploy'):
-                    model_indices_to_draw = {
-                        idx for idx, data in (self.individual_model_movement_dialog.model_movements or {}).items()
-                        if data.get('completed', False)
-                    }
+                    self.individual_model_movement_dialog.unit and
+                    self.individual_model_movement_dialog.unit not in units_to_draw):
+                    units_to_draw.append(self.individual_model_movement_dialog.unit)
             except Exception:
+                pass
+
+            for unit in units_to_draw:
+                # Check if this unit has a highlighted model for individual movement
+                highlighted_model_index = None
+                if (hasattr(self, 'individual_model_movement_dialog') and
+                    self.individual_model_movement_dialog.visible and
+                    self.individual_model_movement_dialog.unit == unit):
+                    highlighted_model_index = self.individual_model_movement_dialog.get_highlighted_model_index()
+
+                # During per-model deployment, only draw models that have actually been placed
                 model_indices_to_draw = None
-            
-            draw_units(
-                battlefield_surface,
-                unit,
-                self.zoom_level,
-                self.offset_x,
-                self.offset_y,
-                pygame.mouse.get_pos(),
-                self.player1,
-                self.player2,
-                highlighted_model_index,
-                model_indices_to_draw=model_indices_to_draw,
-            )
-        
+                try:
+                    if (hasattr(self, 'individual_model_movement_dialog') and
+                        self.individual_model_movement_dialog.visible and
+                        self.individual_model_movement_dialog.unit == unit and
+                        getattr(self.individual_model_movement_dialog, 'movement_type', '') == 'deploy'):
+                        model_indices_to_draw = {
+                            idx for idx, data in (self.individual_model_movement_dialog.model_movements or {}).items()
+                            if data.get('completed', False)
+                        }
+                except Exception:
+                    model_indices_to_draw = None
+
+                draw_units(
+                    battlefield_surface,
+                    unit,
+                    self.zoom_level,
+                    self.offset_x,
+                    self.offset_y,
+                    pygame.mouse.get_pos(),
+                    self.player1,
+                    self.player2,
+                    highlighted_model_index,
+                    model_indices_to_draw=model_indices_to_draw,
+                )
+
         # Old unit-level movement range drawing removed - now using Individual Model Movement Dialog for all movement
 
         # Draw movement range indicator for individual model movement dialog
@@ -24971,18 +24974,19 @@ class GameView:
 
                 #print(f"DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
-                draw_individual_model_movement_range(
-                    battlefield_surface,
-                    selected_model,
-                    movement_type,
-                    max_distance,
-                    self.zoom_level,
-                    self.offset_x,
-                    self.offset_y,
-                    game_map,
-                    normal_move_distance=normal_move_distance,
-                    advance_max_distance=advance_max_distance,
-                )
+                with profile_section("render.range"):
+                    draw_individual_model_movement_range(
+                        battlefield_surface,
+                        selected_model,
+                        movement_type,
+                        max_distance,
+                        self.zoom_level,
+                        self.offset_x,
+                        self.offset_y,
+                        game_map,
+                        normal_move_distance=normal_move_distance,
+                        advance_max_distance=advance_max_distance,
+                    )
 
                 # Draw real-time path preview if mouse is hovering over battlefield
                 #print(f"DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
@@ -25094,14 +25098,15 @@ class GameView:
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and
             hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
-            draw_weapon_ranges(
-                battlefield_surface,
-                self.selected_unit,
-                self.selected_weapon_profile,
-                self.zoom_level,
-                self.offset_x,
-                self.offset_y,
-            )
+            with profile_section("render.range"):
+                draw_weapon_ranges(
+                    battlefield_surface,
+                    self.selected_unit,
+                    self.selected_weapon_profile,
+                    self.zoom_level,
+                    self.offset_x,
+                    self.offset_y,
+                )
             # Highlight valid targets in green overlay if targeting mode active
             # Remove precomputed valid target highlighting to avoid heavy per-frame work
 
@@ -25120,7 +25125,7 @@ class GameView:
 
         # Draw unit details panel if requested
         if self.detailed_unit:
-            self.unit_detail_panel.draw(self.screen, self.detailed_unit, 
+            self.unit_detail_panel.draw(self.screen, self.detailed_unit,
                                         self.detail_panel_pos[0], self.detail_panel_pos[1])
 
         if self.rule_detail_panel and self.rule_detail_panel.visible:
@@ -25166,16 +25171,16 @@ class GameView:
 
     # Note: on_key_press is now handled by phase-specific handlers in PhaseManager
     # Detail panel scrolling is still handled in handle_pygame_event for universal access
-    
+
     def force_complete_deployment(self):
         """Force complete the deployment phase by auto-deploying remaining units"""
         self.game.complete_deployment_phase()
-        
+
         # Clear any selected units
         self.selected_unit = None
         self.left_roster_pane.selected_unit = None
         self.right_roster_pane.selected_unit = None
-        
+
         logger.info("Deployment phase completed! Press SPACE to start the game.")
 
     def close_unit_details(self):

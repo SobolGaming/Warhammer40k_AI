@@ -7,6 +7,7 @@ from ..engine.game import Game
 from ..engine.snapshot import snapshot_game
 from ..engine.event_log import DeterministicEventLog
 from ..engine.command_dispatcher import CommandResult
+from ..utility.profiling_sections import record_value
 from .messages import CommandMessage, ErrorMessage, EventMessage, ResyncMessage, SnapshotMessage
 
 
@@ -45,6 +46,7 @@ class EventStreamCursor:
 
 def build_snapshot_message(game: Game) -> SnapshotMessage:
     snapshot = snapshot_game(game)
+    record_value("network.snapshot.count", 1)
     return SnapshotMessage(snapshot=snapshot)
 
 
@@ -56,6 +58,7 @@ def build_resync_message(
 ) -> ResyncMessage:
     snapshot = snapshot_game(game)
     snapshot["events"] = []
+    record_value("network.resync.count", 1)
     event_log = getattr(game, "event_log", None)
     if event_log is None:
         return ResyncMessage(snapshot=snapshot, events=[], reason=reason, since_event_id=since_event_id)
@@ -88,6 +91,7 @@ def handle_command_message(
 ) -> List[EventMessage | ErrorMessage | ResyncMessage]:
     if message is None:
         raise ValueError("Command message is required.")
+    record_value("network.command.count", 1)
     event_log = getattr(game, "event_log", None)
     current_event_id = _current_event_id(event_log)
 

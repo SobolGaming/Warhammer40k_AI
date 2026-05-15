@@ -25,6 +25,7 @@ from .path_witness import PathWitnessStore
 from .time_manager import TimeManager
 from .version_adapter import ensure_version_adapter_boundary
 from .decisions import CandidateAction
+from ..utility.profiling_sections import profiled_section
 
 
 def _normalize_candidate_bundle(candidates, mask, solver_ms: int, fallback_mode: bool) -> tuple[list[CandidateAction], list[bool], list[str | None]]:
@@ -48,6 +49,7 @@ def _normalize_candidate_bundle(candidates, mask, solver_ms: int, fallback_mode:
     return normalized_candidates, normalized_mask, mask_reasons
 
 
+@profiled_section("decision.request")
 def request_decision(game, request) -> None:
     """Queue a decision request (interrupt window)."""
     if request is None:

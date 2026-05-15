@@ -10,6 +10,7 @@ from typing import Any, Optional, Tuple
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from ..utility.profiling_sections import profile_section, record_value
 from .messages import ErrorMessage, PROTOCOL_VERSION, parse_message, _ensure_jsonable
 from .debug import log_network
 
@@ -79,10 +80,13 @@ def decode_message(raw: Any) -> dict:
 
 
 def encode_message(message: Any, *, validate: bool = True) -> str:
-    data = normalize_message(message)
-    if validate:
-        validate_message(data)
-    return json.dumps(data, separators=(",", ":"), ensure_ascii=True)
+    with profile_section("network.encode_message"):
+        data = normalize_message(message)
+        if validate:
+            validate_message(data)
+        payload = json.dumps(data, separators=(",", ":"), ensure_ascii=True)
+        record_value("network.encode_message.bytes", len(payload))
+        return payload
 
 
 def _validate_control_message(data: dict) -> str:

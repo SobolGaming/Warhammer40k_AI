@@ -6,6 +6,7 @@ from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, Terrai
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine import descriptor_compiler
 from warhammer40k_ai.engine.descriptor_compiler import compile_descriptor_bundle
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
@@ -102,6 +103,60 @@ def test_descriptor_compiler_is_deterministic_for_same_state() -> None:
     assert first.descriptor_ids()["mission_descriptor_id"].startswith("mission_descriptor:")
     assert first.descriptor_ids()["deployment_descriptor_id"].startswith("deployment_descriptor:")
     assert first.descriptor_ids()["army_build_descriptor_id"].startswith("army_build_descriptor:")
+
+
+def test_descriptor_compiler_reuses_static_terrain_and_tool_descriptors(monkeypatch) -> None:
+    game, _player = _build_game()
+    calls = {"terrain": 0, "tools": 0}
+    original_terrain = descriptor_compiler.compile_terrain_descriptors
+    original_tools = descriptor_compiler.compile_tool_descriptors
+
+    def _compile_terrain(current_game):
+        calls["terrain"] += 1
+        return original_terrain(current_game)
+
+    def _compile_tools(current_game):
+        calls["tools"] += 1
+        return original_tools(current_game)
+
+    monkeypatch.setattr(descriptor_compiler, "compile_terrain_descriptors", _compile_terrain)
+    monkeypatch.setattr(descriptor_compiler, "compile_tool_descriptors", _compile_tools)
+
+    first = compile_descriptor_bundle(game)
+    second = compile_descriptor_bundle(game)
+
+    assert first.descriptor_ids()["terrain_descriptor_ids"] == second.descriptor_ids()["terrain_descriptor_ids"]
+    assert first.descriptor_ids()["tool_descriptor_ids"] == second.descriptor_ids()["tool_descriptor_ids"]
+    assert calls == {"terrain": 1, "tools": 1}
+
+
+def test_descriptor_compiler_terrain_cache_honors_revision_change(monkeypatch) -> None:
+    game, _player = _build_game()
+    calls = {"terrain": 0}
+    original_terrain = descriptor_compiler.compile_terrain_descriptors
+
+    def _compile_terrain(current_game):
+        calls["terrain"] += 1
+        return original_terrain(current_game)
+
+    monkeypatch.setattr(descriptor_compiler, "compile_terrain_descriptors", _compile_terrain)
+
+    compile_descriptor_bundle(game)
+    compile_descriptor_bundle(game)
+    game.map.terrain_revision = 1
+    compile_descriptor_bundle(game)
+
+    assert calls["terrain"] == 2
+
+
+def test_descriptor_compiler_dynamic_mission_descriptor_updates_with_turn() -> None:
+    game, _player = _build_game()
+
+    first = compile_descriptor_bundle(game)
+    game.turn += 1
+    second = compile_descriptor_bundle(game)
+
+    assert first.descriptor_ids()["mission_descriptor_id"] != second.descriptor_ids()["mission_descriptor_id"]
 
 
 def test_descriptor_compiler_emits_army_build_descriptor_from_validated_muster() -> None:

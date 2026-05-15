@@ -19,6 +19,7 @@ from ..utility.constants import (
     PILE_IN_DISTANCE,
 )
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
+from ..utility.profiling_sections import profiled_section
 from ..battlefield.control_queries import control_region_centroid, control_region_shape
 from ..battlefield.objective_sites import resolve_objective_id, resolve_objective_site
 from .rules_profile import (
@@ -385,6 +386,7 @@ def get_validation_rules(
     return rules
 
 
+@profiled_section("pathing.build_collision_trees")
 def build_collision_trees(
     moving_unit: object,
     movement_type: object,

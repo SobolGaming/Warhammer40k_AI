@@ -22,6 +22,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.engine.deployment import HumanDeploymentDecisionMaker
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
+from warhammer40k_ai.utility.profiling_sections import profile_section
 
 
 def _safe_profile_label(value: str) -> str:
@@ -182,6 +183,7 @@ def run_game_loop(player_configs: dict) -> None:
 
     running = True
     setup_complete = False
+    clock = pygame.time.Clock()
 
     while running and not session_game.is_game_over():
         for event in pygame.event.get():
@@ -280,9 +282,10 @@ def run_game_loop(player_configs: dict) -> None:
                 logger.info("UI updated after automatic setup completion")
 
         if game_view:
-            game_view.draw()
-            pygame.display.flip()
-            pygame.time.Clock().tick(60)
+            with profile_section("render.frame"):
+                game_view.draw()
+                pygame.display.flip()
+            clock.tick(60)
 
 
 def _build_parser() -> argparse.ArgumentParser:
