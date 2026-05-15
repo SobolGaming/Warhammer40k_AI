@@ -56,7 +56,7 @@ Determinism fields:
 - `mask` aligned to `candidates`
   - `true` means the runtime prevalidated the candidate payload against the same non-mutating legality checks used by authoritative resolution.
   - `false` means the candidate must not be auto-submitted by headless/UI controllers.
-- `wall_clock_ms` and other wall-clock-derived diagnostics are explicitly excluded from deterministic equality checks. Use `warhammer40k_ai.engine.decision_record_determinism` for canonical profiled-vs-unprofiled signatures and digests.
+- `wall_clock_ms`, `expires_at`, and other wall-clock-derived diagnostics are explicitly excluded from deterministic equality checks. Determinism signatures also normalize Python memory-address substrings in object reprs that can appear in diagnostic outcome payloads. Use `warhammer40k_ai.engine.decision_record_determinism` for canonical profiled-vs-unprofiled signatures and digests.
 
 Relabel tooling:
 - Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`

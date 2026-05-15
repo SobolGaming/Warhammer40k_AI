@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from shapely.ops import unary_union
 from shapely.geometry import Point as ShapelyPoint
+from shapely.errors import ShapelyError
 from ..engine.combat_timing import CombatEngagementState, engagement_state_for_models
 from .army_ownership import same_army, unit_parent_army
+
+
+_BASE_SHAPE_DISTANCE_2D_CACHE_MAX = 131072
+_BASE_SHAPE_DISTANCE_2D_CACHE: OrderedDict[tuple, float] = OrderedDict()
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,55 @@ def _circular_edge_distance_2d(base_a, base_b) -> Optional[float]:
     return max(0.0, float(math.hypot(ax - bx, ay - by) - (ar + br)))
 
 
+def _freeze_base_cache_value(value):
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), _freeze_base_cache_value(inner)) for key, inner in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_base_cache_value(inner) for inner in value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _base_shape_distance_2d_cache_key(base) -> tuple:
+    radius = getattr(base, "radius", ())
+    if isinstance(radius, (list, tuple)):
+        radius_key = tuple(float(value) for value in radius)
+    else:
+        radius_key = (float(radius), float(radius))
+    base_type = getattr(base, "base_type", None)
+    return (
+        str(getattr(base_type, "name", base_type) or ""),
+        float(getattr(base, "x", 0.0)),
+        float(getattr(base, "y", 0.0)),
+        float(getattr(base, "facing", 0.0)),
+        radius_key,
+        _freeze_base_cache_value(getattr(base, "_compound_parts", tuple())),
+    )
+
+
+def _base_shape_distance_2d_pair_key(base_a, base_b) -> tuple:
+    key_a = _base_shape_distance_2d_cache_key(base_a)
+    key_b = _base_shape_distance_2d_cache_key(base_b)
+    if repr(key_a) <= repr(key_b):
+        return key_a, key_b
+    return key_b, key_a
+
+
+def _base_shape_distance_2d(base_a, base_b) -> float:
+    key = _base_shape_distance_2d_pair_key(base_a, base_b)
+    cached = _BASE_SHAPE_DISTANCE_2D_CACHE.get(key)
+    if cached is not None:
+        _BASE_SHAPE_DISTANCE_2D_CACHE.move_to_end(key)
+        return float(cached)
+    distance = float(base_a.get_base_shape().distance(base_b.get_base_shape()))
+    _BASE_SHAPE_DISTANCE_2D_CACHE[key] = distance
+    _BASE_SHAPE_DISTANCE_2D_CACHE.move_to_end(key)
+    while len(_BASE_SHAPE_DISTANCE_2D_CACHE) > _BASE_SHAPE_DISTANCE_2D_CACHE_MAX:
+        _BASE_SHAPE_DISTANCE_2D_CACHE.popitem(last=False)
+    return distance
+
+
 def distance_between_models_bases_3d(model_a, model_b) -> float:
     """
     Core measurement primitive for "within X" checks (non-Engagement-Range):
@@ -66,22 +121,20 @@ def distance_between_models_bases_3d(model_a, model_b) -> float:
         return float(math.hypot(float(fast_2d), dz))
 
     try:
-        shape_a = a.get_base_shape()
-        shape_b = b.get_base_shape()
-        dxy = float(shape_a.distance(shape_b))
-    except Exception:
+        dxy = _base_shape_distance_2d(a, b)
+    except (AttributeError, TypeError, ValueError, ShapelyError):
         try:
             ax = float(getattr(a, "x", 0.0))
             ay = float(getattr(a, "y", 0.0))
             bx = float(getattr(b, "x", 0.0))
             by = float(getattr(b, "y", 0.0))
             dxy = float(math.hypot(ax - bx, ay - by))
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             dxy = float("inf")
 
     try:
         dz = abs(float(getattr(a, "z", 0.0)) - float(getattr(b, "z", 0.0)))
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         dz = 0.0
 
     return float(math.hypot(dxy, dz))
@@ -99,12 +152,12 @@ def distance_between_bases_3d(base_a, base_b) -> float:
             dz = 0.0
         return float(math.hypot(float(fast_2d), dz))
     try:
-        dxy = float(base_a.get_base_shape().distance(base_b.get_base_shape()))
-    except Exception:
+        dxy = _base_shape_distance_2d(base_a, base_b)
+    except (AttributeError, TypeError, ValueError, ShapelyError):
         dxy = float("inf")
     try:
         dz = abs(float(getattr(base_a, "z", 0.0)) - float(getattr(base_b, "z", 0.0)))
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         dz = 0.0
     return float(math.hypot(dxy, dz))
 
@@ -116,7 +169,7 @@ def horizontal_distance_between_bases_2d(base_a, base_b) -> float:
     fast_2d = _circular_edge_distance_2d(base_a, base_b)
     if fast_2d is not None:
         return float(fast_2d)
-    return float(base_a.get_base_shape().distance(base_b.get_base_shape()))
+    return _base_shape_distance_2d(base_a, base_b)
 
 
 def vertical_distance_between_bases(base_a, base_b) -> float:

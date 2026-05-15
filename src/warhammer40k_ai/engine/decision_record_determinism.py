@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any, Iterable, Mapping
 
 
@@ -9,6 +10,7 @@ VOLATILE_DECISION_RECORD_KEYS = frozenset(
     {
         "created_at",
         "elapsed_ms",
+        "expires_at",
         "requested_at",
         "resolved_at",
         "solver_ms",
@@ -33,6 +35,8 @@ def strip_volatile_decision_record_fields(value: Any) -> Any:
         return [strip_volatile_decision_record_fields(inner) for inner in value]
     if isinstance(value, tuple):
         return [strip_volatile_decision_record_fields(inner) for inner in value]
+    if isinstance(value, str):
+        return re.sub(r"0x[0-9a-fA-F]+", "0x<addr>", value)
     return value
 
 

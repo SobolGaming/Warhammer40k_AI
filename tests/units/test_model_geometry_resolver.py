@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from warhammer40k_ai.utility.aura_utils import horizontal_distance_between_bases_2d
+from warhammer40k_ai.utility.aura_utils import distance_between_bases_3d, horizontal_distance_between_bases_2d
 from warhammer40k_ai.utility.calcs import convert_mm_to_inches
 from warhammer40k_ai.utility.model_base import Base, BaseType, clone_base
 from warhammer40k_ai.utility.model_geometry import resolve_model_geometry
@@ -566,6 +566,36 @@ def test_clone_base_preserves_compound_geometry():
     assert cloned.has_compound_parts()
     after = float(horizontal_distance_between_bases_2d(cloned, other))
     assert after == pytest.approx(before, abs=1e-4)
+
+
+def test_non_circular_base_distance_reuses_exact_shape_distance_cache(monkeypatch):
+    from warhammer40k_ai.utility import aura_utils
+
+    aura_utils._BASE_SHAPE_DISTANCE_2D_CACHE.clear()
+    first = Base(BaseType.ELLIPTICAL, (2.0, 1.0))
+    second = Base(BaseType.HULL, (1.5, 0.75))
+    first.set_position(0.0, 0.0, 0.0)
+    second.set_position(4.0, 0.0, 0.0)
+
+    original = Base.get_base_shape
+    call_count = {"shape": 0}
+
+    def _counted_get_base_shape(self):
+        call_count["shape"] += 1
+        return original(self)
+
+    monkeypatch.setattr(Base, "get_base_shape", _counted_get_base_shape)
+
+    before = float(distance_between_bases_3d(first, second))
+    first_count = int(call_count["shape"])
+    assert first_count > 0
+
+    assert float(distance_between_bases_3d(first, second)) == pytest.approx(before, abs=1e-9)
+    assert int(call_count["shape"]) == first_count
+
+    second.set_position(5.0, 0.0, 0.0)
+    assert float(distance_between_bases_3d(first, second)) > before
+    assert int(call_count["shape"]) > first_count
 
 
 def test_resolve_requires_manual_geometry_for_hull_when_guide_marks_required(tmp_path):

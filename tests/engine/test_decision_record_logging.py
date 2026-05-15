@@ -195,32 +195,35 @@ def test_decision_record_determinism_signature_excludes_wall_clock_telemetry() -
         "wall_clock_ms": 4,
         "request_context": {
             "unit_id": "unit-1",
+            "expires_at": 123.0,
             "roll_state": {"resolved_at": 10.0, "result": [4, 5]},
         },
         "candidates": [
             {
                 "action_id": "MOVE_UNIT:1",
-                "params": {"unit_id": "unit-1"},
+                "params": {"unit_id": "unit-1", "expires_at": 123.0},
                 "metadata": {"candidate_kind": "move", "solver_ms": 3, "fallback_mode": False},
             }
         ],
         "mask": [True],
-        "outcome": {"immediate_deltas": {"apply_ok": True}},
+        "outcome": {"immediate_deltas": {"apply_ok": True, "value": "<Thing object at 0x123abc>"}},
     }
     profiled = {
         **base,
         "wall_clock_ms": 40,
         "request_context": {
             "unit_id": "unit-1",
+            "expires_at": 999.0,
             "roll_state": {"resolved_at": 99.0, "result": [4, 5]},
         },
         "candidates": [
             {
                 "action_id": "MOVE_UNIT:1",
-                "params": {"unit_id": "unit-1"},
+                "params": {"unit_id": "unit-1", "expires_at": 999.0},
                 "metadata": {"candidate_kind": "move", "solver_ms": 30, "fallback_mode": False},
             }
         ],
+        "outcome": {"immediate_deltas": {"apply_ok": True, "value": "<Thing object at 0x999def>"}},
     }
 
     assert decision_record_determinism_signature(base) == decision_record_determinism_signature(profiled)
