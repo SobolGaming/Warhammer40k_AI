@@ -898,6 +898,57 @@ def test_fast_packer_candidate_cap_stops_after_small_candidate_set(monkeypatch: 
     assert int(metric.get("full_validation_calls", 0) or 0) <= 2
 
 
+def test_deployment_candidate_groups_are_lazy_after_candidate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **_kwargs) -> bool:
+            return True
+
+    unit = _StubUnit("unit:lazy", must_start_in_reserves=False, map_obj=_FlatMap())
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]), placement_candidate_limit=1)
+    monkeypatch.setattr(maker, "_gap_anchor_candidates", lambda *_args, **_kwargs: [(5.0, 5.0)])
+
+    def _late_group(*_args, **_kwargs):
+        raise AssertionError("late deployment candidate groups should not be built after the candidate limit is met")
+
+    monkeypatch.setattr(maker, "_packing_row_anchor_candidates", _late_group)
+    monkeypatch.setattr(maker, "_semantic_anchor_candidates", _late_group)
+    monkeypatch.setattr(maker, "_candidate_positions", _late_group)
+    monkeypatch.setattr(maker, "_footprint_safe_anchor_candidates", _late_group)
+    monkeypatch.setattr(maker, "_edge_sweep_anchor_candidates", _late_group)
+    monkeypatch.setattr(maker, "_candidate_positions_exhaustive", _late_group)
+
+    candidates = maker.build_deployment_move_candidates(
+        unit,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert len(candidates) == 1
+    metric = maker.get_deployment_search_metrics()[-1]
+    assert metric["returned_candidate_sources"] == ["packer_gap"]
+    assert metric["exhaustive_fallback_used"] is False
+
+
 def test_cached_search_context_matches_uncached_deployment_validation() -> None:
     class _FlatMap:
         terrain_features: list[object] = []

@@ -534,6 +534,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         unit_id = str(get_entity_id(unit) or "")
         if unit_id:
             self._selected_payload_by_unit_id.pop(unit_id, None)
+        deployed_units = list(already_deployed or [])
 
         candidate_limit = max(
             1,
@@ -543,7 +544,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     self.deployment_candidate_limit(
                         unit=unit,
                         deployment_zone=deployment_zone,
-                        already_deployed=list(already_deployed or []),
+                        already_deployed=deployed_units,
                     )
                 ),
             ),
@@ -558,15 +559,16 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             unit=unit,
             player_id=str(player_id),
             candidate_limit=int(candidate_limit),
-            already_deployed=list(already_deployed or []),
+            already_deployed=deployed_units,
         )
         position_cache: dict[tuple[str, str, float, float], list[list[dict]]] = {}
         started = time.perf_counter()
         footprint = estimate_unit_pack_footprint(unit)
+        deployed_bounds = self._deployed_unit_bounds(deployed_units)
         candidate_groups = self._deployment_anchor_candidate_groups(
             unit,
             deployment_zone,
-            already_deployed=list(already_deployed or []),
+            already_deployed=deployed_units,
             player=player,
             footprint=footprint,
         )
@@ -574,10 +576,10 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         seen_payload: set[tuple[tuple[str, float, float, float, float], ...]] = set()
         candidates: list[dict] = []
 
-        for source, anchors in list(candidate_groups or []):
+        for source, anchors in candidate_groups or ():
             if str(source or "").startswith("lattice_exhaustive"):
                 metric["exhaustive_fallback_used"] = True
-            for x, y in list(anchors or []):
+            for x, y in anchors or ():
                 metric["anchor_attempts"] = int(metric.get("anchor_attempts", 0) or 0) + 1
                 self._bump_metric_counter(metric, "source_attempt_counts", str(source))
                 key = (round(float(x), 3), round(float(y), 3))
@@ -587,7 +589,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 if self._quick_reject_deployment_anchor(
                     unit,
                     deployment_zone,
-                    already_deployed=list(already_deployed or []),
+                    already_deployed=deployed_units,
+                    already_deployed_bounds=deployed_bounds,
                     footprint=footprint,
                     x=float(x),
                     y=float(y),
@@ -648,6 +651,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     unit,
                     deployment_zone,
                     already_deployed=[],
+                    already_deployed_bounds=[],
                     footprint=footprint,
                     x=float(x),
                     y=float(y),
@@ -710,60 +714,57 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         already_deployed: list[object],
         player: Optional[Player],
         footprint: dict[str, float],
-    ) -> list[tuple[str, list[tuple[float, float]]]]:
-        groups: list[tuple[str, list[tuple[float, float]]]] = [
-            (
-                "packer_gap",
-                self._gap_anchor_candidates(
-                    unit,
-                    deployment_zone,
-                    already_deployed=already_deployed,
-                    footprint=footprint,
-                ),
-            ),
-            (
-                "packer_rows",
-                self._packing_row_anchor_candidates(
-                    unit,
-                    deployment_zone,
-                    already_deployed=already_deployed,
-                    footprint=footprint,
-                ),
-            ),
-            (
-                "semantic_anchor",
-                self._semantic_anchor_candidates(
-                    unit,
-                    deployment_zone,
-                    already_deployed=already_deployed,
-                    player=player,
-                ),
-            ),
-            ("lattice", self._candidate_positions(unit, deployment_zone, already_deployed)),
-            (
-                "footprint_safe_lattice",
-                self._footprint_safe_anchor_candidates(
-                    unit,
-                    deployment_zone,
-                    footprint=footprint,
-                ),
-            ),
-            (
-                "edge_sweep",
-                self._edge_sweep_anchor_candidates(
-                    unit,
-                    deployment_zone,
-                    already_deployed=already_deployed,
-                    footprint=footprint,
-                ),
-            ),
-            ("lattice_exhaustive", self._candidate_positions_exhaustive(unit, deployment_zone)),
-        ]
+    ) -> Iterable[tuple[str, Iterable[tuple[float, float]]]]:
         if self._unit_has_infiltrate(unit):
             infiltrate_groups = self._infiltrate_candidate_groups(unit, already_deployed=already_deployed)
             for idx, anchors in enumerate(list(infiltrate_groups or [])):
-                groups.insert(int(idx), (f"infiltrate_{int(idx)}", list(anchors or [])))
-        return groups
+                yield (f"infiltrate_{int(idx)}", list(anchors or []))
+        yield (
+            "packer_gap",
+            self._gap_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=already_deployed,
+                footprint=footprint,
+            ),
+        )
+        yield (
+            "packer_rows",
+            self._packing_row_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=already_deployed,
+                footprint=footprint,
+            ),
+        )
+        yield (
+            "semantic_anchor",
+            self._semantic_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=already_deployed,
+                player=player,
+            ),
+        )
+        yield ("lattice", self._candidate_positions(unit, deployment_zone, already_deployed))
+        yield (
+            "footprint_safe_lattice",
+            self._footprint_safe_anchor_candidates(
+                unit,
+                deployment_zone,
+                footprint=footprint,
+            ),
+        )
+        yield (
+            "edge_sweep",
+            self._edge_sweep_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=already_deployed,
+                footprint=footprint,
+            ),
+        )
+        yield ("lattice_exhaustive", self._candidate_positions_exhaustive(unit, deployment_zone))
 
     def _relaxed_deployment_anchor_candidates(
         self,
@@ -907,6 +908,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         deployment_zone: dict,
         *,
         already_deployed: list[object],
+        already_deployed_bounds: list[tuple[float, float, float, float]] | None = None,
         footprint: dict[str, float] | None = None,
         x: float,
         y: float,
@@ -915,10 +917,12 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             return True
         footprint = dict(footprint or estimate_unit_pack_footprint(unit))
         clearance = max(0.25, float(footprint.get("radius", footprint.get("largest_radius", 0.0)) or 0.0) + 0.25)
-        for deployed_unit in list(already_deployed or []):
-            unit_bounds = deployed_unit_bounds(deployed_unit)
-            if unit_bounds is None:
-                continue
+        bounds = (
+            list(already_deployed_bounds or [])
+            if already_deployed_bounds is not None
+            else self._deployed_unit_bounds(already_deployed)
+        )
+        for unit_bounds in bounds:
             bx0, by0, bx1, by1 = unit_bounds
             if (
                 float(bx0) - clearance <= float(x) <= float(bx1) + clearance
@@ -926,6 +930,16 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             ):
                 return True
         return False
+
+    @staticmethod
+    def _deployed_unit_bounds(already_deployed: Iterable[object]) -> list[tuple[float, float, float, float]]:
+        bounds: list[tuple[float, float, float, float]] = []
+        for deployed_unit in list(already_deployed or []):
+            unit_bounds = deployed_unit_bounds(deployed_unit)
+            if unit_bounds is None:
+                continue
+            bounds.append(tuple(float(value) for value in unit_bounds))
+        return bounds
 
     def _packing_row_anchor_candidates(
         self,
