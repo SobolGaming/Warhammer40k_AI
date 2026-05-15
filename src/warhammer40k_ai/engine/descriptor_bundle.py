@@ -39,7 +39,10 @@ def json_safe(value: Any) -> Any:
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except (TypeError, ValueError):
+        return json.dumps(json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def descriptor_id(prefix: str, payload: dict[str, Any]) -> str:

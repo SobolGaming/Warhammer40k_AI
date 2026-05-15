@@ -72,6 +72,7 @@ from .terrain_visibility import (
     segment_blocked_by_terrain_feature as terrain_segment_blocked_by_terrain_feature,
 )
 from ..utility.army_ownership import army_identifier, unit_parent_army, units_are_enemies, units_share_army
+from ..utility.entity_ids import get_entity_id
 import logging
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,123 @@ class Map:
         if callable(getter):
             return list(getter() or [])
         return list(getattr(unit, "models", []) or [])
+
+    @staticmethod
+    def _cache_entity_id(entity: object) -> str:
+        try:
+            value = str(get_entity_id(entity) or "")
+        except (AttributeError, TypeError, ValueError):
+            value = ""
+        if value:
+            return value
+        fallback = str(getattr(entity, "id", "") or getattr(entity, "_id", "") or "")
+        return fallback if fallback else f"object:{id(entity)}"
+
+    @staticmethod
+    def _cache_float(value: object) -> float:
+        try:
+            return round(float(value or 0.0), 5)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @classmethod
+    def _base_longest_radius(cls, base: object | None) -> float:
+        if base is None:
+            return 0.0
+        getter = getattr(base, "get_longest_radius", None)
+        if callable(getter):
+            try:
+                return max(0.0, cls._cache_float(getter()))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return 0.0
+        getter = getattr(base, "get_radius", None)
+        if callable(getter):
+            try:
+                return max(0.0, cls._cache_float(getter()))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return 0.0
+        return 0.0
+
+    @classmethod
+    def _model_engagement_signature(cls, model: Model) -> tuple:
+        base = getattr(model, "model_base", None)
+        alive_value = getattr(model, "is_alive", True)
+        if callable(alive_value):
+            try:
+                alive = bool(alive_value())
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                alive = True
+        else:
+            alive = bool(alive_value)
+        return (
+            cls._cache_entity_id(model),
+            alive,
+            cls._cache_float(getattr(base, "x", 0.0)),
+            cls._cache_float(getattr(base, "y", 0.0)),
+            cls._cache_float(getattr(base, "z", 0.0)),
+            cls._cache_float(getattr(base, "facing", 0.0)),
+            cls._cache_float(getattr(base, "width", 0.0)),
+            cls._cache_float(getattr(base, "height", 0.0)),
+            cls._cache_float(getattr(base, "diameter", 0.0)),
+            cls._cache_float(getattr(base, "radius", 0.0)),
+            cls._base_longest_radius(base),
+            bool(getattr(base, "has_circular_base", False)),
+            str(getattr(base, "base_type", "") or ""),
+        )
+
+    @classmethod
+    def _engagement_profile_signature(cls, profile: object) -> tuple:
+        return (
+            str(getattr(profile, "rules_bundle_id", "") or ""),
+            str(getattr(profile, "edition_family", "") or ""),
+            cls._cache_float(getattr(profile, "engagement_range_horizontal", 0.0)),
+            cls._cache_float(getattr(profile, "engagement_range_vertical", 0.0)),
+            cls._cache_float(getattr(profile, "base_contact_epsilon", 0.0)),
+        )
+
+    @classmethod
+    def _unit_engagement_cache_key(
+        cls,
+        source_unit: Unit,
+        target_unit: Unit,
+        source_models: List[Model],
+        target_models: List[Model],
+        geometry_profile: object,
+    ) -> tuple:
+        return (
+            "unit_engagement_range",
+            cls._cache_entity_id(source_unit),
+            cls._cache_entity_id(target_unit),
+            cls._engagement_profile_signature(geometry_profile),
+            tuple(cls._model_engagement_signature(model) for model in source_models),
+            tuple(cls._model_engagement_signature(model) for model in target_models),
+        )
+
+    @classmethod
+    def _model_pair_cannot_engage(cls, source_base: object | None, target_base: object | None, profile: object) -> bool:
+        if source_base is None or target_base is None:
+            return False
+        vertical_limit = float(getattr(profile, "engagement_range_vertical", 0.0) or 0.0)
+        source_z = float(getattr(source_base, "z", 0.0) or 0.0)
+        target_z = float(getattr(target_base, "z", 0.0) or 0.0)
+        if abs(source_z - target_z) > vertical_limit:
+            return True
+        source_radius = cls._base_longest_radius(source_base)
+        target_radius = cls._base_longest_radius(target_base)
+        if source_radius <= 0.0 or target_radius <= 0.0:
+            return False
+        horizontal_limit = (
+            source_radius
+            + target_radius
+            + float(getattr(profile, "engagement_range_horizontal", 0.0) or 0.0)
+        )
+        source_x = float(getattr(source_base, "x", 0.0) or 0.0)
+        source_y = float(getattr(source_base, "y", 0.0) or 0.0)
+        target_x = float(getattr(target_base, "x", 0.0) or 0.0)
+        target_y = float(getattr(target_base, "y", 0.0) or 0.0)
+        dx = source_x - target_x
+        dy = source_y - target_y
+        return bool((dx * dx + dy * dy) > (horizontal_limit * horizontal_limit))
 
     def place_unit(self, unit: Unit) -> bool:
         models = self._unit_collision_models(unit)
@@ -290,12 +408,25 @@ class Map:
         source_models = source_unit.get_models_for_collision()
         target_models = target_unit.get_models_for_collision()
         geometry_profile = geometry_profile_for_context(source_unit=source_unit, target_unit=target_unit)
+        cache_key = self._unit_engagement_cache_key(source_unit, target_unit, source_models, target_models, geometry_profile)
+        cache = getattr(self, "_unit_engagement_range_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, "_unit_engagement_range_cache", cache)
+        if cache_key in cache:
+            return bool(cache[cache_key])
 
         for source_model in source_models:
             if not source_model.is_alive:
                 continue
             for target_model in target_models:
                 if not target_model.is_alive:
+                    continue
+                if self._model_pair_cannot_engage(
+                    getattr(source_model, "model_base", None),
+                    getattr(target_model, "model_base", None),
+                    geometry_profile,
+                ):
                     continue
                 state = engagement_state_for_models(
                     source_model,
@@ -313,7 +444,13 @@ class Map:
                         float(geometry_profile.engagement_range_horizontal or 0.0),
                         float(geometry_profile.engagement_range_vertical or 0.0),
                     )
+                    if cache_key not in cache and len(cache) >= 8192:
+                        cache.clear()
+                    cache[cache_key] = True
                     return True
+        if cache_key not in cache and len(cache) >= 8192:
+            cache.clear()
+        cache[cache_key] = False
         return False
 
     def calculate_pivot_cost(self, unit: Unit) -> float:

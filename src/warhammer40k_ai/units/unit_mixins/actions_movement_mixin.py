@@ -905,6 +905,121 @@ class ActionsMovementMixin:
             add(leader)
         return tuple(units)
 
+    def _ability_activity_state_cache_token(
+        self,
+        *,
+        root,
+        game,
+        game_map,
+        phase,
+        current_player,
+        related_units: tuple,
+    ) -> tuple:
+        unit_rows: list[tuple] = []
+        for unit in related_units:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                sr_marker = (
+                    id(sr),
+                    len(sr),
+                    tuple(sorted(str(key) for key in sr.keys())),
+                )
+            else:
+                sr_marker = (id(sr), 0, ())
+            model_rows = []
+            for model in list(getattr(unit, "models", []) or []):
+                alive_attr = getattr(model, "is_alive", True)
+                try:
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    alive = True
+                model_rows.append(
+                    (
+                        self._ability_activity_entity_signature(model) or str(id(model)),
+                        alive,
+                        getattr(model, "wounds", None),
+                    )
+                )
+            unit_rows.append(
+                (
+                    self._ability_activity_entity_signature(unit) or str(id(unit)),
+                    int(getattr(unit, "_ability_structure_generation", 0) or 0),
+                    int(getattr(unit, "_ability_activity_generation", 0) or 0),
+                    bool(getattr(unit, "is_leader", False)),
+                    bool(getattr(unit, "is_attached_leader", False)),
+                    bool(getattr(unit, "deployed", False)),
+                    str(getattr(unit, "reserve_status", "") or ""),
+                    self._ability_activity_entity_signature(getattr(unit, "attached_to", None)),
+                    self._ability_activity_entity_signature(getattr(unit, "embarked_in", None)),
+                    sr_marker,
+                    tuple(model_rows),
+                )
+            )
+        return (
+            "ability_activity_state_signature_v1",
+            int(getattr(root, "_ability_structure_generation", 0) or 0),
+            int(getattr(root, "_ability_activity_generation", 0) or 0),
+            int(getattr(game_map, "state_generation", 0) or 0),
+            int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+            str(getattr(phase, "name", "") or ""),
+            self._ability_activity_entity_signature(current_player),
+            tuple(unit_rows),
+        )
+
+    def _ability_activity_state_fast_cache_token(
+        self,
+        *,
+        root,
+        game,
+        game_map,
+        phase,
+        current_player,
+        related_units: tuple,
+    ) -> tuple:
+        unit_rows: list[tuple] = []
+        for unit in related_units:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                sr_marker = (
+                    id(sr),
+                    len(sr),
+                    tuple(sorted(str(key) for key in sr.keys())),
+                )
+            else:
+                sr_marker = (id(sr), 0, ())
+            model_rows = tuple(
+                (
+                    self._ability_activity_entity_signature(model) or str(id(model)),
+                    tuple(sorted(str(item or "") for item in list(getattr(model, "optional_wargear", []) or []))),
+                )
+                for model in list(getattr(unit, "models", []) or [])
+            )
+            unit_rows.append(
+                (
+                    self._ability_activity_entity_signature(unit) or str(id(unit)),
+                    int(getattr(unit, "_ability_structure_generation", 0) or 0),
+                    int(getattr(unit, "_ability_activity_generation", 0) or 0),
+                    bool(getattr(unit, "is_leader", False)),
+                    bool(getattr(unit, "is_attached_leader", False)),
+                    bool(getattr(unit, "deployed", False)),
+                    str(getattr(unit, "reserve_status", "") or ""),
+                    self._ability_activity_entity_signature(getattr(unit, "attached_to", None)),
+                    self._ability_activity_entity_signature(getattr(unit, "embarked_in", None)),
+                    model_rows,
+                    sr_marker,
+                )
+            )
+        return (
+            "ability_activity_state_signature_fast_v1",
+            int(getattr(root, "_ability_structure_generation", 0) or 0),
+            int(getattr(root, "_ability_activity_generation", 0) or 0),
+            int(getattr(game_map, "state_generation", 0) or 0),
+            int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+            str(getattr(phase, "name", "") or ""),
+            self._ability_activity_entity_signature(current_player),
+            tuple(unit_rows),
+        )
+
     def _ability_activity_state_signature(self) -> tuple:
         game = None
         army = None
@@ -933,15 +1048,27 @@ class ActionsMovementMixin:
             except (AttributeError, RuntimeError, TypeError, ValueError):
                 root = self
         related_units = self._ability_activity_related_units()
-        return (
-            int(getattr(root, "_ability_structure_generation", 0) or 0),
-            int(getattr(root, "_ability_activity_generation", 0) or 0),
-            int(getattr(game_map, "state_generation", 0) or 0),
-            int(getattr(game, "turn", 0) or 0) if game is not None else 0,
-            str(getattr(phase, "name", "") or ""),
-            self._ability_activity_entity_signature(current_player),
-            tuple(self._ability_activity_unit_signature(unit) for unit in related_units),
+        cache_owner = root if root is not None else self
+        cache = getattr(cache_owner, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(cache_owner, "_ability_cache", cache)
+        fast_cache_key = self._ability_activity_state_fast_cache_token(
+            root=root,
+            game=game,
+            game_map=game_map,
+            phase=phase,
+            current_player=current_player,
+            related_units=related_units,
         )
+        fast_cached = cache.get(fast_cache_key)
+        if isinstance(fast_cached, tuple):
+            return fast_cached
+        signature = fast_cache_key
+        if fast_cache_key not in cache and len(cache) >= 2048:
+            cache.clear()
+        cache[fast_cache_key] = signature
+        return signature
 
     def _selectable_ability_activity_result(self, kind: str, key: str):
         if not kind or not key:
@@ -23103,13 +23230,39 @@ class ActionsMovementMixin:
         )
 
     @staticmethod
+    def _locked_combat_cache_unit_id(unit: 'Unit') -> str:
+        try:
+            return str(get_entity_id(unit) or "")
+        except (AttributeError, TypeError, ValueError):
+            return str(getattr(unit, "id", "") or getattr(unit, "_id", "") or "")
+
+    @staticmethod
     def _is_unit_locked_in_combat(unit: 'Unit', game_map: 'Map') -> bool:
         """Return True if `unit` is within Engagement Range of any of its enemy units."""
-        return any(
+        if unit is None or game_map is None:
+            return False
+        unit_id = ActionsMovementMixin._locked_combat_cache_unit_id(unit)
+        generation = getattr(game_map, "state_generation", None)
+        cache_key = None
+        cache = None
+        if unit_id and generation is not None:
+            cache = getattr(game_map, "_unit_locked_in_combat_cache", None)
+            if not isinstance(cache, dict):
+                cache = {}
+                setattr(game_map, "_unit_locked_in_combat_cache", cache)
+            cache_key = ("unit_locked_in_combat", unit_id, int(generation))
+            if cache_key in cache:
+                return bool(cache.get(cache_key, False))
+        locked = any(
             game_map.is_within_engagement_range(unit, enemy)
             for enemy in game_map.get_enemy_units(unit)
             if enemy.is_alive()
         )
+        if cache is not None and cache_key is not None:
+            if cache_key not in cache and len(cache) >= 4096:
+                cache.clear()
+            cache[cache_key] = bool(locked)
+        return bool(locked)
 
     def is_only_within_enemy_fortifications(self, game_map: 'Map', *, enemy_unit: Optional['Unit'] = None) -> bool:
         """

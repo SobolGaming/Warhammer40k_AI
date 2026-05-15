@@ -866,14 +866,36 @@ def _profile_is_targetless(profile: object) -> bool:
     return False
 
 
+def _uses_headless_policy_controller(game: object | None) -> bool:
+    if game is None:
+        return False
+    if bool(getattr(game, "_headless_fast_shooting_target_candidates", False)):
+        return True
+    if hasattr(game, "_headless_disable_generic_tool_decisions"):
+        return True
+    hub = getattr(game, "decision_controller_hub", None)
+    controllers = getattr(hub, "_controllers", None)
+    if not isinstance(controllers, list):
+        return False
+    for controller in controllers:
+        cls = controller.__class__
+        if cls.__name__ == "HeadlessPolicyDecisionController" and cls.__module__.endswith(
+            ".headless_policy_controller"
+        ):
+            return True
+    return False
+
+
 def _shooting_profile_target_ids(
     game: object | None,
     unit: object,
     model: object,
     profile: object,
     targets: list[object],
+    *,
+    validate_targets: bool = True,
 ) -> list[str]:
-    validate = getattr(unit, "_validate_shooting_declaration", None)
+    validate = getattr(unit, "_validate_shooting_declaration", None) if validate_targets else None
     game_map = getattr(game, "map", None) if game is not None else None
     target_ids: list[str] = []
     for target in list(targets or []):
@@ -903,6 +925,7 @@ def _shooting_target_candidates(
     forced_target_id = str(force_target_unit_id or "").strip()
     if forced_target_id:
         targets = [target for target in targets if str(get_entity_id(target) or "").strip() == forced_target_id]
+    validate_targets = not _uses_headless_policy_controller(game)
     candidates: list[dict[str, object]] = []
     for model in _attached_alive_models(unit):
         model_id = str(get_entity_id(model) or "").strip()
@@ -939,7 +962,14 @@ def _shooting_target_candidates(
                     entry["targetless"] = True
                     candidates.append(entry)
                     continue
-                target_ids = _shooting_profile_target_ids(game, unit, model, profile, targets)
+                target_ids = _shooting_profile_target_ids(
+                    game,
+                    unit,
+                    model,
+                    profile,
+                    targets,
+                    validate_targets=validate_targets,
+                )
                 if not target_ids:
                     continue
                 entry["target_unit_ids"] = target_ids

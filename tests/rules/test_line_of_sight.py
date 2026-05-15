@@ -63,32 +63,21 @@ class TestLineOfSight:
 
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
 
-    def test_los_cache_reuses_identical_model_pair_geometry(self, monkeypatch):
-        import shapely.geometry as shapely_geometry
-
+    def test_los_cache_reuses_identical_model_pair_geometry(self):
         shooter = create_unit("Shooter", 10.0, 10.0)
         target = create_unit("Target", 20.0, 10.0, faction="B")
         attach_to_armies(self.map, [shooter], [target])
 
-        original = shapely_geometry.LineString
-        call_count = {"line": 0}
-
-        def _counted_line_string(*args, **kwargs):
-            call_count["line"] += 1
-            return original(*args, **kwargs)
-
-        monkeypatch.setattr(shapely_geometry, "LineString", _counted_line_string)
+        assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+        first_cache_size = len(getattr(self.map, "_shooting_los_cache", {}))
+        assert first_cache_size == 1
 
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        first_count = int(call_count["line"])
-        assert first_count > 0
-
-        assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        assert int(call_count["line"]) == first_count
+        assert len(getattr(self.map, "_shooting_los_cache", {})) == first_cache_size
 
         target.models[0].set_location(21.0, 10.0, 0.0, 0.0)
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        assert int(call_count["line"]) > first_count
+        assert len(getattr(self.map, "_shooting_los_cache", {})) == first_cache_size + 1
 
     def test_enemy_model_blocks_los(self):
         shooter = create_unit("Shooter", 10.0, 10.0)

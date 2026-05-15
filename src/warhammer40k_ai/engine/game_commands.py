@@ -6,6 +6,7 @@ from typing import Any
 
 from .command_kinds import CMD_RESOLVE_DECISION
 from .commands import GameCommand
+from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
 from .decisions import DecisionResult
 from .ref_codec import encode_refs
 from ..utility.game_context import game_context
@@ -121,7 +122,13 @@ class GameCommandService:
     def in_command_context(self) -> bool:
         return int(getattr(self.game, "_command_context_depth", 0) or 0) > 0
 
-    def _maybe_queue_post_command_tool_decisions(self, command: GameCommand, result) -> bool:
+    def _maybe_queue_post_command_tool_decisions(
+        self,
+        command: GameCommand,
+        result,
+        *,
+        resolved_request=None,
+    ) -> bool:
         game = self.game
         if not bool(getattr(game, "is_authoritative", True)):
             return False
@@ -169,6 +176,9 @@ class GameCommandService:
             return True
         if _pending_not_in_progress():
             return True
+        resolved_decision_type = str(getattr(resolved_request, "decision_type", "") or "")
+        if resolved_decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
+            return False
         if int(getattr(game, "_pre_attack_reaction_window_depth", 0) or 0) > 0:
             return False
         return _queue_for_players(current_then_others, reactions_only=False)
@@ -178,6 +188,14 @@ class GameCommandService:
         from .command_dispatcher import dispatch_command
 
         game = self.game
+        resolved_request = None
+        if str(getattr(command, "kind", "") or "") == CMD_RESOLVE_DECISION:
+            payload = getattr(command, "payload", {}) or {}
+            decision_id = str(payload.get("decision_id", "") or "")
+            queue = getattr(game, "decision_queue", None)
+            get_request = getattr(queue, "get", None) if queue is not None else None
+            if decision_id and callable(get_request):
+                resolved_request = get_request(decision_id)
         with game_context(game):
             result = dispatch_command(game, command)
         event_log = getattr(game, "event_log", None)
@@ -220,7 +238,7 @@ class GameCommandService:
         if callable(post_command_fn) and not is_default_wrapper:
             post_command_fn(command, result)
         else:
-            self._maybe_queue_post_command_tool_decisions(command, result)
+            self._maybe_queue_post_command_tool_decisions(command, result, resolved_request=resolved_request)
         return result
 
     def process_command_queue(self, *, limit: int | None = None):

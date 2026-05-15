@@ -98,6 +98,27 @@ def test_unit_entries_runtime_cache_reuses_engagement_between_viewers(monkeypatc
     assert engagement_calls == ["unit:p1", "unit:p2"]
 
 
+def test_unit_entries_runtime_cache_reuses_view_payload(monkeypatch) -> None:
+    unit = _unit("unit:p1", 0.0, 0.0)
+    player = SimpleNamespace(id="player:p1", army=SimpleNamespace(units=[unit]))
+    game = SimpleNamespace(
+        players=[player],
+        map=SimpleNamespace(objectives=[]),
+        _state_blob_units_runtime_cache={},
+    )
+
+    first = state_blob_units.unit_entries(game, viewer_id=str(player.id), include_hidden=False)
+
+    def unexpected_model_positions(*_args, **_kwargs):
+        raise AssertionError("cached unit entries should not rebuild model positions")
+
+    monkeypatch.setattr(state_blob_units, "model_position_entries", unexpected_model_positions)
+    second = state_blob_units.unit_entries(game, viewer_id=str(player.id), include_hidden=False)
+
+    assert second == first
+    assert second is not first
+
+
 def test_unit_entries_export_model_positions_not_unit_centroids() -> None:
     long_unit = _unit_with_models(
         "unit:long",

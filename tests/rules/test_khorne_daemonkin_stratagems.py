@@ -180,6 +180,40 @@ class TestKhorneDaemonkinStratagems(unittest.TestCase):
         self.assertEqual(len(bl_unit.models_lost), 0)
         self.assertEqual(len(bl_unit.models), 4)
 
+    def test_daemontide_tool_action_context_reuses_support_scan_until_loss_state_changes(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        we_unit = _make_unit("World Eaters", faction_keywords=["WORLD EATERS"])
+        bl_unit = _make_unit("Bloodletters", keywords=["BLOOD LEGIONS", "INFANTRY"])
+        army1.add_unit(we_unit)
+        army1.add_unit(bl_unit)
+        we_unit.deployed = True
+        bl_unit.deployed = True
+        we_unit.models[0].set_location(5.0, 5.0, 0.0, 0.0)
+        bl_unit.models[0].set_location(9.0, 5.0, 0.0, 0.0)
+        game.map.place_unit(we_unit)
+        game.map.place_unit(bl_unit)
+        bl_unit.models_lost = [copy.deepcopy(bl_unit.models[0])]
+        game.current_player_index = 0
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+
+        calls = {"supports": 0}
+
+        def counted_supports(_unit):
+            calls["supports"] += 1
+            return [bl_unit]
+
+        p1.stratagems._we_khorne_daemonkin_daemontide_supports = counted_supports
+
+        first = p1.stratagems._we_khorne_daemonkin_tool_action_context("DAEMONTIDE")
+        second = p1.stratagems._we_khorne_daemonkin_tool_action_context("DAEMONTIDE")
+        self.assertEqual(first["candidates"], second["candidates"])
+        self.assertEqual(calls["supports"], 1)
+
+        bl_unit.models_lost.append(copy.deepcopy(bl_unit.models[0]))
+        third = p1.stratagems._we_khorne_daemonkin_tool_action_context("DAEMONTIDE")
+        self.assertTrue(third["candidates"])
+        self.assertEqual(calls["supports"], 2)
+
     def test_blessing_of_burning_blood_sets_invulnerable(self):
         from warhammer40k_ai.units.wargear import WargearProfile
 

@@ -425,3 +425,23 @@ def test_overwatch_filtered_for_wargear_no_overwatch():
 
     manager._maybe_queue_overwatch(moving_unit, action="charge", when="start")
     assert manager._pending_reactions == []
+
+
+def test_headless_overwatch_candidate_check_skips_full_los_validation():
+    from warhammer40k_ai.rules.stratagems import StratagemManager
+
+    profile = SimpleNamespace(_id="profile", name="Main")
+    wargear = SimpleNamespace(_id="weapon", is_ranged=lambda: True, profiles={"main": profile})
+    model = SimpleNamespace(_id="model", is_alive=True, wargear=[wargear])
+    shooter = SimpleNamespace(_id="shooter", models=[model], get_attached_unit_models=lambda: [model])
+    target = SimpleNamespace(_id="target")
+    game = SimpleNamespace(
+        _headless_disable_generic_tool_decisions=False,
+        _setup_reactive_can_shoot_target=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("headless overwatch precheck should not run LOS validation")
+        ),
+    )
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = game
+
+    assert manager._unit_can_fire_overwatch_at_enemy(shooter, target)

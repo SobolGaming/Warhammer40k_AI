@@ -2426,6 +2426,9 @@ class StratagemManager(
         self._skipped_tool_action_signatures: set[str] = set()
         self._tool_action_probe_diagnostics: List[Dict[str, Any]] = []
         self._tool_action_probe_diagnostic_keys: set[str] = set()
+        self._tool_action_specs_cache: Dict[tuple[Any, ...], tuple[Dict[str, Any], ...]] = {}
+        self._grenade_phase_context_cache: Dict[tuple[Any, ...], Dict[str, Any]] = {}
+        self._grenade_geometry_cache: Dict[tuple[Any, ...], Any] = {}
 
     def _unit_cannot_be_target_of_stratagem(self, unit: Any) -> bool:
         return _unit_cannot_be_target_of_stratagem(unit)
@@ -2475,6 +2478,8 @@ class StratagemManager(
             self._skipped_tool_action_signatures = set(
                 getattr(self, "_skipped_tool_action_signatures", []) or []
             )
+        self._ensure_tool_action_runtime_caches()
+        self._clear_tool_action_runtime_caches()
         self._defensive_reaction_cache.clear()
         self._charge_melee_ap_cache.clear()
         self._consolidate_move_cache.clear()
@@ -3777,6 +3782,221 @@ class StratagemManager(
                 continue
             base[key_text] = value
         return base
+
+    def _ensure_tool_action_runtime_caches(self) -> None:
+        if not isinstance(getattr(self, "_tool_action_specs_cache", None), dict):
+            self._tool_action_specs_cache = {}
+        if not isinstance(getattr(self, "_grenade_phase_context_cache", None), dict):
+            self._grenade_phase_context_cache = {}
+        if not isinstance(getattr(self, "_grenade_geometry_cache", None), dict):
+            self._grenade_geometry_cache = {}
+
+    def _clear_tool_action_runtime_caches(self) -> None:
+        self._ensure_tool_action_runtime_caches()
+        self._tool_action_specs_cache.clear()
+        self._grenade_phase_context_cache.clear()
+        self._grenade_geometry_cache.clear()
+
+    @staticmethod
+    def _cache_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return int(default)
+
+    @staticmethod
+    def _cache_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return round(float(value), 4)
+        except (TypeError, ValueError):
+            return round(float(default), 4)
+
+    @staticmethod
+    def _cache_entity_id(value: Any) -> str:
+        if value is None:
+            return ""
+        entity_id = str(getattr(value, "id", None) or getattr(value, "_id", None) or "")
+        if entity_id:
+            return entity_id
+        return StratagemManager._tool_action_sort_key(value)
+
+    @staticmethod
+    def _cache_alive_flag(value: Any) -> bool:
+        alive_attr = getattr(value, "is_alive", None)
+        if callable(alive_attr):
+            return bool(alive_attr())
+        return bool(getattr(value, "is_alive", True))
+
+    def _cache_map_generation(self) -> int | None:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        raw_generation = getattr(game_map, "state_generation", None) if game_map is not None else None
+        if raw_generation is None:
+            return None
+        return self._cache_int(raw_generation, default=0)
+
+    @staticmethod
+    def _bounded_cache_put(cache: Dict[Any, Any], key: Any, value: Any, *, limit: int) -> None:
+        if key not in cache and len(cache) >= int(limit):
+            cache.clear()
+        cache[key] = value
+
+    @staticmethod
+    def _copy_tool_action_specs(specs: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        copied: List[Dict[str, Any]] = []
+        for spec in list(specs or []):
+            if not isinstance(spec, dict):
+                continue
+            spec_copy = dict(spec)
+            spec_copy["payload"] = dict(spec.get("payload", {}) or {})
+            copied.append(spec_copy)
+        return copied
+
+    @staticmethod
+    def _copy_grenade_context(context: Dict[str, Any]) -> Dict[str, Any]:
+        enemy_by_unit = {
+            str(unit_id): list(enemies or [])
+            for unit_id, enemies in dict((context or {}).get("enemy_candidates_by_unit") or {}).items()
+        }
+        return {
+            "candidates": list((context or {}).get("candidates") or []),
+            "enemy_candidates_by_unit": enemy_by_unit,
+            "enemy_candidates": list((context or {}).get("enemy_candidates") or []),
+        }
+
+    def _tool_action_cache_units(self) -> List[Any]:
+        units_by_id: Dict[str, Any] = {}
+        game = getattr(self, "game", None)
+        players = list(getattr(game, "players", []) or [])
+        if self.player is not None and self.player not in players:
+            players.append(self.player)
+        for player in players:
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            for unit in list(getattr(army, "units", []) or []):
+                get_root = getattr(unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else unit
+                if root is None:
+                    continue
+                unit_id = self._cache_entity_id(root)
+                if unit_id:
+                    units_by_id.setdefault(unit_id, root)
+        game_map = getattr(game, "map", None) if game is not None else None
+        for unit in list(getattr(game_map, "units", []) or []):
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            unit_id = self._cache_entity_id(root)
+            if unit_id:
+                units_by_id.setdefault(unit_id, root)
+        return [units_by_id[key] for key in sorted(units_by_id.keys())]
+
+    def _tool_action_model_state_signature(self, model: Any, *, include_position: bool) -> tuple[Any, ...]:
+        model_id = self._cache_entity_id(model)
+        wounds = getattr(model, "wounds", getattr(model, "_wounds", None))
+        base_wounds = getattr(model, "_base_wounds", None)
+        if include_position:
+            pose = self._grenade_model_pose_signature(model)
+        else:
+            pose = ()
+        return (
+            model_id,
+            self._cache_alive_flag(model),
+            self._cache_int(wounds, default=0) if wounds is not None else "",
+            self._cache_int(base_wounds, default=0) if base_wounds is not None else "",
+            pose,
+        )
+
+    def _tool_action_unit_state_signature(self, unit: Any, *, include_model_positions: bool) -> tuple[Any, ...]:
+        round_state = getattr(unit, "round_state", None)
+        round_flags = tuple(
+            bool(getattr(round_state, attr, False))
+            for attr in (
+                "advanced_this_round",
+                "shot_this_round",
+                "shot_this_phase",
+                "fell_back_this_round",
+                "moved_this_round",
+                "moved_this_phase",
+                "attempted_charge_this_round",
+                "charged_this_round",
+                "fought_this_phase",
+                "eligible_to_fight_this_phase",
+                "embarked_this_round",
+                "disembarked_this_round",
+            )
+        )
+        models = list(getattr(unit, "models", []) or [])
+        model_signatures = tuple(
+            self._tool_action_model_state_signature(model, include_position=include_model_positions)
+            for model in sorted(models, key=self._cache_entity_id)
+        )
+        special_rules = getattr(unit, "special_rules", None)
+        return (
+            self._cache_entity_id(unit),
+            self._cache_alive_flag(unit),
+            bool(getattr(unit, "deployed", False)),
+            str(getattr(unit, "reserve_status", "") or ""),
+            round_flags,
+            len(list(getattr(unit, "models_lost", []) or [])),
+            self._tool_action_stable_context_key(special_rules) if isinstance(special_rules, dict) else "",
+            model_signatures,
+        )
+
+    def _tool_action_runtime_state_signature(self) -> tuple[Any, ...]:
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        map_generation = self._cache_map_generation()
+        include_model_positions = map_generation is None
+        units_signature = tuple(
+            self._tool_action_unit_state_signature(unit, include_model_positions=include_model_positions)
+            for unit in self._tool_action_cache_units()
+        )
+        available_signature = tuple(
+            sorted(
+                (
+                    str(getattr(stratagem, "id", "") or ""),
+                    str(getattr(stratagem, "name", "") or ""),
+                    self._cache_int(getattr(stratagem, "cp_cost", 0), default=0),
+                )
+                for stratagem in list(getattr(self, "available", []) or [])
+            )
+        )
+        return (
+            str(self._resolved_phase_name() or ""),
+            self._cache_int(getattr(game, "turn", 0), default=0) if game is not None else 0,
+            self._cache_entity_id(self.player),
+            self._cache_entity_id(active_player),
+            self._cache_int(getattr(self.player, "command_points", 0), default=0) if self.player is not None else 0,
+            map_generation,
+            available_signature,
+            tuple(sorted(str(name) for name in set(getattr(self, "_used_stratagems_this_phase", set()) or set()))),
+            tuple(
+                sorted(
+                    (str(key), bool(value))
+                    for key, value in dict(getattr(self, "_used_once_per_battle", {}) or {}).items()
+                )
+            ),
+            tuple(
+                sorted(
+                    (str(key), self._cache_int(value, default=0))
+                    for key, value in dict(getattr(self, "_used_battle_round", {}) or {}).items()
+                )
+            ),
+            tuple(sorted(str(name) for name in set(getattr(self, "_grenade_units_this_phase", set()) or set()))),
+            self._tool_action_stable_context_key(getattr(self, "_stratagem_use_exceptions_this_phase", []) or []),
+            units_signature,
+        )
+
+    def _tool_action_specs_cache_key(self, *, reactions_only: bool) -> tuple[Any, ...] | None:
+        if reactions_only:
+            return None
+        return ("tool_action_specs", self._tool_action_runtime_state_signature())
+
+    def _cache_tool_action_specs(self, key: tuple[Any, ...], specs: List[Dict[str, Any]]) -> None:
+        self._ensure_tool_action_runtime_caches()
+        copied = tuple(self._copy_tool_action_specs(specs))
+        self._bounded_cache_put(self._tool_action_specs_cache, key, copied, limit=16)
 
     @staticmethod
     def _canonical_phase_name(phase_value: Any) -> str:
@@ -5228,6 +5448,7 @@ class StratagemManager(
             {
                 "label": label,
                 "payload": payload,
+                "_prevalidated": True,
             }
         )
 
@@ -5281,6 +5502,9 @@ class StratagemManager(
                 continue
             stratagem = self.get_by_name(tool_name)
             if stratagem is None:
+                continue
+            if bool(spec.get("_prevalidated", False)):
+                filtered.append(spec)
                 continue
             validation = validator.validate_serialized_payload(stratagem, payload)
             if validation.issues:
@@ -6040,27 +6264,41 @@ class StratagemManager(
             if pending_requests:
                 return None
 
-        items = [
-            item
-            for item in list(self.get_phase_stratagem_items() or [])
-            if bool(item.get("available", False))
-            and not self._tool_action_is_explicitly_supported(item)
-            and (not reactions_only or bool(item.get("is_reaction", False)))
-        ]
-        if not items:
-            return None
-
+        cache_key = self._tool_action_specs_cache_key(reactions_only=bool(reactions_only))
         specs: List[Dict[str, Any]] = []
-        for item in items:
-            stratagem = self.get_by_name(str(item.get("name", "") or ""))
-            if stratagem is None:
-                continue
-            raw_specs = self._build_tool_action_specs_for_item(item)
-            filtered_specs = self._filter_legal_tool_action_specs(raw_specs)
-            empty_specs_are_valid = self._tool_action_empty_specs_are_valid(item, stratagem)
-            if not filtered_specs:
-                continue
-            specs.extend(filtered_specs)
+        cache_hit = False
+        if cache_key is not None:
+            self._ensure_tool_action_runtime_caches()
+            cached_specs = self._tool_action_specs_cache.get(cache_key)
+            if cached_specs is not None:
+                specs = self._copy_tool_action_specs(cached_specs)
+                cache_hit = True
+
+        if not cache_hit:
+            items = [
+                item
+                for item in list(self.get_phase_stratagem_items() or [])
+                if bool(item.get("available", False))
+                and not self._tool_action_is_explicitly_supported(item)
+                and (not reactions_only or bool(item.get("is_reaction", False)))
+            ]
+            if not items:
+                if cache_key is not None:
+                    self._cache_tool_action_specs(cache_key, [])
+                return None
+
+            for item in items:
+                stratagem = self.get_by_name(str(item.get("name", "") or ""))
+                if stratagem is None:
+                    continue
+                raw_specs = self._build_tool_action_specs_for_item(item)
+                filtered_specs = self._filter_legal_tool_action_specs(raw_specs)
+                empty_specs_are_valid = self._tool_action_empty_specs_are_valid(item, stratagem)
+                if not filtered_specs:
+                    continue
+                specs.extend(filtered_specs)
+            if cache_key is not None:
+                self._cache_tool_action_specs(cache_key, specs)
         if not specs:
             return None
 
@@ -8010,7 +8248,83 @@ class StratagemManager(
             threshold = min(int(threshold), int(max(2, member_threshold)))
         return int(max(2, threshold))
 
-    def _grenade_unit_is_eligible(self, unit) -> bool:
+    def _grenade_model_pose_signature(self, model: Any) -> tuple[float, float, float, float]:
+        get_location = getattr(model, "get_location", None)
+        if callable(get_location):
+            location = list(get_location() or ())
+            if len(location) >= 4:
+                return tuple(self._cache_float(value) for value in location[:4])  # type: ignore[return-value]
+        base = getattr(model, "model_base", None)
+        return (
+            self._cache_float(getattr(base, "x", getattr(model, "x", 0.0))),
+            self._cache_float(getattr(base, "y", getattr(model, "y", 0.0))),
+            self._cache_float(getattr(base, "z", getattr(model, "z", 0.0))),
+            self._cache_float(getattr(base, "facing", getattr(model, "facing", 0.0))),
+        )
+
+    def _grenade_unit_geometry_signature(self, unit: Any) -> tuple[Any, ...]:
+        get_models = getattr(unit, "get_models_for_collision", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        return (
+            self._cache_entity_id(unit),
+            self._cache_alive_flag(unit),
+            bool(getattr(unit, "deployed", False)),
+            tuple(
+                self._tool_action_model_state_signature(model, include_position=True)
+                for model in sorted(models, key=self._cache_entity_id)
+            ),
+        )
+
+    def _grenade_pair_cache_key(self, kind: str, unit: Any, enemy_unit: Any, *extra: Any) -> tuple[Any, ...]:
+        map_generation = self._cache_map_generation()
+        if map_generation is None:
+            geometry_key: Any = (
+                self._grenade_unit_geometry_signature(unit),
+                self._grenade_unit_geometry_signature(enemy_unit),
+            )
+        else:
+            geometry_key = map_generation
+        return (
+            str(kind),
+            self._cache_entity_id(unit),
+            self._cache_entity_id(enemy_unit),
+            geometry_key,
+            tuple(extra),
+        )
+
+    def _grenade_board_cache_key(self, kind: str, enemy_unit: Any | None = None) -> tuple[Any, ...]:
+        map_generation = self._cache_map_generation()
+        if map_generation is None:
+            geometry_key: Any = tuple(self._grenade_unit_geometry_signature(unit) for unit in self._tool_action_cache_units())
+        else:
+            geometry_key = map_generation
+        return (str(kind), self._cache_entity_id(enemy_unit), geometry_key)
+
+    def _grenade_pair_engaged(self, unit: Any, enemy_unit: Any) -> bool:
+        if unit is None or enemy_unit is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return False
+        self._ensure_tool_action_runtime_caches()
+        key = self._grenade_pair_cache_key("engagement", unit, enemy_unit)
+        if key not in self._grenade_geometry_cache:
+            engaged = bool(game_map.is_within_engagement_range(unit, enemy_unit))
+            self._bounded_cache_put(self._grenade_geometry_cache, key, engaged, limit=2048)
+        return bool(self._grenade_geometry_cache.get(key, False))
+
+    def _grenade_unit_distance(self, unit: Any, enemy_unit: Any) -> float:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return 0.0
+        self._ensure_tool_action_runtime_caches()
+        key = self._grenade_pair_cache_key("distance", unit, enemy_unit)
+        if key not in self._grenade_geometry_cache:
+            distance = float(game_map.get_distance_between_units(unit, enemy_unit) or 0.0)
+            self._bounded_cache_put(self._grenade_geometry_cache, key, distance, limit=2048)
+        return float(self._grenade_geometry_cache.get(key, 0.0) or 0.0)
+
+    def _grenade_unit_is_eligible(self, unit, *, unit_engaged_enemy_ids: set[str] | None = None) -> bool:
         if unit is None:
             return False
         alive_attr = getattr(unit, "is_alive", None)
@@ -8043,6 +8357,8 @@ class StratagemManager(
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is None:
             return True
+        if unit_engaged_enemy_ids is not None:
+            return not bool(unit_engaged_enemy_ids)
         for enemy in list(game_map.get_enemy_units(unit) or []):
             if enemy is None:
                 continue
@@ -8052,7 +8368,7 @@ class StratagemManager(
                     continue
             elif not bool(getattr(enemy, "is_alive", True)):
                 continue
-            if game_map.is_within_engagement_range(unit, enemy):
+            if self._grenade_pair_engaged(unit, enemy):
                 return False
         return True
 
@@ -8065,7 +8381,12 @@ class StratagemManager(
         army = self.player.get_army()
         if army is None:
             return False
+        self._ensure_tool_action_runtime_caches()
+        cache_key = self._grenade_board_cache_key("friendly_engagement", enemy_unit)
+        if cache_key in self._grenade_geometry_cache:
+            return bool(self._grenade_geometry_cache.get(cache_key, False))
         seen: set[str] = set()
+        engaged = False
         for friendly in list(getattr(army, "units", []) or []):
             get_root = getattr(friendly, "get_attached_unit_root", None)
             root = get_root() if callable(get_root) else friendly
@@ -8084,9 +8405,11 @@ class StratagemManager(
                 continue
             if not bool(getattr(root, "deployed", False)):
                 continue
-            if game_map.is_within_engagement_range(root, enemy_unit):
-                return True
-        return False
+            if self._grenade_pair_engaged(root, enemy_unit):
+                engaged = True
+                break
+        self._bounded_cache_put(self._grenade_geometry_cache, cache_key, engaged, limit=2048)
+        return bool(engaged)
 
     def _grenade_enemy_visible_from_unit(self, unit, enemy_unit) -> bool:
         if unit is None or enemy_unit is None:
@@ -8094,10 +8417,15 @@ class StratagemManager(
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is None:
             return True
+        self._ensure_tool_action_runtime_caches()
+        cache_key = self._grenade_pair_cache_key("visibility", unit, enemy_unit)
+        if cache_key in self._grenade_geometry_cache:
+            return bool(self._grenade_geometry_cache.get(cache_key, False))
         get_source_models = getattr(unit, "get_models_for_collision", None)
         source_models = list(get_source_models() or []) if callable(get_source_models) else list(getattr(unit, "models", []) or [])
         get_enemy_models = getattr(enemy_unit, "get_models_for_collision", None)
         enemy_models = list(get_enemy_models() or []) if callable(get_enemy_models) else list(getattr(enemy_unit, "models", []) or [])
+        visible = False
         for model in list(source_models or []):
             model_alive = getattr(model, "is_alive", None)
             if callable(model_alive):
@@ -8113,8 +8441,12 @@ class StratagemManager(
                 elif not bool(getattr(target_model, "is_alive", True)):
                     continue
                 if game_map.can_model_see_model(model, target_model):
-                    return True
-        return False
+                    visible = True
+                    break
+            if visible:
+                break
+        self._bounded_cache_put(self._grenade_geometry_cache, cache_key, visible, limit=2048)
+        return bool(visible)
 
     def _grenade_enemy_within_range(self, unit, enemy_unit, *, max_range: float) -> bool:
         if unit is None or enemy_unit is None:
@@ -8122,7 +8454,7 @@ class StratagemManager(
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is None:
             return True
-        distance = float(game_map.get_distance_between_units(unit, enemy_unit) or 0.0)
+        distance = self._grenade_unit_distance(unit, enemy_unit)
         return distance <= float(max_range)
 
     def _grenade_extended_range_profile(self, unit) -> tuple[bool, float, str]:
@@ -8147,8 +8479,16 @@ class StratagemManager(
         unit,
         *,
         engaged_enemy_ids: set[str] | None = None,
+        unit_engaged_enemy_ids: set[str] | None = None,
     ) -> List[Any]:
-        if not self._grenade_unit_is_eligible(unit):
+        if unit_engaged_enemy_ids is None:
+            unit_is_eligible = self._grenade_unit_is_eligible(unit)
+        else:
+            unit_is_eligible = self._grenade_unit_is_eligible(
+                unit,
+                unit_engaged_enemy_ids=unit_engaged_enemy_ids,
+            )
+        if not unit_is_eligible:
             return []
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is None:
@@ -8193,6 +8533,11 @@ class StratagemManager(
         army = self.player.get_army()
         if army is None:
             return {}
+        self._ensure_tool_action_runtime_caches()
+        cache_key = ("grenade_phase_action_context", self._tool_action_runtime_state_signature())
+        cached_context = self._grenade_phase_context_cache.get(cache_key)
+        if cached_context is not None:
+            return self._copy_grenade_context(cached_context)
         candidates: List[Any] = []
         enemy_candidates_by_unit: Dict[str, List[Any]] = {}
         seen: set[str] = set()
@@ -8210,24 +8555,29 @@ class StratagemManager(
             friendly_roots.append(root)
 
         engaged_enemy_ids: set[str] = set()
+        engaged_enemy_ids_by_unit: Dict[str, set[str]] = {}
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is not None:
             for root in list(friendly_roots or []):
+                root_id = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "")
                 for enemy in list(game_map.get_enemy_units(root) or []):
                     if enemy is None:
                         continue
                     enemy_id = str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or "")
-                    if enemy_id and enemy_id in engaged_enemy_ids:
+                    if enemy_id and root_id and enemy_id in engaged_enemy_ids_by_unit.get(root_id, set()):
                         continue
-                    if game_map.is_within_engagement_range(root, enemy):
+                    if self._grenade_pair_engaged(root, enemy):
                         if enemy_id:
                             engaged_enemy_ids.add(enemy_id)
+                            if root_id:
+                                engaged_enemy_ids_by_unit.setdefault(root_id, set()).add(enemy_id)
 
         for root in list(friendly_roots or []):
             uid = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "")
             enemy_candidates = self._grenade_enemy_candidates_for_unit(
                 root,
                 engaged_enemy_ids=engaged_enemy_ids,
+                unit_engaged_enemy_ids=engaged_enemy_ids_by_unit.get(uid, set()),
             )
             if not enemy_candidates:
                 continue
@@ -8246,11 +8596,18 @@ class StratagemManager(
                     seen_enemy.add(enemy_id)
                 enemy_union.append(enemy)
         enemy_union.sort(key=lambda enemy: str(get_entity_id(enemy) or getattr(enemy, "id", getattr(enemy, "_id", "")) or ""))
-        return {
+        context = {
             "candidates": candidates,
             "enemy_candidates_by_unit": enemy_candidates_by_unit,
             "enemy_candidates": enemy_union,
         }
+        self._bounded_cache_put(
+            self._grenade_phase_context_cache,
+            cache_key,
+            self._copy_grenade_context(context),
+            limit=32,
+        )
+        return self._copy_grenade_context(context)
 
     def _context_enemy_candidates_for_unit(self, context: Dict[str, Any], unit: Any) -> List[Any]:
         if unit is None:
@@ -8282,6 +8639,21 @@ class StratagemManager(
         if not units:
             return False
         explicit_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_by_unit = dict(context.get("enemy_candidates_by_unit") or {})
+        if explicit_enemy is None and enemy_by_unit:
+            for unit in list(units or []):
+                unit_id = self._tool_action_sort_key(unit)
+                if list(enemy_by_unit.get(unit_id) or []):
+                    return True
+            return False
+        if explicit_enemy is not None and enemy_by_unit:
+            explicit_enemy_id = self._tool_action_sort_key(explicit_enemy)
+            for unit in list(units or []):
+                unit_id = self._tool_action_sort_key(unit)
+                for enemy in list(enemy_by_unit.get(unit_id) or []):
+                    if self._tool_action_sort_key(enemy) == explicit_enemy_id:
+                        return True
+            return False
         for unit in list(units or []):
             enemies = [explicit_enemy] if explicit_enemy is not None else self._context_enemy_candidates_for_unit(context, unit)
             for enemy in list(enemies or []):
@@ -14121,6 +14493,7 @@ class StratagemManager(
             self._skipped_tool_action_signatures.clear()
         except Exception:
             raise
+        self._clear_tool_action_runtime_caches()
         try:
             self._ec_rapid_destroyed_enemy_this_phase().clear()
         except Exception:
@@ -22379,6 +22752,8 @@ class StratagemManager(
     def _unit_can_fire_overwatch_at_enemy(self, unit: Any, enemy_unit: Any) -> bool:
         if unit is None or enemy_unit is None or self.game is None:
             return False
+        if self._use_fast_headless_overwatch_candidate_check():
+            return self._unit_has_ranged_overwatch_potential(unit)
         setup_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None)
         if callable(setup_can_shoot):
             return bool(setup_can_shoot(unit, enemy_unit))
@@ -22389,6 +22764,51 @@ class StratagemManager(
         if not callable(can_shoot):
             return False
         return bool(can_shoot(enemy_unit, game_map))
+
+    def _use_fast_headless_overwatch_candidate_check(self) -> bool:
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        if bool(getattr(game, "_headless_fast_overwatch_candidates", False)):
+            return True
+        if hasattr(game, "_headless_disable_generic_tool_decisions"):
+            return True
+        hub = getattr(game, "decision_controller_hub", None)
+        controllers = getattr(hub, "_controllers", None)
+        if not isinstance(controllers, list):
+            return False
+        for controller in controllers:
+            cls = controller.__class__
+            if cls.__name__ == "HeadlessPolicyDecisionController" and cls.__module__.endswith(
+                ".headless_policy_controller"
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _unit_has_ranged_overwatch_potential(unit: Any) -> bool:
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        for model in models:
+            alive_value = getattr(model, "is_alive", True)
+            try:
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                alive = True
+            if not alive:
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+                if dict(getattr(wargear, "profiles", {}) or {}):
+                    return True
+        return False
 
     @staticmethod
     def _is_fire_overwatch_trigger_window(action: str, when: str) -> bool:
@@ -24444,10 +24864,34 @@ class StratagemManager(
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "shooting phase":
             return False
-        context = dict(self._grenade_phase_action_context() or {})
         unit = self._can_use_context_root(self._can_use_context_unit(kwargs))
         if unit is None:
             return False
+        enemy_unit = self._can_use_context_enemy(kwargs, unit=unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if enemy_unit is not None and game_map is not None:
+            if not self._grenade_unit_is_eligible(unit):
+                return False
+            enemy_alive = getattr(enemy_unit, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    return False
+            elif not bool(getattr(enemy_unit, "is_alive", True)):
+                return False
+            if self._grenade_enemy_within_friendly_engagement(enemy_unit):
+                return False
+            within_base_range = self._grenade_enemy_within_range(unit, enemy_unit, max_range=8.0)
+            gheistskull_available, gheistskull_range, _gheistskull_source = self._grenade_extended_range_profile(unit)
+            within_extended_range = (
+                bool(gheistskull_available)
+                and not within_base_range
+                and self._grenade_enemy_within_range(unit, enemy_unit, max_range=gheistskull_range)
+            )
+            if not within_base_range and not within_extended_range:
+                return False
+            return bool(self._grenade_enemy_visible_from_unit(unit, enemy_unit))
+
+        context = dict(self._grenade_phase_action_context() or {})
         candidates = list(context.get("candidates") or [])
         selected_unit = None
         for candidate in candidates:

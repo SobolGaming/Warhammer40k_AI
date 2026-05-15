@@ -23,6 +23,7 @@ REPLAY_FORMAT_ID = "wh40k_replay_sqlite_v1"
 REPLAY_FORMAT_VERSION = 1
 REPLAY_RECORDING_GROUP = "decision_replay_recording"
 DEFAULT_KEYFRAME_INTERVAL = 25
+REPLAY_COMPRESSION_LEVEL = 1
 
 
 def _utc_now() -> str:
@@ -54,11 +55,18 @@ def _json_safe(value: Any) -> Any:
 
 
 def _canonical_json(value: Any) -> str:
-    return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except (TypeError, ValueError):
+        return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def _pack_json(value: Any) -> bytes:
-    return zlib.compress(_canonical_json(value).encode("utf-8"), level=6)
+    return zlib.compress(_canonical_json(value).encode("utf-8"), level=REPLAY_COMPRESSION_LEVEL)
+
+
+def _pack_canonical_json_text(value: str) -> bytes:
+    return zlib.compress(str(value or "").encode("utf-8"), level=REPLAY_COMPRESSION_LEVEL)
 
 
 def _unpack_json(blob: bytes) -> Any:
@@ -139,24 +147,43 @@ class ReplayStoreRecorder:
         self.last_decision_idx = 0
         self._pending_keyframes: dict[str, int] = {}
         self._pending_command_events: set[str] = set()
+        self._conn: sqlite3.Connection | None = None
         self._ensure_schema()
         self._refresh_offsets()
 
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _open_connection(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=DELETE")
         conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if self._conn is None:
+            self._conn = self._open_connection()
+        conn = self._conn
         try:
             yield conn
             conn.commit()
         except sqlite3.Error:
             conn.rollback()
             raise
-        finally:
-            conn.close()
+
+    def close(self) -> None:
+        conn = self._conn
+        self._conn = None
+        if conn is None:
+            return
+        conn.commit()
+        conn.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except sqlite3.Error:
+            pass
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
@@ -311,8 +338,9 @@ class ReplayStoreRecorder:
         except RuntimeError:
             # Snapshot serialization is gated to battle round >= 1.
             return False
-        snapshot_blob = _pack_json(snapshot)
-        snapshot_hash = hashlib.sha256(_canonical_json(snapshot).encode("utf-8")).hexdigest()
+        snapshot_json = _canonical_json(snapshot)
+        snapshot_blob = _pack_canonical_json_text(snapshot_json)
+        snapshot_hash = hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -494,13 +522,6 @@ class ReplayStoreRecorder:
                 self._pending_keyframes[decision_id] = int(decision_idx)
             else:
                 self._write_keyframe(game, decision_idx=decision_idx, event_id=int(self.last_event_id))
-        self._set_meta(
-            {
-                "updated_at": _utc_now(),
-                "last_decision_idx": int(self.last_decision_idx),
-                "last_event_id": int(self.last_event_id),
-            }
-        )
         return decision_idx
 
     def finalize_resolution(self, game: Game, request: DecisionRequest | None) -> None:
@@ -1709,6 +1730,9 @@ def disable_decision_replay_recording(game: Game) -> None:
     flush_runtime_tail = getattr(recorder, "flush_runtime_tail", None)
     if callable(flush_runtime_tail):
         flush_runtime_tail(game, write_keyframe=True)
+    close_recorder = getattr(recorder, "close", None)
+    if callable(close_recorder):
+        close_recorder()
     event_system = getattr(game, "event_system", None)
     if event_system is not None:
         event_system.unsubscribe_group(REPLAY_RECORDING_GROUP)

@@ -94,6 +94,7 @@ _HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
     "normal_move_redeploy_9h",
 }
 
+_DEFAULT_SHOOTING_TARGET_PROBE_LIMIT = 8
 _STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE = 1e-4
 _UUID_VALUE_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -1493,6 +1494,194 @@ class HeadlessPolicyDecisionController(DecisionController):
             cls._profile_damage_score(profile, target_unit),
         )
 
+    @classmethod
+    def _ranked_shooting_targets_for_profile(
+        cls,
+        profile: object,
+        targets: list[object],
+    ) -> list[object]:
+        rows: list[tuple[tuple[float, float, float, float, str], object]] = []
+        for target in list(targets or []):
+            target_id = str(maybe_entity_id(target) or "")
+            if not target_id:
+                continue
+            accuracy = cls._profile_accuracy_key(profile, target)
+            rows.append(
+                (
+                    (
+                        -float(accuracy[0]),
+                        -float(accuracy[1]),
+                        -float(accuracy[2]),
+                        -float(accuracy[3]),
+                        target_id,
+                    ),
+                    target,
+                )
+            )
+        rows.sort(key=lambda row: row[0])
+        return [target for _key, target in rows]
+
+    @staticmethod
+    def _default_shooting_target_probe_limit(
+        game: object | None,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+    ) -> int:
+        raw_value = payload.get(
+            "target_probe_limit",
+            context.get(
+                "target_probe_limit",
+                getattr(game, "_headless_shooting_target_probe_limit", _DEFAULT_SHOOTING_TARGET_PROBE_LIMIT)
+                if game is not None
+                else _DEFAULT_SHOOTING_TARGET_PROBE_LIMIT,
+            ),
+        )
+        try:
+            return max(0, int(raw_value or 0))
+        except (TypeError, ValueError):
+            return int(_DEFAULT_SHOOTING_TARGET_PROBE_LIMIT)
+
+    @classmethod
+    def _cache_freeze(cls, value: object) -> object:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return tuple(
+                (str(key), cls._cache_freeze(inner))
+                for key, inner in sorted(value.items(), key=lambda item: str(item[0]))
+            )
+        if isinstance(value, (list, tuple)):
+            return tuple(cls._cache_freeze(inner) for inner in value)
+        if isinstance(value, set):
+            return tuple(sorted((cls._cache_freeze(inner) for inner in value), key=lambda item: str(item)))
+        entity_id = maybe_entity_id(value)
+        if entity_id:
+            return ("entity", str(entity_id))
+        return str(value)
+
+    @classmethod
+    def _shooting_cache_model_signature(cls, model: object) -> tuple:
+        base = getattr(model, "model_base", None)
+        return (
+            str(maybe_entity_id(model) or id(model)),
+            cls._alive(model),
+            getattr(model, "wounds", None),
+            round(float(getattr(base, "x", 0.0) or 0.0), 4),
+            round(float(getattr(base, "y", 0.0) or 0.0), 4),
+            round(float(getattr(base, "z", 0.0) or 0.0), 4),
+            round(float(getattr(base, "facing", 0.0) or 0.0), 4),
+        )
+
+    @classmethod
+    def _shooting_cache_unit_signature(cls, unit: object | None) -> tuple:
+        if unit is None:
+            return ("",)
+        return (
+            str(maybe_entity_id(unit) or id(unit)),
+            cls._alive(unit),
+            bool(getattr(unit, "deployed", True)),
+            str(getattr(unit, "reserve_status", "") or ""),
+            bool(getattr(unit, "is_embarked", False)),
+            str(maybe_entity_id(getattr(unit, "embarked_in", None)) or ""),
+            int(getattr(unit, "_ability_structure_generation", 0) or 0),
+            int(getattr(unit, "_ability_activity_generation", 0) or 0),
+            tuple(cls._shooting_cache_model_signature(model) for model in list(getattr(unit, "models", []) or [])),
+        )
+
+    @classmethod
+    def _default_shooting_declarations_cache_key(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+        unit: object,
+        targets: list[object],
+    ) -> tuple:
+        game_map = getattr(game, "map", None) if game is not None else None
+        phase = getattr(game, "phase", None) if game is not None else None
+        return (
+            "default_shooting_declarations_v1",
+            id(game),
+            int(getattr(game_map, "state_generation", 0) or 0),
+            int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+            str(getattr(phase, "name", "") or ""),
+            str(getattr(request, "decision_type", "") or ""),
+            cls._default_shooting_target_probe_limit(game, payload, getattr(request, "context", {}) or {}),
+            cls._cache_freeze(getattr(request, "context", {}) or {}),
+            cls._cache_freeze(payload),
+            cls._shooting_cache_unit_signature(unit),
+            tuple(cls._shooting_cache_unit_signature(target) for target in targets),
+        )
+
+    @staticmethod
+    def _default_shooting_declarations_cache(game: object | None) -> dict | None:
+        if game is None:
+            return None
+        cache = getattr(game, "_headless_default_shooting_declarations_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(game, "_headless_default_shooting_declarations_cache", cache)
+        return cache
+
+    @staticmethod
+    def _copy_default_shooting_declarations(declarations: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [dict(row) for row in list(declarations or [])]
+
+    @classmethod
+    def _unit_has_ranged_shooting_potential(cls, game: object | None, unit: object) -> bool:
+        if unit is None:
+            return False
+        if not cls._enemy_units_for_shooting(game, unit):
+            return False
+        for model in cls._attached_alive_models(unit):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+                if dict(getattr(wargear, "profiles", {}) or {}):
+                    return True
+        return False
+
+    @staticmethod
+    def _use_fast_shooting_selection_precheck(game: object | None) -> bool:
+        if game is None:
+            return False
+        return bool(
+            getattr(game, "_headless_fast_shooting_selection_precheck", False)
+            or getattr(game, "_headless_policy_controller_attached", False)
+        )
+
+    @classmethod
+    def _unit_has_legal_shooting_declaration(cls, game: object | None, unit: object) -> bool:
+        if unit is None:
+            return False
+        game_map = getattr(game, "map", None) if game is not None else None
+        targets = cls._enemy_units_for_shooting(game, unit)
+        if not targets:
+            return False
+        for model in cls._attached_alive_models(unit):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+                for _profile_name, profile in sorted(dict(getattr(wargear, "profiles", {}) or {}).items(), key=lambda item: str(item[0])):
+                    if profile is None:
+                        continue
+                    for target in targets:
+                        if cls._shooting_profile_valid(unit, model, profile, target, game_map):
+                            return True
+        return False
+
     @staticmethod
     def _shooting_profile_valid(
         unit: object,
@@ -1559,12 +1748,19 @@ class HeadlessPolicyDecisionController(DecisionController):
             max_validation_attempts = int(payload.get("max_validation_attempts", ctx.get("max_validation_attempts", 0)) or 0)
         except (TypeError, ValueError):
             max_validation_attempts = 0
+        target_probe_limit = cls._default_shooting_target_probe_limit(game, payload, ctx)
         targets = cls._enemy_units_for_shooting(game, unit)
         if force_target_id:
             targets = [target for target in targets if str(maybe_entity_id(target) or "") == force_target_id]
+        cache_key = cls._default_shooting_declarations_cache_key(game, request, payload, unit, targets)
+        cache = cls._default_shooting_declarations_cache(game)
+        if cache is not None and cache_key in cache:
+            return cls._copy_default_shooting_declarations(cache[cache_key])
         declarations: list[dict[str, object]] = []
         validation_attempts = 0
         out_of_phase = bool(ctx.get("out_of_phase", False))
+        target_rank_cache: dict[tuple[str, str], list[object]] = {}
+        validation_cache: dict[tuple[str, str, str, str], bool] = {}
         for model in cls._attached_alive_models(unit):
             model_id = str(maybe_entity_id(model) or "")
             if not model_id:
@@ -1625,14 +1821,30 @@ class HeadlessPolicyDecisionController(DecisionController):
                                 best_key = key
                                 best_declaration = declaration
                         continue
-                    for target in targets:
+                    profile_key = (str(maybe_entity_id(profile) or id(profile)), str(profile_name or ""))
+                    ranked_targets = target_rank_cache.get(profile_key)
+                    if ranked_targets is None:
+                        ranked_targets = cls._ranked_shooting_targets_for_profile(profile, targets)
+                        target_rank_cache[profile_key] = ranked_targets
+                    probe_targets = ranked_targets[:target_probe_limit] if target_probe_limit > 0 else ranked_targets
+                    for target in probe_targets:
                         target_id = str(maybe_entity_id(target) or "")
                         if not target_id:
                             continue
                         if max_validation_attempts > 0 and validation_attempts >= max_validation_attempts:
-                            return declarations
-                        validation_attempts += 1
-                        if not cls._shooting_profile_valid(unit, model, profile, target, game_map):
+                            result = declarations
+                            if cache is not None:
+                                if cache_key not in cache and len(cache) >= 1024:
+                                    cache.clear()
+                                cache[cache_key] = cls._copy_default_shooting_declarations(result)
+                            return cls._copy_default_shooting_declarations(result)
+                        validation_key = (model_id, profile_key[0], profile_key[1], target_id)
+                        valid = validation_cache.get(validation_key)
+                        if valid is None:
+                            validation_attempts += 1
+                            valid = cls._shooting_profile_valid(unit, model, profile, target, game_map)
+                            validation_cache[validation_key] = bool(valid)
+                        if not bool(valid):
                             continue
                         accuracy_key = cls._profile_accuracy_key(profile, target)
                         key = (
@@ -1655,11 +1867,21 @@ class HeadlessPolicyDecisionController(DecisionController):
                                 declaration["firing_deck_source_model_ids"] = source_model_ids
                             best_key = key
                             best_declaration = declaration
+                            break
                 if best_declaration is not None:
                     declarations.append(best_declaration)
                     if max_declarations > 0 and len(declarations) >= max_declarations:
-                        return declarations[:max_declarations]
-        return declarations
+                        result = declarations[:max_declarations]
+                        if cache is not None:
+                            if cache_key not in cache and len(cache) >= 1024:
+                                cache.clear()
+                            cache[cache_key] = cls._copy_default_shooting_declarations(result)
+                        return cls._copy_default_shooting_declarations(result)
+        if cache is not None:
+            if cache_key not in cache and len(cache) >= 1024:
+                cache.clear()
+            cache[cache_key] = cls._copy_default_shooting_declarations(declarations)
+        return cls._copy_default_shooting_declarations(declarations)
 
     @classmethod
     def _default_firing_deck_entries(
@@ -1869,12 +2091,9 @@ class HeadlessPolicyDecisionController(DecisionController):
                 firing_deck_entries = [] if bool(getattr(unit, "_firing_deck_declared_this_phase", False)) else firing_deck_selection_entries(unit)
             if firing_deck_entries:
                 return True
-            declarations = cls._default_shooting_declarations(
-                game,
-                request,
-                {"unit_id": unit_id, "max_declarations": 1, "max_validation_attempts": 0},
-            )
-            return bool(declarations)
+            if cls._use_fast_shooting_selection_precheck(game):
+                return cls._unit_has_ranged_shooting_potential(game, unit)
+            return cls._unit_has_legal_shooting_declaration(game, unit)
 
         return True
 

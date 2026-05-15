@@ -82,6 +82,118 @@ def _terrain_cache_key(game: object) -> tuple[object, ...]:
     )
 
 
+def _objective_entity_signature(objective: object) -> tuple[object, ...]:
+    site = getattr(objective, "site", None)
+    if site is None:
+        site = getattr(objective, "objective_site", None)
+    controller = getattr(site, "controlling_player", None) if site is not None else None
+    sticky = getattr(site, "sticky_controller", None) if site is not None else None
+    return (
+        str(getattr(objective, "id", "") or getattr(objective, "objective_id", "") or ""),
+        str(getattr(site, "id", "") or ""),
+        _safe_bounds(site) if site is not None else (),
+        str(getattr(controller, "id", "") or ""),
+        str(getattr(sticky, "id", "") or ""),
+        bool(getattr(site, "removed", False)) if site is not None else False,
+        bool(getattr(site, "is_hazard", False)) if site is not None else False,
+    )
+
+
+def _objective_cache_key(game: object) -> tuple[object, ...]:
+    game_map = getattr(game, "map", None)
+    return (
+        _rules_bundle_id(game),
+        id(game_map),
+        int(getattr(game_map, "state_generation", 0) or 0),
+        tuple(_objective_entity_signature(objective) for objective in getattr(game_map, "objectives", []) or ()),
+    )
+
+
+def _mission_cache_key(game: object) -> tuple[object, ...]:
+    players = tuple(
+        str(getattr(player, "id", "") or "")
+        for player in sorted(list(getattr(game, "players", []) or []), key=lambda item: str(getattr(item, "id", "") or ""))
+    )
+    selected = tuple(sorted((str(key), str(value)) for key, value in dict(getattr(game, "selected_mission_info", {}) or {}).items()))
+    game_map = getattr(game, "map", None)
+    objective_ids = tuple(
+        sorted(str(getattr(objective, "id", "") or getattr(objective, "objective_id", "") or "") for objective in getattr(game_map, "objectives", []) or ())
+    )
+    return (
+        _rules_bundle_id(game),
+        int(getattr(game, "turn", 0) or 0),
+        str(getattr(game, "secondary_mission_mode", "") or ""),
+        selected,
+        players,
+        objective_ids,
+    )
+
+
+def _mission_zone_signature(zone: object) -> tuple[object, ...]:
+    vertices = tuple(
+        (round(float(vertex[0]), 4), round(float(vertex[1]), 4))
+        for vertex in list(getattr(zone, "vertices", []) or [])
+        if isinstance(vertex, (list, tuple)) and len(vertex) >= 2
+    )
+    return (
+        str(getattr(zone, "name", "") or ""),
+        str(getattr(getattr(zone, "zone_type", None), "value", getattr(zone, "zone_type", "")) or ""),
+        vertices,
+        len(list(getattr(zone, "cutouts", []) or [])),
+    )
+
+
+def _deployment_cache_key(game: object) -> tuple[object, ...]:
+    zone_rows: list[tuple[object, ...]] = []
+    for player_id, entry in sorted(dict(getattr(game, "deployment_zones", {}) or {}).items(), key=lambda item: str(item[0])):
+        if isinstance(entry, dict):
+            zones = tuple(_mission_zone_signature(zone) for zone in list(entry.get("mission_zones", []) or []))
+            zone_rows.append((str(player_id), zones))
+        else:
+            zone_rows.append((str(player_id), str(entry)))
+    selected = tuple(sorted((str(key), str(value)) for key, value in dict(getattr(game, "selected_mission_info", {}) or {}).items()))
+    return (
+        _rules_bundle_id(game),
+        selected,
+        int(getattr(game, "attacker_index", 0) or 0),
+        int(getattr(game, "defender_index", 0) or 0),
+        int(getattr(game, "deployment_turn_index", 0) or 0),
+        tuple(zone_rows),
+    )
+
+
+def _army_build_cache_key(game: object) -> tuple[object, ...]:
+    player_entries: list[tuple[object, ...]] = []
+    for player in sorted(list(getattr(game, "players", []) or []), key=lambda item: str(getattr(item, "id", "") or "")):
+        army = getattr(player, "army", None)
+        unit_rows: list[tuple[object, ...]] = []
+        for unit in list(getattr(army, "units", []) or []):
+            enhancement = getattr(unit, "enhancement", None)
+            unit_rows.append(
+                (
+                    str(get_entity_id(unit) or getattr(unit, "name", "") or ""),
+                    str(getattr(unit, "name", "") or ""),
+                    len(list(getattr(unit, "models", []) or [])),
+                    str(getattr(enhancement, "id", "") or ""),
+                    str(getattr(enhancement, "name", "") or ""),
+                )
+            )
+        unit_rows.sort(key=lambda item: str(item[0]))
+        player_entries.append(
+            (
+                str(getattr(player, "id", "") or ""),
+                str(getattr(army, "id", "") or ""),
+                str(getattr(army, "faction", "") or ""),
+                str(getattr(army, "faction_id", "") or ""),
+                str(getattr(army, "army_blueprint_hash", "") or ""),
+                id(getattr(army, "army_blueprint", None)),
+                id(getattr(army, "validated_muster", None)),
+                tuple(unit_rows),
+            )
+        )
+    return (_rules_bundle_id(game), tuple(player_entries))
+
+
 def _tool_cache_key(game: object) -> tuple[object, ...]:
     player_entries: list[tuple[object, ...]] = []
     for player in sorted(list(getattr(game, "players", []) or []), key=lambda item: str(getattr(item, "id", "") or "")):
@@ -123,9 +235,19 @@ def _tool_cache_key(game: object) -> tuple[object, ...]:
 @profiled_section("descriptor.compile_bundle")
 def compile_descriptor_bundle(game: object) -> CompiledDescriptorBundle:
     with profile_section("descriptor.compile_mission"):
-        mission_descriptor = compile_mission_descriptor(game)
+        mission_descriptor = _cached_descriptor_value(
+            game,
+            "mission",
+            _mission_cache_key(game),
+            lambda: compile_mission_descriptor(game),
+        )
     with profile_section("descriptor.compile_objectives"):
-        objective_descriptors = compile_objective_descriptors(game)
+        objective_descriptors = _cached_descriptor_value(
+            game,
+            "objectives",
+            _objective_cache_key(game),
+            lambda: compile_objective_descriptors(game),
+        )
     with profile_section("descriptor.compile_terrain"):
         terrain_descriptors = _cached_descriptor_value(
             game,
@@ -134,9 +256,19 @@ def compile_descriptor_bundle(game: object) -> CompiledDescriptorBundle:
             lambda: compile_terrain_descriptors(game),
         )
     with profile_section("descriptor.compile_deployment"):
-        deployment_descriptor = compile_deployment_descriptor(game)
+        deployment_descriptor = _cached_descriptor_value(
+            game,
+            "deployment",
+            _deployment_cache_key(game),
+            lambda: compile_deployment_descriptor(game),
+        )
     with profile_section("descriptor.compile_army_build"):
-        army_build_descriptor = compile_army_build_descriptor(game)
+        army_build_descriptor = _cached_descriptor_value(
+            game,
+            "army_build",
+            _army_build_cache_key(game),
+            lambda: compile_army_build_descriptor(game),
+        )
     with profile_section("descriptor.compile_tools"):
         tool_descriptors = _cached_descriptor_value(
             game,

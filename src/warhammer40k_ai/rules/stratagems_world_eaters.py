@@ -195,10 +195,64 @@ class WorldEatersStratagemMixin:
             supports.append(root)
         return sorted(supports, key=self._goretrack_sort_key)
 
+    def _we_khorne_daemonkin_context_cache_key(self, name_u: str) -> tuple[Any, ...]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        map_generation = getattr(game_map, "state_generation", None) if game_map is not None else None
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        unit_rows: list[tuple[Any, ...]] = []
+        for unit in self._we_friendly_battlefield_units():
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            special_rules = getattr(root, "special_rules", None)
+            unit_rows.append(
+                (
+                    self._goretrack_sort_key(root),
+                    bool(getattr(root, "deployed", True)),
+                    str(getattr(root, "reserve_status", "") or ""),
+                    bool(getattr(root, "is_embarked", False)),
+                    bool(getattr(root, "embarked_in", None)),
+                    len(list(getattr(root, "models_lost", []) or [])),
+                    id(special_rules),
+                    len(special_rules) if isinstance(special_rules, dict) else 0,
+                )
+            )
+        return (
+            "we_khorne_daemonkin_context_v1",
+            str(name_u or ""),
+            str(getattr(self, "_current_phase_name", "") or self._resolved_phase_name() or ""),
+            self._tool_action_sort_key(active_player),
+            self._tool_action_sort_key(self.player),
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            int(map_generation) if map_generation is not None else None,
+            tuple(sorted(unit_rows, key=lambda row: str(row[0]))),
+        )
+
+    @staticmethod
+    def _copy_we_khorne_daemonkin_context(context: Dict[str, Any]) -> Dict[str, Any]:
+        copied = dict(context or {})
+        if "candidates" in copied:
+            copied["candidates"] = list(copied.get("candidates", []) or [])
+        support_map = copied.get("support_candidates_by_unit")
+        if isinstance(support_map, dict):
+            copied["support_candidates_by_unit"] = {
+                str(key): list(value or [])
+                for key, value in support_map.items()
+            }
+        return copied
+
     def _we_khorne_daemonkin_tool_action_context(self, stratagem_name: str) -> Dict[str, Any]:
         name_u = str(stratagem_name or "").strip().upper()
         if not self._is_khorne_daemonkin_detachment():
             return {}
+        cache = getattr(self, "_we_khorne_daemonkin_context_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, "_we_khorne_daemonkin_context_cache", cache)
+        cache_key = self._we_khorne_daemonkin_context_cache_key(name_u)
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            return self._copy_we_khorne_daemonkin_context(cached)
         mgr = self._get_world_eaters_mgr()
         candidates: List[Any] = []
         support_by_unit: Dict[str, List[Any]] = {}
@@ -226,11 +280,18 @@ class WorldEatersStratagemMixin:
                 support_by_unit[uid] = list(supports)
         candidates = sorted(candidates, key=self._goretrack_sort_key)
         if not candidates:
+            if cache_key not in cache and len(cache) >= 64:
+                cache.clear()
+            cache[cache_key] = {}
             return {}
-        return {
+        context = {
             "candidates": candidates,
             "support_candidates_by_unit": support_by_unit,
         }
+        if cache_key not in cache and len(cache) >= 64:
+            cache.clear()
+        cache[cache_key] = self._copy_we_khorne_daemonkin_context(context)
+        return self._copy_we_khorne_daemonkin_context(context)
 
     def _we_can_use_khorne_daemonkin_tool_action(self, stratagem_name: str, kwargs: Dict[str, Any]) -> bool:
         name_u = str(stratagem_name or "").strip().upper()

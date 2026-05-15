@@ -221,12 +221,129 @@ class GamePhaseHandlersMixin:
         find_positions = getattr(passenger, "_find_disembark_positions", None)
         if not callable(find_positions):
             return False
+        cache = getattr(self, "_movement_phase_disembark_availability_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, "_movement_phase_disembark_availability_cache", cache)
+        cache_key = self._movement_phase_disembark_availability_cache_key(
+            passenger=passenger,
+            transport=transport,
+            transport_base=transport_base,
+            max_distance=3.0,
+        )
+        if cache_key in cache:
+            return bool(cache.get(cache_key, False))
         positions = find_positions(
             transport_base=transport_base,
             game_map=game_map,
             max_distance=3.0,
         )
-        return positions is not None
+        can_disembark = positions is not None
+        if cache_key not in cache and len(cache) >= 512:
+            cache.clear()
+        cache[cache_key] = bool(can_disembark)
+        return bool(can_disembark)
+
+    @staticmethod
+    def _movement_phase_cache_entity_id(value: object) -> str:
+        if value is None:
+            return ""
+        entity_id = maybe_entity_id(value)
+        if entity_id:
+            return str(entity_id)
+        return str(getattr(value, "name", "") or value)
+
+    @staticmethod
+    def _movement_phase_cache_bool_alive(value: object) -> bool:
+        alive = getattr(value, "is_alive", None)
+        if callable(alive):
+            return bool(alive())
+        return bool(getattr(value, "is_alive", True))
+
+    @staticmethod
+    def _movement_phase_cache_float(value: object) -> float:
+        try:
+            return round(float(value), 4)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _movement_phase_round_state_signature(self, unit: object) -> tuple[object, ...]:
+        round_state = getattr(unit, "round_state", None)
+        return tuple(
+            bool(getattr(round_state, attr, False))
+            for attr in (
+                "embarked_this_round",
+                "disembarked_this_round",
+                "advanced_this_round",
+                "fell_back_this_round",
+                "moved_this_round",
+                "shot_this_round",
+                "fought_this_phase",
+            )
+        )
+
+    def _movement_phase_disembark_availability_cache_key(
+        self,
+        *,
+        passenger: object,
+        transport: object,
+        transport_base: object,
+        max_distance: float,
+    ) -> tuple[object, ...]:
+        game_map = getattr(self, "map", None)
+        map_generation = getattr(game_map, "state_generation", None) if game_map is not None else None
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "")
+        transport_passengers = tuple(
+            sorted(
+                self._movement_phase_cache_entity_id(unit)
+                for unit in list(getattr(transport, "transport_passengers", []) or [])
+                if unit is not None
+            )
+        )
+        transport_models = tuple(
+            (
+                self._movement_phase_cache_entity_id(model),
+                self._movement_phase_cache_bool_alive(model),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "x", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "y", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "z", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "facing", 0.0)),
+            )
+            for model in list(getattr(transport, "models", []) or [])
+        )
+        passenger_models = tuple(
+            (
+                self._movement_phase_cache_entity_id(model),
+                self._movement_phase_cache_bool_alive(model),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "x", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "y", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "z", 0.0)),
+                self._movement_phase_cache_float(getattr(getattr(model, "model_base", None), "facing", 0.0)),
+            )
+            for model in list(getattr(passenger, "models", []) or [])
+        )
+        return (
+            "movement_phase_disembark_available",
+            phase_name,
+            int(getattr(self, "turn", 0) or 0),
+            int(map_generation) if map_generation is not None else None,
+            self._movement_phase_cache_entity_id(passenger),
+            self._movement_phase_cache_entity_id(transport),
+            self._movement_phase_cache_float(max_distance),
+            self._movement_phase_cache_float(getattr(transport_base, "x", 0.0)),
+            self._movement_phase_cache_float(getattr(transport_base, "y", 0.0)),
+            self._movement_phase_cache_float(getattr(transport_base, "z", 0.0)),
+            self._movement_phase_cache_float(getattr(transport_base, "facing", 0.0)),
+            self._movement_phase_round_state_signature(passenger),
+            self._movement_phase_round_state_signature(transport),
+            self._movement_phase_cache_bool_alive(passenger),
+            self._movement_phase_cache_bool_alive(transport),
+            bool(getattr(passenger, "deployed", False)),
+            bool(getattr(transport, "deployed", False)),
+            transport_passengers,
+            passenger_models,
+            transport_models,
+        )
 
     def _queue_movement_phase_disembark_choice(
         self,

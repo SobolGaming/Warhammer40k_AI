@@ -7,8 +7,8 @@ from warhammer40k_ai.engine.decision_handlers.stratagems import (
     _apply_select_tool_action,
     _validate_select_tool_action,
 )
-from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_TOOL_ACTION
-from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
+from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_TOOL_ACTION
+from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
@@ -615,6 +615,160 @@ def test_headless_grenade_is_available_in_shooting_phase_with_cp_and_targets() -
         payload["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == grenadier.id
         for payload in payloads
     )
+
+
+def _build_counted_grenade_manager() -> tuple[StratagemManager, SimpleNamespace, SimpleNamespace]:
+    stratagem = _core_stratagem(
+        "GRENADE",
+        stratagem_id="000008335006",
+        phase="Shooting phase",
+    )
+    player = SimpleNamespace(id="player:grenade", command_points=1)
+    enemy_player = SimpleNamespace(id="player:enemy")
+    army = SimpleNamespace(id="army:grenade", units=[], player=player)
+    enemy_army = SimpleNamespace(id="army:enemy", units=[], player=enemy_player)
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
+    player.has_control = lambda: False
+    player._has_attached_decision_controller = lambda: True
+    player.active_secondaries = []
+
+    grenadier_model = SimpleNamespace(id="model:grenadier", name="Grenadier", is_alive=True)
+    enemy_model_a = SimpleNamespace(id="model:enemy-a", name="Enemy A Model", is_alive=True)
+    enemy_model_b = SimpleNamespace(id="model:enemy-b", name="Enemy B Model", is_alive=True)
+    grenadier = SimpleNamespace(
+        id="unit:grenadier",
+        name="Intercessors",
+        deployed=True,
+        is_alive=lambda: True,
+        models=[grenadier_model],
+        round_state=SimpleNamespace(
+            advanced_this_round=False,
+            fell_back_this_round=False,
+            shot_this_round=False,
+        ),
+        special_rules={},
+    )
+    grenadier.get_parent_army = lambda: army
+    grenadier.get_attached_unit_root = lambda: grenadier
+    grenadier.has_keyword = lambda keyword: str(keyword or "").strip().upper() == "GRENADES"
+    enemy_a = SimpleNamespace(
+        id="unit:enemy-a",
+        name="Enemy A",
+        deployed=True,
+        models=[enemy_model_a],
+        round_state=SimpleNamespace(),
+        special_rules={},
+        is_alive=lambda: True,
+    )
+    enemy_b = SimpleNamespace(
+        id="unit:enemy-b",
+        name="Enemy B",
+        deployed=True,
+        models=[enemy_model_b],
+        round_state=SimpleNamespace(),
+        special_rules={},
+        is_alive=lambda: True,
+    )
+    army.units = [grenadier]
+    enemy_army.units = [enemy_a, enemy_b]
+
+    class CountedMap:
+        state_generation = 1
+        units = [grenadier, enemy_a, enemy_b]
+
+        def __init__(self) -> None:
+            self.engagement_checks = 0
+            self.distance_checks = 0
+            self.visibility_checks = 0
+
+        def get_enemy_units(self, unit):
+            return [enemy_a, enemy_b] if unit is grenadier else []
+
+        def is_within_engagement_range(self, _left, _right):
+            self.engagement_checks += 1
+            return False
+
+        def get_distance_between_units(self, _left, _right):
+            self.distance_checks += 1
+            return 6.0
+
+        def can_model_see_model(self, _source, _target):
+            self.visibility_checks += 1
+            return True
+
+    game_map = CountedMap()
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+        get_current_player=lambda: player,
+        map=game_map,
+        players=[player, enemy_player],
+        turn=1,
+    )
+    manager = _build_headless_core_manager(
+        stratagem=stratagem,
+        player=player,
+        game=game,
+        phase_name="Shooting phase",
+    )
+    return manager, game_map, SimpleNamespace(grenadier=grenadier, enemy_a=enemy_a, enemy_b=enemy_b)
+
+
+def test_grenade_phase_context_reuses_geometry_until_map_generation_changes() -> None:
+    manager, game_map, units = _build_counted_grenade_manager()
+
+    first_context = manager._grenade_phase_action_context()
+    first_counts = (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
+    second_context = manager._grenade_phase_action_context()
+
+    assert first_context == second_context
+    assert first_counts == (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
+    assert first_counts == (2, 2, 2)
+
+    game_map.state_generation += 1
+    refreshed_context = manager._grenade_phase_action_context()
+
+    assert refreshed_context["candidates"] == [units.grenadier]
+    assert game_map.engagement_checks > first_counts[0]
+    assert game_map.distance_checks > first_counts[1]
+    assert game_map.visibility_checks > first_counts[2]
+
+
+def test_grenade_can_use_explicit_pair_reuses_distance_and_visibility_checks() -> None:
+    manager, game_map, units = _build_counted_grenade_manager()
+
+    assert manager.can_use(
+        "GRENADE",
+        phase_name="Shooting phase",
+        unit=units.grenadier,
+        enemy_unit=units.enemy_a,
+    ) is True
+    first_counts = (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
+
+    assert manager.can_use(
+        "GRENADE",
+        phase_name="Shooting phase",
+        unit=units.grenadier,
+        enemy_unit=units.enemy_a,
+    ) is True
+    assert first_counts == (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
+
+
+def test_tool_action_request_reuses_prevalidated_specs_for_unchanged_state() -> None:
+    manager, game_map, _units = _build_counted_grenade_manager()
+
+    first_request = manager._build_tool_action_request(reactions_only=False)
+    first_counts = (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
+    second_request = manager._build_tool_action_request(reactions_only=False)
+
+    assert first_request is not None
+    assert second_request is not None
+    assert first_request is not second_request
+    assert _tool_payloads(first_request) == _tool_payloads(second_request)
+    assert first_counts == (game_map.engagement_checks, game_map.distance_checks, game_map.visibility_checks)
 
 
 @pytest.mark.parametrize(
@@ -1798,6 +1952,47 @@ def test_maybe_queue_post_command_tool_decisions_prioritizes_reactions_before_ph
         ("opponent", True),
         ("current", True),
         ("current", False),
+    ]
+
+
+def test_maybe_queue_post_command_tool_decisions_skips_phase_actions_after_dice_roll() -> None:
+    calls: list[tuple[str, bool]] = []
+    current_player = SimpleNamespace(
+        id="player:current",
+        stratagems=SimpleNamespace(
+            queue_headless_tool_action_decision=lambda *, reactions_only=False: (
+                calls.append(("current", bool(reactions_only))) or False
+            )
+        ),
+    )
+    opponent_player = SimpleNamespace(
+        id="player:opponent",
+        stratagems=SimpleNamespace(
+            queue_headless_tool_action_decision=lambda *, reactions_only=False: (
+                calls.append(("opponent", bool(reactions_only))) or False
+            )
+        ),
+    )
+    dummy_game = SimpleNamespace(
+        is_authoritative=True,
+        players=[current_player, opponent_player],
+        decision_queue=DecisionQueue(),
+        get_current_player=lambda: current_player,
+    )
+    roll_request = DecisionRequest.create(DECISION_REQUEST_DICE_ROLL, "Roll")
+
+    assert (
+        Game._maybe_queue_post_command_tool_decisions(
+            dummy_game,
+            None,
+            SimpleNamespace(ok=True),
+            resolved_request=roll_request,
+        )
+        is False
+    )
+    assert calls == [
+        ("opponent", True),
+        ("current", True),
     ]
 
 

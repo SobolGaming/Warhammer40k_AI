@@ -110,6 +110,68 @@ def base_horizontal_radius(base: object) -> float:
     return 0.0
 
 
+def model_base_metric(
+    model: object,
+    *,
+    base_metric_cache: dict[str, tuple[object, float, float, float, float] | None] | None = None,
+) -> tuple[object, float, float, float, float] | None:
+    model_id = str(get_entity_id(model) or id(model))
+    if base_metric_cache is not None and model_id in base_metric_cache:
+        return base_metric_cache[model_id]
+    base = getattr(model, "model_base", None)
+    if base is None:
+        metric = None
+    else:
+        metric = (
+            base,
+            safe_float(getattr(base, "x", 0.0), 0.0),
+            safe_float(getattr(base, "y", 0.0), 0.0),
+            safe_float(getattr(base, "z", 0.0), 0.0),
+            base_horizontal_radius(base),
+        )
+    if base_metric_cache is not None:
+        base_metric_cache[model_id] = metric
+    return metric
+
+
+def base_metric_lower_bound(
+    first: tuple[object, float, float, float, float],
+    second: tuple[object, float, float, float, float],
+) -> float:
+    dx = float(first[1]) - float(second[1])
+    dy = float(first[2]) - float(second[2])
+    center_distance = ((dx * dx) + (dy * dy)) ** 0.5
+    return max(0.0, center_distance - float(first[4]) - float(second[4]))
+
+
+def cached_horizontal_edge_distance(
+    model: object,
+    enemy_model: object,
+    *,
+    edge_distance_cache: dict[tuple[str, str], float] | None = None,
+) -> float:
+    model_id = str(get_entity_id(model) or "")
+    enemy_model_id = str(get_entity_id(enemy_model) or "")
+    cache_key = tuple(sorted((model_id, enemy_model_id))) if model_id and enemy_model_id else None
+    if edge_distance_cache is not None and cache_key is not None and cache_key in edge_distance_cache:
+        return float(edge_distance_cache[cache_key])
+    base = getattr(model, "model_base", None)
+    enemy_base = getattr(enemy_model, "model_base", None)
+    if base is None or enemy_base is None:
+        distance = 9999.0
+    else:
+        horizontal = fast_horizontal_edge_distance(base, enemy_base)
+        if horizontal is None:
+            try:
+                horizontal = safe_float(base.edge_to_edge_distance(enemy_base), 9999.0)
+            except (AttributeError, TypeError, ValueError):
+                horizontal = 9999.0
+        distance = float(horizontal)
+    if edge_distance_cache is not None and cache_key is not None:
+        edge_distance_cache[cache_key] = float(distance)
+    return float(distance)
+
+
 def model_position_entries(unit: object, *, alive_models_override: list[object] | None = None) -> list[dict[str, Any]]:
     if not unit_on_battlefield(unit):
         return []
@@ -155,6 +217,8 @@ def is_unit_in_engagement_range(
     enemy_units: list[object],
     *,
     alive_models_cache: dict[str, list[object]] | None = None,
+    edge_distance_cache: dict[tuple[str, str], float] | None = None,
+    base_metric_cache: dict[str, tuple[object, float, float, float, float] | None] | None = None,
 ) -> bool:
     if not unit_on_battlefield(unit):
         return False
@@ -169,9 +233,10 @@ def is_unit_in_engagement_range(
         return False
 
     for model in unit_models:
-        base = getattr(model, "model_base", None)
-        if base is None:
+        metric = model_base_metric(model, base_metric_cache=base_metric_cache)
+        if metric is None:
             continue
+        base, _x, _y, z, _radius = metric
         for enemy in enemy_units:
             if not unit_on_battlefield(enemy):
                 continue
@@ -185,13 +250,18 @@ def is_unit_in_engagement_range(
             if not enemy_models:
                 continue
             for enemy_model in enemy_models:
-                enemy_base = getattr(enemy_model, "model_base", None)
-                if enemy_base is None:
+                enemy_metric = model_base_metric(enemy_model, base_metric_cache=base_metric_cache)
+                if enemy_metric is None:
                     continue
-                horizontal = fast_horizontal_edge_distance(base, enemy_base)
-                if horizontal is None:
-                    horizontal = safe_float(base.edge_to_edge_distance(enemy_base), 9999.0)
-                vertical = abs(safe_float(getattr(base, "z", 0.0)) - safe_float(getattr(enemy_base, "z", 0.0)))
+                enemy_base, _ex, _ey, enemy_z, _enemy_radius = enemy_metric
+                if base_metric_lower_bound(metric, enemy_metric) > float(ENGAGEMENT_RANGE_HORIZONTAL):
+                    continue
+                horizontal = cached_horizontal_edge_distance(
+                    model,
+                    enemy_model,
+                    edge_distance_cache=edge_distance_cache,
+                )
+                vertical = abs(float(z) - float(enemy_z))
                 if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) and vertical <= float(ENGAGEMENT_RANGE_VERTICAL):
                     return True
     return False
@@ -267,6 +337,8 @@ def min_enemy_engagement_edge_distance(
     enemy_units: list[object],
     *,
     alive_models_cache: dict[str, list[object]] | None = None,
+    edge_distance_cache: dict[tuple[str, str], float] | None = None,
+    base_metric_cache: dict[str, tuple[object, float, float, float, float] | None] | None = None,
 ) -> float | None:
     if not unit_on_battlefield(unit):
         return None
@@ -278,9 +350,10 @@ def min_enemy_engagement_edge_distance(
         if alive_models_cache is not None:
             alive_models_cache[unit_id] = list(unit_models)
     best: float | None = None
+    pair_rows: list[tuple[float, object, object]] = []
     for model in unit_models:
-        base = getattr(model, "model_base", None)
-        if base is None:
+        metric = model_base_metric(model, base_metric_cache=base_metric_cache)
+        if metric is None:
             continue
         for enemy in list(enemy_units or []):
             if not unit_on_battlefield(enemy):
@@ -293,17 +366,21 @@ def min_enemy_engagement_edge_distance(
                 if alive_models_cache is not None:
                     alive_models_cache[enemy_id] = list(enemy_models)
             for enemy_model in enemy_models:
-                enemy_base = getattr(enemy_model, "model_base", None)
-                if enemy_base is None:
+                enemy_metric = model_base_metric(enemy_model, base_metric_cache=base_metric_cache)
+                if enemy_metric is None:
                     continue
-                horizontal = fast_horizontal_edge_distance(base, enemy_base)
-                if horizontal is None:
-                    try:
-                        horizontal = safe_float(base.edge_to_edge_distance(enemy_base), 9999.0)
-                    except (AttributeError, TypeError, ValueError):
-                        horizontal = 9999.0
-                if best is None or horizontal < best:
-                    best = float(horizontal)
+                pair_rows.append((base_metric_lower_bound(metric, enemy_metric), model, enemy_model))
+    pair_rows.sort(key=lambda item: item[0])
+    for lower_bound, model, enemy_model in pair_rows:
+        if best is not None and float(lower_bound) >= best:
+            break
+        horizontal = cached_horizontal_edge_distance(
+            model,
+            enemy_model,
+            edge_distance_cache=edge_distance_cache,
+        )
+        if best is None or horizontal < best:
+            best = float(horizontal)
     return best
 
 
@@ -313,12 +390,37 @@ def _json_distance(value: float | None) -> float | None:
     return round(float(max(0.0, value)), 4)
 
 
+def _copy_jsonish(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _copy_jsonish(inner) for key, inner in value.items()}
+    if isinstance(value, list):
+        return [_copy_jsonish(inner) for inner in value]
+    if isinstance(value, tuple):
+        return [_copy_jsonish(inner) for inner in value]
+    return value
+
+
+def _copy_unit_entries(entries: object) -> list[dict[str, Any]]:
+    copied: list[dict[str, Any]] = []
+    for entry in list(entries or []):
+        if isinstance(entry, dict):
+            copied.append(_copy_jsonish(entry))
+    return copied
+
+
 def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -> list[dict[str, Any]]:
-    objectives = objective_entries(game)
-    players = sorted_players(game)
     runtime_cache = getattr(game, "_state_blob_units_runtime_cache", None)
     if not isinstance(runtime_cache, dict):
         runtime_cache = None
+    view_cache_key = (str(viewer_id or ""), bool(include_hidden))
+    if runtime_cache is not None:
+        entries_by_view = runtime_cache.setdefault("unit_entries_by_view", {})
+        if isinstance(entries_by_view, dict):
+            cached_entries = entries_by_view.get(view_cache_key)
+            if cached_entries is not None:
+                return _copy_unit_entries(cached_entries)
+    objectives = objective_entries(game)
+    players = sorted_players(game)
     player_units: dict[str, list[object]] = {}
     all_units: list[object] = []
     for player in players:
@@ -335,6 +437,8 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
         objective_range_cache: dict[str, list[str]] = {}
         objective_distance_cache: dict[str, float | None] = {}
         enemy_distance_cache: dict[str, float | None] = {}
+        edge_distance_cache: dict[tuple[str, str], float] = {}
+        base_metric_cache: dict[str, tuple[object, float, float, float, float] | None] = {}
     else:
         alive_models_cache = runtime_cache.setdefault("alive_models_by_unit_id", {})
         model_positions_cache = runtime_cache.setdefault("model_positions_by_unit_id", {})
@@ -342,6 +446,8 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
         objective_range_cache = runtime_cache.setdefault("objective_ids_by_unit_id", {})
         objective_distance_cache = runtime_cache.setdefault("objective_distance_by_unit_id", {})
         enemy_distance_cache = runtime_cache.setdefault("enemy_distance_by_unit_id", {})
+        edge_distance_cache = runtime_cache.setdefault("model_edge_distance_by_pair", {})
+        base_metric_cache = runtime_cache.setdefault("model_base_metrics_by_model_id", {})
     for unit in all_units:
         unit_id = str(get_entity_id(unit))
         if unit_id in alive_models_cache:
@@ -386,7 +492,13 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
             if unit_id in enemy_distance_cache:
                 nearest_enemy = enemy_distance_cache[unit_id]
             else:
-                nearest_enemy = min_enemy_engagement_edge_distance(unit, enemies, alive_models_cache=alive_models_cache)
+                nearest_enemy = min_enemy_engagement_edge_distance(
+                    unit,
+                    enemies,
+                    alive_models_cache=alive_models_cache,
+                    edge_distance_cache=edge_distance_cache,
+                    base_metric_cache=base_metric_cache,
+                )
                 enemy_distance_cache[unit_id] = nearest_enemy
             if unit_id in engagement_cache:
                 in_engagement_range = bool(engagement_cache[unit_id])
@@ -396,6 +508,8 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
                         unit,
                         enemies,
                         alive_models_cache=alive_models_cache,
+                        edge_distance_cache=edge_distance_cache,
+                        base_metric_cache=base_metric_cache,
                     )
                 )
                 engagement_cache[unit_id] = bool(in_engagement_range)
@@ -439,7 +553,12 @@ def unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -
                 entry["status_tokens"] = json_safe(status_token_dicts_on_unit(unit))
             units.append((unit_id, entry))
     units.sort(key=lambda item: item[0])
-    return [entry for _unit_id, entry in units]
+    result = [entry for _unit_id, entry in units]
+    if runtime_cache is not None:
+        entries_by_view = runtime_cache.setdefault("unit_entries_by_view", {})
+        if isinstance(entries_by_view, dict):
+            entries_by_view[view_cache_key] = tuple(_copy_jsonish(entry) for entry in result)
+    return result
 
 
 __all__ = ["unit_entries"]

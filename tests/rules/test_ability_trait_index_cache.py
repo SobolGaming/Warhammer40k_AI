@@ -76,6 +76,28 @@ def test_activity_invalidation_bumps_only_activity_generation() -> None:
     assert activity_after == activity_before + 1
 
 
+def test_activity_state_signature_uses_generation_token_until_generation_changes(monkeypatch) -> None:
+    unit = _make_unit(name="Infantry")
+    original = unit._ability_activity_unit_signature
+    calls = {"count": 0}
+
+    def counted_signature(value):
+        calls["count"] += 1
+        return original(value)
+
+    monkeypatch.setattr(unit, "_ability_activity_unit_signature", counted_signature)
+
+    first = unit._ability_activity_state_signature()
+    second = unit._ability_activity_state_signature()
+    assert first == second
+    assert calls["count"] == 0
+
+    unit._invalidate_ability_activity_cache()
+    third = unit._ability_activity_state_signature()
+    assert third != first
+    assert calls["count"] == 0
+
+
 def test_firing_deck_uses_trait_value_index() -> None:
     unit = _make_unit(
         name="Transport",
@@ -113,4 +135,3 @@ def test_find_ability_with_patterns_uses_indexed_fast_path() -> None:
     found, value = unit._find_ability_with_patterns(["super-heavy walker"])
     assert found is True
     assert value is None
-

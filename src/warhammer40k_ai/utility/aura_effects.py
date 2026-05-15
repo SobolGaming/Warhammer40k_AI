@@ -90,7 +90,12 @@ def _count_regex_hotspot(name: str) -> None:
 
 
 _AURA_PARSE_CACHE: dict[tuple[str, str, str, str], object] = {}
+_AURA_PARSE_OBJECT_CACHE: dict[tuple[str, int], tuple[tuple[str, str, str], object]] = {}
 _AURA_PARSE_CACHE_LOCK = threading.RLock()
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+_NON_KEYWORD_CHAR_RE = re.compile(r"[^a-z0-9]+")
+_AURA_TEXT_RE = re.compile(r"\bwhile an? (?:friendly|enemy)\b.*\bwithin\b", flags=re.IGNORECASE)
 
 
 def _clone_aura_parse_value(value):
@@ -128,14 +133,7 @@ def _normalize_cache_key_text(value: str) -> str:
 
 
 def _aura_parse_cache_key(parser_key: str, ability) -> tuple[str, str, str, str]:
-    if isinstance(ability, str):
-        name = ""
-        desc = str(ability or "")
-        parameter = ""
-    else:
-        name = str(getattr(ability, "name", "") or "")
-        desc = str(getattr(ability, "description", "") or "")
-        parameter = str(getattr(ability, "parameter", "") or "")
+    name, desc, parameter = _aura_parse_raw_signature(ability)
     return (
         str(parser_key or "").strip(),
         _normalize_cache_key_text(name),
@@ -144,27 +142,61 @@ def _aura_parse_cache_key(parser_key: str, ability) -> tuple[str, str, str, str]
     )
 
 
+def _aura_parse_raw_signature(ability) -> tuple[str, str, str]:
+    if isinstance(ability, str):
+        name = ""
+        desc = str(ability or "")
+        parameter = ""
+    else:
+        name = str(getattr(ability, "name", "") or "")
+        desc = str(getattr(ability, "description", "") or "")
+        parameter = str(getattr(ability, "parameter", "") or "")
+    return name, desc, parameter
+
+
 def _cached_parse_aura_spec(parser_key: str, ability, parser):
+    parser_key = str(parser_key or "").strip()
+    raw_signature = _aura_parse_raw_signature(ability)
+    object_key = (parser_key, id(ability))
+    with _AURA_PARSE_CACHE_LOCK:
+        cached_object = _AURA_PARSE_OBJECT_CACHE.get(object_key)
+        if cached_object is not None and cached_object[0] == raw_signature:
+            return _clone_aura_parse_value(cached_object[1])
     key = _aura_parse_cache_key(parser_key, ability)
     with _AURA_PARSE_CACHE_LOCK:
-        if key in _AURA_PARSE_CACHE:
-            return _clone_aura_parse_value(_AURA_PARSE_CACHE[key])
+        cached_object = _AURA_PARSE_OBJECT_CACHE.get(object_key)
+        if cached_object is not None and cached_object[0] == raw_signature:
+            return _clone_aura_parse_value(cached_object[1])
+        cached = _AURA_PARSE_CACHE.get(key)
+        if cached is not None:
+            _AURA_PARSE_OBJECT_CACHE[object_key] = (raw_signature, _clone_aura_parse_value(cached))
+            if len(_AURA_PARSE_OBJECT_CACHE) > 65536:
+                _AURA_PARSE_OBJECT_CACHE.clear()
+            return _clone_aura_parse_value(cached)
     parsed = parser(ability)
     with _AURA_PARSE_CACHE_LOCK:
         _AURA_PARSE_CACHE[key] = _clone_aura_parse_value(parsed)
+        _AURA_PARSE_OBJECT_CACHE[object_key] = (raw_signature, _clone_aura_parse_value(parsed))
+        if len(_AURA_PARSE_OBJECT_CACHE) > 65536:
+            _AURA_PARSE_OBJECT_CACHE.clear()
     return _clone_aura_parse_value(parsed)
 
 
 def clear_aura_parse_cache() -> None:
     with _AURA_PARSE_CACHE_LOCK:
         _AURA_PARSE_CACHE.clear()
+        _AURA_PARSE_OBJECT_CACHE.clear()
     _normalize_cache_key_text.cache_clear()
+    _normalize_desc_text.cache_clear()
+    _normalize_keyword_phrase_text.cache_clear()
+    _is_aura_ability_text.cache_clear()
 
-def _normalize_desc(desc: str) -> str:
+@lru_cache(maxsize=32768)
+def _normalize_desc_text(desc: str) -> str:
     text = str(desc or "")
     if not text:
         return ""
-    text = re.sub(r"<[^>]+>", " ", text)
+    text = _HTML_TAG_RE.sub(" ", text)
     text = (
         text.replace("\u00a0", " ")
         .replace("\u2019", "'")
@@ -172,15 +204,23 @@ def _normalize_desc(desc: str) -> str:
         .replace("\u201c", '"')
         .replace("\u201d", '"')
     )
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _normalize_desc(desc: str) -> str:
+    return _normalize_desc_text(str(desc or ""))
+
+
+@lru_cache(maxsize=32768)
+def _normalize_keyword_phrase_text(value: str) -> str:
+    t = str(value or "").lower()
+    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+    t = _NON_KEYWORD_CHAR_RE.sub(" ", t)
+    return _WHITESPACE_RE.sub(" ", t).strip()
 
 
 def _normalize_keyword_phrase(value: str) -> str:
-    t = str(value or "").lower()
-    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
-    t = re.sub(r"[^a-z0-9]+", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    return _normalize_keyword_phrase_text(str(value or ""))
 
 
 def _unit_matches_keyword_phrase(unit, phrase: str) -> bool:
@@ -320,14 +360,116 @@ def _iter_possible_abilities(unit) -> Iterable[object]:
         yield enh
 
 
+def _move_oc_cache_value_signature(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        entity_id = get_entity_id(value)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        entity_id = None
+    if entity_id:
+        return ("entity", str(entity_id))
+    if isinstance(value, dict):
+        return tuple(
+            (str(key), _move_oc_cache_value_signature(inner))
+            for key, inner in sorted(value.items(), key=lambda item: str(item[0]))
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_move_oc_cache_value_signature(inner) for inner in value)
+    if isinstance(value, set):
+        return tuple(sorted((_move_oc_cache_value_signature(inner) for inner in value), key=lambda item: str(item)))
+    return str(value)
+
+
+def _move_oc_cache_unit_signature(unit) -> tuple:
+    if unit is None:
+        return ("",)
+    try:
+        unit_id = get_entity_id(unit)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        unit_id = None
+    try:
+        embarked_in_id = get_entity_id(getattr(unit, "embarked_in", None))
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        embarked_in_id = None
+    alive = getattr(unit, "is_alive", True)
+    try:
+        is_alive = bool(alive() if callable(alive) else alive)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        is_alive = True
+    return (
+        str(unit_id or id(unit)),
+        is_alive,
+        bool(getattr(unit, "deployed", True)),
+        str(getattr(unit, "reserve_status", "") or ""),
+        bool(getattr(unit, "is_embarked", False)),
+        str(embarked_in_id or ""),
+        int(getattr(unit, "_ability_structure_generation", 0) or 0),
+        int(getattr(unit, "_ability_activity_generation", 0) or 0),
+        tuple(str(value or "") for value in list(getattr(unit, "keywords", []) or [])),
+        tuple(str(value or "") for value in list(getattr(unit, "faction_keywords", []) or [])),
+        _move_oc_cache_value_signature(getattr(unit, "special_rules", None)),
+    )
+
+
+def _move_oc_penalty_cache(game_map) -> dict | None:
+    if game_map is None:
+        return None
+    cache = getattr(game_map, "_enemy_aura_move_oc_penalty_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        try:
+            setattr(game_map, "_enemy_aura_move_oc_penalty_cache", cache)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+    return cache
+
+
+def _move_oc_penalty_cache_key(unit, game_map, enemy_sources: list[object]) -> tuple:
+    return (
+        "enemy_aura_move_oc_penalty_v1",
+        int(getattr(game_map, "state_generation", 0) or 0),
+        _move_oc_cache_unit_signature(unit),
+        tuple(_move_oc_cache_unit_signature(source) for source in list(enemy_sources or [])),
+    )
+
+
+def _move_characteristic_bonus_cache(game_map) -> dict | None:
+    if game_map is None:
+        return None
+    cache = getattr(game_map, "_aura_move_characteristic_bonus_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        try:
+            setattr(game_map, "_aura_move_characteristic_bonus_cache", cache)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+    return cache
+
+
+def _move_characteristic_bonus_cache_key(unit, game_map, friendly_sources: list[object]) -> tuple:
+    return (
+        "aura_move_characteristic_bonus_v1",
+        int(getattr(game_map, "state_generation", 0) or 0),
+        _move_oc_cache_unit_signature(unit),
+        tuple(_move_oc_cache_unit_signature(source) for source in list(friendly_sources or [])),
+    )
+
+
 def _is_aura_ability(ability) -> bool:
     name = str(getattr(ability, "name", "") or "")
-    if "(aura" in _norm(name):
+    desc = str(getattr(ability, "description", "") or "")
+    return _is_aura_ability_text(name, desc)
+
+
+@lru_cache(maxsize=32768)
+def _is_aura_ability_text(name: str, desc: str) -> bool:
+    if "(aura" in _norm(str(name or "")):
         return True
-    desc = _normalize_desc(str(getattr(ability, "description", "") or ""))
-    if not desc:
+    normalized = _normalize_desc(desc)
+    if not normalized:
         return False
-    return bool(re.search(r"\bwhile an? (?:friendly|enemy)\b.*\bwithin\b", desc, flags=re.IGNORECASE))
+    return bool(_AURA_TEXT_RE.search(normalized))
 
 
 def _get_map_from_attacker_unit(attacker_unit):
@@ -2633,10 +2775,17 @@ def get_aura_move_characteristic_bonus(unit, *, game_map=None) -> tuple[int, tup
     if game_map is None:
         return 0, ()
 
+    friendly_sources = list(game_map.get_friendly_units(unit))
+    cache = _move_characteristic_bonus_cache(game_map)
+    cache_key = _move_characteristic_bonus_cache_key(unit, game_map, friendly_sources)
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple) and len(cached) == 2:
+            return int(cached[0]), tuple(str(reason) for reason in tuple(cached[1]))
     total = 0
     reasons: list[str] = []
     applied_aura_names: set[str] = set()
-    for source in list(game_map.get_friendly_units(unit)):
+    for source in friendly_sources:
         for ab in _iter_possible_abilities(source):
             spec = _cached_parse_aura_spec("_parse_move_characteristic_aura", ab, _parse_move_characteristic_aura)
             if not spec:
@@ -2663,7 +2812,12 @@ def get_aura_move_characteristic_bonus(unit, *, game_map=None) -> tuple[int, tup
             if amt:
                 total += int(amt)
                 reasons.append(f"Aura: +{amt} Move from {ab_name}")
-    return int(total), tuple(reasons)
+    result = (int(total), tuple(reasons))
+    if cache is not None:
+        if cache_key not in cache and len(cache) >= 2048:
+            cache.clear()
+        cache[cache_key] = result
+    return result
 
 
 def get_aura_fnp_entries(unit, *, game_map=None) -> list[tuple[int, Optional[str]]]:
@@ -2785,11 +2939,18 @@ def _collect_enemy_aura_move_oc_penalty_state(unit, *, game_map=None) -> tuple[i
         game_map = _get_map_from_attacker_unit(unit)
     if game_map is None:
         return 0, 0, 0
+    enemy_sources = list(game_map.get_enemy_units(unit))
+    cache = _move_oc_penalty_cache(game_map)
+    cache_key = _move_oc_penalty_cache_key(unit, game_map, enemy_sources)
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple) and len(cached) == 3:
+            return int(cached[0]), int(cached[1]), int(cached[2])
     move_penalty = 0
     oc_penalty = 0
     oc_minimum_floor = 0
     applied_aura_names: set[str] = set()
-    for source in list(game_map.get_enemy_units(unit)):
+    for source in enemy_sources:
         for ab in _iter_possible_abilities(source):
             spec = _cached_parse_aura_spec("_parse_enemy_move_oc_penalty_aura", ab, _parse_enemy_move_oc_penalty_aura)
             if not spec:
@@ -2828,7 +2989,12 @@ def _collect_enemy_aura_move_oc_penalty_state(unit, *, game_map=None) -> tuple[i
                 oc_minimum_floor = max(oc_minimum_floor, int(spec.get("oc_minimum", 0) or 0))
             except Exception:
                 pass
-    return int(move_penalty), int(oc_penalty), int(max(0, oc_minimum_floor))
+    result = (int(move_penalty), int(oc_penalty), int(max(0, oc_minimum_floor)))
+    if cache is not None:
+        if cache_key not in cache and len(cache) >= 2048:
+            cache.clear()
+        cache[cache_key] = result
+    return result
 
 
 def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:

@@ -19,8 +19,56 @@ def _footprint_coords(entity: object) -> list[list[float]]:
     return footprint_coords
 
 
+def _terrain_cache_entry_signature(entity: object) -> tuple[object, ...]:
+    terrain_type_obj = getattr(entity, "terrain_type", None)
+    footprint = getattr(entity, "footprint", None)
+    exterior = getattr(footprint, "exterior", None)
+    coords = getattr(exterior, "coords", None) if exterior is not None else None
+    try:
+        coord_count = len(coords) if coords is not None else 0
+    except TypeError:
+        coord_count = 0
+    return (
+        str(getattr(entity, "id", "") or ""),
+        str(getattr(terrain_type_obj, "name", terrain_type_obj or "") or ""),
+        id(footprint),
+        int(coord_count),
+        str(getattr(entity, "bounding_box", "") or ""),
+        str(getattr(entity, "traversal_rules", "") or ""),
+        str(getattr(entity, "effect_tags", "") or ""),
+        str(getattr(entity, "related_feature_ids", "") or ""),
+        str(getattr(entity, "metadata", "") or ""),
+    )
+
+
+def _terrain_entries_cache_key(game: object) -> tuple[object, ...]:
+    game_map = getattr(game, "map", None)
+    features = list(getattr(game_map, "terrain_features", []) or [])
+    features.sort(key=lambda feature: str(getattr(feature, "id", "") or ""))
+    areas = iter_terrain_areas(game)
+    return (
+        "terrain_entries_v1",
+        tuple(_terrain_cache_entry_signature(feature) for feature in features),
+        tuple(_terrain_cache_entry_signature(area) for area in areas),
+    )
+
+
+def _copy_terrain_entries(entries: object) -> list[dict[str, Any]]:
+    copied: list[dict[str, Any]] = []
+    for entry in list(entries or []):
+        if isinstance(entry, dict):
+            copied.append(dict(entry))
+    return copied
+
+
 def terrain_entries(game: object) -> list[dict[str, Any]]:
     game_map = getattr(game, "map", None)
+    cache = getattr(game_map, "_state_blob_terrain_entries_cache", None) if game_map is not None else None
+    cache_key = _terrain_entries_cache_key(game)
+    if isinstance(cache, dict):
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return _copy_terrain_entries(cached)
     features = list(getattr(game_map, "terrain_features", []) or [])
     features.sort(key=lambda feature: str(getattr(feature, "id", "") or ""))
     entries: list[dict[str, Any]] = []
@@ -71,6 +119,16 @@ def terrain_entries(game: object) -> list[dict[str, Any]]:
             str(entry["terrain_id"]),
         )
     )
+    if game_map is not None:
+        if not isinstance(cache, dict):
+            cache = {}
+            try:
+                setattr(game_map, "_state_blob_terrain_entries_cache", cache)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                cache = None
+        if isinstance(cache, dict):
+            cache.clear()
+            cache[cache_key] = tuple(dict(entry) for entry in entries)
     return entries
 
 

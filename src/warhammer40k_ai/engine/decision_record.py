@@ -600,7 +600,22 @@ class DecisionRecordStore:
         prev_state_blob_units_cache = (
             getattr(self.game, "_state_blob_units_runtime_cache", None) if had_prev_state_blob_units_cache else None
         )
-        setattr(self.game, "_state_blob_units_runtime_cache", {})
+        game_map = getattr(self.game, "map", None)
+        state_generation = int(getattr(game_map, "state_generation", 0) or 0)
+        persistent_state_blob_cache = getattr(self.game, "_state_blob_units_persistent_cache", None)
+        if not isinstance(persistent_state_blob_cache, dict) or int(
+            persistent_state_blob_cache.get("state_generation", -1) or -1
+        ) != state_generation:
+            persistent_state_blob_cache = {
+                "state_generation": state_generation,
+                "cache": {},
+            }
+            setattr(self.game, "_state_blob_units_persistent_cache", persistent_state_blob_cache)
+        runtime_state_blob_cache = persistent_state_blob_cache.setdefault("cache", {})
+        if not isinstance(runtime_state_blob_cache, dict):
+            runtime_state_blob_cache = {}
+            persistent_state_blob_cache["cache"] = runtime_state_blob_cache
+        setattr(self.game, "_state_blob_units_runtime_cache", runtime_state_blob_cache)
         previous_recursion_limit = sys.getrecursionlimit()
         recursion_limit_changed = previous_recursion_limit < _STATE_BLOB_RECURSION_LIMIT
         if recursion_limit_changed:

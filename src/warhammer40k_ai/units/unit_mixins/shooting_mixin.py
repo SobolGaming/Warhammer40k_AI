@@ -7,6 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 _SHOOTING_LOS_CACHE_MAX = 8192
+_SHOOTING_LOS_GEOMETRY_CACHE_MAX = 8192
+_SHOOTING_LOS_SAMPLE_CACHE_MAX = 8192
 
 
 def _unit_disembarked_in_current_phase(unit: object, game: object | None) -> bool:
@@ -227,6 +229,26 @@ def _shooting_los_cache_set(game_map: object, key: tuple, value: bool) -> None:
     cache.move_to_end(key)
     while len(cache) > _SHOOTING_LOS_CACHE_MAX:
         cache.popitem(last=False)
+
+
+def _shooting_ordered_map_cache(game_map: object, attr_name: str) -> OrderedDict:
+    cache = getattr(game_map, attr_name, None)
+    if isinstance(cache, OrderedDict):
+        return cache
+    cache = OrderedDict()
+    try:
+        setattr(game_map, attr_name, cache)
+    except (AttributeError, TypeError):
+        pass
+    return cache
+
+
+def _shooting_los_geometry_cache(game_map: object) -> OrderedDict:
+    return _shooting_ordered_map_cache(game_map, "_shooting_los_geometry_cache")
+
+
+def _shooting_los_sample_cache(game_map: object) -> OrderedDict:
+    return _shooting_ordered_map_cache(game_map, "_shooting_los_sample_cache")
 
 
 class ShootingMixin:
@@ -2199,6 +2221,48 @@ class ShootingMixin:
                 or second[3] < first[1]
             )
 
+        def _segment_bounds_2d(p0: tuple, p1: tuple) -> tuple[float, float, float, float]:
+            x0 = float(p0[0])
+            y0 = float(p0[1])
+            x1 = float(p1[0])
+            y1 = float(p1[1])
+            return (
+                x0 if x0 <= x1 else x1,
+                y0 if y0 <= y1 else y1,
+                x1 if x0 <= x1 else x0,
+                y1 if y0 <= y1 else y0,
+            )
+
+        def _blocker_bounds_for_los(
+            terrain_contexts: tuple[dict[str, object], ...],
+            blocker_contexts: tuple[dict[str, object], ...],
+        ) -> tuple[bool, tuple[tuple[float, float, float, float], ...]]:
+            bounds_rows: list[tuple[float, float, float, float]] = []
+            always_possible = False
+            for context in terrain_contexts:
+                if bool(context.get("is_ruins")) and bool(context.get("shooter_inside", False)):
+                    always_possible = True
+                footprint_bounds = context.get("footprint_bounds")
+                if footprint_bounds is None:
+                    if context.get("footprint") is not None or context.get("walls"):
+                        always_possible = True
+                else:
+                    bounds_rows.append(footprint_bounds)
+                for wall in tuple(context.get("walls", ()) or ()):
+                    bounds_rows.append(wall["bounds"])
+            for blocker in blocker_contexts:
+                bounds_rows.append(blocker["bounds"])
+            return bool(always_possible), tuple(bounds_rows)
+
+        def _any_blocker_bounds_overlap(
+            line_bounds: tuple[float, float, float, float],
+            blocker_bounds: tuple[tuple[float, float, float, float], ...],
+        ) -> bool:
+            for bounds in blocker_bounds:
+                if _bounds_overlap(line_bounds, bounds):
+                    return True
+            return False
+
         def _line_intersection_point(line2d, geometry):
             intersection = line2d.intersection(geometry)
             if intersection.is_empty:
@@ -2234,6 +2298,13 @@ class ShootingMixin:
             cached = model_geometry_cache.get(key)
             if cached is not None:
                 return cached
+            map_cache_key = _shooting_los_model_key(model)
+            map_cache = _shooting_los_geometry_cache(game_map)
+            cached = map_cache.get(map_cache_key)
+            if cached is not None:
+                map_cache.move_to_end(map_cache_key)
+                model_geometry_cache[key] = cached
+                return cached
             base = getattr(model, "model_base", None)
             if base is None:
                 return None
@@ -2246,12 +2317,22 @@ class ShootingMixin:
                 z_bounds = (z, z)
             geometry = (shape, shape.bounds, z_bounds)
             model_geometry_cache[key] = geometry
+            map_cache[map_cache_key] = geometry
+            map_cache.move_to_end(map_cache_key)
+            while len(map_cache) > _SHOOTING_LOS_GEOMETRY_CACHE_MAX:
+                map_cache.popitem(last=False)
             return geometry
 
-        def sample_model_points_3d(model: 'Model', perimeter_points: int = 8, z_levels: int = 3) -> list:
+        def sample_model_points_3d(model: 'Model', perimeter_points: int = 8, z_levels: int = 3) -> tuple:
+            sample_cache_key = ("sample_points_3d", _shooting_los_model_key(model), int(perimeter_points), int(z_levels))
+            sample_cache = _shooting_los_sample_cache(game_map)
+            cached = sample_cache.get(sample_cache_key)
+            if cached is not None:
+                sample_cache.move_to_end(sample_cache_key)
+                return tuple(cached)
             geometry = _model_geometry(model)
             if geometry is None:
-                return []
+                return ()
             base_shape, _bounds, z_bounds = geometry
             exterior = base_shape.exterior
             perimeter_samples = []
@@ -2276,7 +2357,12 @@ class ShootingMixin:
             for (x, y) in xy_points:
                 for z in z_samples:
                     points_3d.append((x, y, z))
-            return points_3d
+            samples = tuple(points_3d)
+            sample_cache[sample_cache_key] = samples
+            sample_cache.move_to_end(sample_cache_key)
+            while len(sample_cache) > _SHOOTING_LOS_SAMPLE_CACHE_MAX:
+                sample_cache.popitem(last=False)
+            return samples
 
         def _build_terrain_contexts(shooter_shape: object) -> tuple[dict[str, object], ...]:
             contexts: list[dict[str, object]] = []
@@ -2357,16 +2443,20 @@ class ShootingMixin:
             target_is_aircraft: bool,
             terrain_contexts: tuple[dict[str, object], ...],
             blocker_contexts: tuple[dict[str, object], ...],
+            always_possible_blocker: bool,
+            blocker_bounds: tuple[tuple[float, float, float, float], ...],
             shooter_is_aircraft: bool,
             shooter_is_towering: bool,
         ) -> bool:
             # Quick reject: degenerate line in XY projects to a point
             if abs(float(p0[0]) - float(p1[0])) <= 1e-9 and abs(float(p0[1]) - float(p1[1])) <= 1e-9:
                 return False
+            line_bounds = _segment_bounds_2d(p0, p1)
+            if not always_possible_blocker and not _any_blocker_bounds_overlap(line_bounds, blocker_bounds):
+                return False
             line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
             if line2d.length == 0:
                 return False
-            line_bounds = line2d.bounds
 
             # Helper to compute z at param t along the 2D line
             def z_at_t(t: float) -> float:
@@ -2485,6 +2575,7 @@ class ShootingMixin:
         shooter_is_towering = _unit_flag(shooter_unit, "is_towering")
         terrain_contexts = _build_terrain_contexts(shooter_shape)
         blocker_contexts = _build_blocker_contexts()
+        always_possible_blocker, blocker_bounds = _blocker_bounds_for_los(terrain_contexts, blocker_contexts)
 
         # Sample 3D points on shooter and on each target model; LOS if any pair is unblocked
         shooter_points = sample_model_points_3d(shooting_model, perimeter_points=8, z_levels=3)
@@ -2500,6 +2591,17 @@ class ShootingMixin:
             target_is_aircraft = _unit_flag(target_unit_for_model, "is_aircraft")
             target_ruins_states = _target_ruins_states(target_shape, terrain_contexts)
             target_points = sample_model_points_3d(target_model, perimeter_points=8, z_levels=3)
+            broad_los_bounds = (
+                min(float(_shooter_bounds[0]), float(_target_bounds[0])),
+                min(float(_shooter_bounds[1]), float(_target_bounds[1])),
+                max(float(_shooter_bounds[2]), float(_target_bounds[2])),
+                max(float(_shooter_bounds[3]), float(_target_bounds[3])),
+            )
+            target_blocker_bounds = tuple(
+                bounds for bounds in blocker_bounds if _bounds_overlap(broad_los_bounds, bounds)
+            )
+            if not always_possible_blocker and not target_blocker_bounds:
+                return _cache_and_return(True)
             for p0 in shooter_points:
                 for p1 in target_points:
                     if not is_segment_blocked(
@@ -2509,6 +2611,8 @@ class ShootingMixin:
                         target_is_aircraft=target_is_aircraft,
                         terrain_contexts=terrain_contexts,
                         blocker_contexts=blocker_contexts,
+                        always_possible_blocker=always_possible_blocker,
+                        blocker_bounds=target_blocker_bounds,
                         shooter_is_aircraft=shooter_is_aircraft,
                         shooter_is_towering=shooter_is_towering,
                     ):
