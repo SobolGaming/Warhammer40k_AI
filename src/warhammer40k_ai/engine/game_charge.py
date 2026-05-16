@@ -618,6 +618,18 @@ class ChargeService:
                     "contributor_type": infer_modifier_contributor_type(reason=reason, source=source),
                 }
             )
+        from .charge_diagnostics import charge_target_distance_rows
+
+        target_distance_rows = charge_target_distance_rows(self.map, charging_unit, targets)
+        required_distances: list[float] = []
+        for row in list(target_distance_rows or []):
+            try:
+                required_distances.append(float(row.get("required_charge_distance_estimate")))
+            except (TypeError, ValueError):
+                continue
+        required_charge_total = 0
+        if required_distances:
+            required_charge_total = int(math.ceil(max(required_distances) - 1e-9))
         roll_spec = {
             "dice_count": dice_count,
             "faces": 6,
@@ -636,6 +648,12 @@ class ChargeService:
             "command_reroll_allowed": command_reroll_ok,
             "command_reroll_mode": "whole",
         }
+        if target_distance_rows:
+            roll_spec["charge_declaration_target_distances"] = list(target_distance_rows)
+        if required_charge_total > 0:
+            roll_spec["sum_target"] = int(required_charge_total)
+            roll_spec["sum_op"] = "gte"
+            roll_spec["required_charge_distance_estimate"] = float(max(required_distances))
         if fixed_dice:
             roll_spec["fixed_dice"] = list(fixed_dice)
             roll_spec["miracle_used"] = bool(miracle_used)

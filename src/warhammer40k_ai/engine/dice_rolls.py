@@ -91,16 +91,27 @@ def _sorted_die_ids(dice: Iterable[dict]) -> List[str]:
     return [str(d.get("die_id", "")) for d in items]
 
 
-def _sum_base_dice(dice: Iterable[dict]) -> int:
-    total = 0
+def _sum_for_success(spec: dict, dice: Iterable[dict]) -> int:
+    base_values: list[int] = []
     for die in list(dice or []):
         if bool(die.get("is_derived", False)):
             continue
         try:
-            total += int(die.get("value", 0) or 0)
-        except Exception:
+            base_values.append(int(die.get("value", 0) or 0))
+        except (TypeError, ValueError):
             continue
-    return int(total)
+    if not base_values:
+        return 0
+    charge_spec = dict(spec.get("charge_spec", {}) or {}) if isinstance(spec, dict) else {}
+    if charge_spec:
+        try:
+            keep = int(charge_spec.get("keep_highest", len(base_values)) or len(base_values))
+        except (TypeError, ValueError):
+            keep = len(base_values)
+        keep = max(0, min(int(keep), len(base_values)))
+        if keep < len(base_values):
+            return int(sum(sorted(base_values, reverse=True)[:keep]))
+    return int(sum(base_values))
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -665,7 +676,7 @@ class DiceRollManager:
             values.append(self._next_roll_outcome(state, faces, game))
 
         state.dice = self._build_dice(state.roll_id, values, faces, derived=list(spec.get("derived_dice", []) or []))
-        state.total = int(_sum_base_dice(state.dice))
+        state.total = int(_sum_for_success(spec, state.dice))
         if str(spec.get("display_kind", "") or "") == "d33":
             base_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
             if len(base_vals) >= 2:
@@ -737,7 +748,7 @@ class DiceRollManager:
                 faces,
                 derived=list(roll_results.get("derived_dice", []) or []),
             )
-        state.total = int(roll_results.get("total", _sum_base_dice(state.dice)))
+        state.total = int(roll_results.get("total", _sum_for_success(getattr(state, "spec", {}) or {}, state.dice)))
         if str(state.spec.get("display_kind", "") or "") == "d33":
             base_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
             if len(base_vals) >= 2:
@@ -824,6 +835,8 @@ class DiceRollManager:
                 return []
             return eligible
 
+        sum_failed = state.sum_success is False
+
         if callable(provider):
             for opt in options:
                 action_id = str(opt.get("action_id", ""))
@@ -869,20 +882,33 @@ class DiceRollManager:
                 if state.per_die_success.get(die_id, None) is False
             ]
             if mode in ("all", "whole"):
-                if failed:
+                if failed or sum_failed:
                     return (action_id, eligible)
                 continue
             if mode in ("values", "ones", "any"):
                 # Prefer rerolling eligible failures.
                 if failed:
                     return (action_id, failed)
+                if sum_failed:
+                    return (action_id, eligible)
                 return (action_id, eligible)
             if mode in ("one", "single", "select"):
                 if failed:
                     return (action_id, [failed[0]])
+                if sum_failed and eligible:
+                    return (action_id, [eligible[0]])
                 return (action_id, [eligible[0]])
             # Fallback: select all eligible.
             return (action_id, eligible)
+        if str(spec.get("roll_type", "") or "").strip().lower() == "charge" and sum_failed:
+            for opt in options:
+                if str(opt.get("action_id", "")) != "command_reroll":
+                    continue
+                if not bool(opt.get("is_command", False)):
+                    continue
+                selected = _select_ids(opt)
+                if selected:
+                    return ("command_reroll", selected)
         return ("none", [])
 
     def apply_reroll(
@@ -953,7 +979,7 @@ class DiceRollManager:
             die["reroll_count"] = int(die.get("reroll_count", 0) or 0) + 1
             rerolled_ids.append(die_id)
 
-        state.total = int(_sum_base_dice(state.dice))
+        state.total = int(_sum_for_success(state.spec, state.dice))
         if str(state.spec.get("display_kind", "") or "") == "d33":
             base_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
             if len(base_vals) >= 2:
@@ -1103,7 +1129,7 @@ class DiceRollManager:
                 "rerolled_from": None,
             }
             state.dice.append(die)
-        state.total = int(_sum_base_dice(state.dice))
+        state.total = int(_sum_for_success(state.spec, state.dice))
         if str(state.spec.get("display_kind", "") or "") == "d33":
             base_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
             if len(base_vals) >= 2:

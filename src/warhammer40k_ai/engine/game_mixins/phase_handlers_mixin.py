@@ -1300,6 +1300,53 @@ class GamePhaseHandlersMixin:
         ):
             return
         resolved_value = getattr(request, "_resolved_decision_value", None)
+        if decision_type in {DECISION_DECLARE_CHARGE, DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
+            roll_id = None
+            if isinstance(resolved_value, dict):
+                roll_id = resolved_value.get("roll_id")
+            if roll_id is None:
+                roll_id = ctx.get("roll_id")
+            if roll_id is not None:
+                roll_manager = getattr(self, "roll_manager", None)
+                get_roll = getattr(roll_manager, "get_roll", None) if roll_manager is not None else None
+                if callable(get_roll):
+                    try:
+                        roll_state = get_roll(int(roll_id))
+                    except (TypeError, ValueError):
+                        roll_state = None
+                    if (
+                        roll_state is not None
+                        and not bool(getattr(roll_state, "final", False))
+                        and bool(getattr(self, "auto_resolve_dice_rolls", False))
+                    ):
+                        agent = getattr(self, "_headless_decision_agent", None)
+                        resolve_auto = getattr(agent, "_auto_resolve_request", None)
+                        queue = getattr(self, "decision_queue", None)
+                        list_requests = getattr(queue, "list", None) if queue is not None else None
+                        attempts = 0
+                        while callable(resolve_auto) and callable(list_requests) and attempts < 8:
+                            pending_roll_request = None
+                            for pending in list(list_requests() or []):
+                                pending_type = str(getattr(pending, "decision_type", "") or "").strip()
+                                if pending_type not in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
+                                    continue
+                                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                                if str(pending_ctx.get("roll_id", "") or "") != str(roll_id):
+                                    continue
+                                pending_roll_request = pending
+                                break
+                            if pending_roll_request is None:
+                                break
+                            resolve_auto(pending_roll_request, self)
+                            try:
+                                roll_state = get_roll(int(roll_id))
+                            except (TypeError, ValueError):
+                                roll_state = None
+                            if roll_state is None or bool(getattr(roll_state, "final", False)):
+                                break
+                            attempts += 1
+                    if roll_state is not None and not bool(getattr(roll_state, "final", False)):
+                        return
         if isinstance(resolved_value, dict):
             if not target_unit_ids:
                 target_unit_ids = [

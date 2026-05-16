@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield
-from warhammer40k_ai.engine.dice_rolls import register_roll_handler
+from warhammer40k_ai.engine.dice_rolls import DiceRollState, register_roll_handler
 from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.utility.dice import get_roll, suppress_get_roll_requests
@@ -230,6 +230,115 @@ def test_auto_pick_reroll_action_uses_decision_port_provider_for_remote_player()
     assert list(selected or [])
     assert provider_calls
     assert str(provider_calls[0].get("roll_type", "") or "") == "hit"
+
+
+def test_auto_pick_charge_reroll_uses_required_charge_total_failure():
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = False
+    req = game.roll_manager.request_roll(
+        game,
+        player_id="p1",
+        spec={
+            "dice_count": 2,
+            "faces": 6,
+            "fixed_dice": [3, 1],
+            "roll_sequence": [6, 2],
+            "reason": "Charge roll",
+            "roll_type": "charge",
+            "charge_spec": {"dice_count": 2, "keep_highest": 2},
+            "sum_target": 8,
+            "sum_op": "gte",
+            "reroll_rules": [
+                {
+                    "action_id": "reroll_charge",
+                    "label": "Re-roll Charge roll",
+                    "mode": "all",
+                    "source": "rule",
+                }
+            ],
+        },
+        prompt="Charge roll",
+    )
+    roll_id = int((req.context or {}).get("roll_id", 0) or 0)
+    state = game.roll_manager.resolve_roll(game, roll_id)
+
+    assert state.sum_success is False
+    action_id, selected = game.roll_manager._auto_pick_reroll_action(game, state)
+
+    assert action_id == "reroll_charge"
+    assert set(selected or []) == {f"{roll_id}:0", f"{roll_id}:1"}
+
+    updated = game.roll_manager.apply_reroll(game, roll_id, action_id=action_id, selected_die_ids=selected)
+    assert updated.total == 8
+    assert updated.sum_success is True
+    assert updated.reroll_history[-1]["action_id"] == "reroll_charge"
+
+
+def test_auto_pick_charge_command_reroll_when_charge_failed_and_no_rule_reroll():
+    game = _make_game_with_players()
+    state = DiceRollState(
+        roll_id=91,
+        player_id="p1",
+        spec={"roll_type": "charge", "sum_target": 8, "sum_op": "gte"},
+        status="rolled",
+        dice=[
+            {"die_id": "91:0", "value": 2, "is_derived": False},
+            {"die_id": "91:1", "value": 2, "is_derived": False},
+        ],
+        total=4,
+        per_die_success={"91:0": None, "91:1": None},
+        sum_success=False,
+        reroll_options=[
+            {"action_id": "none", "label": "No re-roll", "mode": "none", "source": "none"},
+            {
+                "action_id": "command_reroll",
+                "label": "Command Re-roll",
+                "mode": "whole",
+                "eligible_die_ids": ["91:0", "91:1"],
+                "is_command": True,
+                "consume_cp": True,
+            },
+        ],
+    )
+
+    action_id, selected = game.roll_manager._auto_pick_reroll_action(game, state)
+
+    assert action_id == "command_reroll"
+    assert set(selected or []) == {"91:0", "91:1"}
+
+
+def test_charge_roll_success_uses_kept_dice_before_reroll_choice():
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = False
+    req = game.roll_manager.request_roll(
+        game,
+        player_id="p1",
+        spec={
+            "dice_count": 3,
+            "faces": 6,
+            "fixed_dice": [6, 5, 1],
+            "reason": "Charge roll",
+            "roll_type": "charge",
+            "charge_spec": {"dice_count": 3, "keep_highest": 2},
+            "sum_target": 10,
+            "sum_op": "gte",
+            "reroll_rules": [
+                {
+                    "action_id": "reroll_charge",
+                    "label": "Re-roll Charge roll",
+                    "mode": "all",
+                    "source": "rule",
+                }
+            ],
+        },
+        prompt="Charge roll",
+    )
+    roll_id = int((req.context or {}).get("roll_id", 0) or 0)
+    state = game.roll_manager.resolve_roll(game, roll_id)
+
+    assert state.total == 11
+    assert state.sum_success is True
+    assert game.roll_manager._auto_pick_reroll_action(game, state) == ("none", [])
 
 
 def test_get_roll_d33_uses_request_roll():
