@@ -104,6 +104,8 @@ class TestSelectedToShootOrFightRerollChoice(unittest.TestCase):
         wargear_mod.get_roll = lambda _s: next(seq)
         try:
             hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(hit_res.get("hit"))
+            self.assertEqual(hit_res.get("reroll"), 5)
             self.assertTrue(any("Test Ability" in x for x in hit_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_action_reroll("hit", "shoot"))
 
@@ -137,6 +139,8 @@ class TestSelectedToShootOrFightRerollChoice(unittest.TestCase):
             self.assertIsNone(hit_res.get("reroll"))
 
             wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(wound_res.get("wound"))
+            self.assertEqual(wound_res.get("reroll"), 5)
             self.assertTrue(any("Test Ability" in x for x in wound_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_action_reroll("wound", "shoot"))
         finally:
@@ -162,6 +166,8 @@ class TestSelectedToShootOrFightRerollChoice(unittest.TestCase):
         wargear_mod.get_roll = lambda _s: next(seq)
         try:
             hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(hit_res.get("hit"))
+            self.assertEqual(hit_res.get("reroll"), 5)
             self.assertTrue(any("Test Ability" in x for x in hit_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_action_reroll("hit", "fight"))
         finally:
@@ -190,11 +196,15 @@ class TestSelectedToShootOrFightRerollChoice(unittest.TestCase):
         wargear_mod.get_roll = lambda _s: next(seq)
         try:
             hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(hit_res.get("hit"))
+            self.assertEqual(hit_res.get("reroll"), 5)
             self.assertTrue(any("Test Ability" in x for x in hit_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_action_reroll("hit", "shoot"))
             self.assertTrue(attacker_model.can_use_selected_to_action_reroll("wound", "shoot"))
 
             wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(wound_res.get("wound"))
+            self.assertEqual(wound_res.get("reroll"), 5)
             self.assertTrue(any("Test Ability" in x for x in wound_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_action_reroll("wound", "shoot"))
         finally:

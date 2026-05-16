@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from warhammer40k_ai.engine.decisions import DecisionQueue
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_DICE_REROLL
-from warhammer40k_ai.engine.dice_rolls import DiceRollManager
+from warhammer40k_ai.engine.dice_rolls import DiceRollManager, register_roll_handler
 
 
 class _EventSystemStub:
@@ -164,3 +166,75 @@ def test_command_reroll_request_payload_carries_tool_metadata() -> None:
     assert payload["stratagem_name"] == "COMMAND RE-ROLL"
     assert payload["ability_key"] == "command_reroll"
     assert payload["ability_name"] == "COMMAND RE-ROLL"
+
+
+@pytest.mark.parametrize("roll_type", ["hit", "wound"])
+def test_command_reroll_attack_handler_receives_final_rerolled_hit_or_wound(roll_type: str) -> None:
+    player = _PlayerStub("p4", available=True)
+    unit = _UnitStub("u4")
+    game = _GameStub(player=player, unit=unit)
+    handled: list[dict] = []
+    handler_key = f"test_command_reroll_final_{roll_type}_{id(handled)}"
+
+    def _capture_handler(_game, state) -> None:
+        handled.append(
+            {
+                "roll_type": str(state.spec.get("roll_type", "") or ""),
+                "dice": [
+                    int(die.get("value", 0) or 0)
+                    for die in list(state.dice or [])
+                    if not bool(die.get("is_derived", False))
+                ],
+                "success": list(dict(state.per_die_success or {}).values()),
+                "final": bool(state.final),
+            }
+        )
+
+    register_roll_handler(handler_key, _capture_handler)
+    req = game.roll_manager.request_roll(
+        game,
+        player_id=player.id,
+        spec={
+            "dice_count": 1,
+            "faces": 6,
+            "fixed_dice": [2],
+            "roll_sequence": [5],
+            "reason": f"{roll_type.title()} roll (1D6)",
+            "roll_type": roll_type,
+            "target": 3,
+            "target_op": "gte",
+            "unit_id": unit.id,
+            "handler_key": handler_key,
+            "command_reroll_allowed": True,
+            "command_reroll_mode": "one",
+            "reroll_rules": [],
+        },
+        prompt=f"{roll_type.title()} roll (1D6)",
+    )
+    roll_id = int((req.context or {}).get("roll_id", 0) or 0)
+
+    state = game.roll_manager.resolve_roll(game, roll_id)
+    assert state.final is False
+    assert handled == []
+
+    command_option = next(
+        opt
+        for opt in list(state.reroll_options or [])
+        if str(opt.get("action_id", "") or "") == "command_reroll"
+    )
+    updated = game.roll_manager.apply_reroll(
+        game,
+        roll_id,
+        action_id="command_reroll",
+        selected_die_ids=list(command_option.get("eligible_die_ids", []) or []),
+    )
+
+    assert updated.final is True
+    assert handled == [
+        {
+            "roll_type": roll_type,
+            "dice": [5],
+            "success": [True],
+            "final": True,
+        }
+    ]

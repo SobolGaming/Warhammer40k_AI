@@ -95,10 +95,14 @@ class TestSelectedToShootRerolls(unittest.TestCase):
         try:
             attack_instance = {"_aura_attack_mods": aura_stub}
             hit_res = prof._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(hit_res.get("hit"))
+            self.assertEqual(hit_res.get("reroll"), 5)
             self.assertTrue(any("Crystal Matrix" in x for x in hit_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_shoot_reroll("hit"))
 
             wound_res = prof._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(wound_res.get("wound"))
+            self.assertEqual(wound_res.get("reroll"), 5)
             self.assertTrue(any("Crystal Matrix" in x for x in wound_res.get("special_effects", [])))
             self.assertFalse(attacker_model.can_use_selected_to_shoot_reroll("wound"))
 
