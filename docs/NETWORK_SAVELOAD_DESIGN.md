@@ -108,6 +108,7 @@ Events include:
 - event_id (monotonic int), type, actor_id
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
+- `unit_move_started`/`unit_move_ended` payloads include the current `phase_name` when the event log is attached to an active game, so replay/profiling can attribute fight-phase pile-in/consolidate and reactive Blood Surge movement to their owning phase window.
 - `command_rejected` payloads include validator `errors`; rejected `RESOLVE_DECISION` events also include compact decision diagnostics (`decision_id`, `option_id`, `decision_type`, optional candidate probe ids/kinds, `payload_keys`, and counts/checksums for large arrays such as `model_positions` or `declarations`).
 - `charge_move_failed` payloads include the declared target IDs, charge roll/max distance, roll ID when available, current and declaration-time target distances when available, a `within_declaration_range` boolean for the 12" declaration gate, and a `failure_stage` classifier (`declaration_range`, `charge_roll_distance`, `endpoint_geometry`, or `target_distance_unknown`).
 
@@ -366,7 +367,7 @@ Movement:
 - sublime_prescience_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="sublime_prescience"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `optional=true`)
 - spirit_mark_friendly_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="spirit_mark_friendly"`, `source_unit_id`, `model_id`, `range`, `keyword`, `sustained_hits_value`)
 - spirit_mark_enemy_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_mark_enemy"`, `source_unit_id`, `model_id`, `friendly_unit_id`, `sustained_hits_value`, `keyword`)
-- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"`; preview fight stages may also include serialized `fight_scheduler`, `fight_stage_boundary`, and `fight_move_decision_categories` such as `consolidate_to_engage` / `consolidate_to_objective`)
+- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"` and publish `unit_move_started`/`unit_move_ended` under the Fight phase when applied; preview fight stages may also include serialized `fight_scheduler`, `fight_stage_boundary`, and `fight_move_decision_categories` such as `consolidate_to_engage` / `consolidate_to_objective`)
 - coherency_violation_dialog: RESOLVE_COHERENCY {model_ids[1]} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`; coherency removals stamp removal-cause telemetry on `model_destroyed_before_removal`/`unit_destroyed`)
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
@@ -414,7 +415,8 @@ Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors / On
 `CONFIRM_YES_NO` with `reactive_move_*` context, followed by `MOVE_UNIT` with
 `movement_type="loping_speed"` and `max_distance` (rolled or fixed). On My Signal uses
 `reactive_move_source="On My Signal"` and only queues from enemy Normal or Advance move-end events.
-Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
+Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`;
+successful Blood Surge `MOVE_UNIT` applications publish `unit_move_started`/`unit_move_ended`.
 Brazen Fury uses the same pattern with `reactive_move_kind="brazen_fury"` and `movement_type="brazen_fury"`.
 Horde Move uses the same pattern with `reactive_move_kind="horde_move"` and `movement_type="horde_move"`.
 Blistering Assault uses the same pattern with `reactive_move_kind="blistering_assault"` and `movement_type="blistering_assault"` (with `reactive_move_allow_engagement_range=true`).

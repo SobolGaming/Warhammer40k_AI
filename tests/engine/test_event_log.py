@@ -115,16 +115,20 @@ def test_unit_move_events_logged():
     unit = SimpleNamespace(id="u1", models=[model])
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1
-    game.event_system.publish("unit_move_started", unit=unit, action="move")
-    game.event_system.publish("unit_move_ended", unit=unit, action="move")
+    game.phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.event_system.publish("unit_move_started", unit=unit, action="pile_in")
+    game.event_system.publish("unit_move_ended", unit=unit, action="pile_in")
 
     started = [e for e in game.event_log.events if e.event_type == "unit_move_started"]
     ended = [e for e in game.event_log.events if e.event_type == "unit_move_ended"]
     assert started
     assert ended
+    assert started[-1].payload["action"] == "pile_in"
+    assert started[-1].payload["phase_name"] == "FIGHT_PHASE"
     payload = ended[-1].payload
     assert payload["unit_id"] == "u1"
-    assert payload["action"] == "move"
+    assert payload["action"] == "pile_in"
+    assert payload["phase_name"] == "FIGHT_PHASE"
     pos = payload["model_positions"][0]
     assert pos["model_id"] == "m1"
     assert pos["x"] == 1250

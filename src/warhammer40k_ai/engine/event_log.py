@@ -404,6 +404,14 @@ class DeterministicEventLog:
             validate_payload=False,
         )
 
+    def _current_phase_name(self) -> str:
+        game = self._attached_game
+        if game is None:
+            return ""
+        phase = getattr(game, "phase", None)
+        phase_name = getattr(phase, "name", phase)
+        return str(phase_name or "").strip()
+
     def _on_unit_move_started(self, **kwargs: Any) -> None:
         unit = kwargs.get("unit")
         action = kwargs.get("action")
@@ -411,6 +419,9 @@ class DeterministicEventLog:
             "unit_id": maybe_entity_id(unit),
             "action": str(action or ""),
         }
+        phase_name = self._current_phase_name()
+        if phase_name:
+            payload["phase_name"] = phase_name
         self.record("unit_move_started", actor_id=None, payload=payload, validate_payload=True)
 
     def _on_unit_move_ended(self, **kwargs: Any) -> None:
@@ -420,6 +431,9 @@ class DeterministicEventLog:
             "unit_id": maybe_entity_id(unit),
             "action": str(action or ""),
         }
+        phase_name = self._current_phase_name()
+        if phase_name:
+            payload["phase_name"] = phase_name
         models = list(getattr(unit, "models", []) or []) if unit is not None else []
         positions = []
         for model in models:

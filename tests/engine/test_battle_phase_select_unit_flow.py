@@ -24,10 +24,19 @@ from warhammer40k_ai.engine.decision_requests import (
     build_select_unit_request,
 )
 from warhammer40k_ai.engine.decision_handlers.shooting import _apply_declare_shots
+from warhammer40k_ai.engine.decision_handlers.movement import _apply_move_unit
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.fight_phase_manager import FightStage
 from warhammer40k_ai.engine.fight_resolution import _resolve_target_declaration_attacks
 from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
+
+
+class _EventSystemStub:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def publish(self, event_name: str, **kwargs) -> None:
+        self.events.append((event_name, dict(kwargs)))
 
 
 class _DecisionQueueStub:
@@ -97,6 +106,14 @@ class _ModelStub:
         self._id = model_id
         self.wargear = [wargear]
         self.is_alive = True
+        self.model_base = SimpleNamespace(z=0.0, facing=0.0)
+        self._location = (0.0, 0.0, 0.0, 0.0)
+
+    def get_location(self):
+        return self._location
+
+    def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+        self._location = (float(x), float(y), float(z), float(facing))
 
 
 class _UnitStub:
@@ -120,6 +137,7 @@ class _UnitStub:
         )
         self.models = [_ModelStub(f"{unit_id}:model-1", _WargearStub(f"{unit_id}:wg-1"))]
         self._charge_targets = list(charge_targets or [])
+        self.special_rules = {}
 
     def is_alive(self) -> bool:
         return True
@@ -173,6 +191,9 @@ class _UnitStub:
     def validate_charge_end_state(self, targets, _game_map):
         return (bool(targets), "")
 
+    def mark_blood_surge_used(self, _game=None) -> None:
+        self.special_rules["blood_surge_used"] = True
+
 
 class _MapStub:
     def __init__(self, enemy_units, *, distances=None) -> None:
@@ -203,10 +224,13 @@ class _FlowGame(GamePhaseHandlersMixin):
         self.turn = 2
         self.is_authoritative = True
         self.decision_queue = _DecisionQueueStub()
+        self.event_system = _EventSystemStub()
         self.queued_requests: list[DecisionRequest] = []
         self.map = _MapStub(enemy_units or [], distances=distances)
         registry_items = list(getattr(unit.parent_army, "units", []) or [unit])
         registry_items.extend(list(enemy_units or []))
+        for registry_unit in list(registry_items):
+            registry_items.extend(list(getattr(registry_unit, "models", []) or []))
         self.entity_registry = _RegistryStub(registry_items)
         self._player = unit.parent_army.player
         self._opponent = _PlayerStub("player-2", "Opponent")
@@ -1276,3 +1300,85 @@ def test_fight_move_unit_followup_resumes_pending_fight_sequence() -> None:
     game._maybe_queue_fight_phase_followup(request, result)
 
     assert resumed == [(unit.id, "pile_in")]
+
+
+def test_fight_move_unit_application_publishes_move_start_and_end_events() -> None:
+    _player, _army, unit, _enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Pile In",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"unit_id": unit.id, "movement_type": "pile_in"})],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "pile_in",
+            "phase_name": "FIGHT_PHASE",
+            "phase_step": "FIGHT_NORMAL",
+            "selection_purpose": "FIGHT_MOVE",
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={
+            "model_positions": [
+                {"model_id": unit.models[0].id, "position": [3.0, 4.0, 0.0], "facing": 1.25},
+            ],
+        },
+    )
+
+    _apply_move_unit(game, request, result)
+
+    move_events = [
+        (event_name, event_payload["action"], event_payload["unit"])
+        for event_name, event_payload in game.event_system.events
+        if event_name in {"unit_move_started", "unit_move_ended"}
+    ]
+    assert move_events == [
+        ("unit_move_started", "pile_in", unit),
+        ("unit_move_ended", "pile_in", unit),
+    ]
+    assert unit.models[0].get_location() == (3.0, 4.0, 0.0, 1.25)
+
+
+def test_blood_surge_move_application_publishes_move_start_and_end_events() -> None:
+    _player, _army, unit, _enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Blood Surge",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"unit_id": unit.id, "movement_type": "blood_surge"})],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "blood_surge",
+            "phase_name": "SHOOTING_PHASE",
+            "reactive_move_kind": "blood_surge",
+            "reactive_move_movement_type": "blood_surge",
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={
+            "model_positions": [
+                {"model_id": unit.models[0].id, "position": [1.0, 2.0, 0.0], "facing": 0.5},
+            ],
+        },
+    )
+
+    _apply_move_unit(game, request, result)
+
+    move_events = [
+        (event_name, event_payload["action"], event_payload["unit"])
+        for event_name, event_payload in game.event_system.events
+        if event_name in {"unit_move_started", "unit_move_ended"}
+    ]
+    assert move_events == [
+        ("unit_move_started", "blood_surge", unit),
+        ("unit_move_ended", "blood_surge", unit),
+    ]
+    assert unit.special_rules["blood_surge_used"] is True

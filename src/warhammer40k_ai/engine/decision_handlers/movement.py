@@ -1425,6 +1425,52 @@ def _clear_selected_movement_plan(unit: object) -> None:
     round_state.planned_movement_distance_inches = None
 
 
+def _movement_event_action(movement_type: str, ctx: dict | None = None) -> str:
+    movement_key = str(movement_type or "").strip().lower()
+    if movement_key != "reactive":
+        return movement_key
+    context = dict(ctx or {})
+    reactive_movement_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_movement_type:
+        return reactive_movement_type
+    reactive_move_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    return reactive_move_kind or movement_key
+
+
+def _publish_unit_move_event(
+    game: object,
+    event_name: str,
+    unit: object,
+    *,
+    movement_type: str,
+    ctx: dict | None = None,
+) -> None:
+    event_system = getattr(game, "event_system", None)
+    if event_system is None:
+        return
+    action = _movement_event_action(movement_type, ctx)
+    if not action:
+        return
+    event_system.publish(event_name, unit=unit, action=action)
+
+
+def _should_publish_decision_move_started(movement_type: str) -> bool:
+    movement_key = str(movement_type or "").strip().lower()
+    return movement_key in {"pile_in", "consolidate", "blood_surge"}
+
+
+def _should_publish_decision_move_ended(movement_type: str, ctx: dict | None = None) -> bool:
+    movement_key = str(movement_type or "").strip().lower()
+    if movement_key in {"move", "advance", "fall_back", "charge", "pile_in", "consolidate", "blood_surge"}:
+        return True
+    return movement_key == "reactive" and _movement_event_action(movement_type, ctx) in {
+        "move",
+        "advance",
+        "fall_back",
+        "blood_surge",
+    }
+
+
 def _apply_select_movement_action(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
@@ -3109,6 +3155,14 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 except Exception:
                     pass
         return None
+    if _should_publish_decision_move_started(movement_type):
+        _publish_unit_move_event(
+            game,
+            "unit_move_started",
+            unit,
+            movement_type=movement_type,
+            ctx=ctx,
+        )
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
 
@@ -3380,15 +3434,14 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             raise RuntimeError("Wraithlike Retreat transport cannot embark units.")
         if not bool(add_passenger(unit, game_map=game_map)):
             raise RuntimeError("Wraithlike Retreat failed: transport could not embark unit at move end.")
-    move_end_action = ""
-    if movement_type in ("move", "advance", "fall_back", "charge"):
-        move_end_action = str(movement_type)
-    elif movement_type == "reactive" and reactive_movement_type in ("move", "advance", "fall_back"):
-        move_end_action = str(reactive_movement_type)
-    if move_end_action:
-        event_system = getattr(game, "event_system", None)
-        if event_system is not None:
-            event_system.publish("unit_move_ended", unit=unit, action=move_end_action)
+    if _should_publish_decision_move_ended(movement_type, ctx):
+        _publish_unit_move_event(
+            game,
+            "unit_move_ended",
+            unit,
+            movement_type=movement_type,
+            ctx=ctx,
+        )
     return None
 
 
