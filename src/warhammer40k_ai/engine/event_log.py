@@ -170,6 +170,9 @@ class DeterministicEventLog:
         event_system.subscribe_group(EVENT_LOG_GROUP, "vp_awarded", self._on_vp_awarded)
         event_system.subscribe_group(EVENT_LOG_GROUP, "vp_capped", self._on_vp_capped)
         event_system.subscribe_group(EVENT_LOG_GROUP, "objective_control_changed", self._on_objective_control_changed)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "blood_tithe_points_gained", self._on_blood_tithe_points_gained)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "blood_tithe_activated", self._on_blood_tithe_activated)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "blood_tithe_updated", self._on_blood_tithe_updated)
 
     def detach(self) -> None:
         if self._attached_game is None:
@@ -684,6 +687,42 @@ class DeterministicEventLog:
             "battle_round": int(battle_round or 0),
         }
         self.record("battle_round_started", actor_id=None, payload=payload, validate_payload=True)
+
+    def _on_blood_tithe_points_gained(self, **kwargs: Any) -> None:
+        payload: dict[str, Any] = {
+            "player_id": maybe_entity_id(kwargs.get("player")),
+            "amount": int(kwargs.get("amount", 0) or 0),
+            "total": int(kwargs.get("total", 0) or 0),
+            "attacker_unit_id": maybe_entity_id(kwargs.get("attacker_unit")),
+            "target_unit_id": maybe_entity_id(kwargs.get("target_unit")),
+        }
+        if kwargs.get("roll") is not None:
+            payload["roll"] = int(kwargs.get("roll") or 0)
+        source = str(kwargs.get("source") or "").strip()
+        if source:
+            payload["source"] = source
+        self.record("blood_tithe_points_gained", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
+
+    def _on_blood_tithe_activated(self, **kwargs: Any) -> None:
+        ability = kwargs.get("ability")
+        payload: dict[str, Any] = {
+            "player_id": maybe_entity_id(kwargs.get("player")),
+            "ability_key": str(getattr(ability, "key", "") or ""),
+            "ability_name": str(getattr(ability, "name", "") or ability or ""),
+            "total": int(kwargs.get("total", 0) or 0),
+        }
+        cost = getattr(ability, "cost", None)
+        if cost is not None:
+            payload["cost"] = int(cost or 0)
+        self.record("blood_tithe_activated", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
+
+    def _on_blood_tithe_updated(self, **kwargs: Any) -> None:
+        payload = {
+            "player_id": maybe_entity_id(kwargs.get("player")),
+            "total": int(kwargs.get("total", 0) or 0),
+            "active": [str(value or "") for value in list(kwargs.get("active", []) or [])],
+        }
+        self.record("blood_tithe_updated", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
 
     def _on_vp_awarded(self, **kwargs: Any) -> None:
         player = kwargs.get("player")

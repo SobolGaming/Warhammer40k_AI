@@ -247,8 +247,22 @@ def _validate_choose_blood_tithe(game: object, request: DecisionRequest, result:
     if ability_key is None:
         return ("Blood Tithe selection requires ability_key.",)
     army = _resolve_army(game, request, payload)
-    if army is None or getattr(army, "blood_tithe", None) is None:
+    mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+    if mgr is None or not getattr(mgr, "is_khorne_daemonkin", lambda: False)():
         return ("Blood Tithe manager not found.",)
+    timing = str(request.context.get("timing", "") or payload.get("timing", "") or "command_phase")
+    player = _resolve_player(game, request, payload)
+    ignore_limit = bool(request.context.get("ignore_command_phase_limit", False))
+    if not bool(
+        mgr.can_activate_blood_tithe(
+            str(ability_key),
+            game=game,
+            player=player,
+            timing=timing,
+            ignore_command_phase_limit=ignore_limit,
+        )
+    ):
+        return ("Blood Tithe ability already active, unavailable, or lacks enough points.",)
     return ()
 
 
@@ -259,13 +273,22 @@ def _apply_choose_blood_tithe(game: object, request: DecisionRequest, result: De
     army = _resolve_army(game, request, payload)
     if army is None:
         raise RuntimeError("Blood Tithe army not found.")
-    mgr = getattr(army, "blood_tithe", None)
-    if mgr is None:
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None or not getattr(mgr, "is_khorne_daemonkin", lambda: False)():
         raise RuntimeError("Blood Tithe manager not found.")
     ability_key = payload.get("ability_key") or payload.get("choice_key") or payload.get("key")
-    timing = str(request.context.get("timing", "") or payload.get("timing", "") or "")
+    timing = str(request.context.get("timing", "") or payload.get("timing", "") or "command_phase")
     player = _resolve_player(game, request, payload)
-    return bool(mgr.activate_blood_tithe(str(ability_key), game=game, player=player, timing=timing))
+    ignore_limit = bool(request.context.get("ignore_command_phase_limit", False))
+    return bool(
+        mgr.activate_blood_tithe(
+            str(ability_key),
+            game=game,
+            player=player,
+            timing=timing,
+            ignore_command_phase_limit=ignore_limit,
+        )
+    )
 
 
 def _validate_choose_idol_of_khorne(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

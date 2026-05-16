@@ -222,6 +222,46 @@ class TestBloodTithe(unittest.TestCase):
 
         self.assertTrue(unit.attached_unit_has_blessings_of_khorne())
 
+    def test_blood_tithe_decision_uses_khorne_daemonkin_manager(self):
+        from warhammer40k_ai.engine.decision_handlers.abilities import (
+            _apply_choose_blood_tithe,
+            _validate_choose_blood_tithe,
+        )
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_BLOOD_TITHE
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        game, we_army, _enemy_army, p1, _p2 = self._make_game()
+        mgr = we_army.world_eaters_detachments
+        mgr.blood_tithe_points = 2
+        army_id = get_entity_id(we_army)
+        option = DecisionOption.create(
+            "Enraged Abjuration",
+            payload={
+                "army_id": army_id,
+                "ability_key": "ENRAGED_ABJURATION",
+                "timing": "command_phase",
+            },
+        )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_BLOOD_TITHE,
+            "Select a Blood Tithe ability.",
+            player_id=p1.id,
+            options=[option],
+            context={"army_id": army_id, "timing": "command_phase"},
+        )
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=p1.id,
+            option_id=option.option_id,
+            payload={},
+        )
+
+        self.assertEqual(_validate_choose_blood_tithe(game, request, result), ())
+        self.assertTrue(_apply_choose_blood_tithe(game, request, result))
+        self.assertEqual(mgr.blood_tithe_points, 0)
+        self.assertIn("ENRAGED_ABJURATION", mgr.blood_tithe_active)
+
     def test_a_worthy_skull_grants_btp(self):
         game, we_army, enemy_army, p1, _p2 = self._make_game()
         we_unit = _make_unit(

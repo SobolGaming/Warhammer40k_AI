@@ -757,6 +757,9 @@ class GamePhaseHandlersMixin:
         for unit in list(candidates or []):
             if unit is None:
                 continue
+            round_state = getattr(unit, "round_state", None)
+            if bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
             if build_declare_charge_request(
                 self,
                 unit,
@@ -1230,6 +1233,11 @@ class GamePhaseHandlersMixin:
                 return
             if str(ctx.get("phase_name", "") or "").strip().upper() != "CHARGE_PHASE":
                 return
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            unit = self._resolve_unit_by_id(unit_id) if unit_id else None
+            round_state = getattr(unit, "round_state", None)
+            if round_state is not None:
+                round_state.attempted_charge_this_round = True
             if not bool(ctx.get("out_of_turn", False)):
                 self._queue_charge_phase_selection(player=self.get_current_player())
             return
@@ -1270,6 +1278,19 @@ class GamePhaseHandlersMixin:
             return
         round_state = getattr(unit, "round_state", None)
         if bool(getattr(round_state, "charged_this_round", False)):
+            return
+        if (
+            decision_type
+            in {
+                DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+                DECISION_DECLARE_CHARGE,
+                DECISION_REQUEST_DICE_ROLL,
+                DECISION_SELECT_DICE_REROLL,
+            }
+            and bool(getattr(round_state, "attempted_charge_this_round", False))
+            and not list(getattr(round_state, "charge_target_ids", None) or [])
+            and not list(getattr(round_state, "charge_move_target_ids", None) or [])
+        ):
             return
         resolved_value = getattr(request, "_resolved_decision_value", None)
         if isinstance(resolved_value, dict):

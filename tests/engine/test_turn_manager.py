@@ -62,6 +62,18 @@ class _Game:
         self.start_command_phase_calls += 1
 
 
+class _CommandStartEventGame(_Game):
+    def __init__(self) -> None:
+        super().__init__()
+        self.turn = 2
+        self.current_player_index = 0
+        self.battle_round_starting_player_index = 0
+
+    def start_command_phase(self) -> None:
+        super().start_command_phase()
+        self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
+
+
 def test_turn_manager_does_not_start_sixth_battle_round_hooks() -> None:
     game = _Game()
 
@@ -76,6 +88,23 @@ def test_turn_manager_does_not_start_sixth_battle_round_hooks() -> None:
     event_names = [event_name for event_name, _payload in game.event_system.events]
     assert "phase_start" not in event_names
     assert "battle_round_started" not in event_names
+
+
+def test_turn_manager_publishes_command_phase_start_after_switching_players() -> None:
+    game = _CommandStartEventGame()
+    old_player = game.players[0]
+    next_player = game.players[1]
+
+    turn_manager.next_phase(game)
+
+    assert game.phase == BattleRoundPhases.COMMAND_PHASE
+    assert game.current_player_index == 1
+    assert game.start_command_phase_calls == 1
+    phase_end_events = [payload for name, payload in game.event_system.events if name == "phase_end"]
+    phase_start_events = [payload for name, payload in game.event_system.events if name == "phase_start"]
+    assert phase_end_events[0]["player"] is old_player
+    assert len(phase_start_events) == 1
+    assert phase_start_events[0]["player"] is next_player
 
 
 def test_controller_driven_deployment_uses_selected_mission(monkeypatch) -> None:

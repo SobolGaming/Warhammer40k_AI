@@ -340,6 +340,16 @@ def test_charge_phase_selection_request_is_queued() -> None:
     assert request.context["allowed_unit_ids"] == [unit.id]
 
 
+def test_charge_phase_selection_excludes_units_that_already_attempted_charge() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.attempted_charge_this_round = True
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+
+    request = game._queue_charge_phase_selection()
+
+    assert request is None
+
+
 def test_charge_select_unit_resolution_queues_declare_charge_request() -> None:
     _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
     game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
@@ -569,7 +579,9 @@ def test_charge_followup_binds_post_roll_targets_before_queueing_move() -> None:
 
 
 def test_charge_move_followup_requeues_select_unit() -> None:
-    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    _player, army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    second_unit = _UnitStub("unit-2", army, charge_targets=[enemy])
+    army.units.append(second_unit)
     game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
     request = DecisionRequest.create(
         DECISION_MOVE_UNIT,
@@ -595,6 +607,69 @@ def test_charge_move_followup_requeues_select_unit() -> None:
 
     assert len(game.queued_requests) == 1
     assert game.queued_requests[0].decision_type == DECISION_SELECT_UNIT
+    assert game.queued_requests[0].context["allowed_unit_ids"] == [second_unit.id]
+    assert unit.round_state.attempted_charge_this_round is True
+
+
+def test_charge_reroll_followup_does_not_reopen_resolved_failed_charge() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.attempted_charge_this_round = True
+    unit.round_state.charge_target_ids = set()
+    unit.round_state.charge_move_target_ids = None
+    unit.round_state.charge_roll = 8
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Charge reroll",
+        player_id="player-1",
+        options=[DecisionOption.create("No re-roll", payload={"action_id": "none"})],
+        context={
+            "roll_spec": {
+                "roll_type": "charge",
+                "unit_id": unit.id,
+                "target_unit_ids": [enemy.id],
+                "out_of_turn": False,
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={"selected_die_ids": []},
+    )
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert game.queued_requests == []
+
+
+def test_late_charge_declaration_followup_does_not_reopen_resolved_failed_charge() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    unit.round_state.attempted_charge_this_round = True
+    unit.round_state.charge_target_ids = set()
+    unit.round_state.charge_move_target_ids = None
+    unit.round_state.charge_roll = 8
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy])
+    request = build_declare_charge_request(
+        game,
+        unit,
+        player_id="player-1",
+        out_of_turn=False,
+        context={"phase_name": "CHARGE_PHASE", "phase_step": "DECLARE_CHARGES"},
+    )
+    assert request is not None
+    option = request.options[0]
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={"target_unit_ids": [enemy.id]},
+    )
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert game.queued_requests == []
 
 
 def test_fight_phase_selection_request_is_queued_for_stage() -> None:

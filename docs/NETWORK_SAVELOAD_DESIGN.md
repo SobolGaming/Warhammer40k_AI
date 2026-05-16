@@ -98,6 +98,7 @@ Events are serialized state transitions and random outcomes. Examples:
 - unit_move_started, unit_move_ended, charge_move_failed
 - model_damage_resolved, unit_shooting_resolved, fight_attacks_resolved
 - model_destroyed, model_destroyed_before_removal, unit_destroyed
+- blood_tithe_points_gained, blood_tithe_activated, blood_tithe_updated
 - phase_start, phase_end, battle_round_started
 - objective_control_changed
 - vp_awarded, vp_capped

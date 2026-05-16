@@ -2966,6 +2966,11 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         if phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
             _mark_move_units_movement_status(unit, movement_type)
         if movement_type == "charge":
+            round_state = getattr(unit, "round_state", None)
+            if round_state is not None:
+                round_state.attempted_charge_this_round = True
+                round_state.charge_target_ids = set()
+                round_state.charge_move_target_ids = None
             target_unit_ids = [
                 str(value or "")
                 for value in list(ctx.get("target_unit_ids", []) or result_payload.get("target_unit_ids", []) or [])

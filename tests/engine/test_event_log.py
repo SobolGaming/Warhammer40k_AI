@@ -256,6 +256,48 @@ def test_charge_move_failed_event_logged():
     assert payload["movement_type"] == "charge"
 
 
+def test_blood_tithe_events_logged():
+    player = Player("P1", control=PlayerControl.LOCAL)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.turn = 1
+    attacker = SimpleNamespace(id="attacker")
+    target = SimpleNamespace(id="target")
+    ability = SimpleNamespace(key="ENRAGED_ABJURATION", name="Enraged Abjuration", cost=2)
+
+    game.event_system.publish(
+        "blood_tithe_points_gained",
+        player=player,
+        amount=1,
+        total=2,
+        attacker_unit=attacker,
+        target_unit=target,
+        roll=5,
+    )
+    game.event_system.publish(
+        "blood_tithe_activated",
+        player=player,
+        ability=ability,
+        total=0,
+    )
+    game.event_system.publish(
+        "blood_tithe_updated",
+        player=player,
+        total=0,
+        active=["Enraged Abjuration"],
+    )
+
+    gained = [event for event in game.event_log.events if event.event_type == "blood_tithe_points_gained"]
+    activated = [event for event in game.event_log.events if event.event_type == "blood_tithe_activated"]
+    updated = [event for event in game.event_log.events if event.event_type == "blood_tithe_updated"]
+    assert gained[-1].payload["player_id"] == player.id
+    assert gained[-1].payload["attacker_unit_id"] == "attacker"
+    assert gained[-1].payload["target_unit_id"] == "target"
+    assert gained[-1].payload["roll"] == 5
+    assert activated[-1].payload["ability_key"] == "ENRAGED_ABJURATION"
+    assert activated[-1].payload["cost"] == 2
+    assert updated[-1].payload["active"] == ["Enraged Abjuration"]
+
+
 def test_skipped_charge_move_application_logs_failed_charge_move():
     from warhammer40k_ai.engine.decision_handlers.movement import _apply_move_unit
     from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
