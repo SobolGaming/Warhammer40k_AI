@@ -83,6 +83,8 @@ class UnitRoundState:
     engaged_enemies_at_turn_start: Optional[set] = None  # Track engaged enemy unit ids at start of controlling player's turn
     charge_target_ids: Optional[set] = None  # Track declared charge target unit ids
     charge_move_target_ids: Optional[set] = None  # Track post-roll legal charge target ids used for movement validation
+    charge_roll_id: Optional[int] = None  # DiceRollManager roll id for the active charge roll
+    charge_move_resolved_this_round: bool = False  # Track whether the declared charge's move step has resolved
     charge_resolution_choice: Optional[dict] = None  # Serialized ChargeResolutionChoice for replay/network parity
     charge_resolution_outcome: Optional[dict] = None  # Serialized ChargeOutcome for replay/network parity
 

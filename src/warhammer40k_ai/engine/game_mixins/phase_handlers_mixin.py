@@ -840,7 +840,14 @@ class GamePhaseHandlersMixin:
             return
         queue = getattr(self, "decision_queue", None)
         if queue is not None and hasattr(queue, "list") and hasattr(queue, "pop"):
-            from ..decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES, DECISION_MOVE_UNIT
+            from ..decision_kinds import (
+                DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+                DECISION_DECLARE_CHARGE,
+                DECISION_MOVE_UNIT,
+                DECISION_REQUEST_DICE_ROLL,
+                DECISION_SELECT_DICE_REROLL,
+                DECISION_SELECT_UNIT,
+            )
 
             for request in list(queue.list() or []):
                 decision_type = str(getattr(request, "decision_type", "") or "").strip()
@@ -853,10 +860,43 @@ class GamePhaseHandlersMixin:
                     queue.pop(getattr(request, "decision_id", None))
                     continue
                 if decision_type != DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+                    if decision_type == DECISION_DECLARE_CHARGE:
+                        if str(ctx.get("unit_id", "") or "").strip() == unit_id:
+                            queue.pop(getattr(request, "decision_id", None))
+                            continue
+                        for option in list(getattr(request, "options", []) or []):
+                            payload = dict(getattr(option, "payload", {}) or {})
+                            if str(payload.get("unit_id", "") or "").strip() == unit_id:
+                                queue.pop(getattr(request, "decision_id", None))
+                                break
+                        continue
+                    if decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
+                        roll_spec = dict(ctx.get("roll_spec", {}) or {})
+                        roll_type = str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "") or "").strip().lower()
+                        if roll_type == "charge" and str(roll_spec.get("unit_id", "") or "").strip() == unit_id:
+                            queue.pop(getattr(request, "decision_id", None))
+                        continue
+                    if decision_type == DECISION_SELECT_UNIT:
+                        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+                        phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
+                        if phase_name != "CHARGE_PHASE" or phase_step != "DECLARE_CHARGES":
+                            continue
+                        request_unit_ids = {
+                            str(value or "").strip()
+                            for value in list(ctx.get("allowed_unit_ids", []) or [])
+                            if str(value or "").strip()
+                        }
+                        for option in list(getattr(request, "options", []) or []):
+                            payload = dict(getattr(option, "payload", {}) or {})
+                            option_unit_id = str(payload.get("unit_id", "") or "").strip()
+                            if option_unit_id:
+                                request_unit_ids.add(option_unit_id)
+                        if unit_id in request_unit_ids:
+                            queue.pop(getattr(request, "decision_id", None))
+                        continue
                     continue
-                if str(ctx.get("unit_id", "") or "").strip() != unit_id:
-                    continue
-                queue.pop(getattr(request, "decision_id", None))
+                if str(ctx.get("unit_id", "") or "").strip() == unit_id:
+                    queue.pop(getattr(request, "decision_id", None))
 
         round_state = getattr(unit, "round_state", None)
         if round_state is not None:
@@ -971,6 +1011,12 @@ class GamePhaseHandlersMixin:
             "count_as_charged": bool(count_as_charged),
             "charge_declaration_range_limit": CHARGE_DECLARATION_RANGE_INCHES,
         }
+        roll_id = getattr(getattr(unit, "round_state", None), "charge_roll_id", None)
+        if roll_id is not None:
+            try:
+                context["roll_id"] = int(roll_id)
+            except (TypeError, ValueError):
+                context["roll_id"] = roll_id
         if target_distance_rows:
             context["charge_declaration_target_distances"] = target_distance_rows
 
@@ -1245,6 +1291,9 @@ class GamePhaseHandlersMixin:
             round_state = getattr(unit, "round_state", None)
             if round_state is not None:
                 round_state.attempted_charge_this_round = True
+                if not bool(getattr(round_state, "charged_this_round", False)):
+                    self._clear_pending_charge_followup(unit=unit)
+                round_state.charge_move_resolved_this_round = True
             if not bool(ctx.get("out_of_turn", False)):
                 self._queue_charge_phase_selection(player=self.get_current_player())
             return
@@ -1286,6 +1335,8 @@ class GamePhaseHandlersMixin:
         round_state = getattr(unit, "round_state", None)
         if bool(getattr(round_state, "charged_this_round", False)):
             return
+        if bool(getattr(round_state, "charge_move_resolved_this_round", False)):
+            return
         if (
             decision_type
             in {
@@ -1307,6 +1358,11 @@ class GamePhaseHandlersMixin:
             if roll_id is None:
                 roll_id = ctx.get("roll_id")
             if roll_id is not None:
+                if round_state is not None:
+                    try:
+                        round_state.charge_roll_id = int(roll_id)
+                    except (TypeError, ValueError):
+                        round_state.charge_roll_id = roll_id
                 roll_manager = getattr(self, "roll_manager", None)
                 get_roll = getattr(roll_manager, "get_roll", None) if roll_manager is not None else None
                 if callable(get_roll):
@@ -1347,6 +1403,23 @@ class GamePhaseHandlersMixin:
                             attempts += 1
                     if roll_state is not None and not bool(getattr(roll_state, "final", False)):
                         return
+        if bool(getattr(round_state, "charged_this_round", False)):
+            return
+        if bool(getattr(round_state, "charge_move_resolved_this_round", False)):
+            return
+        if (
+            decision_type
+            in {
+                DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+                DECISION_DECLARE_CHARGE,
+                DECISION_REQUEST_DICE_ROLL,
+                DECISION_SELECT_DICE_REROLL,
+            }
+            and bool(getattr(round_state, "attempted_charge_this_round", False))
+            and not list(getattr(round_state, "charge_target_ids", None) or [])
+            and not list(getattr(round_state, "charge_move_target_ids", None) or [])
+        ):
+            return
         if isinstance(resolved_value, dict):
             if not target_unit_ids:
                 target_unit_ids = [

@@ -242,6 +242,7 @@ def test_charge_move_failed_event_logged():
         unit=unit,
         target_unit_ids=["target-a", "target-b"],
         reason="charge_roll_insufficient_by_distance",
+        roll_id=37,
         max_distance=7,
         charge_roll=7,
         declaration_range_limit=12,
@@ -274,6 +275,7 @@ def test_charge_move_failed_event_logged():
     assert payload["unit_id"] == "charger"
     assert payload["target_unit_ids"] == ["target-a", "target-b"]
     assert payload["reason"] == "charge_roll_insufficient_by_distance"
+    assert payload["roll_id"] == 37
     assert payload["max_distance"] == 7.0
     assert payload["charge_roll"] == 7.0
     assert payload["declaration_range_limit"] == 12.0
@@ -353,6 +355,7 @@ def test_skipped_charge_move_application_logs_failed_charge_move():
             "unit_id": "charger",
             "movement_type": "charge",
             "target_unit_ids": ["target"],
+            "roll_id": 37,
             "max_distance": 7,
             "allow_skip": True,
         },
@@ -372,6 +375,7 @@ def test_skipped_charge_move_application_logs_failed_charge_move():
     assert payload["unit_id"] == "charger"
     assert payload["target_unit_ids"] == ["target"]
     assert payload["reason"] == "charge_roll_insufficient_by_distance"
+    assert payload["roll_id"] == 37
     assert payload["solver_failure_reason"] == "no_legal_charge_move"
     assert payload["max_distance"] == 7.0
     assert payload["charge_roll"] == 7.0

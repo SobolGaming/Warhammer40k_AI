@@ -182,6 +182,8 @@ _UNIT_ROUND_FIELDS = [
     "engaged_enemies_at_turn_start",
     "charge_target_ids",
     "charge_move_target_ids",
+    "charge_roll_id",
+    "charge_move_resolved_this_round",
     "charge_resolution_choice",
     "charge_resolution_outcome",
 ]

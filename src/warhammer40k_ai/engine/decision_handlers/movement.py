@@ -3035,17 +3035,20 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             event_reason = diagnostic_reason if reason == "no_legal_charge_move" and diagnostic_reason else reason
             if event_reason != reason:
                 failure_diagnostics["solver_failure_reason"] = reason
+            roll_id = ctx.get("roll_id", getattr(round_state, "charge_roll_id", None) if round_state is not None else None)
             event_system = getattr(game, "event_system", None)
             if event_system is not None:
-                event_system.publish(
-                    "charge_move_failed",
-                    unit=unit,
-                    target_unit_ids=target_unit_ids,
-                    reason=event_reason,
-                    max_distance=ctx.get("max_distance"),
-                    movement_type="charge",
+                event_payload = {
+                    "unit": unit,
+                    "target_unit_ids": target_unit_ids,
+                    "reason": event_reason,
+                    "max_distance": ctx.get("max_distance"),
+                    "movement_type": "charge",
                     **failure_diagnostics,
-                )
+                }
+                if roll_id not in (None, ""):
+                    event_payload["roll_id"] = roll_id
+                event_system.publish("charge_move_failed", **event_payload)
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
         _clear_selected_movement_plan(unit)

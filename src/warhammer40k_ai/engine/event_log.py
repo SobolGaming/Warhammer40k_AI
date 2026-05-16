@@ -624,6 +624,12 @@ class DeterministicEventLog:
             payload["max_distance"] = max_distance_value
         if charge_roll_value is not None:
             payload["charge_roll"] = charge_roll_value
+        roll_id = kwargs.get("roll_id")
+        if roll_id not in (None, ""):
+            try:
+                payload["roll_id"] = int(roll_id)
+            except (TypeError, ValueError):
+                payload["roll_id"] = str(roll_id)
         for key in (
             "declaration_range_limit",
             "minimum_target_distance",
