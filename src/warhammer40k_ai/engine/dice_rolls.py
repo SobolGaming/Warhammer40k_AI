@@ -836,11 +836,21 @@ class DiceRollManager:
             return eligible
 
         sum_failed = state.sum_success is False
+        provider_success = state.sum_success
+        if provider_success is None:
+            die_successes = [
+                state.per_die_success.get(str(die.get("die_id", "")))
+                for die in list(state.dice or [])
+                if not bool(die.get("is_derived", False))
+            ]
+            die_successes = [success for success in die_successes if success is not None]
+            if die_successes:
+                provider_success = all(bool(success) for success in die_successes)
 
         if callable(provider):
             for opt in options:
                 action_id = str(opt.get("action_id", ""))
-                if action_id in ("none", "command_reroll"):
+                if action_id == "none":
                     continue
                 reason = str(opt.get("label", "") or spec.get("reason", "") or "Re-roll")
                 needed = spec.get("target", None)
@@ -856,9 +866,11 @@ class DiceRollManager:
                             value=int(state.total or 0),
                             dice=dice_vals,
                             needed=needed,
-                            success=state.sum_success,
+                            success=provider_success,
                             reason=reason,
                             allow_reroll=True,
+                            is_command=bool(opt.get("is_command", False)),
+                            cp_cost=opt.get("cp_cost", None),
                         )
                     )
                 except Exception:

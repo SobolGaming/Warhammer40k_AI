@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.dice_rolls import DiceRollState, register_roll_handler
 from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
@@ -305,6 +307,48 @@ def test_auto_pick_charge_command_reroll_when_charge_failed_and_no_rule_reroll()
 
     assert action_id == "command_reroll"
     assert set(selected or []) == {"91:0", "91:1"}
+
+
+@pytest.mark.parametrize("roll_type", ["hit", "wound"])
+def test_auto_pick_command_reroll_provider_can_select_failed_attack_roll(roll_type: str):
+    game = _make_game_with_players()
+    provider_calls = []
+    game.install_decision_providers(
+        roll_reroll_provider=lambda **kwargs: provider_calls.append(dict(kwargs)) or (not bool(kwargs.get("success")))
+    )
+    state = DiceRollState(
+        roll_id=92,
+        player_id="p1",
+        spec={"roll_type": roll_type, "target": 3, "target_op": "gte"},
+        status="rolled",
+        dice=[
+            {"die_id": "92:0", "value": 2, "is_derived": False},
+        ],
+        total=2,
+        per_die_success={"92:0": False},
+        sum_success=None,
+        reroll_options=[
+            {"action_id": "none", "label": "No re-roll", "mode": "none", "source": "none"},
+            {
+                "action_id": "command_reroll",
+                "label": "Command Re-roll",
+                "mode": "one",
+                "eligible_die_ids": ["92:0"],
+                "is_command": True,
+                "consume_cp": True,
+                "cp_cost": 1,
+            },
+        ],
+    )
+
+    action_id, selected = game.roll_manager._auto_pick_reroll_action(game, state)
+
+    assert action_id == "command_reroll"
+    assert selected == ["92:0"]
+    assert provider_calls
+    assert provider_calls[0]["roll_type"] == roll_type
+    assert provider_calls[0]["success"] is False
+    assert provider_calls[0]["is_command"] is True
 
 
 def test_charge_roll_success_uses_kept_dice_before_reroll_choice():
